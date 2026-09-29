@@ -39,7 +39,11 @@ import {
   jumpToOccurrence,
   onRoomScroll,
 } from '@/lib/room-scroll-follow';
-import type { SteeringExecutionState, SteeringQueueItemState } from '@/lib/steering-dock';
+import type {
+  SteeringExecutionState,
+  SteeringNodeOutcome,
+  SteeringQueueItemState,
+} from '@/lib/steering-dock';
 import { projectTerminalTodoState } from '@/lib/todo-state';
 
 import type { Run } from '../primitives/run';
@@ -571,6 +575,11 @@ export function ConsoleNodeRoom({
     },
     [run.id, run.status]
   );
+  // Reported by the dock's own queue read the instant the node is known
+  // terminal — the header pill folds this onto its own row/run status so it
+  // never shows `Running` beside the dock's own `node finished` disclosure.
+  // Same fresh-mount-reports-null reasoning as `dockExecutionState` above.
+  const [dockNodeOutcome, setDockNodeOutcome] = useState<SteeringNodeOutcome | null>(null);
   const [deliveryStates, setDeliveryStates] = useState<ReadonlyMap<string, SteeringQueueItemState>>(
     () => new Map()
   );
@@ -1145,6 +1154,7 @@ export function ConsoleNodeRoom({
         idleAwaitExpired={idleAwaitExpired}
         iterationPrefix={iterationPrefix}
         recoveryRequired={dockExecutionState === 'recovery_required'}
+        terminalOutcome={dockNodeOutcome}
       />
     );
 
@@ -1231,6 +1241,7 @@ export function ConsoleNodeRoom({
                 setAutoFocusTarget(null);
               }}
               onExecutionStateChange={handleDockExecutionStateChange}
+              onNodeOutcomeChange={setDockNodeOutcome}
               onDeliveryStatesChange={setDeliveryStates}
               focusLastRow={focusLastRow}
               nodeTerminal={nodeTerminal}

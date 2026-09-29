@@ -111,6 +111,7 @@ function mkSnapshot(
 ): QueueSnapshot {
   return {
     execution_state: overrides?.execution_state ?? 'live',
+    node_outcome: overrides?.node_outcome ?? null,
     auto_send: overrides?.auto_send ?? false,
     capabilities: overrides?.capabilities ?? { soft_injection: false, delivery_ack: false },
     queued,

@@ -15,7 +15,7 @@ import {
   type FinishedIterationView,
   type RunOfTotal,
 } from '@/lib/execution-room-model';
-import type { SteeringExecutionState } from '@/lib/steering-dock';
+import type { SteeringExecutionState, SteeringNodeOutcome } from '@/lib/steering-dock';
 import type { WorkflowRunStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -183,6 +183,11 @@ export function LegacyNodeRoom({
     },
     [onRunSettleHint, runStatus]
   );
+  // Reported by the dock's own queue read the instant the node is known
+  // terminal — the header pill folds this onto its own row/run status so it
+  // never shows `Running` beside the dock's own `node finished` disclosure.
+  // Same fresh-mount-reports-null reasoning as `dockExecutionState` above.
+  const [dockNodeOutcome, setDockNodeOutcome] = useState<SteeringNodeOutcome | null>(null);
 
   if (row === null) return <RoomPlaceholder>Select a node</RoomPlaceholder>;
 
@@ -218,6 +223,7 @@ export function LegacyNodeRoom({
         idleAwaitExpired={idleAwaitExpired}
         iterationPrefix={iterationPrefix}
         recoveryRequired={dockExecutionState === 'recovery_required'}
+        terminalOutcome={dockNodeOutcome}
       />
     ) : (
       <div className="flex items-center gap-2 border-b border-border px-4 py-2">
@@ -280,6 +286,7 @@ export function LegacyNodeRoom({
             nodeExecutionKey={nodeExecutionKey}
             onSelectLiveRow={onSelectRow}
             onExecutionStateChange={handleDockExecutionStateChange}
+            onNodeOutcomeChange={setDockNodeOutcome}
             recoveryRequired={dockExecutionState === 'recovery_required'}
           />
         );

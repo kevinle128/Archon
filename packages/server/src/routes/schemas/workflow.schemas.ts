@@ -779,6 +779,16 @@ export const readWorkflowNodeQueueResponseSchema = z
      * it entirely, so this dock-owned channel is what self-heals.
      */
     sub_state: z.enum(['generating', 'idle-after-interrupt']).nullable(),
+    /**
+     * The node's own settled outcome, from the same durable event
+     * projection `GET /runs/:id` itself settles onto — null until the node
+     * is known terminal by this read. Lets a client's room header show the
+     * real outcome the instant THIS read learns it, without waiting on its
+     * own, separately-cadenced run-status poll to catch up (which can still
+     * read `running`/`awaiting` for a short window after this queue read
+     * already knows the node is done).
+     */
+    node_outcome: z.enum(['completed', 'failed', 'skipped']).nullable(),
   })
   .strict()
   .openapi('ReadWorkflowNodeQueueResponse');

@@ -2939,7 +2939,7 @@ export interface paths {
         };
         /**
          * Read a running workflow node's durable guidance queue
-         * @description Returns the node's durable queue in server FIFO order, including delivery state, the durable auto-send setting, and provider capability data. Bodyless and mutation-free: no request body, no query parameters, and the read never changes the run, queue, or transcript. Every outcome carries `Cache-Control: no-store`. `execution_state` is `live` with a live in-process handle, `recovery_required` for a durable non-terminal node with no live handle (a server restart), or `finished` for a terminal run/node — never a 409 for a terminal node, since its durable content (including `never_sent` records) must stay readable.
+         * @description Returns the node's durable queue in server FIFO order, including delivery state, the durable auto-send setting, and provider capability data. Bodyless and mutation-free: no request body, no query parameters, and the read never changes the run, queue, or transcript. Every outcome carries `Cache-Control: no-store`. `execution_state` is `live` with a live in-process handle, `recovery_required` for a durable non-terminal node with no live handle (a server restart), or `finished` for a terminal run/node — never a 409 for a terminal node, since its durable content (including `never_sent` records) must stay readable. `node_outcome` names the node's own settled status once `execution_state` is `finished`, from the same projection `GET /runs/:id` settles onto — null until then.
          */
         get: {
             parameters: {
@@ -6092,6 +6092,8 @@ export interface components {
             queued: components["schemas"]["QueuedGuidanceMessage"][];
             /** @enum {string|null} */
             sub_state: "generating" | "idle-after-interrupt" | null;
+            /** @enum {string|null} */
+            node_outcome: "completed" | "failed" | "skipped" | null;
         };
         SteeringCapabilities: {
             soft_injection: boolean;

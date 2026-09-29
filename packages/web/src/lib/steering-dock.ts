@@ -177,6 +177,18 @@ export interface SteeringDockState {
    * Empty until the first snapshot.
    */
   readonly deliveryByMessageId: ReadonlyMap<string, SteeringQueueItemState>;
+  /**
+   * The node's own settled outcome, read straight from the durable queue
+   * snapshot the instant the node is known terminal — null until then, and
+   * still null for a queue-only/never-registered node the read learned
+   * nothing about. This is the ONE signal a room header can trust to skip
+   * straight past a stale `running`/`awaiting` row status without waiting
+   * on that status's own, separately-cadenced poll: the server computed it
+   * from the same durable projection `GET /runs/:id` itself settles onto,
+   * never guessed from `execution_state: 'finished'` alone (that value only
+   * proves the node stopped, not how).
+   */
+  readonly nodeOutcome: SteeringNodeOutcome | null;
 }
 
 export type SteeringDockMode =
@@ -660,6 +672,7 @@ export function createSteeringDockState(subState?: SteeringSubState): SteeringDo
     sendingNowMessageId: null,
     queueGeneration: 0,
     deliveryByMessageId: new Map(),
+    nodeOutcome: null,
   };
 }
 
@@ -1140,6 +1153,11 @@ export interface QueueSnapshot {
    * `subState` prop a host may also thread in from its own, slower poll.
    */
   readonly sub_state: SteeringSubState | null;
+  /**
+   * The node's own settled outcome — see `SteeringDockState.nodeOutcome`.
+   * Null while the node is not yet known terminal by this read.
+   */
+  readonly node_outcome: SteeringNodeOutcome | null;
 }
 
 /**
@@ -1249,6 +1267,12 @@ export function applyQueueSnapshot(
       ([messageId, deliveryState]) => state.deliveryByMessageId.get(messageId) === deliveryState
     );
   const subStateUnchanged = state.subState === snapshot.sub_state;
+  // Normalized against a stub snapshot that predates this field (every
+  // pre-existing test fixture) reading as `undefined` rather than the wire
+  // contract's own `null` — without this, the identity short-circuit above
+  // could never fire on those fixtures, forcing an unnecessary re-render on
+  // every accepted poll.
+  const nextNodeOutcome = snapshot.node_outcome ?? null;
   const unchanged =
     sentUnchanged &&
     neverSentUnchanged &&
@@ -1256,7 +1280,8 @@ export function applyQueueSnapshot(
     subStateUnchanged &&
     state.executionState === snapshot.execution_state &&
     state.autoSend === snapshot.auto_send &&
-    state.softInjection === snapshot.capabilities.soft_injection;
+    state.softInjection === snapshot.capabilities.soft_injection &&
+    state.nodeOutcome === nextNodeOutcome;
   if (unchanged) return state;
 
   return {
@@ -1267,6 +1292,7 @@ export function applyQueueSnapshot(
     executionState: snapshot.execution_state,
     autoSend: snapshot.auto_send,
     softInjection: snapshot.capabilities.soft_injection,
+    nodeOutcome: nextNodeOutcome,
     ...(subStateUnchanged
       ? null
       : {

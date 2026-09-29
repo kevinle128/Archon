@@ -815,6 +815,69 @@ describe('ConsoleNodeRoom', () => {
     invalidateSpy.mockRestore();
   });
 
+  // Same gap as the test above, but this time the dock's own queue read also
+  // carries the node's settled outcome (`node_outcome`), and no SECOND
+  // `renderRoom` call ever supplies a fresh, terminal `run` prop — the only
+  // signal this test gives the room that the node is done is this dock's
+  // own read. The pill must show the real outcome from that read alone,
+  // never waiting on a run refetch to land first.
+  test('the pill never shows Running once this dock reports the node terminal, even before any run refetch lands', async () => {
+    queueFetchSpy?.mockRestore();
+    queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              execution_state: 'finished',
+              node_outcome: 'failed',
+              auto_send: false,
+              capabilities: { soft_injection: false, delivery_ack: false },
+              queued: [],
+              sub_state: null,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        );
+      }
+      if (method === 'GET' && pathname.endsWith('/draft')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ success: true, draft: null, auto_send: false }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch);
+
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] });
+
+    await act(async () => {
+      renderRoom({
+        run: run({ id: 'run-outcome', status: 'running' }),
+        loadMessages,
+      });
+    });
+    await flushUntil('header settles to the terminal outcome', () =>
+      (host.textContent ?? '').includes('Failed')
+    );
+
+    expect(host.textContent).not.toContain('Running');
+    expect(host.textContent).toContain('Failed');
+  });
+
   // The literal server-reported `recovery_required` signal (a restart with
   // no live process behind this node) is the one and only source for the
   // pill — never inferred from any gap between two independently-cadenced

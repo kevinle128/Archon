@@ -35,7 +35,11 @@ import {
   jumpToOccurrence,
   onRoomScroll,
 } from '@/lib/room-scroll-follow';
-import type { SteeringExecutionState, SteeringQueueItemState } from '@/lib/steering-dock';
+import type {
+  SteeringExecutionState,
+  SteeringNodeOutcome,
+  SteeringQueueItemState,
+} from '@/lib/steering-dock';
 import { projectTerminalTodoState } from '@/lib/todo-state';
 import type { WorkflowRunStatus } from '@/lib/types';
 
@@ -124,6 +128,8 @@ export interface NodeTranscriptPaneProps {
   nodeExecutionKey?: string | null;
   /** Forwarded to the composer dock; see its own doc comment. */
   onExecutionStateChange?: (state: SteeringExecutionState | null) => void;
+  /** Forwarded to the composer dock; see its own doc comment. */
+  onNodeOutcomeChange?: (outcome: SteeringNodeOutcome | null) => void;
   /**
    * Server-reported restart recovery for the selected row (owned by the
    * parent room, which reads it from the dock's own `onExecutionStateChange`
@@ -170,6 +176,7 @@ export function NodeTranscriptPane({
   nodeExecutionKey = null,
   onSelectLiveRow,
   onExecutionStateChange,
+  onNodeOutcomeChange,
   recoveryRequired = false,
 }: NodeTranscriptPaneProps): React.ReactElement {
   const resolvedScopeKey =
@@ -718,6 +725,7 @@ export function NodeTranscriptPane({
           setAutoFocusTarget(null);
         }}
         onExecutionStateChange={onExecutionStateChange}
+        onNodeOutcomeChange={onNodeOutcomeChange}
         onDeliveryStatesChange={setDeliveryStates}
         focusLastRow={focusLastRow}
         nodeTerminal={nodeTerminal}

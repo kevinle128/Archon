@@ -92,6 +92,7 @@ import {
   type SteeringDockMode,
   type SteeringDockState,
   type SteeringExecutionState,
+  type SteeringNodeOutcome,
   type SteeringQueueItemState,
   type SteeringSubState,
 } from '@/lib/steering-dock';
@@ -199,6 +200,14 @@ export interface ConsoleComposerDockProps {
    * currently read.
    */
   onExecutionStateChange?: (state: SteeringExecutionState | null) => void;
+  /**
+   * The node's own settled outcome, reported on every change (including
+   * back to null on a scope reset) so the room header pill can show the
+   * real terminal outcome the instant this dock's own queue read learns it
+   * — never left for the header's own, separately-cadenced row/run status
+   * to infer on its own.
+   */
+  onNodeOutcomeChange?: (outcome: SteeringNodeOutcome | null) => void;
   /**
    * Every message id's last-observed delivery state, reported on every
    * change so a transcript operator row can show the proven `sent` /
@@ -386,6 +395,7 @@ export function ConsoleComposerDock({
   autoFocusTarget = null,
   onAutoFocusApplied,
   onExecutionStateChange,
+  onNodeOutcomeChange,
   onDeliveryStatesChange,
   send = sendNodeGuidance,
   interrupt = interruptNode,
@@ -666,9 +676,22 @@ export function ConsoleComposerDock({
   // The only reader of the durable queue snapshot's execution state today —
   // report every change, including the reset back to null on a scope swap,
   // so a parent header can show `Recovery required` without polling twice.
-  useEffect(() => {
+  // Layout, not passive: `setDock` above resolves from a promise handler, so
+  // a passive effect's own callback (and the parent `setState` it triggers)
+  // can still land AFTER React has already painted this render's `settling`/
+  // `finished` band — the exact window a stale header pill was caught in
+  // (round-12 QA). A layout effect's parent update is flushed synchronously
+  // before paint, so the header and the dock settle in the same frame.
+  useLayoutEffect(() => {
     onExecutionStateChange?.(dock.executionState);
   }, [dock.executionState, onExecutionStateChange]);
+
+  // Same synchronous-before-paint reasoning as `onExecutionStateChange`
+  // above: the room header's pill must never lag one frame behind this
+  // dock's own terminal reconciliation.
+  useLayoutEffect(() => {
+    onNodeOutcomeChange?.(dock.nodeOutcome);
+  }, [dock.nodeOutcome, onNodeOutcomeChange]);
 
   useEffect(() => {
     onDeliveryStatesChange?.(dock.deliveryByMessageId);

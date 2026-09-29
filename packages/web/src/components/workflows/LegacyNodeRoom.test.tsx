@@ -1476,6 +1476,72 @@ describe('LegacyNodeRoom dispatcher', () => {
     }
   });
 
+  // Same gap as the settle-hint test above, but this time the header's own
+  // `status` prop (fed by a separately-cadenced run/row poll) has not
+  // caught up to a terminal value AT ALL — it still reads `running`. The
+  // dock's own queue read now also carries the node's settled outcome
+  // (`node_outcome`), and the pill must show that real outcome instead of
+  // `Running`, the instant this dock's own read reports it — never waiting
+  // on the run settle hint's own refetch to land first.
+  test('the pill never shows Running once this dock reports the node terminal, even while row status is stale', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'finished',
+                  node_outcome: 'failed',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                  sub_state: null,
+                }
+              : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const { loadMessages } = createLoadMessages();
+      await act(async () => {
+        renderRoom({
+          row: COMMAND_ROW,
+          loadMessages,
+          definitionNodes: [{ id: 'command', command: 'review' }],
+          // The row's own status and the run's own status both stay
+          // `running` for this whole test — only the dock's own queue read
+          // ever reports the node as terminal.
+          runStatus: 'running',
+          headerModel: headerModelFor('running'),
+        });
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(host.textContent).not.toContain('Running');
+      expect(host.textContent).toContain('Failed');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   // The literal server-reported `recovery_required` signal (a restart with
   // no live process behind this node) is the one and only source for the
   // pill — never inferred from any gap between two independently-cadenced

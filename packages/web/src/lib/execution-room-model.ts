@@ -8,7 +8,11 @@
 import type { components } from './api.generated';
 import { ensureUtc, formatDurationLong } from './format';
 import type { RoomSurface } from './room-split-layout';
-import { IDLE_AWAIT_EXPIRED_ERROR, type SteeringExecutionState } from './steering-dock';
+import {
+  IDLE_AWAIT_EXPIRED_ERROR,
+  type SteeringExecutionState,
+  type SteeringNodeOutcome,
+} from './steering-dock';
 
 type WorkflowEvent = components['schemas']['WorkflowEvent'];
 
@@ -834,6 +838,30 @@ export function statusPill(status: string, recoveryRequired = false): StatusPill
     label: STATUS_PILL_LABEL[status] ?? status,
     tone: STATUS_PILL_TONE[status] ?? null,
   };
+}
+
+/**
+ * Folds the steering dock's own terminal reconciliation onto the room
+ * header's status the instant it is known, so a still-`running`/`awaiting`
+ * row status — fed by a separately-cadenced poll — never outlives the
+ * node's proven outcome. Feeding this ONE resolved status into both
+ * `statusPill` and `headerMetaLine` (rather than teaching each of them
+ * about `terminalOutcome` separately) is what keeps the pill and the
+ * `running…` meta segment from ever disagreeing about whether the node is
+ * still live for the same render.
+ *
+ * A `status` that is already one of the durable terminal outcomes always
+ * wins over `terminalOutcome` for the same reason `statusPill`'s own
+ * `recoveryRequired` precedent does: the durable record is never stale in
+ * the direction that matters.
+ */
+export function effectiveNodeRoomStatus(
+  status: string,
+  terminalOutcome: SteeringNodeOutcome | null | undefined
+): string {
+  if (terminalOutcome === null || terminalOutcome === undefined) return status;
+  if (TERMINAL_PILL_STATUSES.has(status)) return status;
+  return terminalOutcome;
 }
 
 export interface RunOfTotal {

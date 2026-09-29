@@ -7585,6 +7585,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
       const queueBody = (await queueRes.json()) as {
         success: boolean;
         execution_state: string;
+        node_outcome: string | null;
         auto_send: boolean;
         capabilities: { soft_injection: boolean; delivery_ack: boolean };
         queued: Array<Record<string, unknown>>;
@@ -7592,6 +7593,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
       expect(queueBody).toEqual({
         success: true,
         execution_state: 'live',
+        node_outcome: null,
         auto_send: false,
         capabilities: { soft_injection: false, delivery_ack: false },
         sub_state: null,
@@ -9237,6 +9239,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     expect(await res.json()).toEqual({
       success: true,
       execution_state: 'live',
+      node_outcome: null,
       auto_send: false,
       capabilities: { soft_injection: false, delivery_ack: false },
       sub_state: null,
@@ -9273,6 +9276,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     expect(await res.json()).toEqual({
       success: true,
       execution_state: 'live',
+      node_outcome: null,
       auto_send: false,
       capabilities: { soft_injection: false, delivery_ack: false },
       sub_state: null,
@@ -9292,6 +9296,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       success: true,
+      node_outcome: null,
       execution_state: 'live',
       auto_send: false,
       capabilities: { soft_injection: false, delivery_ack: false },
@@ -9470,7 +9475,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     expect(mockGetWorkflowRun).toHaveBeenCalledTimes(1);
   });
 
-  test('returns 200 finished for a terminal run, keeping the durable content readable', async () => {
+  test('returns 200 finished for a terminal run, folding the run outcome onto a still-open node', async () => {
     mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'completed' }));
     mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
     const handle = getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID);
@@ -9480,16 +9485,28 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
 
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    const body = (await res.json()) as { execution_state: string; queued: unknown[] };
+    const body = (await res.json()) as {
+      execution_state: string;
+      node_outcome: string | null;
+      queued: unknown[];
+    };
     expect(body.execution_state).toBe('finished');
     expect(body.queued).toHaveLength(1);
-    // Hot path: a live handle short-circuits the event read even though the
-    // run itself is terminal.
-    expect(mockListWorkflowEvents).not.toHaveBeenCalled();
+    // A live handle short-circuits the node-known/terminal check above, but
+    // this terminal edge still reads events once to fold the run's own
+    // outcome onto a node the projection never saw a lifecycle event for —
+    // the same fold `GET /runs/:id` itself applies.
+    expect(mockListWorkflowEvents).toHaveBeenCalledTimes(1);
+    expect(body.node_outcome).toBe('completed');
   });
 
   test('returns 200 finished for each terminal projected node state when no handle exists', async () => {
     const { app } = makeApp();
+    const outcomeByEventType: Record<string, string> = {
+      node_completed: 'completed',
+      node_failed: 'failed',
+      node_skipped: 'skipped',
+    };
     for (const eventType of ['node_completed', 'node_failed', 'node_skipped']) {
       const nodeId = `node-${eventType}`;
       mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
@@ -9499,13 +9516,15 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
 
       expect(res.status).toBe(200);
       expect(res.headers.get('cache-control')).toBe('no-store');
-      const body = (await res.json()) as { execution_state: string };
+      const body = (await res.json()) as { execution_state: string; node_outcome: string | null };
       expect(body.execution_state).toBe('finished');
+      expect(body.node_outcome).toBe(outcomeByEventType[eventType]);
     }
   });
 
-  test('returns 200 finished for a closed handle without reading events', async () => {
+  test('returns 200 finished for a closed handle, reading events once for the node outcome', async () => {
     const handle = liveSetup();
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_completed')]);
     queueSteerItem(handle, STEER_MESSAGE_ID);
     handle.close();
     const { app } = makeApp();
@@ -9513,10 +9532,35 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
 
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    const body = (await res.json()) as { execution_state: string; queued: unknown[] };
+    const body = (await res.json()) as {
+      execution_state: string;
+      node_outcome: string | null;
+      queued: unknown[];
+    };
     expect(body.execution_state).toBe('finished');
     expect(body.queued).toHaveLength(1);
-    expect(mockListWorkflowEvents).not.toHaveBeenCalled();
+    // The hot path (a live/closed handle) never read events for `nodeTerminal`
+    // itself, but the closed handle still needs the node's own outcome, which
+    // only the event projection carries.
+    expect(mockListWorkflowEvents).toHaveBeenCalledTimes(1);
+    expect(body.node_outcome).toBe('completed');
+  });
+
+  test('folds a cancelled run onto a restart-recovered node whose own event never went terminal', async () => {
+    // No in-process handle (server restarted) and the node's own projected
+    // status is still `running` — only the run's own status says the node
+    // is done. This is the exact race a restart-recovered node's Abandon
+    // opened: `node_outcome` must still name the real outcome instead of
+    // staying null and leaving a client to infer one.
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'cancelled' }));
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    const { app } = makeApp();
+    const res = await getNodeQueue(app);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { execution_state: string; node_outcome: string | null };
+    expect(body.execution_state).toBe('finished');
+    expect(body.node_outcome).toBe('failed');
   });
 
   test('returns 422 for a known running node with no in-process handle (detached)', async () => {
