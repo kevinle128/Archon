@@ -569,6 +569,39 @@ describe('withdraw transitions', () => {
     expect(resolveWithdrawSuccess(active, 'b')).toBe(active);
   });
 
+  test('success on the last remaining row keeps it rendered instead of blanking the band, but clears id and refusal', () => {
+    const state = stateWith([receipt('a', 'alpha')], {
+      refusal: { code: 'stale', message: 'old' },
+    });
+    const resolved = resolveWithdrawSuccess(beginWithdraw(state, 'a'), 'a');
+    // The row itself is untouched — the corrective re-read (bumped
+    // generation) is what actually removes or restores it, never this 200.
+    expect(resolved.sent).toBe(state.sent);
+    expect(resolved.withdrawingMessageId).toBeNull();
+    expect(resolved.refusal).toBeNull();
+    expect(resolved.queueGeneration).toBe(state.queueGeneration + 1);
+  });
+
+  test('a confirming snapshot that omits the kept-back row then empties the band, with no intervening blank state', () => {
+    const state = stateWith([receipt('a', 'alpha')]);
+    const resolved = resolveWithdrawSuccess(beginWithdraw(state, 'a'), 'a');
+    expect(resolved.sent).toEqual([receipt('a', 'alpha')]); // still shown
+    const confirmed = applyQueueSnapshot(resolved, mkSnapshot([]), resolved.queueGeneration);
+    expect(confirmed.sent).toEqual([]);
+  });
+
+  test('a confirming snapshot that still has the row restores its true (dispatched) state, with no intervening blank state', () => {
+    const state = stateWith([receipt('a', 'alpha')]);
+    const resolved = resolveWithdrawSuccess(beginWithdraw(state, 'a'), 'a');
+    expect(resolved.sent).toEqual([receipt('a', 'alpha')]); // still shown
+    const confirmed = applyQueueSnapshot(
+      resolved,
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'dispatching' })]),
+      resolved.queueGeneration
+    );
+    expect(confirmed.sent).toEqual([{ ...receipt('a', 'alpha'), state: 'dispatching' }]);
+  });
+
   test('failure retains rows and send state, stores refusal, clears the matching id', () => {
     const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')], {
       pendingRetry: { messageId: 'p', message: 'wip' },

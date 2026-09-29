@@ -854,6 +854,15 @@ export function beginWithdraw(state: SteeringDockState, messageId: string): Stee
  * preserved) and clears the active id plus any stored refusal. The generation
  * bumps even when a snapshot already removed the row — the server confirmed
  * the mutation either way. A stale or mismatched completion is a no-op.
+ *
+ * The response never says whether the row actually left the queue (it is a
+ * no-op either way if a concurrent dispatch already claimed it) — a
+ * corrective re-read follows on the bumped generation. Removing the row when
+ * it is the only one left would blank the band before that re-read lands, so
+ * this keeps the row exactly as it was instead: the corrective snapshot
+ * resolves it either way (dropped if truly withdrawn, restored with its true
+ * state otherwise), so the band goes from one non-empty rendering straight to
+ * the next with no empty frame in between.
  */
 export function resolveWithdrawSuccess(
   state: SteeringDockState,
@@ -861,6 +870,15 @@ export function resolveWithdrawSuccess(
 ): SteeringDockState {
   if (state.withdrawingMessageId !== messageId) return state;
   const sent = state.sent.filter(entry => entry.messageId !== messageId);
+  const keepLastRowUntilConfirmed = sent.length === 0 && state.sent.length > 0;
+  if (keepLastRowUntilConfirmed) {
+    return {
+      ...state,
+      withdrawingMessageId: null,
+      refusal: null,
+      queueGeneration: state.queueGeneration + 1,
+    };
+  }
   return {
     ...state,
     sent,
