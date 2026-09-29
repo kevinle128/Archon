@@ -421,15 +421,17 @@ export function ComposerDock({
   const pollingHandleRef = useRef<QueuePollingHandle | null>(null);
 
   const [dock, setDock] = useState<SteeringDockState>(() => createSteeringDockState(subState));
-  // Bumped whenever a withdraw resolves successfully — the trigger for the
-  // immediate-re-read effect below. A ref bump alone would not schedule a
-  // render, and firing `.kick()` synchronously inside the withdraw promise
-  // handler reads `dockRef.current` before this render's `setDock` has
-  // committed, sampling the PRE-withdraw `queueGeneration` and making the
+  // Bumped whenever a withdraw or a Send-now resolves successfully — the
+  // trigger for the immediate-re-read effect below. A ref bump alone would
+  // not schedule a render, and firing `.kick()` synchronously inside the
+  // promise handler reads `dockRef.current` before this render's `setDock`
+  // has committed, sampling the PRE-resolve `queueGeneration` and making the
   // kicked read's generation check discard the very response meant to fix
   // this. State + effect defers the kick to after commit, when
-  // `dockRef.current` already reflects the resolved generation.
-  const [withdrawKickTick, setWithdrawKickTick] = useState(0);
+  // `dockRef.current` already reflects the resolved generation. Shared by
+  // both mutations rather than one counter each — either one just needs the
+  // dock's own poll to catch up immediately, not two independent triggers.
+  const [forceKickTick, setForceKickTick] = useState(0);
   const [draft, setDraft] = useState('');
   // Shared across the four mutually-exclusive band renders below; only one
   // ever mounts at a time. Default open matches the approved mockup.
@@ -775,14 +777,14 @@ export function ComposerDock({
     // nodeExecutionKey: cleanup aborts the old poller on attempt reset.
   }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled, mode, nodeExecutionKey]);
 
-  // Fires only after a withdraw resolves successfully — see
-  // `withdrawKickTick`'s declaration for why this runs as a post-commit
-  // effect rather than inline in the promise handler. `pollingHandleRef` is
-  // null while polling is disabled, making the kick a safe no-op then.
+  // Fires only after a withdraw or a Send-now resolves successfully — see
+  // `forceKickTick`'s declaration for why this runs as a post-commit effect
+  // rather than inline in the promise handler. `pollingHandleRef` is null
+  // while polling is disabled, making the kick a safe no-op then.
   useEffect(() => {
-    if (withdrawKickTick === 0) return;
+    if (forceKickTick === 0) return;
     pollingHandleRef.current?.kick();
-  }, [withdrawKickTick]);
+  }, [forceKickTick]);
 
   // When the dock's controls leave the DOM — terminal state hides the dock,
   // a 422 swaps it for the detached disclosure — focus must move to the
@@ -978,6 +980,13 @@ export function ComposerDock({
         (receipt): void => {
           if (attemptGenerationRef.current !== attemptGen) return;
           setDock(current => resolveSendNowSuccess(current, receipt));
+          // A reply that ends the node in the same turn is otherwise only
+          // learned on this dock's own next scheduled poll (up to
+          // `pollIntervalMs` later) — force an immediate re-read (via the
+          // effect below, once this render commits) so `SENDING`/`Stop`/
+          // `Queue` never outlive a node this tab's own Send now just
+          // finished.
+          setForceKickTick(tick => tick + 1);
           setDraft(current => (current === submittedDraft ? '' : current));
           void clearDraft(runId, nodeId).then(
             () => {
@@ -1089,7 +1098,7 @@ export function ComposerDock({
         // the effect below, once this render commits) so a false "removed"
         // (the row was already claimed) is corrected by the true state
         // instead of trusting the optimistic removal above.
-        setWithdrawKickTick(tick => tick + 1);
+        setForceKickTick(tick => tick + 1);
       },
       (error: unknown): void => {
         if (attemptGenerationRef.current !== attemptGen) return;

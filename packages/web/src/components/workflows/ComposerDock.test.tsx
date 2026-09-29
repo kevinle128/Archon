@@ -1302,6 +1302,21 @@ describe('ComposerDock', () => {
     expect(host.querySelector('[role="status"]')?.textContent).toBe('agent generating');
   });
 
+  // A reply that ends the node in the same turn is otherwise only learned on
+  // this dock's own next scheduled poll — up to `pollIntervalMs` later. The
+  // poll interval here is set far beyond this test's own flush window, so a
+  // second read can only appear via the forced kick, never the interval
+  // itself firing early.
+  test('a successful Send now forces an immediate re-read, never waiting out the poll interval', async () => {
+    readCalls.length = 0;
+    await renderDock({ subState: 'idle-after-interrupt', pollIntervalMs: 60_000 });
+    expect(readCalls.length).toBeGreaterThan(0);
+    const readsBeforeSendNow = readCalls.length;
+    await setDraft('go ahead');
+    await clickSendNow();
+    expect(readCalls.length).toBeGreaterThan(readsBeforeSendNow);
+  });
+
   test('Send now posts only the new draft, clears band and draft on success', async () => {
     nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
       interruptCalls.push({ runId, nodeId });
