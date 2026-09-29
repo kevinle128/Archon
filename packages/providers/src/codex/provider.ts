@@ -38,11 +38,11 @@ import {
 import { withResumedOutcome, resumedOutcome } from '../shared/resumed';
 import {
   defaultProcessTreeOps,
-  findCodexExecRoot,
   collectDescendantPids,
-  reapCodexProcessTree,
+  reapProcessTree,
   type ProcessTreeOps,
-} from './process-tree-reap';
+} from '../shared/process-tree-reap';
+import { findCodexExecRoot } from './process-tree-reap';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -1193,7 +1193,7 @@ export class CodexProvider implements IAgentProvider {
       { rootPid: snapshot.rootPid, descendantCount: snapshot.descendantPids.length },
       'codex.tree_reap_armed'
     );
-    void reapCodexProcessTree({
+    void reapProcessTree({
       ops: this.processTreeOps,
       descendantPids: snapshot.descendantPids,
       terminateGraceMs: this.treeReapTerminateGraceMs,

@@ -35,6 +35,7 @@ const mockCreateWorkflowEvent = mock(() => Promise.resolve());
 interface MockNonTerminalNode {
   nodeId: string;
   scope: Record<string, unknown>;
+  terminalEventType: 'node_failed' | 'loop_iteration_failed';
 }
 const mockFindNonTerminalNodes = mock((): Promise<MockNonTerminalNode[]> => Promise.resolve([]));
 
@@ -1644,8 +1645,8 @@ describe('abandonWorkflow', () => {
     test('writes one node_failed event per non-terminal node, and emits it for a live UI refresh', async () => {
       mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
       mockFindNonTerminalNodes.mockResolvedValueOnce([
-        { nodeId: 'prompt-a', scope: {} },
-        { nodeId: 'loop-b', scope: {} },
+        { nodeId: 'prompt-a', scope: {}, terminalEventType: 'node_failed' },
+        { nodeId: 'loop-b', scope: {}, terminalEventType: 'node_failed' },
       ]);
 
       await abandonWorkflow('run-1');
@@ -1690,7 +1691,9 @@ describe('abandonWorkflow', () => {
       mockGetWorkflowRun.mockResolvedValueOnce(
         makePausedRun({ status: 'running', conversation_id: 'conv-7' })
       );
-      mockFindNonTerminalNodes.mockResolvedValueOnce([{ nodeId: 'prompt-a', scope: {} }]);
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        { nodeId: 'prompt-a', scope: {}, terminalEventType: 'node_failed' },
+      ]);
       mockGetConversationById.mockImplementationOnce((id: unknown) => {
         expect(id).toBe('conv-7');
         return Promise.resolve({ platform_conversation_id: 'web-live-tab' });
@@ -1715,7 +1718,9 @@ describe('abandonWorkflow', () => {
 
     test('writes the durable event even when the run’s conversation cannot be found, without registering a mapping', async () => {
       mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
-      mockFindNonTerminalNodes.mockResolvedValueOnce([{ nodeId: 'prompt-a', scope: {} }]);
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        { nodeId: 'prompt-a', scope: {}, terminalEventType: 'node_failed' },
+      ]);
       mockGetConversationById.mockImplementationOnce(() => Promise.resolve(null));
 
       await abandonWorkflow('run-1');
@@ -1728,7 +1733,9 @@ describe('abandonWorkflow', () => {
 
     test('writes the durable event even when the conversation lookup fails, without registering a mapping', async () => {
       mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
-      mockFindNonTerminalNodes.mockResolvedValueOnce([{ nodeId: 'prompt-a', scope: {} }]);
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        { nodeId: 'prompt-a', scope: {}, terminalEventType: 'node_failed' },
+      ]);
       mockGetConversationById.mockImplementationOnce(() => Promise.reject(new Error('db blip')));
 
       await abandonWorkflow('run-1');
@@ -1748,6 +1755,7 @@ describe('abandonWorkflow', () => {
         {
           nodeId: 'loop-b',
           scope: { occurrence_id: 'occ-1', attempt_id: 'att-1', retry_epoch: 0, iteration: 2 },
+          terminalEventType: 'node_failed',
         },
       ]);
 
@@ -1764,6 +1772,73 @@ describe('abandonWorkflow', () => {
           iteration: 2,
           error: 'Cancelled by user',
         },
+      });
+    });
+
+    // A loop mid-iteration reports TWO open executions for the same
+    // step_name — the container (closed by node_failed) and the current
+    // iteration (closed by loop_iteration_failed). Writing only one would
+    // leave the other permanently `running` in the execution-history
+    // projection (the exact VQ10-3 symptom).
+    test('writes a loop_iteration_failed event for an open iteration, distinct from the container node_failed', async () => {
+      mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        {
+          nodeId: 'loop-b',
+          scope: { occurrence_id: 'occ-outer', attempt_id: 'att-outer', retry_epoch: 0 },
+          terminalEventType: 'node_failed',
+        },
+        {
+          nodeId: 'loop-b',
+          scope: {
+            occurrence_id: 'occ-iter-2',
+            attempt_id: 'att-iter-2',
+            retry_epoch: 0,
+            iteration: 2,
+          },
+          terminalEventType: 'loop_iteration_failed',
+        },
+      ]);
+
+      await abandonWorkflow('run-1');
+
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledTimes(2);
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledWith({
+        workflow_run_id: 'run-1',
+        event_type: 'node_failed',
+        step_name: 'loop-b',
+        data: {
+          occurrence_id: 'occ-outer',
+          attempt_id: 'att-outer',
+          retry_epoch: 0,
+          error: 'Cancelled by user',
+        },
+      });
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledWith({
+        workflow_run_id: 'run-1',
+        event_type: 'loop_iteration_failed',
+        step_name: 'loop-b',
+        data: {
+          occurrence_id: 'occ-iter-2',
+          attempt_id: 'att-iter-2',
+          retry_epoch: 0,
+          iteration: 2,
+          error: 'Cancelled by user',
+        },
+      });
+      expect(mockEmit).toHaveBeenCalledWith({
+        type: 'node_failed',
+        runId: 'run-1',
+        nodeId: 'loop-b',
+        nodeName: 'loop-b',
+        error: 'Cancelled by user',
+      });
+      expect(mockEmit).toHaveBeenCalledWith({
+        type: 'loop_iteration_failed',
+        runId: 'run-1',
+        nodeId: 'loop-b',
+        iteration: 2,
+        error: 'Cancelled by user',
       });
     });
 
@@ -1803,7 +1878,9 @@ describe('abandonWorkflow', () => {
 
     test('is idempotent: a second abandon of the same already-cancelled run writes nothing more', async () => {
       mockGetWorkflowRun.mockResolvedValue(makePausedRun({ status: 'running' }));
-      mockFindNonTerminalNodes.mockResolvedValueOnce([{ nodeId: 'prompt-a', scope: {} }]);
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        { nodeId: 'prompt-a', scope: {}, terminalEventType: 'node_failed' },
+      ]);
 
       await abandonWorkflow('run-1');
       expect(mockCreateWorkflowEvent).toHaveBeenCalledTimes(1);

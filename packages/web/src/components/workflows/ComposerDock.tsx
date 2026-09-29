@@ -46,6 +46,8 @@ import {
   createKeepaliveCoalescer,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  dispatchFailedEntry,
+  dispatchFailureDisclosure,
   effectiveNodeTerminal,
   sendNowItemAccessibleName,
   finishedIterationDisclosure,
@@ -1335,6 +1337,7 @@ export function ComposerDock({
 
   const blocked = mode === 'blocked';
   const idle = agentMode === 'idle';
+  const dispatchFailed = dispatchFailedEntry(visibleSent);
   const pendingCount = pendingQueueCount(visibleSent);
   const statusText =
     blocked && blockedReason !== null
@@ -1395,6 +1398,9 @@ export function ComposerDock({
                     accent={index === 0}
                   >
                     {statusLabel === null ? null : <span className="flex-none">{statusLabel}</span>}
+                    {receipt.state === 'queued' && receipt.lastError !== null ? (
+                      <span className="flex-none text-text-secondary">failed</span>
+                    ) : null}
                     {claimable && canSendItemNow ? (
                       <button
                         type="button"
@@ -1461,9 +1467,19 @@ export function ComposerDock({
       >
         {idle ? (
           <>
-            <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
-              {STEERING_INTERRUPT_DISCLOSURE}
-            </p>
+            {dispatchFailed !== null ? (
+              <p
+                role="alert"
+                aria-live="assertive"
+                className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+              >
+                {dispatchFailureDisclosure(dispatchFailed.lastError ?? '')}
+              </p>
+            ) : (
+              <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+                {STEERING_INTERRUPT_DISCLOSURE}
+              </p>
+            )}
             <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
               {STEERING_IDLE_AWAIT_DISCLOSURE}
             </p>

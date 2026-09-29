@@ -8,7 +8,7 @@
 import type { components } from './api.generated';
 import { ensureUtc, formatDurationLong } from './format';
 import type { RoomSurface } from './room-split-layout';
-import { IDLE_AWAIT_EXPIRED_ERROR } from './steering-dock';
+import { IDLE_AWAIT_EXPIRED_ERROR, type SteeringExecutionState } from './steering-dock';
 
 type WorkflowEvent = components['schemas']['WorkflowEvent'];
 
@@ -1129,6 +1129,50 @@ export function resolveRunDetailRefetchIntervalMs(
     return hasUnsettledNodeExecutions(executions) ? 3000 : false;
   }
   return 3000;
+}
+
+/**
+ * The room header's `recoveryRequired` pill input. A restart-recovered
+ * node's dock read moves `recovery_required` -> `finished` the instant its
+ * own ~1s queue poll observes the node settled — routinely BEFORE the
+ * row/run status projection that pill also reads (`buildExecutionHeader`'s
+ * own `runStatus` fold, refreshed by SSE or a slower heartbeat) has caught
+ * up. Treating only the raw `recovery_required` signal as recovery-required
+ * let that gap render a stale `Running`/`Waiting on you` pill for however
+ * long the OTHER poll took. `finished` counts the same, for as long as
+ * `status` — the value this decision is actually protecting — still reads
+ * non-terminal; once that status itself becomes terminal (from either poll
+ * landing), this stops mattering on its own, so it can never wedge the pill
+ * on `Recovery required` after the run has genuinely settled.
+ */
+export function isRoomRecoveryRequired(
+  dockExecutionState: SteeringExecutionState | null,
+  status: string | null
+): boolean {
+  if (dockExecutionState === 'recovery_required') return true;
+  if (dockExecutionState !== 'finished') return false;
+  return status === null || NON_TERMINAL_NODE_STATUSES.has(status);
+}
+
+/**
+ * True on the exact edge a dock's queue read first reports `finished` while
+ * the cached run entity is still non-terminal — the moment to force an
+ * immediate run refetch instead of waiting on SSE (which a tab's own
+ * single-stream registration can lose to a sibling tab watching the same
+ * run) or the slower heartbeat poll. Durable terminal state takes
+ * precedence over a stale live projection the instant this dock itself
+ * learns the node settled, regardless of when the tab was opened.
+ */
+export function shouldRefetchRunOnDockFinished(
+  previousDockExecutionState: SteeringExecutionState | null,
+  nextDockExecutionState: SteeringExecutionState | null,
+  runStatus: string
+): boolean {
+  return (
+    nextDockExecutionState === 'finished' &&
+    previousDockExecutionState !== 'finished' &&
+    !isTerminalRunStatus(runStatus)
+  );
 }
 
 /**

@@ -17,6 +17,12 @@ import { GrokEventParser } from './event-parser';
 // `@agentclientprotocol/sdk` on every Archon boot even when Grok never runs.
 // The real function is loaded lazily inside `acpQuery()` instead.
 import type { GrokAcpProcessInput, runGrokAcpTurn } from './acp-client';
+import {
+  defaultProcessTreeOps,
+  collectDescendantPids,
+  reapProcessTree,
+  type ProcessTreeOps,
+} from '../shared/process-tree-reap';
 
 const MAX_CAPTURE_CHARS = 1_000_000;
 const TERMINATION_GRACE_MS = 5_000;
@@ -28,6 +34,8 @@ function getLog(): ReturnType<typeof createLogger> {
 }
 
 export interface GrokProcess {
+  /** The spawned process's own pid — the root to snapshot the descendant tree from on abort. */
+  pid: number;
   stdout: ReadableStream<Uint8Array> | null;
   stderr: ReadableStream<Uint8Array> | null;
   exited: Promise<number>;
@@ -70,6 +78,7 @@ function defaultSpawner(command: string[], options: GrokSpawnOptions): GrokProce
     stderr: 'pipe',
   });
   return {
+    pid: proc.pid,
     stdout: proc.stdout,
     stderr: proc.stderr,
     exited: proc.exited,
@@ -355,17 +364,23 @@ export class GrokProvider implements IAgentProvider {
   private readonly spawn: GrokSpawner;
   private readonly resolveBinary: GrokBinaryResolver;
   private readonly runAcpTurn: GrokAcpTurnRunner | undefined;
+  private readonly processTreeOps: ProcessTreeOps;
+  private readonly treeReapTerminateGraceMs: number;
 
   constructor(options?: {
     spawn?: GrokSpawner;
     resolveBinary?: GrokBinaryResolver;
     runAcpTurn?: GrokAcpTurnRunner;
+    processTreeOps?: ProcessTreeOps;
+    treeReapTerminateGraceMs?: number;
   }) {
     this.spawn = options?.spawn ?? defaultSpawner;
     this.resolveBinary = options?.resolveBinary ?? resolveGrokBinaryPath;
     // Left undefined by default — see the import-site comment above: loaded
     // lazily in acpQuery() so registering Grok never evaluates the ACP SDK.
     this.runAcpTurn = options?.runAcpTurn;
+    this.processTreeOps = options?.processTreeOps ?? defaultProcessTreeOps;
+    this.treeReapTerminateGraceMs = options?.treeReapTerminateGraceMs ?? TERMINATION_GRACE_MS;
   }
 
   getType(): string {
@@ -466,12 +481,62 @@ export class GrokProvider implements IAgentProvider {
     let killTimer: ReturnType<typeof setTimeout> | undefined;
     let protocolError: Error | undefined;
     let transportError: Error | undefined;
+    // Set the moment a `tool` chunk is parsed — the CLI's own signal that it
+    // just invoked a tool, which (for a shell-style tool) forks a subprocess
+    // this provider does not otherwise have a handle on. Reaping is skipped
+    // entirely when no tool ever ran: nothing to reap, and it spares every
+    // ordinary abort (Stop/Cancel with no open tool) a `ps` round-trip.
+    let toolEverStarted = false;
+    // Guards the tree-reap dance to exactly once per query: `terminate()` can
+    // be invoked from several racing paths (operator abort, an IO error on
+    // either the exit or stderr outcome, a protocol error) and only the first
+    // should snapshot-and-kill.
+    let reapArmed = false;
     const clearKillTimer = (): void => {
       if (killTimer) clearTimeout(killTimer);
       killTimer = undefined;
     };
+    // Reap the tool's own subprocess tree BEFORE signaling the root: unlike
+    // Codex (whose SDK races its own abort teardown ahead of any snapshot
+    // this provider could take), Archon spawned `proc` itself and decides
+    // exactly when to signal it — so the descendant snapshot can be taken
+    // first, while `proc` (and anything it forked) is still provably alive,
+    // then the root is killed. The snapshot's own `ps` round-trip (~tens of
+    // ms) delays the root's SIGTERM by the same amount; every other
+    // provider's own reap already costs more than that.
+    const terminateWithTreeReap = async (): Promise<void> => {
+      if (!toolEverStarted || process.platform === 'win32') {
+        if (!processExited) killTimer = scheduleKill(proc);
+        return;
+      }
+      let descendantPids: readonly number[] = [];
+      try {
+        const processes = await this.processTreeOps.listProcesses();
+        descendantPids = collectDescendantPids(processes, proc.pid);
+      } catch (err) {
+        getLog().warn({ err }, 'grok.tree_reap_snapshot_failed');
+      }
+      // The process may have exited on its own while the snapshot was in
+      // flight — nothing left to signal.
+      if (processExited) return;
+      killTimer = scheduleKill(proc);
+      if (descendantPids.length === 0) return;
+      getLog().info(
+        { rootPid: proc.pid, descendantCount: descendantPids.length },
+        'grok.tree_reap_armed'
+      );
+      void reapProcessTree({
+        ops: this.processTreeOps,
+        descendantPids,
+        terminateGraceMs: this.treeReapTerminateGraceMs,
+      }).catch((err: unknown) => {
+        getLog().warn({ err }, 'grok.tree_reap_failed');
+      });
+    };
     const terminate = (): void => {
-      if (!processExited && !killTimer) killTimer = scheduleKill(proc);
+      if (processExited || reapArmed) return;
+      reapArmed = true;
+      void terminateWithTreeReap();
     };
     const onAbort = (): void => {
       terminate();
@@ -518,7 +583,13 @@ export class GrokProvider implements IAgentProvider {
         for await (const line of streamLines(proc.stdout)) {
           if (line.trim().length === 0) continue;
           try {
-            for (const chunk of parser.consumeLine(line)) yield chunk;
+            for (const chunk of parser.consumeLine(line)) {
+              // The CLI's own signal that it just invoked a tool — for a
+              // shell-style tool this forks a subprocess `proc` has no
+              // other handle on (see `toolEverStarted` above `terminate`).
+              if (chunk.type === 'tool') toolEverStarted = true;
+              yield chunk;
+            }
           } catch (error) {
             protocolError = toError(error);
             terminate();

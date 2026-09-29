@@ -65,6 +65,16 @@ export interface LocalSentReceipt {
   readonly state: SteeringQueueItemState;
   /** Author of the message; null for an unauthenticated/no-identity caller. */
   readonly operatorUserId: string | null;
+  /**
+   * Failure evidence for an entry a retryable automatic-dispatch failure
+   * reverted to `queued` (still at the front, not a distinct terminal
+   * state), or that terminal reconciliation marked `never_sent`; null for
+   * an entry that never failed. Server-authoritative, read fresh on every
+   * queue snapshot.
+   */
+  readonly lastError: string | null;
+  /** Count of retryable automatic-dispatch failures this entry has been reverted from. */
+  readonly dispatchFailureCount: number;
 }
 
 export interface PendingSubmission {
@@ -200,6 +210,29 @@ export function neverSentDisclosure(idleAwaitExpired: boolean): string {
   return idleAwaitExpired
     ? STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE
     : STEERING_NEVER_SENT_DISCLOSURE;
+}
+
+/**
+ * The one queue entry to show a dispatch-failure alert for, if any. A
+ * retryable automatic-dispatch failure reverts an entry to the front of the
+ * queue with failure evidence and parks the node idle-after-interrupt — this
+ * is the head-most row still carrying that evidence, so the dock renders
+ * exactly one assertive error rather than one per queue poll or one per row.
+ *
+ * `lastError` is never cleared by a later successful claim — the server
+ * keeps it as durable history once an entry has failed at least once — so
+ * this also requires `state === 'queued'`: the one state a revert actually
+ * leaves an entry in. A re-claimed entry moves to `dispatching`/`sent`/
+ * `delivered` without clearing `lastError`, and must not keep showing a
+ * stale alert for a retry that is in flight or already succeeded.
+ */
+export function dispatchFailedEntry(sent: readonly LocalSentReceipt[]): LocalSentReceipt | null {
+  return sent.find(entry => entry.state === 'queued' && entry.lastError !== null) ?? null;
+}
+
+/** Exact dispatch-failure alert copy, naming the reverted entry's evidence. */
+export function dispatchFailureDisclosure(lastError: string): string {
+  return `automatic dispatch failed · ${lastError} · Send now to retry`;
 }
 
 /** Exact finished-iteration disclosure; N is the proven live iteration. */
@@ -645,6 +678,8 @@ export function resolveGuidanceSuccess(
     message: state.pendingRetry?.message ?? '',
     state: receipt.state ?? 'queued',
     operatorUserId: null,
+    lastError: null,
+    dispatchFailureCount: 0,
   };
   const sent = [...state.sent, accepted];
   return {
@@ -712,6 +747,8 @@ export function beginSendNow(
             message: pendingRetry.message,
             state: 'awaiting_send_now' as const,
             operatorUserId: null,
+            lastError: null,
+            dispatchFailureCount: 0,
           },
         ];
   return {
@@ -999,6 +1036,10 @@ export interface QueuedGuidanceRow {
   /** Author of the message; null for an unauthenticated/no-identity caller. */
   readonly operator_user_id: string | null;
   readonly state: SteeringQueueItemState;
+  /** Failure evidence for a reverted-to-queued or never_sent row; null otherwise. */
+  readonly last_error: string | null;
+  /** Count of retryable automatic-dispatch failures this row has been reverted from. */
+  readonly dispatch_failure_count: number;
 }
 
 /** The queue-read wire payload — the durable node queue in server FIFO order. */
@@ -1087,6 +1128,8 @@ export function applyQueueSnapshot(
       message: row.message,
       state: row.state,
       operatorUserId: row.operator_user_id,
+      lastError: row.last_error,
+      dispatchFailureCount: row.dispatch_failure_count,
     }));
   const nextNeverSent: NeverSentEntry[] = snapshot.queued
     .filter(row => row.state === 'never_sent')
@@ -1102,7 +1145,9 @@ export function applyQueueSnapshot(
         row.messageId === state.sent[i].messageId &&
         row.message === state.sent[i].message &&
         row.state === state.sent[i].state &&
-        row.operatorUserId === state.sent[i].operatorUserId
+        row.operatorUserId === state.sent[i].operatorUserId &&
+        row.lastError === state.sent[i].lastError &&
+        row.dispatchFailureCount === state.sent[i].dispatchFailureCount
     );
   const neverSentUnchanged =
     state.neverSent !== null &&

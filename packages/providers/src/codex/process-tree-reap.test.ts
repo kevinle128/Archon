@@ -1,18 +1,7 @@
-import { describe, test, expect, mock } from 'bun:test';
-import { createMockLogger } from '../test/mocks/logger';
+import { describe, test, expect } from 'bun:test';
 
-const mockLogger = createMockLogger();
-mock.module('@archon/paths', () => ({
-  createLogger: mock(() => mockLogger),
-}));
-
-import {
-  findCodexExecRoot,
-  collectDescendantPids,
-  reapCodexProcessTree,
-  type ProcessSnapshotEntry,
-  type ProcessTreeOps,
-} from './process-tree-reap';
+import { findCodexExecRoot } from './process-tree-reap';
+import type { ProcessSnapshotEntry } from '../shared/process-tree-reap';
 
 const OUR_PID = 4242;
 
@@ -104,95 +93,5 @@ describe('findCodexExecRoot', () => {
       threadId: null,
     });
     expect(root).toBeNull();
-  });
-});
-
-describe('collectDescendantPids', () => {
-  test('walks the full multi-level descendant subtree, excluding unrelated processes', () => {
-    const descendants = collectDescendantPids(tree(), 9001);
-    expect(new Set(descendants)).toEqual(new Set([9002, 9003]));
-  });
-
-  test('returns an empty list for a childless root', () => {
-    const descendants = collectDescendantPids(tree(), 500);
-    expect(descendants).toEqual([]);
-  });
-});
-
-/** A fake process whose liveness the test controls directly, and whose kill calls are recorded. */
-function fakeOps(initiallyAlive: readonly number[]): ProcessTreeOps & {
-  alive: Set<number>;
-  killed: { pid: number; signal: NodeJS.Signals }[];
-} {
-  const alive = new Set(initiallyAlive);
-  const killed: { pid: number; signal: NodeJS.Signals }[] = [];
-  return {
-    alive,
-    killed,
-    listProcesses: () => Promise.resolve([]),
-    isAlive: (pid: number) => alive.has(pid),
-    kill: (pid: number, signal: NodeJS.Signals) => {
-      killed.push({ pid, signal });
-    },
-  };
-}
-
-describe('reapCodexProcessTree', () => {
-  // The root (`codex exec`) is never reaped by this function — by the time
-  // it runs, `codex exec` is always already dead (its own SIGTERM teardown
-  // is faster than any snapshot round-trip could observe it alive), so only
-  // its snapshotted descendants are ever in `descendantPids`.
-  test('SIGTERMs a live descendant, no SIGKILL when it dies in the grace window', async () => {
-    const ops = fakeOps([9002]);
-    // The descendant dies promptly once SIGTERM'd — simulate that inside kill().
-    const originalKill = ops.kill;
-    const wrappedKill = (pid: number, signal: NodeJS.Signals): void => {
-      originalKill(pid, signal);
-      if (signal === 'SIGTERM') ops.alive.delete(pid);
-    };
-    await reapCodexProcessTree({
-      ops: { ...ops, kill: wrappedKill },
-      descendantPids: [9002],
-      terminateGraceMs: 20,
-    });
-    expect(ops.killed).toEqual([{ pid: 9002, signal: 'SIGTERM' }]);
-  });
-
-  test('escalates to SIGKILL when a descendant outlives the terminate grace window', async () => {
-    const ops = fakeOps([9002]);
-    await reapCodexProcessTree({
-      ops,
-      descendantPids: [9002],
-      terminateGraceMs: 10,
-    });
-    expect(ops.killed).toEqual([
-      { pid: 9002, signal: 'SIGTERM' },
-      { pid: 9002, signal: 'SIGKILL' },
-    ]);
-  });
-
-  test('never signals a descendant that already exited on its own', async () => {
-    const ops = fakeOps([]);
-    await reapCodexProcessTree({
-      ops,
-      descendantPids: [9002],
-      terminateGraceMs: 10,
-    });
-    expect(ops.killed).toEqual([]);
-  });
-
-  test('reaps every live descendant in a multi-pid snapshot', async () => {
-    const ops = fakeOps([9002, 9003]);
-    await reapCodexProcessTree({
-      ops,
-      descendantPids: [9002, 9003],
-      terminateGraceMs: 10,
-    });
-    expect(ops.killed).toEqual([
-      { pid: 9002, signal: 'SIGTERM' },
-      { pid: 9003, signal: 'SIGTERM' },
-      { pid: 9002, signal: 'SIGKILL' },
-      { pid: 9003, signal: 'SIGKILL' },
-    ]);
   });
 });

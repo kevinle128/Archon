@@ -1,0 +1,40 @@
+VQ10-2 live verification — Console pill in a browser tab opened AFTER a
+kill -9 restart, for a restart-recovered loop node (iteration 2).
+
+Setup: run d3e396da80248326c7fce87c718f818d (qa10-loop, node hold-loop,
+iteration 2), Stop'd mid-tool-call (interrupted the 120s foreground busy-wait),
+1 item queued (LF3-Q1), confirmed the latest workflow_events row was
+node_usage_recorded (no occurrence_id/attempt_id — the exact VQ10-3 trigger),
+then `kill -9` on the server (PID 67627), restarted on the same port (3353,
+PID 77367), then a FRESH Playwright browser tab (never open before the kill)
+navigated to the run's Console room for the first time, ~1.5s after that
+restart.
+
+First run of the check script (server PID 77367, run still abandonable):
+
+  [fresh tab opened after restart] navigating to
+  http://localhost:5221/console/p/3ea13a5b82c6bc591617d01e6a5b2452/r/d3e396da80248326c7fce87c718f818d?node=hold-loop
+  initial room pill (before abandon): Recovery required
+  abandon status 200 { success: true, message: "Abandoned workflow: qa10-loop" }
+  abandonAt(ms)= 501
+  t=1ms pill=Recovery required
+  t=668ms pill=Failed
+  sawRunningAfterAbandon= false
+  reachedFailedAt(ms after abandon)= 167
+
+Result: the pill went `Recovery required` -> `Failed` directly, 167ms after
+the Abandon POST. `Running` was never observed at any of the 40ms samples
+taken in the ~4.5s window after Abandon (`sawRunningAfterAbandon: false`).
+Pre-fix, the round-10 QA measured this same "fresh tab opened after restart"
+case at 429-456ms into `Running` and 26.35-26.39s into `Failed`.
+
+Screenshot after settle: vq10-2-fresh-tab-after-restart-failed.png (shows the
+room header pill reading Failed, "Iteration 2" selected, "of 2 . max 3", and
+the dock's NEVER SENT band for the queued LF3-Q1 entry).
+
+A second run of the check script against the SAME (already-terminal) run
+correctly got a 400 "Cannot abandon run with status 'cancelled'" from the
+abandon POST, and read the pill as already Failed (t=2ms) — confirming the
+selector is stable and the terminal state persists; that second run's own
+timing numbers are not meaningful (nothing to abandon) and are not the
+measurement above.

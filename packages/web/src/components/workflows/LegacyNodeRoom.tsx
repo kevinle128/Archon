@@ -9,6 +9,7 @@ import {
   type WorkflowNodeStateResponse,
 } from '@/lib/api';
 import {
+  isRoomRecoveryRequired,
   nodeKindChip,
   type ExecutionHeaderModel,
   type FinishedIterationView,
@@ -184,7 +185,7 @@ export function LegacyNodeRoom({
         runOfTotal={runOfTotal}
         idleAwaitExpired={idleAwaitExpired}
         iterationPrefix={iterationPrefix}
-        recoveryRequired={dockExecutionState === 'recovery_required'}
+        recoveryRequired={isRoomRecoveryRequired(dockExecutionState, headerModel.status)}
       />
     ) : (
       <div className="flex items-center gap-2 border-b border-border px-4 py-2">

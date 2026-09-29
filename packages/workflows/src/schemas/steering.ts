@@ -92,7 +92,17 @@ export const steeringQueueEntrySchema = z
     operator_user_id: nullableOperatorUserIdSchema,
     fifo_position: z.number().int().min(1),
     state: z.enum(STEERING_QUEUE_STATES),
+    /**
+     * Failure evidence for an entry a retryable automatic-dispatch failure
+     * reverted to `queued`, or that terminal reconciliation later marked
+     * `never_sent`; null otherwise. A retryable failure keeps the entry
+     * `queued` (not a distinct terminal state) so it stays re-claimable —
+     * the same `queued` FIFO claim SQL, ordered by the entry's existing
+     * (unchanged) `fifo_position`, already puts it back at the front.
+     */
     last_error: z.string().nullable(),
+    /** Count of retryable automatic-dispatch failures this entry has been reverted from; never caps a retry. */
+    dispatch_failure_count: z.number().int().min(0),
     created_at: z.union([z.date(), z.string()]),
     updated_at: z.union([z.date(), z.string()]),
   })

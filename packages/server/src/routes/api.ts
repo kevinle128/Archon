@@ -6113,6 +6113,8 @@ export function registerApiRoutes(
               message: entry.message,
               operator_user_id: entry.operator_user_id,
               state: entry.state === 'withdrawn' ? ('delivery_unknown' as const) : entry.state,
+              last_error: entry.last_error,
+              dispatch_failure_count: entry.dispatch_failure_count,
             })),
             sub_state: handle?.steeringSubState() ?? null,
           },

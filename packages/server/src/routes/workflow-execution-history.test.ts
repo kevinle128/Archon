@@ -1071,4 +1071,160 @@ describe('projectWorkflowExecutionHistory', () => {
       ambiguous.filter(item => item.occurrence_id === OCCURRENCE_A && item.status === 'running')
     ).toHaveLength(2);
   });
+
+  // End-to-end coverage for the orphaned-node terminal write
+  // (`writeTerminalNodeEventsForOrphanedNodes` in @archon/core): the
+  // synthesized terminal event must carry the SAME occurrence_id the node's
+  // own node_started/loop_iteration_started minted, not whatever the bare
+  // tool_called/tool_completed/node_usage_recorded event in between happened
+  // to carry (none of those carry scope at all). Fixture data mirrors the
+  // exact synthesized event shape those two functions produce.
+  test('a synthesized node_failed for an orphaned prompt node settles the open execution', () => {
+    const executions = projectWorkflowExecutionHistory({
+      events: [
+        event({
+          id: 'orphan-prompt-1',
+          event_type: 'node_started',
+          step_name: 'prompt-a',
+          created_at: '2026-09-07T00:00:01.000Z',
+          data: {
+            occurrence_id: OCCURRENCE_A,
+            attempt_id: ATTEMPT_A,
+            retry_epoch: 0,
+            type: 'prompt',
+          },
+        }),
+        event({
+          id: 'orphan-prompt-2',
+          event_type: 'tool_called',
+          step_name: 'prompt-a',
+          created_at: '2026-09-07T00:00:02.000Z',
+          data: { tool_name: 'Bash', tool_call_id: 't1' },
+        }),
+        event({
+          id: 'orphan-prompt-3',
+          event_type: 'tool_completed',
+          step_name: 'prompt-a',
+          created_at: '2026-09-07T00:00:03.000Z',
+          data: {
+            tool_name: 'Bash',
+            duration_ms: 10,
+            tool_call_id: 't1',
+            tool_outcome: 'interrupted',
+          },
+        }),
+        event({
+          id: 'orphan-prompt-4',
+          event_type: 'node_failed',
+          step_name: 'prompt-a',
+          created_at: '2026-09-07T00:00:04.000Z',
+          data: {
+            occurrence_id: OCCURRENCE_A,
+            attempt_id: ATTEMPT_A,
+            retry_epoch: 0,
+            error: 'Cancelled by user',
+          },
+        }),
+      ],
+    });
+
+    expect(executions).toHaveLength(1);
+    expect(executions[0]).toMatchObject({ occurrence_id: OCCURRENCE_A, status: 'failed' });
+    expect(executions[0]?.unknown_scope).toBeUndefined();
+  });
+
+  test('synthesized node_failed + loop_iteration_failed for an orphaned loop settle both the container and the open iteration', () => {
+    const executions = projectWorkflowExecutionHistory({
+      events: [
+        event({
+          id: 'orphan-loop-1',
+          event_type: 'node_started',
+          step_name: 'loop-b',
+          created_at: '2026-09-07T00:00:01.000Z',
+          data: {
+            occurrence_id: OCCURRENCE_A,
+            attempt_id: ATTEMPT_A,
+            retry_epoch: 0,
+            type: 'loop',
+          },
+        }),
+        event({
+          id: 'orphan-loop-2',
+          event_type: 'loop_iteration_started',
+          step_name: 'loop-b',
+          created_at: '2026-09-07T00:00:02.000Z',
+          data: {
+            occurrence_id: OCCURRENCE_B,
+            attempt_id: ATTEMPT_A,
+            retry_epoch: 0,
+            iteration: 1,
+          },
+        }),
+        event({
+          id: 'orphan-loop-3',
+          event_type: 'loop_iteration_completed',
+          step_name: 'loop-b',
+          created_at: '2026-09-07T00:00:03.000Z',
+          data: {
+            occurrence_id: OCCURRENCE_B,
+            attempt_id: ATTEMPT_A,
+            retry_epoch: 0,
+            iteration: 1,
+          },
+        }),
+        event({
+          id: 'orphan-loop-4',
+          event_type: 'loop_iteration_started',
+          step_name: 'loop-b',
+          created_at: '2026-09-07T00:00:04.000Z',
+          data: {
+            occurrence_id: OCCURRENCE_C,
+            attempt_id: ATTEMPT_B,
+            retry_epoch: 0,
+            iteration: 2,
+          },
+        }),
+        event({
+          id: 'orphan-loop-5',
+          event_type: 'tool_called',
+          step_name: 'loop-b',
+          created_at: '2026-09-07T00:00:05.000Z',
+          data: { tool_name: 'Bash', tool_call_id: 't2' },
+        }),
+        // Abandon closes the open iteration first, then the container —
+        // mirroring `writeTerminalNodeEventsForOrphanedNodes`'s write order.
+        event({
+          id: 'orphan-loop-6',
+          event_type: 'loop_iteration_failed',
+          step_name: 'loop-b',
+          created_at: '2026-09-07T00:00:06.000Z',
+          data: {
+            occurrence_id: OCCURRENCE_C,
+            attempt_id: ATTEMPT_B,
+            retry_epoch: 0,
+            iteration: 2,
+            error: 'Cancelled by user',
+          },
+        }),
+        event({
+          id: 'orphan-loop-7',
+          event_type: 'node_failed',
+          step_name: 'loop-b',
+          created_at: '2026-09-07T00:00:07.000Z',
+          data: {
+            occurrence_id: OCCURRENCE_A,
+            attempt_id: ATTEMPT_A,
+            retry_epoch: 0,
+            error: 'Cancelled by user',
+          },
+        }),
+      ],
+    });
+
+    expect(executions.filter(item => item.unknown_scope === true)).toHaveLength(0);
+    expect(executions.filter(item => item.status === 'running')).toHaveLength(0);
+    expect(executions.find(item => item.occurrence_id === OCCURRENCE_A)?.status).toBe('failed');
+    expect(executions.find(item => item.occurrence_id === OCCURRENCE_B)?.status).toBe('completed');
+    expect(executions.find(item => item.occurrence_id === OCCURRENCE_C)?.status).toBe('failed');
+  });
 });

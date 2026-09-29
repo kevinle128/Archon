@@ -3,6 +3,7 @@
  * node body, with Ask cards inline at agent tool invocations.
  */
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -16,9 +17,11 @@ import { buildAgentHistory, type AgentHistory, type AgentHistoryItem } from '@/l
 import {
   bareNodeLabel,
   buildExecutionHeader,
+  isRoomRecoveryRequired,
   loopMaxIterationsForNode,
   nodeKindChip,
   resolveGapHoldStatus,
+  shouldRefetchRunOnDockFinished,
   type ExecutionHeaderModel,
   type FinishedIterationView,
   type RunOfTotal,
@@ -41,6 +44,8 @@ import type { SteeringExecutionState, SteeringQueueItemState } from '@/lib/steer
 import { projectTerminalTodoState } from '@/lib/todo-state';
 
 import type { Run } from '../primitives/run';
+import { invalidate } from '../store/cache';
+import { K } from '../store/keys';
 import type {
   AskAnswerBody,
   PendingInteraction,
@@ -544,6 +549,29 @@ export function ConsoleNodeRoom({
   // is currently observable. A fresh dock mount reports null immediately, so
   // switching rows/nodes clears a stale recovery pill without extra plumbing.
   const [dockExecutionState, setDockExecutionState] = useState<SteeringExecutionState | null>(null);
+  // Tracks the dock's own PREVIOUS execution_state so the edge into
+  // `finished` can be detected without depending on `dockExecutionState`
+  // itself (a state setter's read of its own current value only reflects
+  // last render, not necessarily the most recent report when several land
+  // before this component re-renders).
+  const previousDockExecutionStateRef = useRef<SteeringExecutionState | null>(null);
+  const handleDockExecutionStateChange = useCallback(
+    (next: SteeringExecutionState | null): void => {
+      const previous = previousDockExecutionStateRef.current;
+      previousDockExecutionStateRef.current = next;
+      // The dock's own ~1s queue poll routinely learns a node settled before
+      // the run entity cache does (SSE can miss a tab whose stream lost the
+      // single-connection-per-conversation slot to a sibling tab on the same
+      // run; the heartbeat fallback can take up to 30s). Durable terminal
+      // state takes precedence the instant this dock itself learns it,
+      // regardless of when the tab was opened.
+      if (shouldRefetchRunOnDockFinished(previous, next, run.status)) {
+        invalidate(K.run(run.id));
+      }
+      setDockExecutionState(next);
+    },
+    [run.id, run.status]
+  );
   const [deliveryStates, setDeliveryStates] = useState<ReadonlyMap<string, SteeringQueueItemState>>(
     () => new Map()
   );
@@ -1117,7 +1145,7 @@ export function ConsoleNodeRoom({
         runOfTotal={runOfTotal}
         idleAwaitExpired={idleAwaitExpired}
         iterationPrefix={iterationPrefix}
-        recoveryRequired={dockExecutionState === 'recovery_required'}
+        recoveryRequired={isRoomRecoveryRequired(dockExecutionState, computedHeader.status)}
       />
     );
 
@@ -1203,7 +1231,7 @@ export function ConsoleNodeRoom({
               onAutoFocusApplied={(): void => {
                 setAutoFocusTarget(null);
               }}
-              onExecutionStateChange={setDockExecutionState}
+              onExecutionStateChange={handleDockExecutionStateChange}
               onDeliveryStatesChange={setDeliveryStates}
               focusLastRow={focusLastRow}
               nodeTerminal={nodeTerminal}

@@ -20,6 +20,8 @@ import type {
 } from '../skills/runs';
 import type { DagNode } from '../skills/workflows';
 import { invalidate } from '../store/cache';
+import * as cacheStore from '../store/cache';
+import { K } from '../store/keys';
 import { installHappyDom, restoreHappyDom } from '../test/install-happy-dom';
 
 const react = await import('react');
@@ -724,6 +726,76 @@ describe('ConsoleNodeRoom', () => {
     expect(clearSpy).toHaveBeenCalled();
     timeoutSpy.mockRestore();
     clearSpy.mockRestore();
+  });
+
+  // Reproduces a Console tab opened AFTER a server restart, still watching a
+  // restart-recovered node: the dock's own ~1s queue poll learns the node
+  // settled (execution_state flips straight to `finished`, per the real
+  // server contract — `recovery_required` never appears for an ALREADY
+  // finished node) before the cached run entity (refreshed only by SSE or a
+  // much slower heartbeat) does. Without the fix, the pill reads `Running`
+  // for however long that OTHER refresh takes, and nothing forces it to
+  // happen sooner.
+  test('a dock read reporting finished keeps the recovery pill (never shows Running) and forces a run refetch', async () => {
+    const invalidateSpy = spyOn(cacheStore, 'invalidate');
+
+    queueFetchSpy?.mockRestore();
+    queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              execution_state: 'finished',
+              auto_send: false,
+              capabilities: { soft_injection: false, delivery_ack: false },
+              queued: [],
+              sub_state: null,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        );
+      }
+      if (method === 'GET' && pathname.endsWith('/draft')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ success: true, draft: null, auto_send: false }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch);
+
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] });
+
+    // The run row itself never settles in this test — mirroring the real bug,
+    // where the run entity cache is still `running` (the crash never
+    // touched it) at the exact moment the dock's own poll learns otherwise.
+    await act(async () => {
+      renderRoom({
+        run: run({ id: 'run-recover', status: 'running' }),
+        loadMessages,
+      });
+    });
+    await flushUntil('dock settles to finished', () => invalidateSpy.mock.calls.length > 0);
+
+    expect(host.textContent).toContain('Recovery required');
+    expect(host.textContent).not.toContain('Running');
+    expect(invalidateSpy).toHaveBeenCalledWith(K.run('run-recover'));
+
+    invalidateSpy.mockRestore();
   });
 
   test('recovers from a load error through Retry', async () => {

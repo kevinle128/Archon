@@ -1070,6 +1070,41 @@ describe('ConsoleComposerDock', () => {
     expect(send.getAttribute('aria-label')).toContain('Cmd/Ctrl+Enter to send');
   });
 
+  test('a retryable dispatch failure shows one assertive error naming the evidence, not the generic Stop disclosure', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+      subState: 'idle-after-interrupt',
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue(
+        [
+          {
+            message_id: 'id-a',
+            message: 'redirect',
+            state: 'queued',
+            last_error: 'provider startup boom',
+            dispatch_failure_count: 1,
+          },
+        ],
+        { sub_state: 'idle-after-interrupt' }
+      )
+    );
+    const alert = host.querySelector('[role="alert"]');
+    expect(alert?.getAttribute('aria-live')).toBe('assertive');
+    expect(alert?.textContent).toBe(
+      'automatic dispatch failed · provider startup boom · Send now to retry'
+    );
+    expect(host.textContent).not.toContain('stopped after the last completed tool call');
+    // The idle-await inactivity disclosure still applies unchanged.
+    expect(host.textContent).toContain('no redirect ends this node after 30 min of inactivity');
+    const row = host.querySelector('li[data-message-id="id-a"]');
+    expect(row?.textContent).toContain('failed');
+    expect(sendNowButton()).not.toBeNull();
+  });
+
   test('an observer sees a durably-queued row stop offering withdraw the instant the projected sub-state advances past it, ahead of its own next poll', async () => {
     // Simulates the observer shell: it learns `idle-after-interrupt` →
     // `generating` from a faster external signal (a host prop backed by
@@ -1261,6 +1296,8 @@ describe('ConsoleComposerDock', () => {
       message: string;
       operator_user_id?: string | null;
       state?: ReadWorkflowNodeQueueResponse['queued'][number]['state'];
+      last_error?: string | null;
+      dispatch_failure_count?: number;
     }[],
     overrides?: Partial<Omit<ReadWorkflowNodeQueueResponse, 'success' | 'queued'>>
   ): ReadWorkflowNodeQueueResponse {
@@ -1274,6 +1311,8 @@ describe('ConsoleComposerDock', () => {
         message: row.message,
         operator_user_id: row.operator_user_id ?? null,
         state: row.state ?? 'queued',
+        last_error: row.last_error ?? null,
+        dispatch_failure_count: row.dispatch_failure_count ?? 0,
       })),
       sub_state: overrides?.sub_state ?? null,
     };

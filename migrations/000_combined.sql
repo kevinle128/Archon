@@ -816,6 +816,7 @@ CREATE TABLE IF NOT EXISTS remote_agent_steering_queue_entries (
   fifo_position INTEGER NOT NULL CHECK (fifo_position >= 1),
   state VARCHAR(32) NOT NULL DEFAULT 'queued',
   last_error TEXT,
+  dispatch_failure_count INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_steering_queue_run_node_message
@@ -825,7 +826,7 @@ CREATE TABLE IF NOT EXISTS remote_agent_steering_queue_entries (
 );
 
 COMMENT ON TABLE remote_agent_steering_queue_entries IS
-  'Durable FIFO guidance queue per node; message_id is the caller-stamped idempotency and delivery-correlation key. State is validated in application code, not a CHECK constraint, because the state set is open-ended (queued, awaiting_send_now, dispatching, sent, delivered, delivery_unknown, withdrawn, never_sent, failed, and future additions); cascade-deletes with the run.';
+  'Durable FIFO guidance queue per node; message_id is the caller-stamped idempotency and delivery-correlation key. State is validated in application code, not a CHECK constraint, because the state set is open-ended (queued, awaiting_send_now, dispatching, sent, delivered, delivery_unknown, withdrawn, never_sent, and future additions); cascade-deletes with the run. A retryable automatic-dispatch failure (the session is still usable) reverts the entry to `queued` at its existing fifo_position — already the front among claimable entries, since it was claimed first — rather than a distinct terminal `failed` state, so the entry stays re-claimable; `last_error`/`dispatch_failure_count` carry the durable evidence.';
 
 -- ============================================================================
 -- Table 26: Steering node settings (durable per-node auto-send + provider)
@@ -851,6 +852,9 @@ ALTER TABLE remote_agent_workflow_node_messages
 
 ALTER TABLE remote_agent_pending_interactions
   ADD COLUMN IF NOT EXISTS execution_scope JSONB;
+
+ALTER TABLE remote_agent_steering_queue_entries
+  ADD COLUMN IF NOT EXISTS dispatch_failure_count INTEGER NOT NULL DEFAULT 0;
 
 -- ============================================================================
 -- Table 24: Workflow node execution evidence (git attribution)
@@ -1155,6 +1159,8 @@ COMMENT ON COLUMN remote_agent_steering_queue_entries.state IS
   'Delivery state; validated in application code against the open steering state set.';
 COMMENT ON COLUMN remote_agent_steering_queue_entries.last_error IS
   'Failure evidence for a returned-to-queue or never_sent entry; NULL otherwise.';
+COMMENT ON COLUMN remote_agent_steering_queue_entries.dispatch_failure_count IS
+  'Count of retryable automatic-dispatch failures this entry has been reverted from; 0 until the first one. Never resets, and never caps a retry — each operator Send now simply tries again.';
 
 -- Steering node settings
 COMMENT ON COLUMN remote_agent_steering_node_settings.auto_send_enabled IS

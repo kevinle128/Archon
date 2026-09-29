@@ -62,6 +62,8 @@ import {
   STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE,
   IDLE_AWAIT_EXPIRED_ERROR,
   createKeepaliveCoalescer,
+  dispatchFailedEntry,
+  dispatchFailureDisclosure,
   isKeepaliveActivityKey,
   neverSentDisclosure,
   STEERING_SEND_FAILED_MESSAGE,
@@ -84,13 +86,17 @@ import {
 function guidanceRow(
   messageId: string,
   message: string,
-  overrides?: Partial<Pick<QueuedGuidanceRow, 'operator_user_id' | 'state'>>
+  overrides?: Partial<
+    Pick<QueuedGuidanceRow, 'operator_user_id' | 'state' | 'last_error' | 'dispatch_failure_count'>
+  >
 ): QueuedGuidanceRow {
   return {
     message_id: messageId,
     message,
     operator_user_id: overrides?.operator_user_id ?? null,
     state: overrides?.state ?? 'queued',
+    last_error: overrides?.last_error ?? null,
+    dispatch_failure_count: overrides?.dispatch_failure_count ?? 0,
   };
 }
 
@@ -458,7 +464,14 @@ describe('submission state transitions', () => {
       state: 'queued',
     });
     expect(next.sent).toEqual([
-      { messageId: begun.messageId, message: 'first', state: 'queued', operatorUserId: null },
+      {
+        messageId: begun.messageId,
+        message: 'first',
+        state: 'queued',
+        operatorUserId: null,
+        lastError: null,
+        dispatchFailureCount: 0,
+      },
     ]);
     expect(next.sendInFlight).toBe(false);
     expect(next.pendingRetry).toBeNull();
@@ -516,6 +529,8 @@ describe('withdraw transitions', () => {
     message,
     state: 'queued',
     operatorUserId: null,
+    lastError: null,
+    dispatchFailureCount: 0,
   });
 
   function stateWith(
@@ -897,6 +912,8 @@ describe('per-item Send now transitions', () => {
     message,
     state: 'queued',
     operatorUserId: null,
+    lastError: null,
+    dispatchFailureCount: 0,
   });
 
   function stateWith(
@@ -961,7 +978,14 @@ describe('queueItemStatusLabel', () => {
 
 describe('pendingQueueCount', () => {
   function receiptWithState(messageId: string, state: LocalSentReceipt['state']): LocalSentReceipt {
-    return { messageId, message: 'm', state, operatorUserId: null };
+    return {
+      messageId,
+      message: 'm',
+      state,
+      operatorUserId: null,
+      lastError: null,
+      dispatchFailureCount: 0,
+    };
   }
 
   test('excludes a dispatching entry from the count', () => {
@@ -1005,7 +1029,14 @@ describe('pendingQueueCount', () => {
 
 describe('allPendingDispatching', () => {
   function receiptWithState(messageId: string, state: LocalSentReceipt['state']): LocalSentReceipt {
-    return { messageId, message: 'm', state, operatorUserId: null };
+    return {
+      messageId,
+      message: 'm',
+      state,
+      operatorUserId: null,
+      lastError: null,
+      dispatchFailureCount: 0,
+    };
   }
 
   test('true only when every row is dispatching', () => {
@@ -1073,7 +1104,14 @@ describe('effectiveNodeTerminal', () => {
 
 describe('visiblePendingReceipts', () => {
   function receiptWithState(messageId: string, state: LocalSentReceipt['state']): LocalSentReceipt {
-    return { messageId, message: 'm', state, operatorUserId: null };
+    return {
+      messageId,
+      message: 'm',
+      state,
+      operatorUserId: null,
+      lastError: null,
+      dispatchFailureCount: 0,
+    };
   }
 
   test('returns the same array reference when nothing is delivered yet', () => {
@@ -1249,7 +1287,14 @@ describe('toSteeringRefusal', () => {
 // ---------------------------------------------------------------------------
 
 function receipt(messageId: string, message: string): LocalSentReceipt {
-  return { messageId, message, state: 'queued', operatorUserId: null };
+  return {
+    messageId,
+    message,
+    state: 'queued',
+    operatorUserId: null,
+    lastError: null,
+    dispatchFailureCount: 0,
+  };
 }
 
 function stateWith(
@@ -1318,6 +1363,42 @@ describe('applyQueueSnapshot', () => {
       0
     );
     expect(next.sent).toEqual([receipt('b', 'beta'), receipt('c', 'gamma-remote')]);
+  });
+
+  test('carries failure evidence for an entry a retryable dispatch failure reverted, and a state-only change still re-renders it', () => {
+    const state = stateWith([receipt('a', 'alpha')]);
+    const reverted = applyQueueSnapshot(
+      state,
+      mkSnapshot([
+        guidanceRow('a', 'alpha', {
+          state: 'queued',
+          last_error: 'provider startup boom',
+          dispatch_failure_count: 1,
+        }),
+      ]),
+      0
+    );
+    expect(reverted.sent).toEqual([
+      { ...receipt('a', 'alpha'), lastError: 'provider startup boom', dispatchFailureCount: 1 },
+    ]);
+    // A second retryable failure changes only the evidence fields while
+    // `state` round-trips back to 'queued' — the unchanged-object fast path
+    // must not mistake this for an identical snapshot.
+    const failedAgain = applyQueueSnapshot(
+      reverted,
+      mkSnapshot([
+        guidanceRow('a', 'alpha', {
+          state: 'queued',
+          last_error: 'dispatch boom 2',
+          dispatch_failure_count: 2,
+        }),
+      ]),
+      reverted.queueGeneration
+    );
+    expect(failedAgain.sent).toEqual([
+      { ...receipt('a', 'alpha'), lastError: 'dispatch boom 2', dispatchFailureCount: 2 },
+    ]);
+    expect(failedAgain).not.toBe(reverted);
   });
 
   test('deliveryByMessageId covers every row the server returned, including sent/delivered ones', () => {
@@ -2144,6 +2225,40 @@ describe('idle-await disclosure and keepalive coalescer', () => {
     expect(STEERING_NEVER_SENT_DISCLOSURE).toBe('node finished · none of this was sent');
     expect(neverSentDisclosure(false)).toBe(STEERING_NEVER_SENT_DISCLOSURE);
     expect(neverSentDisclosure(true)).toBe(STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE);
+  });
+
+  test('dispatchFailedEntry finds the one queued row with recorded failure evidence, null when none', () => {
+    const ok = receipt('a', 'alpha');
+    const failed = { ...receipt('b', 'beta'), lastError: 'boom', dispatchFailureCount: 1 };
+    expect(dispatchFailedEntry([ok, failed])).toEqual(failed);
+    expect(dispatchFailedEntry([ok])).toBeNull();
+    expect(dispatchFailedEntry([])).toBeNull();
+  });
+
+  test('dispatchFailedEntry ignores stale evidence on a re-claimed row no longer queued', () => {
+    // The server never clears lastError on a later successful claim — a
+    // retry that is in flight (dispatching) or already delivered must not
+    // keep showing the alert for a failure that no longer describes it.
+    const retrying = {
+      ...receipt('a', 'alpha'),
+      state: 'dispatching' as const,
+      lastError: 'boom',
+      dispatchFailureCount: 1,
+    };
+    const delivered = {
+      ...receipt('b', 'beta'),
+      state: 'delivered' as const,
+      lastError: 'boom',
+      dispatchFailureCount: 1,
+    };
+    expect(dispatchFailedEntry([retrying])).toBeNull();
+    expect(dispatchFailedEntry([delivered])).toBeNull();
+  });
+
+  test('dispatchFailureDisclosure names the exact failure evidence', () => {
+    expect(dispatchFailureDisclosure('provider startup boom')).toBe(
+      'automatic dispatch failed · provider startup boom · Send now to retry'
+    );
   });
 
   interface KeepaliveClock {

@@ -298,25 +298,40 @@ async function writeTerminalNodeEventsForOrphanedNodes(run: WorkflowRun): Promis
   }
 
   try {
-    for (const { nodeId, scope } of nodes) {
+    for (const { nodeId, scope, terminalEventType } of nodes) {
       // Fire-and-forget internally (catches + logs); no workflow definition is
       // loaded here, so nodeName falls back to the id, matching the executor's
       // own fallback when a node declares no `command` label. `scope` (read
-      // off the node's own latest event) attaches this write to the same
-      // execution/iteration row a live cancel's own write would have.
+      // off the START event that opened THIS execution) attaches this write
+      // to the same execution/iteration row a live cancel's own write would
+      // have. A loop mid-iteration reports two open executions for the same
+      // nodeId — the container (node_failed) and the current iteration
+      // (loop_iteration_failed) — and both get their own write here so
+      // neither row is left stuck `running`.
       await workflowEventDb.createWorkflowEvent({
         workflow_run_id: run.id,
-        event_type: 'node_failed',
+        event_type: terminalEventType,
         step_name: nodeId,
         data: { ...scope, error: 'Cancelled by user' },
       });
-      emitter.emit({
-        type: 'node_failed',
-        runId: run.id,
-        nodeId,
-        nodeName: nodeId,
-        error: 'Cancelled by user',
-      });
+      if (terminalEventType === 'loop_iteration_failed') {
+        const iteration = typeof scope.iteration === 'number' ? scope.iteration : 0;
+        emitter.emit({
+          type: 'loop_iteration_failed',
+          runId: run.id,
+          nodeId,
+          iteration,
+          error: 'Cancelled by user',
+        });
+      } else {
+        emitter.emit({
+          type: 'node_failed',
+          runId: run.id,
+          nodeId,
+          nodeName: nodeId,
+          error: 'Cancelled by user',
+        });
+      }
     }
   } finally {
     // This run is terminal and these are the only events left to emit for

@@ -3016,7 +3016,7 @@ describe('process-tree reap of an orphaned tool-call child on abort', () => {
     processes: { pid: number; ppid: number; command: string }[],
     initiallyAlive: readonly number[]
   ): {
-    ops: import('./process-tree-reap').ProcessTreeOps;
+    ops: import('../shared/process-tree-reap').ProcessTreeOps;
     killed: { pid: number; signal: NodeJS.Signals }[];
   } {
     const alive = new Set(initiallyAlive);

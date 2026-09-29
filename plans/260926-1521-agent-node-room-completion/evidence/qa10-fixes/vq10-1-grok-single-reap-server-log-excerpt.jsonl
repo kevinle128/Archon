@@ -1,0 +1,2 @@
+102:@archon/server dev: {"level":30,"time":1790666120940,"pid":77367,"hostname":"Les-MacBook-Pro.local","module":"provider.grok","rootPid":81858,"descendantCount":10,"msg":"grok.tree_reap_armed"}
+103:@archon/server dev: {"level":30,"time":1790666120940,"pid":77367,"hostname":"Les-MacBook-Pro.local","module":"provider.process-tree-reap","pids":[81980,81981,81982,81984,81985,81986,86609,83549,85576,86678],"msg":"process_tree_reap.terminating_orphans"}

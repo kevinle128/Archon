@@ -347,6 +347,20 @@ export interface IWorkflowSteeringStore {
     messageIds: readonly string[]
   ): Promise<void>;
   /**
+   * `dispatching` -> `queued` after a retryable automatic-dispatch failure —
+   * a thrown provider/execution error on a guidance turn whose session is
+   * still established. `fifo_position` is left untouched (already the
+   * front among claimable entries), and `last_error`/`dispatch_failure_count`
+   * carry the durable evidence. Idempotent: a no-op for an id no longer
+   * `dispatching`.
+   */
+  revertSteeringQueueClaim(
+    workflowRunId: string,
+    nodeId: string,
+    messageIds: readonly string[],
+    failureMessage: string
+  ): Promise<void>;
+  /**
    * `sent` -> `delivered`, once the live provider turn echoes a verified
    * acknowledgement for this exact caller-stamped message id. A missing or
    * already-advanced id is a no-op — delivery ack never advances a different

@@ -31,6 +31,7 @@ const {
   listSteeringQueue,
   claimSteeringQueue,
   markSteeringMessagesSent,
+  revertSteeringQueueClaim,
   markSteeringMessageDelivered,
   claimSteeringMessageForSoftInjection,
   revertSteeringSoftInjectionClaim,
@@ -419,6 +420,122 @@ describe('steering queue: claim', () => {
     });
     await claimSteeringMessageForSoftInjection('run-1', 'review', 'm-1');
     expect(await claimSteeringMessageForSoftInjection('run-1', 'review', 'm-1')).toBeNull();
+  });
+});
+
+describe('revertSteeringQueueClaim', () => {
+  test('reverts to queued at the front, without renumbering, so it is claimed before a later entry', async () => {
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-1',
+      message: 'first',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await claimSteeringQueue('run-1', 'review', 1); // claims m-1, now dispatching
+    // A second entry is queued AFTER the claim — a real operator could add
+    // guidance while the failed dispatch attempt was in flight.
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-2',
+      message: 'second',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'provider exploded');
+
+    const rows = await listSteeringQueue('run-1', 'review');
+    expect(rows.map(r => r.message_id)).toEqual(['m-1', 'm-2']);
+    expect(rows[0]?.state).toBe('queued');
+    expect(rows[0]?.last_error).toBe('provider exploded');
+    expect(rows[0]?.dispatch_failure_count).toBe(1);
+
+    // Re-claiming picks the reverted entry, not the later one.
+    const reclaimed = await claimSteeringQueue('run-1', 'review', 1);
+    expect(reclaimed.map(c => c.message_id)).toEqual(['m-1']);
+  });
+
+  test('is idempotent: a second revert of an already-queued entry is a no-op', async () => {
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-1',
+      message: 'first',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await claimSteeringQueue('run-1', 'review', 1);
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'first failure');
+    // Not re-claimed this time — state is already 'queued', not 'dispatching'.
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'second failure text');
+
+    const rows = await listSteeringQueue('run-1', 'review');
+    expect(rows[0]?.state).toBe('queued');
+    expect(rows[0]?.last_error).toBe('first failure');
+    expect(rows[0]?.dispatch_failure_count).toBe(1);
+  });
+
+  test('increments the count and updates the error text across repeated claim/revert cycles', async () => {
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-1',
+      message: 'first',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await claimSteeringQueue('run-1', 'review', 1);
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'first failure');
+    // A later Send now re-claims the same reverted entry, then fails again.
+    await claimSteeringQueue('run-1', 'review', 1);
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'second failure');
+
+    const rows = await listSteeringQueue('run-1', 'review');
+    expect(rows[0]?.state).toBe('queued');
+    expect(rows[0]?.last_error).toBe('second failure');
+    expect(rows[0]?.dispatch_failure_count).toBe(2);
+  });
+
+  test('is a no-op for an id that was never claimed (still queued)', async () => {
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-1',
+      message: 'never claimed',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'should not apply');
+    const rows = await listSteeringQueue('run-1', 'review');
+    expect(rows[0]?.state).toBe('queued');
+    expect(rows[0]?.last_error).toBeNull();
+    expect(rows[0]?.dispatch_failure_count).toBe(0);
+  });
+
+  test('is a no-op for an id that already advanced past dispatching (sent)', async () => {
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-1',
+      message: 'delivered already',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await claimSteeringQueue('run-1', 'review', 1);
+    await markSteeringMessagesSent('run-1', 'review', ['m-1']);
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'too late');
+    const rows = await listSteeringQueue('run-1', 'review');
+    expect(rows[0]?.state).toBe('sent');
+    expect(rows[0]?.last_error).toBeNull();
+  });
+
+  test('an empty id list is a no-op', async () => {
+    await expect(
+      revertSteeringQueueClaim('run-1', 'review', [], 'unused')
+    ).resolves.toBeUndefined();
   });
 });
 
