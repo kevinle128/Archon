@@ -12,6 +12,7 @@ import type {
   WorkflowNodeMessageResponse,
   WorkflowNodeMessagesResponse,
 } from '@/lib/api';
+import type { ExecutionHeaderModel } from '@/lib/execution-room-model';
 import * as toolPresentation from '@/lib/tool-presentation';
 import type { WorkflowRunStatus } from '@/lib/types';
 
@@ -738,6 +739,13 @@ describe('LegacyNodeRoom dispatcher', () => {
     nodeExecutionKey?: string | null;
     scopeKey?: string;
     finishedIteration?: { liveRowId: string; liveIteration: number } | null;
+    /** Rendering the real `NodeRoomHeader` (with the recovery pill) needs
+     * all three of `headerModel`/`onSelectRow`/`onClose`; omitting
+     * `headerModel` keeps the fallback plain header used by every other
+     * test in this file. */
+    headerModel?: ExecutionHeaderModel;
+    onClose?: () => void;
+    onRunSettleHint?: () => void;
   }): void {
     root.render(
       createElement(
@@ -766,13 +774,37 @@ describe('LegacyNodeRoom dispatcher', () => {
           nodeExecutionKey: args.nodeExecutionKey,
           scopeKey: args.scopeKey,
           finishedIteration: args.finishedIteration,
+          headerModel: args.headerModel,
+          onClose:
+            args.onClose ?? (args.headerModel === undefined ? undefined : (): void => undefined),
+          onRunSettleHint: args.onRunSettleHint,
           onSelectRow:
-            args.finishedIteration === undefined || args.finishedIteration === null
-              ? undefined
-              : (): void => undefined,
+            args.headerModel !== undefined ||
+            (args.finishedIteration !== undefined && args.finishedIteration !== null)
+              ? (): void => undefined
+              : undefined,
         })
       )
     );
+  }
+
+  function headerModelFor(status: string): ExecutionHeaderModel {
+    return {
+      nodeId: 'review',
+      nodeLabel: 'Review',
+      executionLabel: 'Review',
+      status,
+      statusReason: null,
+      waitingOnOperator: false,
+      startedOffsetMs: null,
+      startedAt: null,
+      durationMs: null,
+      provider: null,
+      model: null,
+      unknownScope: false,
+      isLoopIteration: false,
+      loopMaxIterations: null,
+    };
   }
 
   const bashEvents: readonly WorkflowEventResponse[] = [
@@ -1298,9 +1330,11 @@ describe('LegacyNodeRoom dispatcher', () => {
         await Promise.resolve();
       });
 
-      const field = host.querySelector('textarea');
-      // Terminal + no written ids yet keeps composer until reconcile; still pin dock props.
-      const start = field ?? host;
+      // Terminal with nothing undelivered hides the composer outright — search
+      // from the room's own wrapper, which renders regardless of dock mode,
+      // to confirm the props still reached the dock.
+      const start = host.querySelector('[aria-label="command room"]');
+      if (start === null) throw new Error('command room wrapper missing');
       const props = findPropsWithKey(start, 'nodeTerminal');
       expect(props).not.toBeNull();
       expect(props?.nodeTerminal).toBe(true);
@@ -1358,13 +1392,143 @@ describe('LegacyNodeRoom dispatcher', () => {
         await Promise.resolve();
       });
 
-      const field = host.querySelector('textarea');
-      const start = field ?? host;
+      const start = host.querySelector('[aria-label="command room"]');
+      if (start === null) throw new Error('command room wrapper missing');
       const props = findPropsWithKey(start, 'idleAwaitExpired');
       expect(props).not.toBeNull();
       expect(props?.idleAwaitExpired).toBe(true);
       expect(props?.nodeTerminal).toBe(true);
       expect(props?.nodeExecutionKey).toBe('occ-command-1');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  // A node ending naturally (or via Abandon) settles this room's own dock
+  // to `finished` routinely BEFORE the cached run entity (refreshed by SSE
+  // or a slower heartbeat) catches up to a terminal status — the ordinary
+  // case on every clean completion, not only a restart-recovered node. The
+  // server never reports `recovery_required` for an already-finished node,
+  // so this gap must never be misread as recovery: the pill stays silent on
+  // that claim, and the composer that has nothing left to send hides instead
+  // of staying live. The room still signals its host to refetch the run on
+  // that same edge, so the header can settle to the durable outcome the
+  // instant that refetch lands.
+  test('a dock read reporting finished never claims recovery and signals a run settle hint', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'finished',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                  sub_state: null,
+                }
+              : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const { loadMessages } = createLoadMessages();
+      let settleHints = 0;
+      // The run entity is still `running` at the exact moment this room's own
+      // dock learns the node settled — mirroring the real gap.
+      await act(async () => {
+        renderRoom({
+          row: COMMAND_ROW,
+          loadMessages,
+          definitionNodes: [{ id: 'command', command: 'review' }],
+          runStatus: 'running',
+          headerModel: headerModelFor('running'),
+          onRunSettleHint: (): void => {
+            settleHints += 1;
+          },
+        });
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(host.textContent).not.toContain('Recovery required');
+      expect(host.querySelector('textarea')).toBeNull();
+      expect(settleHints).toBeGreaterThan(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  // The literal server-reported `recovery_required` signal (a restart with
+  // no live process behind this node) is the one and only source for the
+  // pill — never inferred from any gap between two independently-cadenced
+  // reads.
+  test('the pill claims recovery only for the literal server-reported signal', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'recovery_required',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                  sub_state: null,
+                }
+              : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const { loadMessages } = createLoadMessages();
+      await act(async () => {
+        renderRoom({
+          row: COMMAND_ROW,
+          loadMessages,
+          definitionNodes: [{ id: 'command', command: 'review' }],
+          runStatus: 'running',
+          headerModel: headerModelFor('running'),
+        });
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(host.textContent).toContain('Recovery required');
     } finally {
       globalThis.fetch = originalFetch;
     }

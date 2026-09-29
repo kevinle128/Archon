@@ -19,7 +19,6 @@ import {
   hasUnsettledNodeExecutions,
   headerMetaLine,
   isLiveRowStatus,
-  isRoomRecoveryRequired,
   latestNodeExecutionKey,
   loopMaxIterationsForNode,
   nodeKindChip,
@@ -813,38 +812,6 @@ describe('statusPill', () => {
     expect(statusPill('completed', true)).toEqual({ label: 'Completed', tone: 'success' });
     expect(statusPill('cancelled', true)).toEqual({ label: 'Cancelled', tone: null });
     expect(statusPill('skipped', true)).toEqual({ label: 'Skipped', tone: null });
-  });
-});
-
-describe('isRoomRecoveryRequired', () => {
-  test('the raw recovery_required signal is always required, regardless of status', () => {
-    expect(isRoomRecoveryRequired('recovery_required', 'running')).toBe(true);
-    expect(isRoomRecoveryRequired('recovery_required', 'completed')).toBe(true);
-  });
-
-  // The dock's own ~1s queue poll routinely reports `finished` before the
-  // run entity cache (refreshed by SSE or a much slower heartbeat) catches
-  // up — treat `finished` the same as `recovery_required` for as long as the
-  // row/run status it feeds still reads non-terminal, so the pill never
-  // flashes a stale `Running`/`Waiting on you` in that gap.
-  test('a finished dock read still requires recovery while status has not caught up to terminal', () => {
-    expect(isRoomRecoveryRequired('finished', 'running')).toBe(true);
-    expect(isRoomRecoveryRequired('finished', 'awaiting')).toBe(true);
-  });
-
-  test('a finished dock read stops requiring recovery once status is terminal', () => {
-    expect(isRoomRecoveryRequired('finished', 'failed')).toBe(false);
-    expect(isRoomRecoveryRequired('finished', 'completed')).toBe(false);
-    expect(isRoomRecoveryRequired('finished', 'cancelled')).toBe(false);
-  });
-
-  test('a live or null dock state never requires recovery', () => {
-    expect(isRoomRecoveryRequired('live', 'running')).toBe(false);
-    expect(isRoomRecoveryRequired(null, 'running')).toBe(false);
-  });
-
-  test('a null status is treated as non-terminal while finished', () => {
-    expect(isRoomRecoveryRequired('finished', null)).toBe(true);
   });
 });
 

@@ -2170,10 +2170,16 @@ describe('steeringDockMode: finished requires explicit node-terminal evidence or
     expect(modeFor('running', { live: false, neverSent: [], nodeTerminal: false })).toBe('hidden');
   });
 
-  test('an empty or unresolved never-sent result preserves the ordinary table', () => {
-    expect(modeFor('running', { neverSent: null, nodeTerminal: true })).toBe('composer');
-    expect(modeFor('running', { neverSent: [], nodeTerminal: true })).toBe('composer');
-    expect(modeFor('awaiting', { neverSent: [], nodeTerminal: true })).toBe('blocked');
+  // Proven node-terminal evidence overrides the ordinary rowStatus-driven
+  // table (composer/blocked/detached) even with nothing undelivered to show:
+  // a terminal node never keeps offering to send while a separately-cadenced
+  // rowStatus/live prop still reads live. A finished-iteration descriptor is
+  // the one thing that still wins first (a completed occurrence on a
+  // still-live loop reads as history, not as the node itself being done).
+  test('proven node-terminal evidence with nothing undelivered hides the dock outright', () => {
+    expect(modeFor('running', { neverSent: null, nodeTerminal: true })).toBe('hidden');
+    expect(modeFor('running', { neverSent: [], nodeTerminal: true })).toBe('hidden');
+    expect(modeFor('awaiting', { neverSent: [], nodeTerminal: true })).toBe('hidden');
     expect(modeFor('completed', { neverSent: null, nodeTerminal: true })).toBe('hidden');
     expect(
       modeFor('completed', {
@@ -2188,7 +2194,7 @@ describe('steeringDockMode: finished requires explicit node-terminal evidence or
         nodeTerminal: true,
         refusal: { code: 'not_steerable_here', message: 'detached' },
       })
-    ).toBe('detached');
+    ).toBe('hidden');
   });
 
   test('copy and accessible labels are exact', () => {

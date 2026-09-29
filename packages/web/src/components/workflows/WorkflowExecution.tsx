@@ -430,6 +430,15 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     ]);
   }, [queryClient, runId]);
 
+  // The Legacy node room's own dock learns a node settled (via its
+  // faster-cadenced queue read) before this run entity's own poll/SSE
+  // catches up — force the cached run entity stale on that exact edge
+  // instead of waiting out the slower refresh. See
+  // `shouldRefetchRunOnDockFinished`.
+  const handleRunSettleHint = useCallback((): void => {
+    void queryClient.invalidateQueries({ queryKey: ['workflowRun', runId] });
+  }, [queryClient, runId]);
+
   const askController = useMemo(
     () =>
       createAskAnswerController({
@@ -1112,6 +1121,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           onScrollTopChange={handleScrollTopChange}
           askDrafts={askDrafts}
           onAskDraftChange={updateAskDraft}
+          onRunSettleHint={handleRunSettleHint}
         />
       );
     }

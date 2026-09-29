@@ -262,11 +262,15 @@ export const STEERING_RECOVERY_DISCLOSURE =
  * surfaces recovery); otherwise a non-live run hides the dock entirely; a
  * proven finished-iteration descriptor wins before the terminal-row hide
  * check so a completed occurrence on a still-live loop can surface the
- * read-only dock; otherwise a non-generating row hides the dock
- * (historical/cold executions must never issue a request); a real pending
- * ask keeps its blocked reason even when a refusal is stored — no request
- * should have been made from that state; only then does a stored 422
- * `not_steerable_here` flip the dock to the detached disclosure.
+ * read-only dock; a node already proven terminal (with nothing undelivered
+ * to show) hides outright rather than falling through to the row-status
+ * check below — a terminal node never keeps a live composer up just because
+ * a slower-cadenced `rowStatus`/`live` prop has not caught up to the same
+ * fact yet; otherwise a non-generating row hides the dock (historical/cold
+ * executions must never issue a request); a real pending ask keeps its
+ * blocked reason even when a refusal is stored — no request should have been
+ * made from that state; only then does a stored 422 `not_steerable_here`
+ * flip the dock to the detached disclosure.
  *
  * `neverSent` is the caller's render-time union of the server's durable
  * `never_sent` rows, the still-pending queue, and the operator's own
@@ -329,6 +333,14 @@ export function steeringDockMode(input: {
   if (input.finishedIteration !== null && input.finishedIteration !== undefined) {
     return 'finished-iteration';
   }
+  // Proven terminal with nothing undelivered to show (the branch above
+  // already claimed the nonempty-neverSent case): hide outright instead of
+  // falling through to the rowStatus check, which reads a separately
+  // cadenced prop that can still say `running`/`awaiting` for a short
+  // window after this dock's own queue read already learned the node is
+  // done — a finished node must never keep a live composer up while that
+  // other signal catches up.
+  if (input.nodeTerminal === true) return 'hidden';
   if (input.rowStatus !== 'running' && input.rowStatus !== 'awaiting') return 'hidden';
   if (steeringBlockedReason(input) !== null) return 'blocked';
   if (input.refusal?.code === STEERING_NOT_STEERABLE_CODE) return 'detached';

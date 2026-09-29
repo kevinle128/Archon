@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import {
   getWorkflowNodeMessages,
@@ -9,8 +9,8 @@ import {
   type WorkflowNodeStateResponse,
 } from '@/lib/api';
 import {
-  isRoomRecoveryRequired,
   nodeKindChip,
+  shouldRefetchRunOnDockFinished,
   type ExecutionHeaderModel,
   type FinishedIterationView,
   type RunOfTotal,
@@ -82,6 +82,14 @@ export interface LegacyNodeRoomProps {
   onScrollTopChange?: (scrollTop: number) => void;
   askDrafts?: AskDraftByRequest;
   onAskDraftChange?: (requestId: string, draft: AskDraft) => void;
+  /**
+   * Invalidate the cached run entity on the exact edge this room's own dock
+   * learns (via its faster-cadenced queue read) that the node just settled,
+   * before the run's own status poll/SSE has caught up — see
+   * `shouldRefetchRunOnDockFinished`. Omitted in a context with no run-entity
+   * cache to invalidate.
+   */
+  onRunSettleHint?: () => void;
 }
 
 const TYPE_LABELS: Record<NodeBodyKind, string> = {
@@ -146,11 +154,35 @@ export function LegacyNodeRoom({
   onScrollTopChange,
   askDrafts,
   onAskDraftChange,
+  onRunSettleHint,
 }: LegacyNodeRoomProps): React.ReactElement {
   // Reported by the dock's own queue poll — the only place restart recovery
   // is currently observable. A fresh dock mount reports null immediately, so
   // switching rows/nodes clears a stale recovery pill without extra plumbing.
   const [dockExecutionState, setDockExecutionState] = useState<SteeringExecutionState | null>(null);
+  // Tracks the dock's own PREVIOUS execution_state so the edge into
+  // `finished` can be detected without depending on `dockExecutionState`
+  // itself (a state setter's read of its own current value only reflects
+  // last render, not necessarily the most recent report when several land
+  // before this component re-renders).
+  const previousDockExecutionStateRef = useRef<SteeringExecutionState | null>(null);
+  const handleDockExecutionStateChange = useCallback(
+    (next: SteeringExecutionState | null): void => {
+      const previous = previousDockExecutionStateRef.current;
+      previousDockExecutionStateRef.current = next;
+      // The dock's own ~1s queue poll routinely learns a node settled before
+      // the run entity cache does (SSE can miss a tab whose stream lost the
+      // single-connection-per-conversation slot to a sibling tab on the same
+      // run; the heartbeat fallback can take up to 30s). Durable terminal
+      // state takes precedence the instant this dock itself learns it,
+      // regardless of when the tab was opened.
+      if (shouldRefetchRunOnDockFinished(previous, next, runStatus)) {
+        onRunSettleHint?.();
+      }
+      setDockExecutionState(next);
+    },
+    [onRunSettleHint, runStatus]
+  );
 
   if (row === null) return <RoomPlaceholder>Select a node</RoomPlaceholder>;
 
@@ -185,7 +217,7 @@ export function LegacyNodeRoom({
         runOfTotal={runOfTotal}
         idleAwaitExpired={idleAwaitExpired}
         iterationPrefix={iterationPrefix}
-        recoveryRequired={isRoomRecoveryRequired(dockExecutionState, headerModel.status)}
+        recoveryRequired={dockExecutionState === 'recovery_required'}
       />
     ) : (
       <div className="flex items-center gap-2 border-b border-border px-4 py-2">
@@ -247,7 +279,7 @@ export function LegacyNodeRoom({
             idleAwaitExpired={idleAwaitExpired}
             nodeExecutionKey={nodeExecutionKey}
             onSelectLiveRow={onSelectRow}
-            onExecutionStateChange={setDockExecutionState}
+            onExecutionStateChange={handleDockExecutionStateChange}
             recoveryRequired={dockExecutionState === 'recovery_required'}
           />
         );

@@ -728,15 +728,17 @@ describe('ConsoleNodeRoom', () => {
     clearSpy.mockRestore();
   });
 
-  // Reproduces a Console tab opened AFTER a server restart, still watching a
-  // restart-recovered node: the dock's own ~1s queue poll learns the node
-  // settled (execution_state flips straight to `finished`, per the real
-  // server contract — `recovery_required` never appears for an ALREADY
-  // finished node) before the cached run entity (refreshed only by SSE or a
-  // much slower heartbeat) does. Without the fix, the pill reads `Running`
-  // for however long that OTHER refresh takes, and nothing forces it to
-  // happen sooner.
-  test('a dock read reporting finished keeps the recovery pill (never shows Running) and forces a run refetch', async () => {
+  // A node ending naturally (or via Abandon) settles this dock's own ~1s
+  // queue poll to `finished` routinely BEFORE the cached run entity
+  // (refreshed by SSE or a slower heartbeat) catches up to a terminal
+  // status — the ordinary case on every clean completion, not only a
+  // restart-recovered node. The server never reports `recovery_required` for
+  // an already-finished node, so this gap must never be misread as recovery:
+  // the pill stays silent on that claim, and the composer that has nothing
+  // left to send hides instead of staying live. A forced run refetch still
+  // fires on the same edge so the header settles to the durable outcome
+  // (never a stale `Running`) the instant that refetch lands.
+  test('a dock read reporting finished never claims recovery, hides the composer, and forces a run refetch that settles the pill', async () => {
     const invalidateSpy = spyOn(cacheStore, 'invalidate');
 
     queueFetchSpy?.mockRestore();
@@ -780,9 +782,8 @@ describe('ConsoleNodeRoom', () => {
 
     const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] });
 
-    // The run row itself never settles in this test — mirroring the real bug,
-    // where the run entity cache is still `running` (the crash never
-    // touched it) at the exact moment the dock's own poll learns otherwise.
+    // The run entity is still `running` at the exact moment the dock's own
+    // poll learns the node settled — the cache has not been invalidated yet.
     await act(async () => {
       renderRoom({
         run: run({ id: 'run-recover', status: 'running' }),
@@ -791,11 +792,85 @@ describe('ConsoleNodeRoom', () => {
     });
     await flushUntil('dock settles to finished', () => invalidateSpy.mock.calls.length > 0);
 
-    expect(host.textContent).toContain('Recovery required');
-    expect(host.textContent).not.toContain('Running');
+    expect(host.textContent).not.toContain('Recovery required');
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.textContent).not.toContain('Queue');
     expect(invalidateSpy).toHaveBeenCalledWith(K.run('run-recover'));
 
+    // The forced refetch lands (the parent re-supplies a terminal run): the
+    // header settles to the durable outcome, never a stale `Running`, and
+    // still never claims recovery.
+    await act(async () => {
+      renderRoom({
+        run: run({ id: 'run-recover', status: 'cancelled' }),
+        loadMessages,
+      });
+    });
+    await flushUntil('header settles to the terminal outcome', () =>
+      (host.textContent ?? '').includes('Failed')
+    );
+    expect(host.textContent).not.toContain('Recovery required');
+    expect(host.textContent).not.toContain('Running');
+
     invalidateSpy.mockRestore();
+  });
+
+  // The literal server-reported `recovery_required` signal (a restart with
+  // no live process behind this node) is the one and only source for the
+  // pill — never inferred from any gap between two independently-cadenced
+  // reads.
+  test('the pill claims recovery only for the literal server-reported signal', async () => {
+    queueFetchSpy?.mockRestore();
+    queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              execution_state: 'recovery_required',
+              auto_send: false,
+              capabilities: { soft_injection: false, delivery_ack: false },
+              queued: [],
+              sub_state: null,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        );
+      }
+      if (method === 'GET' && pathname.endsWith('/draft')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ success: true, draft: null, auto_send: false }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch);
+
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] });
+
+    await act(async () => {
+      renderRoom({
+        run: run({ id: 'run-recover-2', status: 'running' }),
+        loadMessages,
+      });
+    });
+    await flushUntil('recovery pill renders', () =>
+      (host.textContent ?? '').includes('Recovery required')
+    );
+    expect(host.textContent).toContain('Recovery required');
   });
 
   test('recovers from a load error through Retry', async () => {
@@ -5815,7 +5890,11 @@ describe('ConsoleNodeRoom', () => {
       });
       await flush();
 
-      const start = host.querySelector('textarea') ?? host;
+      // A terminal node with nothing undelivered renders no textarea (the
+      // dock hides outright) — search from the room's own wrapper, which
+      // renders regardless of dock mode, instead of assuming a live field.
+      const start = host.querySelector('[aria-label="review room"]');
+      if (start === null) throw new Error('review room wrapper missing');
       const props = findPropsWithKey(start, 'nodeTerminal');
       expect(props).not.toBeNull();
       expect(props?.nodeTerminal).toBe(true);
@@ -5839,7 +5918,8 @@ describe('ConsoleNodeRoom', () => {
       });
       await flush();
 
-      const start = host.querySelector('textarea') ?? host;
+      const start = host.querySelector('[aria-label="review room"]');
+      if (start === null) throw new Error('review room wrapper missing');
       const props = findPropsWithKey(start, 'idleAwaitExpired');
       expect(props).not.toBeNull();
       expect(props?.idleAwaitExpired).toBe(true);
