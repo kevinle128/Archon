@@ -90,6 +90,8 @@ export interface LegacyNodeRoomProps {
    * cache to invalidate.
    */
   onRunSettleHint?: () => void;
+  /** Forwarded to the composer dock; see its own doc comment. Default 0. */
+  terminalEdgeKick?: number;
 }
 
 const TYPE_LABELS: Record<NodeBodyKind, string> = {
@@ -155,6 +157,7 @@ export function LegacyNodeRoom({
   askDrafts,
   onAskDraftChange,
   onRunSettleHint,
+  terminalEdgeKick = 0,
 }: LegacyNodeRoomProps): React.ReactElement {
   // Reported by the dock's own queue poll — the only place restart recovery
   // is currently observable. A fresh dock mount reports null immediately, so
@@ -288,6 +291,7 @@ export function LegacyNodeRoom({
             onExecutionStateChange={handleDockExecutionStateChange}
             onNodeOutcomeChange={setDockNodeOutcome}
             recoveryRequired={dockExecutionState === 'recovery_required'}
+            terminalEdgeKick={terminalEdgeKick}
           />
         );
         break;

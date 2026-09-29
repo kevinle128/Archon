@@ -604,6 +604,18 @@ export function ConsoleComposerDock({
   // took over, or there is genuinely nothing left to show).
   const pendingSettlement = dock.executionState !== 'finished' && visibleSent.length > 0;
 
+  // True until this dock's own first queue read has resolved. See
+  // `steeringDockMode`'s own doc comment on its `firstReadPending` param.
+  const firstReadPending = dock.executionState === null;
+  // Mirrors `steeringDockMode`'s own precondition for reaching the
+  // composer/blocked/detached branch, minus the `firstReadPending` gate
+  // itself — exactly the set of rows that must still poll (once) to learn
+  // whether they are ordinary live rows or actually need restart recovery.
+  // Used below to keep polling enabled through that gap even though `mode`
+  // itself reads `hidden` for it.
+  const rowLooksSteerable =
+    !nodeIsTerminal && live && (rowStatus === 'running' || rowStatus === 'awaiting');
+
   const mode = steeringDockMode({
     rowStatus,
     live,
@@ -614,6 +626,7 @@ export function ConsoleComposerDock({
     nodeTerminal: nodeIsTerminal,
     recoveryRequired: dock.executionState === 'recovery_required',
     pendingSettlement,
+    firstReadPending,
   });
 
   // One-shot fetch on the terminal transition (never gated on any local
@@ -747,7 +760,11 @@ export function ConsoleComposerDock({
     mode === 'blocked' ||
     mode === 'finished-iteration' ||
     mode === 'settling' ||
-    mode === 'recovery-required';
+    mode === 'recovery-required' ||
+    // `mode` reads `hidden` for the exact gap `firstReadPending` bridges —
+    // poll anyway (once) so that read can land and the mode can resolve to
+    // whatever it should actually be, instead of hiding forever.
+    (mode === 'hidden' && firstReadPending && rowLooksSteerable);
 
   useEffect(() => {
     if (!pollingEnabled) return;

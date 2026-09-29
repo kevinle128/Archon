@@ -137,6 +137,8 @@ export interface NodeTranscriptPaneProps {
    * does, since no live process backs either. Default false.
    */
   recoveryRequired?: boolean;
+  /** Forwarded to the composer dock; see its own doc comment. Default 0. */
+  terminalEdgeKick?: number;
 }
 
 function collectToolIds(messages: readonly WorkflowNodeMessageResponse[]): Set<string> {
@@ -178,6 +180,7 @@ export function NodeTranscriptPane({
   onExecutionStateChange,
   onNodeOutcomeChange,
   recoveryRequired = false,
+  terminalEdgeKick = 0,
 }: NodeTranscriptPaneProps): React.ReactElement {
   const resolvedScopeKey =
     scopeKey ??
@@ -813,6 +816,7 @@ export function NodeTranscriptPane({
         idleAwaitExpired={idleAwaitExpired}
         nodeExecutionKey={nodeExecutionKey}
         deliveredMessageIds={deliveredMessageIds}
+        terminalEdgeKick={terminalEdgeKick}
       />
     </RoomRegion>
   );

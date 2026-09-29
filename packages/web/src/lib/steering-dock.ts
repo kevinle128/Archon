@@ -388,6 +388,19 @@ export function steeringDockMode(input: {
   recoveryRequired?: boolean;
   /** See this function's own doc comment. Default false/undefined: no gap to bridge. */
   pendingSettlement?: boolean;
+  /**
+   * True until this dock's own first queue read has resolved
+   * (`executionState` still null) — before that read, `recoveryRequired`
+   * cannot yet be known, so a row that is actually a restart-recovered node
+   * would otherwise flash a live composer for the gap. Hides the composer/
+   * blocked/detached controls for that gap instead of guessing; nothing here
+   * relabels or removes an already-shown band (this only ever applies before
+   * this dock has shown anything), so the VQ12-1 continuity rule — an
+   * undelivered item must never disappear once shown — still holds. Default
+   * false/undefined: no gap to bridge (matches every caller that doesn't
+   * poll a queue at all, e.g. tests exercising the pure state machine).
+   */
+  firstReadPending?: boolean;
 }): SteeringDockMode {
   if (input.recoveryRequired === true) return 'recovery-required';
   if (
@@ -418,6 +431,7 @@ export function steeringDockMode(input: {
   // other signal catches up.
   if (input.nodeTerminal === true) return 'hidden';
   if (input.rowStatus !== 'running' && input.rowStatus !== 'awaiting') return 'hidden';
+  if (input.firstReadPending === true) return 'hidden';
   if (steeringBlockedReason(input) !== null) return 'blocked';
   if (input.refusal?.code === STEERING_NOT_STEERABLE_CODE) return 'detached';
   return 'composer';

@@ -119,6 +119,21 @@ describe('ConsoleComposerDock', () => {
   let nextReadDraft: ReadNodeDraft;
   let nextSaveDraft: SaveNodeDraft;
   let nextClearDraft: ClearNodeDraft;
+  // Echoed by the default `nextRead` below so a resolved first read never
+  // fights the `subState` PROP a test rendered with — see `renderDock`,
+  // which sets this before every render.
+  let lastRenderedSubState: SteeringSubState | undefined;
+  // Bootstrap-resolve budget shared by every `nextRead` reassignment below
+  // (see their own doc comment). `renderDock` resets this to 0 whenever it
+  // detects the SAME attempt-reset condition `ConsoleComposerDock`'s own
+  // effect uses (scope change, `nodeExecutionKey` replaced, or the terminal
+  // fail-safe) — each fresh attempt re-enters `firstReadPending` and needs
+  // its own two free resolves to escape it, not just the test's very first
+  // mount.
+  let coldStartResolves = 0;
+  let lastScopeKey: string | undefined;
+  let lastNodeExecutionKey: string | null | undefined;
+  let lastNodeTerminal: boolean | undefined;
 
   beforeEach(async () => {
     win = installHappyDom();
@@ -152,10 +167,35 @@ describe('ConsoleComposerDock', () => {
       return { success: true };
     };
     readCalls.length = 0;
-    // Default: a never-settling read so existing send/withdraw tests stay
-    // deterministic with no real fetch and no hydration race.
+    coldStartResolves = 0;
+    lastScopeKey = undefined;
+    lastNodeExecutionKey = undefined;
+    lastNodeTerminal = undefined;
+    // Default: resolves the bootstrap reads only (the mount tick, plus the
+    // one extra tick the poller always fires when that first resolve flips
+    // `mode` out of `firstReadPending`'s `hidden` gate — see
+    // `settleSnapshot`'s own doc comment on why that second tick exists),
+    // echoing whatever `subState` this render was given so the snapshot
+    // never fights the same-named PROP most send/withdraw tests set
+    // directly (`applyQueueSnapshot` reconciles `sub_state`
+    // unconditionally). Every read after that never settles, exactly like
+    // the old default — existing send/withdraw tests stay deterministic
+    // with no real fetch and no later hydration race clobbering their own
+    // optimistic local state.
     nextRead = async (runId, nodeId, options): Promise<ReadWorkflowNodeQueueResponse> => {
       readCalls.push({ runId, nodeId, signal: options?.signal });
+      coldStartResolves += 1;
+      if (coldStartResolves <= 2) {
+        return {
+          success: true,
+          execution_state: 'live',
+          node_outcome: null,
+          auto_send: false,
+          capabilities: { soft_injection: false, delivery_ack: false },
+          queued: [],
+          sub_state: lastRenderedSubState ?? null,
+        };
+      }
       return deferred<ReadWorkflowNodeQueueResponse>().promise;
     };
     // Default: a never-settling draft read (field starts empty, matching the
@@ -218,6 +258,31 @@ describe('ConsoleComposerDock', () => {
       deliveredMessageIds: ReadonlySet<string>;
     }> = {}
   ): Promise<void> {
+    lastRenderedSubState = overrides.subState;
+    // Mirrors `ConsoleComposerDock`'s own attempt-reset conditions (scope
+    // change, `nodeExecutionKey` replaced, or the terminal fail-safe) so the
+    // bootstrap-resolve budget in the `nextRead` closures above is refreshed
+    // exactly when the component's own `dock` state resets to
+    // `createSteeringDockState(...)` and re-enters `firstReadPending`.
+    const effectiveScopeKey = `${overrides.runId ?? 'run-1'}:${overrides.nodeId ?? 'grp.body'}`;
+    const effectiveNodeExecutionKey = overrides.nodeExecutionKey ?? null;
+    const effectiveNodeTerminal = overrides.nodeTerminal ?? false;
+    const scopeChanged = lastScopeKey !== undefined && lastScopeKey !== effectiveScopeKey;
+    const keyReplaced =
+      typeof lastNodeExecutionKey === 'string' &&
+      typeof effectiveNodeExecutionKey === 'string' &&
+      lastNodeExecutionKey !== effectiveNodeExecutionKey;
+    const terminalFailSafe =
+      lastNodeExecutionKey === null &&
+      effectiveNodeExecutionKey === null &&
+      lastNodeTerminal === true &&
+      !effectiveNodeTerminal;
+    if (scopeChanged || keyReplaced || terminalFailSafe) {
+      coldStartResolves = 0;
+    }
+    lastScopeKey = effectiveScopeKey;
+    lastNodeExecutionKey = effectiveNodeExecutionKey;
+    lastNodeTerminal = effectiveNodeTerminal;
     await act(async () => {
       root.render(
         createElement(composerDock.ConsoleComposerDock, {
@@ -357,6 +422,56 @@ describe('ConsoleComposerDock', () => {
     expect(button.className).toContain('min-w-[84px]');
     expect(button.className).toContain('focus-visible:outline-accent-bright');
     expect(button.className).toContain('motion-reduce:transition-none');
+  });
+
+  // Before this dock's own first queue read resolves, a "running" row is
+  // indistinguishable from one that actually needs restart recovery — the
+  // host's `rowStatus`/`live` say the same thing either way, and
+  // `recovery_required` can only ever come from this dock's own read. A
+  // live composer shown in that gap would have to be retracted the instant
+  // the real answer landed; showing nothing instead is never a retraction.
+  test('a cold mount shows no live composer before this dock’s own first read resolves, even for a node that turns out to need restart recovery', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000 });
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.querySelectorAll('button')).toHaveLength(0);
+
+    // The read resolves straight to recovery_required: the dock goes
+    // directly from hidden to the read-only restart band, never through a
+    // frame with live controls.
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha' }], { execution_state: 'recovery_required' })
+    );
+    expect(host.textContent).toContain('restored after server restart');
+    expect(host.querySelector('textarea')).toBeNull();
+  });
+
+  test('an ordinary running node still gets its live composer once this dock’s own first read resolves', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000 });
+    expect(host.querySelector('textarea')).toBeNull();
+    await settleSnapshot(ctrl, okQueue([]));
+    expect(host.querySelector('textarea')).not.toBeNull();
+  });
+
+  // Accepted by design (VQ13-2): a terminal node's never-sent band is a
+  // first paint, not a disappearance — no earlier band existed to keep, so
+  // the VQ12-1 continuity rule (an undelivered item must never vanish once
+  // shown) does not apply here. Anchors the current, unchanged behavior.
+  test('a terminal node with undelivered items shows no band until this dock’s own first read resolves', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000, nodeTerminal: true });
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.textContent ?? '').not.toContain('never sent');
+
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha', state: 'never_sent' }], {
+        execution_state: 'finished',
+      })
+    );
+    expect(host.textContent).toContain('never sent');
   });
 
   test('a server-confirmed recovery_required queue read renders a read-only restart band, no controls', async () => {
@@ -908,18 +1023,22 @@ describe('ConsoleComposerDock', () => {
 
   test('the queue poll corrects Stop/Send now even when the projected subState prop never changes', async () => {
     const ctrl = controllableRead();
+    await renderDock({
+      subState: 'idle-after-interrupt',
+      pollIntervalMs: 1,
+      readQueue: ctrl.read,
+    });
+    // First read matches the projected prop — establishes the baseline this
+    // dock's OWN read, not the prop, is now driving. A short interval so
+    // the second, real poll tick this test needs arrives quickly.
+    await settleSnapshot(ctrl, okQueue([], { sub_state: 'idle-after-interrupt' }));
+    expect(host.textContent).not.toContain('Stop');
+    expect(sendNowButton()).not.toBeNull();
+
     // The prop reflects a stale projection this tab's own render never sees
     // update — the same shape as a parent whose separate, slower poll
     // sampled the same value on both sides of a transition another shell
     // caused. The dock's own queue poll must still self-heal.
-    await renderDock({
-      subState: 'idle-after-interrupt',
-      pollIntervalMs: 60_000,
-      readQueue: ctrl.read,
-    });
-    expect(host.textContent).not.toContain('Stop');
-    expect(sendNowButton()).not.toBeNull();
-
     await settleSnapshot(ctrl, okQueue([], { sub_state: 'generating' }));
 
     expect(stopButton()).not.toBeNull();
@@ -1187,10 +1306,35 @@ describe('ConsoleComposerDock', () => {
       return { success: true, message_id: messageId };
     };
     readCalls.length = 0;
-    // Default: a never-settling read so existing send/withdraw tests stay
-    // deterministic with no real fetch and no hydration race.
+    coldStartResolves = 0;
+    lastScopeKey = undefined;
+    lastNodeExecutionKey = undefined;
+    lastNodeTerminal = undefined;
+    // Default: resolves the bootstrap reads only (the mount tick, plus the
+    // one extra tick the poller always fires when that first resolve flips
+    // `mode` out of `firstReadPending`'s `hidden` gate — see
+    // `settleSnapshot`'s own doc comment on why that second tick exists),
+    // echoing whatever `subState` this render was given so the snapshot
+    // never fights the same-named PROP most send/withdraw tests set
+    // directly (`applyQueueSnapshot` reconciles `sub_state`
+    // unconditionally). Every read after that never settles, exactly like
+    // the old default — existing send/withdraw tests stay deterministic
+    // with no real fetch and no later hydration race clobbering their own
+    // optimistic local state.
     nextRead = async (runId, nodeId, options): Promise<ReadWorkflowNodeQueueResponse> => {
       readCalls.push({ runId, nodeId, signal: options?.signal });
+      coldStartResolves += 1;
+      if (coldStartResolves <= 2) {
+        return {
+          success: true,
+          execution_state: 'live',
+          node_outcome: null,
+          auto_send: false,
+          capabilities: { soft_injection: false, delivery_ack: false },
+          queued: [],
+          sub_state: lastRenderedSubState ?? null,
+        };
+      }
       return deferred<ReadWorkflowNodeQueueResponse>().promise;
     };
     await renderDock({ subState: 'generating' });
@@ -1260,10 +1404,35 @@ describe('ConsoleComposerDock', () => {
       return { success: true, message_id: messageId };
     };
     readCalls.length = 0;
-    // Default: a never-settling read so existing send/withdraw tests stay
-    // deterministic with no real fetch and no hydration race.
+    coldStartResolves = 0;
+    lastScopeKey = undefined;
+    lastNodeExecutionKey = undefined;
+    lastNodeTerminal = undefined;
+    // Default: resolves the bootstrap reads only (the mount tick, plus the
+    // one extra tick the poller always fires when that first resolve flips
+    // `mode` out of `firstReadPending`'s `hidden` gate — see
+    // `settleSnapshot`'s own doc comment on why that second tick exists),
+    // echoing whatever `subState` this render was given so the snapshot
+    // never fights the same-named PROP most send/withdraw tests set
+    // directly (`applyQueueSnapshot` reconciles `sub_state`
+    // unconditionally). Every read after that never settles, exactly like
+    // the old default — existing send/withdraw tests stay deterministic
+    // with no real fetch and no later hydration race clobbering their own
+    // optimistic local state.
     nextRead = async (runId, nodeId, options): Promise<ReadWorkflowNodeQueueResponse> => {
       readCalls.push({ runId, nodeId, signal: options?.signal });
+      coldStartResolves += 1;
+      if (coldStartResolves <= 2) {
+        return {
+          success: true,
+          execution_state: 'live',
+          node_outcome: null,
+          auto_send: false,
+          capabilities: { soft_injection: false, delivery_ack: false },
+          queued: [],
+          sub_state: lastRenderedSubState ?? null,
+        };
+      }
       return deferred<ReadWorkflowNodeQueueResponse>().promise;
     };
     nextSend = async (runId, nodeId, body): Promise<SendWorkflowNodeResponse> => {
@@ -1461,6 +1630,13 @@ describe('ConsoleComposerDock', () => {
       `pending read never reached ${String(min)} (have ${String(ctrl.pendingCount())})`
     );
   }
+  // Tracks which `controllableRead()` instances have already had their
+  // bootstrap settle drained — see `settleSnapshot` below. Never cleared:
+  // each test's `controllableRead()` call returns a fresh object, so old
+  // entries are simply unreachable once that object is, with no cross-test
+  // leakage risk.
+  const bootstrapDrainedCtrls = new WeakSet();
+
   async function settleSnapshot(
     ctrl: {
       resolveNext: (value: ReadWorkflowNodeQueueResponse) => void;
@@ -1473,6 +1649,26 @@ describe('ConsoleComposerDock', () => {
       ctrl.resolveNext(value);
     });
     await flush();
+    // Only the FIRST-EVER settle against a given controllable read can be
+    // the one that exits `firstReadPending`'s `hidden` gate — that
+    // transition always ticks the poller once more immediately (the same
+    // cleanup+restart-on-`mode`-change mechanism VQ12-1's terminal-edge
+    // kick relies on), so one redundant read can already be pending again
+    // right after. Draining it with the SAME value is a no-op on dock state
+    // (nothing changed since), so the caller sees exactly the transition it
+    // asked for. Scoped to the first call only: a LATER settle's own extra
+    // pending read (e.g. a second, genuinely independent fetch a terminal
+    // transition triggers) is for the caller's own next explicit settle,
+    // not something to silently swallow here.
+    if (!bootstrapDrainedCtrls.has(ctrl)) {
+      bootstrapDrainedCtrls.add(ctrl);
+      if (ctrl.pendingCount() > 0) {
+        await act(async () => {
+          ctrl.resolveNext(value);
+        });
+        await flush();
+      }
+    }
   }
   async function settleRejection(
     ctrl: {
