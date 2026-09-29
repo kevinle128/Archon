@@ -213,3 +213,11 @@ Status: DONE_WITH_CONCERNS
 Summary: VQ9-1 (Codex) and VQ9-3 are fixed in their original triggers, and every earlier finding stays fixed. VQ9-2 is only partly fixed. A Console tab opened after the restart still shows `Running` for about 26 s after Abandon of a recovered node (VQ10-2). The new terminal event has no execution scope, so both shells keep a permanent `Run 1 · running` / `Iteration 2 · running` + `Execution unknown` selector (VQ10-3). Grok `--single` orphans its tool shell on Abandon (VQ10-1). All three are minor.
 
 Verdict: REJECT
+
+## Decisions (2026-09-29)
+
+1. VQ10-1: node-level abort on Grok `--single` terminates the whole descendant tree, through the same provider-neutral tree reap used for Codex.
+2. VQ10-2: after Abandon, both shells show the durable terminal state immediately, however long before or after the restart the tab was opened.
+3. VQ10-3: a server-written terminal event for an orphaned node carries the exact execution scope of the execution it closes, so that execution row settles and no unknown-scope row appears.
+
+Each fix starts from a failing test that reproduces the QA trigger. Fixes are owned by the `qa10-fixes` follow-up work.
