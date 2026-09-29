@@ -1,0 +1,425 @@
+{
+  "run": {
+    "id": "cd51131c880dd1182b990f86ca2c5d7b",
+    "conversation_id": "7976efd0816e6d20709b407c5819d8c9",
+    "codebase_id": "3ea13a5b82c6bc591617d01e6a5b2452",
+    "workflow_name": "qa10-prompt",
+    "user_message": "go",
+    "status": "cancelled",
+    "current_step_index": null,
+    "metadata": {},
+    "parent_conversation_id": "0e0449c7da3cf4a63a4fd2974870e477",
+    "user_id": "a98509c9cf764805d570d63baa33d3a5",
+    "parent_run_id": null,
+    "started_at": "2026-09-29 07:04:21",
+    "completed_at": "2026-09-29 07:05:32",
+    "last_activity_at": "2026-09-29 07:04:22",
+    "working_path": "/private/tmp/claude-501/-Users-dale-orca-workspaces-Archon-develop-2/c3af2ea9-daf2-4dac-a244-7679f5cdbb02/scratchpad/qa10-fixes-live-1790665140/home/workspaces/_local/repo/worktrees/archon/thread-f36c4625",
+    "output_root": "/private/tmp/claude-501/-Users-dale-orca-workspaces-Archon-develop-2/c3af2ea9-daf2-4dac-a244-7679f5cdbb02/scratchpad/qa10-fixes-live-1790665140/home/workspaces/_local/repo",
+    "adopted_from_run_id": null,
+    "outcome": null,
+    "worker_platform_id": "web-worker-1790665461731-isf13b",
+    "parent_platform_id": "web-1790665459066-5hrtj8",
+    "conversation_platform_id": null
+  },
+  "events": [
+    {
+      "id": "8aef5a53-2ba2-4142-9d79-48632bd20c51",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11012,
+      "event_type": "workflow_started",
+      "step_index": null,
+      "step_name": null,
+      "data": {
+        "workflowName": "qa10-prompt",
+        "defaultAssistant": "codex",
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "isolationMode": "in-place",
+        "baseBranch": "main",
+        "userId": "a98509c9cf764805d570d63baa33d3a5",
+        "userMessage": "go",
+        "origin": "web"
+      },
+      "created_at": "2026-09-29 07:04:21"
+    },
+    {
+      "id": "f056ffa7-fcbb-4eb2-a0a9-03de99580b59",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11013,
+      "event_type": "node_started",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "command": null,
+        "provider": "claude",
+        "model": "opus",
+        "occurrence_id": "feff8a80-30c6-4af8-a0ee-f6c5a8d7d3d7",
+        "attempt_id": "0bd3bd06-a0ad-414d-b8c4-3a21b0077ec9",
+        "retry_epoch": 0
+      },
+      "created_at": "2026-09-29 07:04:21"
+    },
+    {
+      "id": "13fb13f9-0e5a-464c-8dca-ff17237e66b1",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11014,
+      "event_type": "hook_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "hook_id": "b7c9a90d-ed71-477c-a682-7ab530b5367b",
+        "hook_name": "SessionStart:startup",
+        "hook_event": "SessionStart",
+        "activity": "started"
+      },
+      "created_at": "2026-09-29 07:04:22"
+    },
+    {
+      "id": "5cea2afa-fef2-4610-ae76-25f675290013",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11015,
+      "event_type": "hook_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "hook_id": "e518a850-941f-49db-882d-cf3fb76deb9a",
+        "hook_name": "SessionStart:startup",
+        "hook_event": "SessionStart",
+        "activity": "started"
+      },
+      "created_at": "2026-09-29 07:04:22"
+    },
+    {
+      "id": "de818e67-5925-4f5f-8c3e-f503e5f4946f",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11016,
+      "event_type": "hook_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "hook_id": "d7f8bc0c-45ed-425f-8e6c-75f17814afe2",
+        "hook_name": "SessionStart:startup",
+        "hook_event": "SessionStart",
+        "activity": "started"
+      },
+      "created_at": "2026-09-29 07:04:22"
+    },
+    {
+      "id": "1bd0ec2d-2978-45c4-aab1-84e2b68bfb4b",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11017,
+      "event_type": "hook_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "hook_id": "c4062d4c-dfba-445a-9320-83e8960d1687",
+        "hook_name": "SessionStart:startup",
+        "hook_event": "SessionStart",
+        "activity": "started"
+      },
+      "created_at": "2026-09-29 07:04:22"
+    },
+    {
+      "id": "97eb083f-51d1-475c-ac1b-3ebbf21848ec",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11018,
+      "event_type": "hook_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "hook_id": "7c8e4faf-4645-42f1-99ca-70532cabe71b",
+        "hook_name": "SessionStart:startup",
+        "hook_event": "SessionStart",
+        "activity": "started"
+      },
+      "created_at": "2026-09-29 07:04:22"
+    },
+    {
+      "id": "014cb186-0526-4fff-83b8-c3c877fa0e53",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11019,
+      "event_type": "hook_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "hook_id": "b7c9a90d-ed71-477c-a682-7ab530b5367b",
+        "hook_name": "SessionStart:startup",
+        "hook_event": "SessionStart",
+        "activity": "response",
+        "outcome": "success",
+        "exit_code": 0
+      },
+      "created_at": "2026-09-29 07:04:22"
+    },
+    {
+      "id": "907ba89b-2347-4955-8c98-f60171d84425",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11020,
+      "event_type": "hook_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "hook_id": "d7f8bc0c-45ed-425f-8e6c-75f17814afe2",
+        "hook_name": "SessionStart:startup",
+        "hook_event": "SessionStart",
+        "activity": "response",
+        "outcome": "success",
+        "exit_code": 0
+      },
+      "created_at": "2026-09-29 07:04:22"
+    },
+    {
+      "id": "41399132-987f-45e7-9306-abf9fba4532e",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11021,
+      "event_type": "hook_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "hook_id": "c4062d4c-dfba-445a-9320-83e8960d1687",
+        "hook_name": "SessionStart:startup",
+        "hook_event": "SessionStart",
+        "activity": "response",
+        "outcome": "success",
+        "exit_code": 0
+      },
+      "created_at": "2026-09-29 07:04:22"
+    },
+    {
+      "id": "b2cc252f-ded9-45af-a3a8-2e56f74ed595",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11022,
+      "event_type": "hook_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "hook_id": "7c8e4faf-4645-42f1-99ca-70532cabe71b",
+        "hook_name": "SessionStart:startup",
+        "hook_event": "SessionStart",
+        "activity": "response",
+        "outcome": "success",
+        "exit_code": 0
+      },
+      "created_at": "2026-09-29 07:04:22"
+    },
+    {
+      "id": "38dc5bc5-8f2c-49a9-8f66-fc6651e403d6",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11023,
+      "event_type": "hook_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "hook_id": "e518a850-941f-49db-882d-cf3fb76deb9a",
+        "hook_name": "SessionStart:startup",
+        "hook_event": "SessionStart",
+        "activity": "response",
+        "outcome": "success",
+        "exit_code": 0
+      },
+      "created_at": "2026-09-29 07:04:22"
+    },
+    {
+      "id": "4c9e3113-92b3-45d0-9122-592981768fae",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11024,
+      "event_type": "tool_called",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "end=$((SECONDS+120)); while [ $SECONDS -lt $end ]; do :; done; echo step-1",
+          "description": "Busy-wait for 120 seconds then echo step-1",
+          "timeout": 130000
+        },
+        "tool_call_id": "toolu_01VmfVrfKYD65iRk46mRhva9"
+      },
+      "created_at": "2026-09-29 07:04:27"
+    },
+    {
+      "id": "7c1689b4-be0c-42bc-8424-57e4e5adc346",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11025,
+      "event_type": "task_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "task_id": "bmbt22wln",
+        "activity": "started",
+        "description": "Busy-wait for 120 seconds then echo step-1",
+        "task_type": "local_bash"
+      },
+      "created_at": "2026-09-29 07:04:31"
+    },
+    {
+      "id": "724994c6-3bfc-4b32-a0f6-906edbe5b935",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11026,
+      "event_type": "task_activity",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "task_id": "bmbt22wln",
+        "activity": "stopped",
+        "summary": "Busy-wait for 120 seconds then echo step-1"
+      },
+      "created_at": "2026-09-29 07:04:51"
+    },
+    {
+      "id": "ea2ab2ec-49e6-400e-82cb-c34be0563f91",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11027,
+      "event_type": "tool_completed",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "tool_name": "Bash",
+        "duration_ms": 24005,
+        "tool_call_id": "toolu_01VmfVrfKYD65iRk46mRhva9",
+        "tool_outcome": "interrupted"
+      },
+      "created_at": "2026-09-29 07:04:51"
+    },
+    {
+      "id": "1015915c-39ff-4e96-8cdb-8b0aa4476bea",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11028,
+      "event_type": "node_usage_recorded",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "schema_version": 1,
+        "agent_provider": "claude",
+        "usage_breakdown": [
+          {
+            "provider": "anthropic",
+            "model": "claude-opus-4-8",
+            "model_source": "reported",
+            "input_tokens": 2,
+            "output_tokens": 234,
+            "cache_read_tokens": 16156,
+            "cache_write_tokens": 19928,
+            "cost_usd": 0.21321800000000002
+          }
+        ],
+        "retry_epoch": 0,
+        "iteration": null,
+        "reask_attempt": 0,
+        "terminal_error": true,
+        "error_subtype": "error_during_execution"
+      },
+      "created_at": "2026-09-29 07:04:51"
+    },
+    {
+      "id": "d0f88940-2f07-4f8f-a310-b8267edf36bb",
+      "workflow_run_id": "cd51131c880dd1182b990f86ca2c5d7b",
+      "event_order": 11029,
+      "event_type": "node_failed",
+      "step_index": null,
+      "step_name": "hold",
+      "data": {
+        "occurrence_id": "feff8a80-30c6-4af8-a0ee-f6c5a8d7d3d7",
+        "attempt_id": "0bd3bd06-a0ad-414d-b8c4-3a21b0077ec9",
+        "retry_epoch": 0,
+        "error": "Cancelled by user"
+      },
+      "created_at": "2026-09-29 07:05:32"
+    }
+  ],
+  "nodeStates": [
+    {
+      "nodeId": "hold",
+      "name": "hold",
+      "status": "failed",
+      "retryEpoch": 0,
+      "provider": "claude",
+      "model": "opus",
+      "error": "Cancelled by user"
+    }
+  ],
+  "pending_interactions": [],
+  "usage": {
+    "scope": {
+      "from": null,
+      "to": null,
+      "runId": "cd51131c880dd1182b990f86ca2c5d7b",
+      "includesChildRollup": false
+    },
+    "groupBy": "node",
+    "totals": {
+      "tokensInput": 2,
+      "tokensOutput": 234,
+      "tokensReasoning": null,
+      "tokensCacheRead": 16156,
+      "tokensCacheWrite": 19928,
+      "requests": null,
+      "reportedUsd": 0.21321800000000002,
+      "estimatedUsd": null,
+      "recordCount": 1,
+      "missingTokensInput": 0,
+      "missingTokensOutput": 0,
+      "missingTokensReasoning": 1,
+      "missingTokensCacheRead": 0,
+      "missingTokensCacheWrite": 0,
+      "missingRequests": 1,
+      "rowsMissingUsd": 0
+    },
+    "groups": [
+      {
+        "dimensions": {
+          "agentProvider": "claude",
+          "provider": "anthropic",
+          "model": "claude-opus-4-8",
+          "modelSource": "reported",
+          "runId": "cd51131c880dd1182b990f86ca2c5d7b",
+          "nodeId": "hold",
+          "kind": null
+        },
+        "metrics": {
+          "tokensInput": 2,
+          "tokensOutput": 234,
+          "tokensReasoning": null,
+          "tokensCacheRead": 16156,
+          "tokensCacheWrite": 19928,
+          "requests": null,
+          "reportedUsd": 0.21321800000000002,
+          "estimatedUsd": null,
+          "recordCount": 1,
+          "missingTokensInput": 0,
+          "missingTokensOutput": 0,
+          "missingTokensReasoning": 1,
+          "missingTokensCacheRead": 0,
+          "missingTokensCacheWrite": 0,
+          "missingRequests": 1,
+          "rowsMissingUsd": 0
+        }
+      }
+    ],
+    "coverage": {
+      "usageEventCount": 1,
+      "ledgeredEventCount": 1,
+      "unledgeredEventCount": 0,
+      "hasRecordedUsage": true,
+      "historicalBackfill": false,
+      "filterScope": "date-project-run-node"
+    }
+  },
+  "viewer_is_starter": true,
+  "starter_display_name": "qa10-operator",
+  "nodeExecutions": [
+    {
+      "node_id": "hold",
+      "status": "failed",
+      "occurrence_id": "feff8a80-30c6-4af8-a0ee-f6c5a8d7d3d7",
+      "attempt_id": "0bd3bd06-a0ad-414d-b8c4-3a21b0077ec9",
+      "retry_epoch": 0,
+      "started_at": "2026-09-29 07:04:21",
+      "ended_at": "2026-09-29 07:05:32",
+      "duration_ms": 71000,
+      "start_offset_ms": 0,
+      "error": "Cancelled by user"
+    }
+  ]
+}
