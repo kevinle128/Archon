@@ -299,6 +299,75 @@ export async function getDagResumeSnapshot(workflowRunId: string): Promise<{
   return { completedNodeOutputs, tokens };
 }
 
+/** Node-lifecycle event types marking a node's execution as settled. */
+const TERMINAL_NODE_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'node_completed',
+  'node_failed',
+  'node_skipped',
+  'node_routed',
+  'node_skipped_prior_success',
+]);
+
+/**
+ * Execution-scope keys `executionScopeEventFields`/loop-iteration bookkeeping
+ * write onto a node's own lifecycle events (`transcript-execution-scope.ts`,
+ * `dag-executor.ts`'s `iterationData`). Carried forward verbatim so a
+ * synthesized terminal event attaches to the same execution/iteration row a
+ * live cancel's own write would have, instead of landing unscoped.
+ */
+const SCOPE_DATA_KEYS = [
+  'occurrence_id',
+  'attempt_id',
+  'retry_epoch',
+  'loop_ancestry',
+  'route_activation_seq',
+  'iteration',
+] as const;
+
+function extractScopeData(data: Record<string, unknown>): Record<string, unknown> {
+  const scope: Record<string, unknown> = {};
+  for (const key of SCOPE_DATA_KEYS) {
+    if (data[key] !== undefined) scope[key] = data[key];
+  }
+  return scope;
+}
+
+export interface NonTerminalNode {
+  readonly nodeId: string;
+  /** This node's own execution-scope fields, read off its latest event. */
+  readonly scope: Record<string, unknown>;
+}
+
+/**
+ * Every node (`step_name`) whose LATEST recorded event for this run is not
+ * one of the terminal lifecycle types — a node currently mid-execution (or
+ * mid-retry: a node that failed and then produced a fresh `node_started` is
+ * correctly non-terminal again, which is why this reads the latest event
+ * per node rather than merely checking whether a terminal event ever
+ * occurred). Used to detect a node an executor abandoned mid-flight without
+ * ever writing its own terminal event, typically because the process
+ * running it exited (crash or restart) before it could.
+ */
+export async function findNonTerminalNodes(
+  workflowRunId: string
+): Promise<readonly NonTerminalNode[]> {
+  const events = await listWorkflowEvents(workflowRunId);
+  const latestByNode = new Map<string, WorkflowEventRow>();
+  for (const event of events) {
+    if (event.step_name === null || event.step_name === undefined) continue;
+    // `listWorkflowEvents` orders ascending, so the last write for a given
+    // step_name always overwrites the map entry with the newest event.
+    latestByNode.set(event.step_name, event);
+  }
+  const result: NonTerminalNode[] = [];
+  for (const [nodeId, latest] of latestByNode) {
+    if (TERMINAL_NODE_EVENT_TYPES.has(latest.event_type)) continue;
+    const data = typeof latest.data === 'object' && latest.data !== null ? latest.data : {};
+    result.push({ nodeId, scope: extractScopeData(data) });
+  }
+  return result;
+}
+
 /**
  * Return node outputs from the latest effective retry epoch projection.
  *

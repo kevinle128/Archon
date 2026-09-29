@@ -1532,7 +1532,15 @@ describe('ConsoleComposerDock', () => {
     await clickQueue();
     expect(host.querySelectorAll('li')).toHaveLength(1);
 
-    await renderDock({ hasPendingAsk: true });
+    const ctrl = controllableRead();
+    await renderDock({ hasPendingAsk: true, readQueue: ctrl.read });
+    // The new poller fires its own read immediately on mount — drain it
+    // (reflecting the still-queued item) so only the withdraw's own kicked
+    // re-read is pending by the time the delete below settles one.
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: calls[0].body.message_id, message: 'parked one', state: 'queued' }])
+    );
     expect(queueButton().getAttribute('aria-disabled')).toBe('true');
     await clickQueue();
     expect(calls).toHaveLength(1);
@@ -1543,6 +1551,12 @@ describe('ConsoleComposerDock', () => {
     expect(withdrawCalls).toEqual([
       { runId: 'run-1', nodeId: 'grp.body', messageId: calls[0].body.message_id },
     ]);
+    // Withdrawing the only row defers the actual removal to the kicked
+    // re-read (the withdraw response never says whether it landed) — the
+    // row stays rendered, never a blank band, until that read confirms it.
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+
+    await settleSnapshot(ctrl, okQueue([]));
     expect(host.querySelectorAll('li')).toHaveLength(0);
     expect(host.querySelector('ul')).toBeNull();
   });
@@ -1604,7 +1618,10 @@ describe('ConsoleComposerDock', () => {
       okQueue([{ message_id: 'id-a', message: 'redirect', state: 'queued' }])
     );
     await clickDelete(0);
-    expect(host.querySelector('li[data-message-id="id-a"]')).toBeNull();
+    // The withdraw response never says whether the row actually left the
+    // queue — removing it here, before the kicked re-read confirms either
+    // outcome, would blank the band for the race case where it did not.
+    expect(host.querySelector('li[data-message-id="id-a"]')).not.toBeNull();
 
     // The kicked re-read confirms the row is genuinely gone.
     await settleSnapshot(ctrl, okQueue([]));
@@ -1613,7 +1630,13 @@ describe('ConsoleComposerDock', () => {
   });
 
   test('deleting the last row focuses the previous delete; deleting the only row focuses the field', async () => {
-    await renderDock();
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read });
+    // The poller fires its own read immediately on mount, before anything
+    // is queued — drain it so it never lingers as a stale pending entry
+    // that a later settleSnapshot below could resolve by mistake.
+    await settleSnapshot(ctrl, okQueue([]));
+
     await setDraft('first');
     await clickQueue();
     await setDraft('second');
@@ -1621,10 +1644,21 @@ describe('ConsoleComposerDock', () => {
 
     const previousDelete = deleteButtons()[0];
     await clickDelete(1);
+    // Multi-item withdraw removes the row immediately — no need to wait for
+    // its own kicked re-read, but drain it so it does not linger stale.
     expect(host.querySelectorAll('li')).toHaveLength(1);
     expect((win.document.activeElement as unknown) === previousDelete).toBe(true);
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: calls[0].body.message_id, message: 'first', state: 'queued' }])
+    );
 
     await clickDelete(0);
+    // Withdrawing the only remaining row defers removal to the kicked
+    // re-read — still one row shown, and focus has not moved yet.
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+
+    await settleSnapshot(ctrl, okQueue([]));
     expect(host.querySelector('ul')).toBeNull();
     expect(host.textContent).not.toContain('queued ·');
     expect((win.document.activeElement as unknown) === field()).toBe(true);

@@ -746,6 +746,7 @@ export function ConsoleNodeRoom({
           nodeStatus: selectedNodeState?.status,
           nodeError: selectedNodeState?.error,
           nodeSteeringSubState: selectedNodeState?.steeringSubState,
+          runStatus: run.status,
         }));
   const computedOptions: readonly ConsoleExecutionHeaderOption[] =
     headerOptions ??

@@ -34,6 +34,7 @@ import {
   getEpochAwareCompletedDagNodeOutputs,
   getRetryPreservedDagNodeOutputs,
   getDagResumeSnapshot,
+  findNonTerminalNodes,
 } from './workflow-events';
 
 describe('workflow-events', () => {
@@ -562,6 +563,80 @@ describe('workflow-events', () => {
       mockQuery.mockRejectedValueOnce(new Error('connection refused'));
 
       await expect(getDagResumeSnapshot('run-error')).rejects.toThrow('connection refused');
+    });
+  });
+
+  describe('findNonTerminalNodes', () => {
+    function eventRow(overrides: Partial<WorkflowEventRow>): WorkflowEventRow {
+      return { ...mockEvent, ...overrides };
+    }
+
+    test('returns every node whose latest event is not a terminal type', async () => {
+      mockQuery.mockResolvedValueOnce(
+        createQueryResult([
+          eventRow({ id: 'e1', step_name: 'prompt-a', event_type: 'node_started', data: {} }),
+          eventRow({ id: 'e2', step_name: 'loop-b', event_type: 'node_started', data: {} }),
+          eventRow({
+            id: 'e3',
+            step_name: 'loop-b',
+            event_type: 'loop_iteration_started',
+            data: { iteration: 2, occurrence_id: 'occ-1', attempt_id: 'att-1', retry_epoch: 0 },
+          }),
+        ])
+      );
+
+      const result = await findNonTerminalNodes('run-1');
+
+      expect(result).toEqual([
+        { nodeId: 'prompt-a', scope: {} },
+        {
+          nodeId: 'loop-b',
+          scope: { iteration: 2, occurrence_id: 'occ-1', attempt_id: 'att-1', retry_epoch: 0 },
+        },
+      ]);
+    });
+
+    test('excludes a node whose latest event is terminal', async () => {
+      mockQuery.mockResolvedValueOnce(
+        createQueryResult([
+          eventRow({ id: 'e1', step_name: 'done-a', event_type: 'node_started', data: {} }),
+          eventRow({ id: 'e2', step_name: 'done-a', event_type: 'node_completed', data: {} }),
+        ])
+      );
+
+      const result = await findNonTerminalNodes('run-clean');
+
+      expect(result).toEqual([]);
+    });
+
+    test('a retried node (failed, then a fresh node_started) is non-terminal again', async () => {
+      mockQuery.mockResolvedValueOnce(
+        createQueryResult([
+          eventRow({ id: 'e1', step_name: 'retry-a', event_type: 'node_started', data: {} }),
+          eventRow({ id: 'e2', step_name: 'retry-a', event_type: 'node_failed', data: {} }),
+          eventRow({ id: 'e3', step_name: 'retry-a', event_type: 'node_started', data: {} }),
+        ])
+      );
+
+      const result = await findNonTerminalNodes('run-retry');
+
+      expect(result).toEqual([{ nodeId: 'retry-a', scope: {} }]);
+    });
+
+    test('returns an empty list when every node reached a terminal event', async () => {
+      mockQuery.mockResolvedValueOnce(createQueryResult([]));
+
+      const result = await findNonTerminalNodes('run-clean');
+
+      expect(result).toEqual([]);
+    });
+
+    test('propagates the underlying list-events error', async () => {
+      mockQuery.mockRejectedValueOnce(new Error('connection refused'));
+
+      await expect(findNonTerminalNodes('run-error')).rejects.toThrow(
+        'Failed to list workflow events: connection refused'
+      );
     });
   });
 
