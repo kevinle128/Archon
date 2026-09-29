@@ -421,7 +421,19 @@ export async function findNonTerminalNodes(
     else openUnscopedByStep.delete(stepName);
   }
 
-  return [...openByOccurrence.values(), ...openUnscopedByStep.values()];
+  // A loop's own container and its current iteration are two independent
+  // open executions for the same nodeId. Order the iteration's close before
+  // the container's — mirroring the live executor's own sequence
+  // (`failLoopIteration` writes `loop_iteration_failed`, then calls
+  // `failLoopNode`, which writes `node_failed`) — rather than Map insertion
+  // order, which would write the container (inserted first, at
+  // `node_started`) ahead of the iteration.
+  const scoped = [...openByOccurrence.values()];
+  const iterationCloses = scoped.filter(
+    entry => entry.terminalEventType === 'loop_iteration_failed'
+  );
+  const nodeCloses = scoped.filter(entry => entry.terminalEventType === 'node_failed');
+  return [...iterationCloses, ...nodeCloses, ...openUnscopedByStep.values()];
 }
 
 /**

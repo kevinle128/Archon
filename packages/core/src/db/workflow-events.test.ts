@@ -628,8 +628,11 @@ describe('workflow-events', () => {
     // container's own node_started (type: loop, never closed until the
     // whole node settles) and the current iteration's loop_iteration_started
     // (its own, distinct occurrence — freshly minted every iteration). Both
-    // must be reported so the caller can close both rows.
-    test('a loop node orphaned mid-iteration reports both the container and the open iteration', async () => {
+    // must be reported so the caller can close both rows, iteration first —
+    // mirroring the live executor's own order (`failLoopIteration` writes
+    // `loop_iteration_failed`, then calls `failLoopNode`, which writes
+    // `node_failed`).
+    test('a loop node orphaned mid-iteration reports both the container and the open iteration, iteration first', async () => {
       mockQuery.mockResolvedValueOnce(
         createQueryResult([
           eventRow({
@@ -696,11 +699,6 @@ describe('workflow-events', () => {
       expect(result).toEqual([
         {
           nodeId: 'loop-b',
-          scope: { occurrence_id: 'occ-outer', attempt_id: 'att-outer', retry_epoch: 0 },
-          terminalEventType: 'node_failed',
-        },
-        {
-          nodeId: 'loop-b',
           scope: {
             iteration: 2,
             occurrence_id: 'occ-iter-2',
@@ -708,6 +706,11 @@ describe('workflow-events', () => {
             retry_epoch: 0,
           },
           terminalEventType: 'loop_iteration_failed',
+        },
+        {
+          nodeId: 'loop-b',
+          scope: { occurrence_id: 'occ-outer', attempt_id: 'att-outer', retry_epoch: 0 },
+          terminalEventType: 'node_failed',
         },
       ]);
     });
