@@ -571,16 +571,44 @@ describe('workflow-events', () => {
       return { ...mockEvent, ...overrides };
     }
 
-    test('returns every node whose latest event is not a terminal type', async () => {
+    // A real agent turn (prompt or loop-iteration body) writes many events
+    // between its own node_started/loop_iteration_started and its terminal
+    // event — tool_called/tool_completed/node_usage_recorded — and NONE of
+    // those carry execution-scope fields (only the lifecycle start/terminal
+    // events do, via `executionScopeEventFields`). Reading scope off the
+    // LATEST event (the pre-fix behavior) reads one of these bare events
+    // instead of the start event that actually owns the open occurrence.
+    test('a prompt node orphaned mid-tool-call carries the node_started occurrence, not the bare latest event', async () => {
       mockQuery.mockResolvedValueOnce(
         createQueryResult([
-          eventRow({ id: 'e1', step_name: 'prompt-a', event_type: 'node_started', data: {} }),
-          eventRow({ id: 'e2', step_name: 'loop-b', event_type: 'node_started', data: {} }),
+          eventRow({
+            id: 'e1',
+            step_name: 'prompt-a',
+            event_type: 'node_started',
+            data: { occurrence_id: 'occ-a', attempt_id: 'att-a-1', retry_epoch: 0, type: 'prompt' },
+          }),
+          eventRow({
+            id: 'e2',
+            step_name: 'prompt-a',
+            event_type: 'tool_called',
+            data: { tool_name: 'Bash', tool_input: {}, tool_call_id: 't1' },
+          }),
           eventRow({
             id: 'e3',
-            step_name: 'loop-b',
-            event_type: 'loop_iteration_started',
-            data: { iteration: 2, occurrence_id: 'occ-1', attempt_id: 'att-1', retry_epoch: 0 },
+            step_name: 'prompt-a',
+            event_type: 'tool_completed',
+            data: {
+              tool_name: 'Bash',
+              duration_ms: 10,
+              tool_call_id: 't1',
+              tool_outcome: 'interrupted',
+            },
+          }),
+          eventRow({
+            id: 'e4',
+            step_name: 'prompt-a',
+            event_type: 'node_usage_recorded',
+            data: { retryEpoch: 0, iteration: null },
           }),
         ])
       );
@@ -588,19 +616,117 @@ describe('workflow-events', () => {
       const result = await findNonTerminalNodes('run-1');
 
       expect(result).toEqual([
-        { nodeId: 'prompt-a', scope: {} },
         {
-          nodeId: 'loop-b',
-          scope: { iteration: 2, occurrence_id: 'occ-1', attempt_id: 'att-1', retry_epoch: 0 },
+          nodeId: 'prompt-a',
+          scope: { occurrence_id: 'occ-a', attempt_id: 'att-a-1', retry_epoch: 0 },
+          terminalEventType: 'node_failed',
         },
       ]);
     });
 
-    test('excludes a node whose latest event is terminal', async () => {
+    // A loop node mid-iteration 2 has TWO open executions at once: the
+    // container's own node_started (type: loop, never closed until the
+    // whole node settles) and the current iteration's loop_iteration_started
+    // (its own, distinct occurrence — freshly minted every iteration). Both
+    // must be reported so the caller can close both rows.
+    test('a loop node orphaned mid-iteration reports both the container and the open iteration', async () => {
       mockQuery.mockResolvedValueOnce(
         createQueryResult([
-          eventRow({ id: 'e1', step_name: 'done-a', event_type: 'node_started', data: {} }),
-          eventRow({ id: 'e2', step_name: 'done-a', event_type: 'node_completed', data: {} }),
+          eventRow({
+            id: 'e1',
+            step_name: 'loop-b',
+            event_type: 'node_started',
+            data: {
+              occurrence_id: 'occ-outer',
+              attempt_id: 'att-outer',
+              retry_epoch: 0,
+              type: 'loop',
+            },
+          }),
+          eventRow({
+            id: 'e2',
+            step_name: 'loop-b',
+            event_type: 'loop_iteration_started',
+            data: {
+              iteration: 1,
+              occurrence_id: 'occ-iter-1',
+              attempt_id: 'att-iter-1',
+              retry_epoch: 0,
+            },
+          }),
+          eventRow({
+            id: 'e3',
+            step_name: 'loop-b',
+            event_type: 'loop_iteration_completed',
+            data: {
+              iteration: 1,
+              occurrence_id: 'occ-iter-1',
+              attempt_id: 'att-iter-1',
+              retry_epoch: 0,
+            },
+          }),
+          eventRow({
+            id: 'e4',
+            step_name: 'loop-b',
+            event_type: 'loop_iteration_started',
+            data: {
+              iteration: 2,
+              occurrence_id: 'occ-iter-2',
+              attempt_id: 'att-iter-2',
+              retry_epoch: 0,
+            },
+          }),
+          eventRow({
+            id: 'e5',
+            step_name: 'loop-b',
+            event_type: 'tool_called',
+            data: { tool_name: 'Bash', tool_input: {}, tool_call_id: 't2' },
+          }),
+          eventRow({
+            id: 'e6',
+            step_name: 'loop-b',
+            event_type: 'node_usage_recorded',
+            data: { retryEpoch: 0, iteration: 2 },
+          }),
+        ])
+      );
+
+      const result = await findNonTerminalNodes('run-1');
+
+      expect(result).toEqual([
+        {
+          nodeId: 'loop-b',
+          scope: { occurrence_id: 'occ-outer', attempt_id: 'att-outer', retry_epoch: 0 },
+          terminalEventType: 'node_failed',
+        },
+        {
+          nodeId: 'loop-b',
+          scope: {
+            iteration: 2,
+            occurrence_id: 'occ-iter-2',
+            attempt_id: 'att-iter-2',
+            retry_epoch: 0,
+          },
+          terminalEventType: 'loop_iteration_failed',
+        },
+      ]);
+    });
+
+    test('excludes a node whose scoped occurrence was already closed', async () => {
+      mockQuery.mockResolvedValueOnce(
+        createQueryResult([
+          eventRow({
+            id: 'e1',
+            step_name: 'done-a',
+            event_type: 'node_started',
+            data: { occurrence_id: 'occ-done', attempt_id: 'att-done', retry_epoch: 0 },
+          }),
+          eventRow({
+            id: 'e2',
+            step_name: 'done-a',
+            event_type: 'node_completed',
+            data: { occurrence_id: 'occ-done', attempt_id: 'att-done', retry_epoch: 0 },
+          }),
         ])
       );
 
@@ -612,15 +738,51 @@ describe('workflow-events', () => {
     test('a retried node (failed, then a fresh node_started) is non-terminal again', async () => {
       mockQuery.mockResolvedValueOnce(
         createQueryResult([
-          eventRow({ id: 'e1', step_name: 'retry-a', event_type: 'node_started', data: {} }),
-          eventRow({ id: 'e2', step_name: 'retry-a', event_type: 'node_failed', data: {} }),
-          eventRow({ id: 'e3', step_name: 'retry-a', event_type: 'node_started', data: {} }),
+          eventRow({
+            id: 'e1',
+            step_name: 'retry-a',
+            event_type: 'node_started',
+            data: { occurrence_id: 'occ-1', attempt_id: 'att-1', retry_epoch: 0 },
+          }),
+          eventRow({
+            id: 'e2',
+            step_name: 'retry-a',
+            event_type: 'node_failed',
+            data: { occurrence_id: 'occ-1', attempt_id: 'att-1', retry_epoch: 0 },
+          }),
+          eventRow({
+            id: 'e3',
+            step_name: 'retry-a',
+            event_type: 'node_started',
+            data: { occurrence_id: 'occ-2', attempt_id: 'att-2', retry_epoch: 1 },
+          }),
         ])
       );
 
       const result = await findNonTerminalNodes('run-retry');
 
-      expect(result).toEqual([{ nodeId: 'retry-a', scope: {} }]);
+      expect(result).toEqual([
+        {
+          nodeId: 'retry-a',
+          scope: { occurrence_id: 'occ-2', attempt_id: 'att-2', retry_epoch: 1 },
+          terminalEventType: 'node_failed',
+        },
+      ]);
+    });
+
+    // Legacy rows minted before occurrence_id existed carry no scope at all —
+    // the same "latest unscoped start per step_name" pairing the pre-fix
+    // implementation used is preserved for this narrow, unscoped-only case.
+    test('an unscoped legacy node_started/node_failed pair is still paired by step_name', async () => {
+      mockQuery.mockResolvedValueOnce(
+        createQueryResult([
+          eventRow({ id: 'e1', step_name: 'legacy-a', event_type: 'node_started', data: {} }),
+        ])
+      );
+
+      const result = await findNonTerminalNodes('run-legacy');
+
+      expect(result).toEqual([{ nodeId: 'legacy-a', scope: {}, terminalEventType: 'node_failed' }]);
     });
 
     test('returns an empty list when every node reached a terminal event', async () => {

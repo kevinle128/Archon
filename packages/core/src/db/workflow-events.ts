@@ -299,13 +299,31 @@ export async function getDagResumeSnapshot(workflowRunId: string): Promise<{
   return { completedNodeOutputs, tokens };
 }
 
-/** Node-lifecycle event types marking a node's execution as settled. */
-const TERMINAL_NODE_EVENT_TYPES: ReadonlySet<string> = new Set([
+/**
+ * Node-lifecycle events that OPEN an execution, and the terminal event type
+ * that closes each — mirrors `START_EVENTS`/`TERMINAL_EVENTS` in the server's
+ * `projectWorkflowExecutionHistory` read model, which pairs the exact same
+ * events by `occurrence_id`. A loop container's own `node_started` (never
+ * closed until the whole node settles) and its current iteration's
+ * `loop_iteration_started` (a fresh occurrence every iteration) are two
+ * INDEPENDENT open executions and close with different event types.
+ */
+const START_TO_TERMINAL_EVENT_TYPE: Readonly<
+  Record<string, 'node_failed' | 'loop_iteration_failed'>
+> = {
+  node_started: 'node_failed',
+  loop_iteration_started: 'loop_iteration_failed',
+};
+
+/** Node-lifecycle event types that CLOSE an open execution (by occurrence_id, or by step_name when unscoped). */
+const CLOSING_NODE_EVENT_TYPES: ReadonlySet<string> = new Set([
   'node_completed',
   'node_failed',
   'node_skipped',
   'node_routed',
   'node_skipped_prior_success',
+  'loop_iteration_completed',
+  'loop_iteration_failed',
 ]);
 
 /**
@@ -334,38 +352,76 @@ function extractScopeData(data: Record<string, unknown>): Record<string, unknown
 
 export interface NonTerminalNode {
   readonly nodeId: string;
-  /** This node's own execution-scope fields, read off its latest event. */
+  /** This node's own execution-scope fields, read off the START event that opened it (never a later, scope-less event). */
   readonly scope: Record<string, unknown>;
+  /** The terminal event type that closes THIS specific open execution. */
+  readonly terminalEventType: 'node_failed' | 'loop_iteration_failed';
+}
+
+function asDataRecord(data: WorkflowEventRow['data']): Record<string, unknown> {
+  return typeof data === 'object' && data !== null ? data : {};
 }
 
 /**
- * Every node (`step_name`) whose LATEST recorded event for this run is not
- * one of the terminal lifecycle types — a node currently mid-execution (or
- * mid-retry: a node that failed and then produced a fresh `node_started` is
- * correctly non-terminal again, which is why this reads the latest event
- * per node rather than merely checking whether a terminal event ever
- * occurred). Used to detect a node an executor abandoned mid-flight without
- * ever writing its own terminal event, typically because the process
- * running it exited (crash or restart) before it could.
+ * Every still-OPEN execution across this run's lifecycle events — a node (or
+ * loop iteration) started but never reached one of its terminal event types.
+ * Used to detect work an executor abandoned mid-flight without ever writing
+ * its own terminal event, typically because the process running it exited
+ * (crash or restart) before it could.
+ *
+ * Pairs START events (`node_started`, `loop_iteration_started`) with their
+ * closing terminal event by `occurrence_id` — the same identity
+ * `projectWorkflowExecutionHistory` uses to build the execution-history read
+ * model — instead of reading whichever event happens to be LATEST for a
+ * step_name. An agent node's latest event before a crash is routinely a
+ * `tool_called`/`tool_completed`/`node_usage_recorded` row, none of which
+ * carry execution-scope fields; reading scope off that event instead of the
+ * START event that actually owns the open occurrence produced an unscoped
+ * (or partially-scoped) synthesized terminal write that the execution-history
+ * projector could not pair back to the open row, leaving it stuck `running`
+ * forever and adding a phantom `unknown_scope` row alongside it.
+ *
+ * A loop container's own `node_started` and its current iteration's
+ * `loop_iteration_started` are separate, independently-scoped open
+ * executions (the container's occurrence never closes until the whole loop
+ * settles), so a mid-iteration crash reports BOTH — the caller must close
+ * both rows, not just one.
+ *
+ * Legacy rows minted before `occurrence_id` existed carry no scope at all;
+ * those fall back to the same "latest unscoped start per step_name" pairing
+ * the pre-occurrence design used, scoped to that narrow case only.
  */
 export async function findNonTerminalNodes(
   workflowRunId: string
 ): Promise<readonly NonTerminalNode[]> {
   const events = await listWorkflowEvents(workflowRunId);
-  const latestByNode = new Map<string, WorkflowEventRow>();
+  const openByOccurrence = new Map<string, NonTerminalNode>();
+  const openUnscopedByStep = new Map<string, NonTerminalNode>();
+
   for (const event of events) {
-    if (event.step_name === null || event.step_name === undefined) continue;
-    // `listWorkflowEvents` orders ascending, so the last write for a given
-    // step_name always overwrites the map entry with the newest event.
-    latestByNode.set(event.step_name, event);
+    const stepName = event.step_name;
+    if (stepName === null || stepName === undefined) continue;
+    const data = asDataRecord(event.data);
+    const occurrenceId = typeof data.occurrence_id === 'string' ? data.occurrence_id : undefined;
+
+    const terminalEventType = START_TO_TERMINAL_EVENT_TYPE[event.event_type];
+    if (terminalEventType !== undefined) {
+      const open: NonTerminalNode = {
+        nodeId: stepName,
+        scope: extractScopeData(data),
+        terminalEventType,
+      };
+      if (occurrenceId !== undefined) openByOccurrence.set(occurrenceId, open);
+      else openUnscopedByStep.set(stepName, open);
+      continue;
+    }
+
+    if (!CLOSING_NODE_EVENT_TYPES.has(event.event_type)) continue;
+    if (occurrenceId !== undefined) openByOccurrence.delete(occurrenceId);
+    else openUnscopedByStep.delete(stepName);
   }
-  const result: NonTerminalNode[] = [];
-  for (const [nodeId, latest] of latestByNode) {
-    if (TERMINAL_NODE_EVENT_TYPES.has(latest.event_type)) continue;
-    const data = typeof latest.data === 'object' && latest.data !== null ? latest.data : {};
-    result.push({ nodeId, scope: extractScopeData(data) });
-  }
-  return result;
+
+  return [...openByOccurrence.values(), ...openUnscopedByStep.values()];
 }
 
 /**
