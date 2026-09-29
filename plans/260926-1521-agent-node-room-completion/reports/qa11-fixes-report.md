@@ -136,12 +136,12 @@ new queue snapshot (this dock's own poll has not caught up yet) — asserts no
 fetch resolves reporting the item was actually `delivered` — asserts the
 band still never renders. Fixing the gate surfaced three **pre-existing**
 tests that encoded the old (buggy) contract as passing assertions — a
-delivery_unknown-row test that relied on the ungated `dock.sent` render to
+`delivery_unknown`-row test that relied on the ungated `dock.sent` render to
 show a row the gate now correctly excludes at `execution_state: 'live'`
 (fixed by adding `execution_state: 'finished'` to that fixture, which is what
 the real server would report once the run/node is genuinely done); a
-withdraw test whose second `settleSnapshot` call resolved the _wrong_ of two
-pending reads (the withdraw's own now-discarded corrective re-read, queued
+withdraw test whose second `settleSnapshot` call resolved the wrong one of
+two pending reads (the withdraw's own now-discarded corrective re-read, queued
 before the terminal one-shot fetch) — fixed by draining the stale read first;
 and a cancelled-run test relying on the ungated `dock.sent` to show a
 still-`queued` item as read-only before the server's own reconciliation
