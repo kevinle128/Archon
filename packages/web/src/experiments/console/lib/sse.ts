@@ -100,6 +100,21 @@ export function useRunStreamSSE(conversationPlatformId: string | null, runId: st
     let runDirty = false;
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
+    // `onopen` fires on the initial connect too, which the run/messages
+    // loaders already cover — only a RECONNECT (every open after the first)
+    // needs its own refetch, since the stream may have missed events, or the
+    // run's own re-read may have been failing, for the whole time it was
+    // down. This is Console's fast path back after an outage: it does not
+    // wait for the 30s safety-net heartbeat in RunDetailPage.tsx.
+    let hasOpenedOnce = false;
+    es.onopen = (): void => {
+      if (hasOpenedOnce) {
+        invalidate(K.run(runId));
+        invalidate(K.messages(conversationPlatformId));
+      }
+      hasOpenedOnce = true;
+    };
+
     // Coalesce bursts. Streamed text can arrive at >10Hz; we don't want a
     // refetch per chunk. 100ms is fast enough to feel live and slow enough
     // to dedupe.

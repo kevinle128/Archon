@@ -938,7 +938,13 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     [queryClient, runId]
   );
 
-  if (error) {
+  // react-query keeps the last successful `data` on a background refetch
+  // failure (it never clears it just because `error` is now set), so a
+  // failed re-read after the run has already loaded once must not swap the
+  // whole room for this error page — only a first load that never succeeded
+  // does. The non-blocking "Failed to load — retrying" hint below the header
+  // covers the "last read failed" case instead.
+  if (error && !workflow) {
     return (
       <div className="flex items-center justify-center h-full text-error">
         <p>Failed to load workflow run: {error}</p>
@@ -1215,6 +1221,8 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           <span className="text-xs text-text-secondary">{formatDurationMs(elapsed)}</span>
         </div>
       </div>
+
+      {error ? <p className="px-4 py-1 text-xs text-error">Failed to load — retrying</p> : null}
 
       {/* View tabs — only for DAG workflows */}
       {isDag && (

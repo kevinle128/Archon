@@ -729,6 +729,69 @@ describe('WorkflowExecution room visit', () => {
     expect(host.querySelector('[data-testid="legacy-node-room"]')?.textContent).toContain('Review');
   });
 
+  function mockRunDetailOutage(failing: boolean): void {
+    fetchSpy.mockRestore();
+    fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((input: RequestInfo | URL) => {
+      const path = requestPath(input);
+      if (path === '/api/workflows/runs/run-1' || path === '/api/workflows/runs/run-2') {
+        if (failing) return Promise.resolve(jsonResponse({ error: 'server down' }, 500));
+        const runId = path.endsWith('run-2') ? 'run-2' : 'run-1';
+        return Promise.resolve(jsonResponse(visitRunDetail(runId)));
+      }
+      if (path === '/api/workflows/demo') {
+        return Promise.resolve(jsonResponse(visitWorkflowDefinition()));
+      }
+      if (path.includes('/nodes/') && path.endsWith('/messages')) {
+        return Promise.resolve(
+          jsonResponse({ messages: [], hasMore: false, highWatermark: 0 } satisfies {
+            messages: never[];
+            hasMore: boolean;
+            highWatermark: number;
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({ error: `unmocked ${path}` }, 404));
+    }) as typeof fetch);
+  }
+
+  test('a refetch failure after the run has loaded keeps the room open and hints, then recovers', async () => {
+    await renderVisit();
+    await clickTab('Logs');
+    await flushUntil('log rows', () => (host.textContent ?? '').includes('Review'));
+    await clickNamed('Review');
+    await flushUntil(
+      'opened review',
+      () => host.querySelector('[data-testid="legacy-node-room"]') !== null
+    );
+
+    // Simulate an outage: the next run-detail read fails after data has
+    // already loaded once.
+    mockRunDetailOutage(true);
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workflowRun', 'run-1'] });
+    });
+    await flushUntil('hint shown', () =>
+      (host.textContent ?? '').includes('Failed to load — retrying')
+    );
+
+    // react-query keeps the last-good data, so the error page must not
+    // replace the room — only the non-blocking hint may appear.
+    expect(host.textContent).not.toContain('Failed to load workflow run:');
+    expect(host.querySelector('[data-testid="legacy-node-room"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="legacy-node-room"]')?.textContent).toContain('Review');
+
+    // The server comes back: the page recovers without a remount.
+    mockRunDetailOutage(false);
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workflowRun', 'run-1'] });
+    });
+    await flushUntil(
+      'hint cleared',
+      () => !(host.textContent ?? '').includes('Failed to load — retrying')
+    );
+    expect(host.querySelector('[data-testid="legacy-node-room"]')).not.toBeNull();
+  });
+
   test('closing the room restores focus to the log opener', async () => {
     await renderVisit();
     await clickTab('Logs');
