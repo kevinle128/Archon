@@ -542,10 +542,30 @@ export function ConsoleComposerDock({
   // transcript, which is the opposite of undelivered, so it must never
   // render as "never sent" before the terminal reconciliation result
   // (server truth) arrives.
+  //
+  // The still-pending local queue (`dock.sent`) is trustworthy ONLY when
+  // THIS dock's own queue read is what reported the node finished
+  // (`dock.executionState === 'finished'`) — that is a single server
+  // response saying both "this node is done" and "this row is still
+  // queued" in the same breath, and a row a finished node cannot claim has
+  // exactly one possible outcome. It is untrustworthy when terminality
+  // instead comes from the faster EXTERNAL `nodeTerminal` prop or from
+  // `!live`: those can land before this dock's own next queue poll, and
+  // `dock.sent` can be one poll stale relative to what a DIFFERENT tab just
+  // did to the same row (claimed and delivered it in the same instant the
+  // node finished) — folding it in unconditionally would paint that stale
+  // row as never-sent for exactly that gap. This is the one list the
+  // 'finished' render below maps too, so the header count and the rendered
+  // rows can never disagree.
+  const trustedPendingReceipts =
+    dock.executionState === 'finished'
+      ? dock.sent.filter(receipt => isPossiblyNeverSent(receipt.state))
+      : [];
   const finishedEntries: NeverSentEntry[] = [
-    ...dock.sent
-      .filter(receipt => isPossiblyNeverSent(receipt.state))
-      .map(receipt => ({ messageId: receipt.messageId, message: receipt.message })),
+    ...trustedPendingReceipts.map(receipt => ({
+      messageId: receipt.messageId,
+      message: receipt.message,
+    })),
     ...(dock.neverSent ?? []),
     ...(draft.trim().length > 0 ? [{ messageId: null, message: draft }] : []),
   ];
@@ -1175,7 +1195,7 @@ export function ConsoleComposerDock({
 
   if (mode === 'finished' && finishedEntries.length > 0) {
     const neverSentEntries = dock.neverSent ?? [];
-    const draftOrd = dock.sent.length + neverSentEntries.length + 1;
+    const draftOrd = trustedPendingReceipts.length + neverSentEntries.length + 1;
     return (
       <section
         aria-label={neverSentBandHeader(finishedEntries.length)}
@@ -1196,7 +1216,7 @@ export function ConsoleComposerDock({
           className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
         >
           <ul aria-label={neverSentListLabel(finishedEntries.length)}>
-            {dock.sent.map((receipt, index) => (
+            {trustedPendingReceipts.map((receipt, index) => (
               <QueueBandItem
                 key={receipt.messageId}
                 dataMessageId={receipt.messageId}
@@ -1213,7 +1233,7 @@ export function ConsoleComposerDock({
               <QueueBandItem
                 key={entry.messageId ?? `never-sent-${String(index)}`}
                 dataMessageId={entry.messageId ?? undefined}
-                ord={dock.sent.length + index + 1}
+                ord={trustedPendingReceipts.length + index + 1}
                 text={entry.message}
                 accent={false}
               />

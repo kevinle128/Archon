@@ -273,9 +273,11 @@ export const STEERING_RECOVERY_DISCLOSURE =
  * flip the dock to the detached disclosure.
  *
  * `neverSent` is the caller's render-time union of the server's durable
- * `never_sent` rows, the still-pending queue, and the operator's own
- * still-unsent draft text — never a client-side ledger. `finished` still
- * requires nonempty `neverSent`, so a terminal (or non-live) node with
+ * `never_sent` rows, the operator's own still-unsent draft text, and — only
+ * when this dock's OWN queue read is what reported the node finished, never
+ * from a faster external signal — the still-pending local queue (see
+ * `isPossiblyNeverSent`'s doc comment). `finished` still requires nonempty
+ * `neverSent`, so a terminal (or non-live) node with
  * nothing undelivered and a blank draft correctly falls through to hidden —
  * matching "no dock at all" once nothing survives to show. A cold-opened
  * terminal run reaches this mode as soon as its one-shot queue/draft reads
@@ -534,6 +536,10 @@ export function isQueueItemClaimable(state: SteeringQueueItemState): boolean {
  * (`dispatching`, `sent`, `delivered`) already left the queue for the
  * transcript — the opposite of undelivered — so it must never render as
  * never-sent ahead of the terminal reconciliation result (server truth).
+ * Callers gate this on `dock.executionState === 'finished'` — the one
+ * signal that is this dock's OWN queue read, not a faster external prop —
+ * before trusting the local row at all; see `finishedEntries` in
+ * ComposerDock.tsx / ConsoleComposerDock.tsx.
  */
 export function isPossiblyNeverSent(state: SteeringQueueItemState): boolean {
   return !isQueueItemInFlight(state);
