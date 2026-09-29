@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -593,6 +594,25 @@ export function ConsoleNodeRoom({
   const prevScopeRef = useRef(resolvedScopeKey);
   /** Intended live row id set on Go; cleared before focusing after commit. */
   const pendingGoTargetRef = useRef<{ fromRowId: string; toRowId: string } | null>(null);
+  /**
+   * The deepest element focused inside the transcript scroller, tracked on
+   * every focus so an iteration boundary that removes the ROW currently
+   * holding it (the old iteration's rows are replaced wholesale when the
+   * room follows a new live iteration — resolveFollowedRow) can be told
+   * apart from an unrelated blur. Never cleared on blur: `document.contains`
+   * below is what proves the specific tracked node is actually gone, not
+   * merely that focus moved elsewhere for the moment.
+   */
+  const lastFocusedTranscriptRowRef = useRef<Element | null>(null);
+  /**
+   * True only while the scroller itself holds focus because THIS
+   * mechanism's own redirect (below) parked it there for want of a real row
+   * at that moment. Distinguishes "reclaim once a row appears" from a
+   * DIFFERENT, deliberate final destination on the bare scroller — e.g. the
+   * occurrence navigator dropping to one group — which must never be
+   * overridden.
+   */
+  const parkedOnScrollerFallbackRef = useRef(false);
   pageStateRef.current = pageState;
   loadMessagesRef.current = loadMessages;
 
@@ -1018,6 +1038,59 @@ export function ConsoleNodeRoom({
     (lastRow ?? el).focus({ preventScroll: true });
   };
 
+  // A loop iteration boundary the operator did not drive through Go (the
+  // room follows a newly live iteration on its own — resolveFollowedRow)
+  // replaces the whole rendered row list. If the operator's focus was on a
+  // row in the OLD list, the browser has already blurred it to `<body>` by
+  // the time this runs (the DOM removal happens during commit, before any
+  // effect) — `lastFocusedTranscriptRowRef` is what lets this tell "that
+  // exact row is now gone" from "focus is at body for some unrelated
+  // reason". Layout, not passive: a passive effect's own DOM focus() call
+  // can still land after the browser paints the blurred frame.
+  //
+  // No dependency array: the row prop and the transcript content it
+  // resolves to (a separate query, keyed by scope) do not necessarily
+  // settle in the same commit — keying this on `rowId` alone can fire once,
+  // find the old row still present (content hasn't caught up yet), and
+  // never fire again once it actually gets removed a render later. Running
+  // after every commit is safe because every check here is idempotent: a
+  // still-connected tracked row, or any focus other than a bare `<body>`,
+  // is a no-op.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    // Self-heal, but only the fallback THIS effect itself created: reclaim
+    // focus into a just-appeared real row only while `parkedOnScrollerFallbackRef`
+    // is still true. A different focus destination since (including a
+    // DELIBERATE final landing on the bare scroller from elsewhere, e.g. the
+    // occurrence navigator dropping to one group) clears the flag instead of
+    // being overridden.
+    if (parkedOnScrollerFallbackRef.current) {
+      if (document.activeElement !== el) {
+        parkedOnScrollerFallbackRef.current = false;
+      } else {
+        const lastRow = el.querySelector<HTMLElement>('[data-last-row]');
+        if (lastRow !== null) {
+          parkedOnScrollerFallbackRef.current = false;
+          lastRow.focus({ preventScroll: true });
+          return;
+        }
+      }
+    }
+    const trackedRow = lastFocusedTranscriptRowRef.current;
+    if (trackedRow === null) return;
+    if (document.contains(trackedRow)) return;
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
+    lastFocusedTranscriptRowRef.current = null;
+    const lastRow = el.querySelector<HTMLElement>('[data-last-row]');
+    if (lastRow !== null) {
+      lastRow.focus({ preventScroll: true });
+    } else {
+      parkedOnScrollerFallbackRef.current = true;
+      el.focus({ preventScroll: true });
+    }
+  });
+
   let body: ReactNode;
   if (nodeId === null || resolution === null || row === null) {
     body = <RoomPlaceholder>Select a node</RoomPlaceholder>;
@@ -1210,6 +1283,16 @@ export function ConsoleNodeRoom({
             ref={scrollRef}
             data-testid="console-node-room-scroll"
             tabIndex={-1}
+            onFocusCapture={(event): void => {
+              // Scoped to actual transcript rows (`[data-last-row]`, the
+              // only elements `focusLastRow` ever targets) — the scroller
+              // also hosts occurrence headings and other focusables with
+              // their own, unrelated focus-restoration paths that must not
+              // be overridden.
+              if (event.target.hasAttribute('data-last-row')) {
+                lastFocusedTranscriptRowRef.current = event.target;
+              }
+            }}
             // The todo strip below stays flex-none at its full content height, so an
             // expanded strip on a very short room can squeeze this flex-1 sibling
             // toward zero. A tiny floor keeps the scroller present rather than

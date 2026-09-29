@@ -1955,6 +1955,61 @@ describe('ConsoleNodeRoom', () => {
     expect((win.document.activeElement as unknown) === scroller).toBe(true);
   });
 
+  // The room follows a newly live loop iteration on its own — no Go click —
+  // so the effects above are the only thing standing between the removed
+  // row and `<body>`. The browser has already blurred the removed row (a
+  // real DOM removal, not merely losing `data-last-row`) by the time either
+  // effect runs; only `lastFocusedTranscriptRowRef` proves it was THIS
+  // specific row. The scope-keyed transcript query briefly parks focus on
+  // the scroller itself while the new iteration's content loads (no row
+  // exists yet); once it settles, focus self-heals onto the real last row.
+  test('a loop iteration boundary the operator did not drive never drops focus to body', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...FIXTURE],
+    });
+    await act(async () => {
+      renderRoom({
+        selectedRow: row({
+          id: 'review-iter-1',
+          nodeId: 'review',
+          label: 'Review',
+          status: 'running',
+        }),
+        loadMessages,
+      });
+    });
+    await flushUntil('iteration 1 content', () => (host.textContent ?? '').includes('first'));
+    const firstLastRow = host.querySelector('[data-last-row]');
+    if (firstLastRow === null) throw new Error('missing last-row marker');
+    await act(async () => {
+      (firstLastRow as unknown as HTMLElement).focus();
+    });
+    expect((win.document.activeElement as unknown) === firstLastRow).toBe(true);
+
+    await act(async () => {
+      renderRoom({
+        selectedRow: row({
+          id: 'review-iter-2',
+          nodeId: 'review',
+          label: 'Review ×2',
+          status: 'failed',
+          selection: { kind: 'loop_iteration', iteration: 2 },
+        }),
+        loadMessages,
+      });
+    });
+    await flushUntil(
+      'iteration 2 content settled onto a real last row',
+      () => !host.contains(firstLastRow) && host.querySelector('[data-last-row]') !== null
+    );
+
+    const newLastRow = host.querySelector('[data-last-row]');
+    expect(newLastRow).not.toBeNull();
+    expect((newLastRow as unknown) === firstLastRow).toBe(false);
+    expect(win.document.activeElement).not.toBe(win.document.body as unknown as HTMLElement);
+    expect((win.document.activeElement as unknown) === newLastRow).toBe(true);
+  });
+
   describe('Console tool disclosure rows', () => {
     const NOW_MS = new Date(CREATED_AT).getTime() + 30_000;
 
