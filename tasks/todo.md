@@ -44,7 +44,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA round 9: REJECT (0 major, 2 minor, 1 cosmetic); all VQ8 fixes hold; child reap verified on all providers incl. DeepSeek
 - [x] QA9 fixes merged (Codex descendant reap, recovered-node abandon terminal state + SSE routing, band frame); validate green; e2e 158/0/4
 - [x] QA round 10: REJECT (0 major, 3 minor); all VQ9 fixes hold except the two partial paths
-- [ ] QA10 fixes (Grok --single tree reap, post-restart tab terminal state, orphaned-node terminal event scope) — agent qa10-fixes
+- [ ] QA10 fixes (Grok --single tree reap, post-restart tab terminal state, orphaned-node terminal event scope) + 7.5 failed auto-dispatch returns to queue front (user decision 2026-09-29: build it; session-losing failures still fail the node) — agent qa10-fixes
 - [ ] QA round 11 (final acceptance, Verdict: ACCEPT required)
 
 ## Background processes started by this session
