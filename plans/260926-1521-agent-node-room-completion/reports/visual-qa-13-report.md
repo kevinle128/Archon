@@ -228,3 +228,15 @@ Status: DONE_WITH_CONCERNS
 Summary: VQ12-1, VQ12-2 and VQ12-3 are fixed in their original triggers in both shells; VQ12-4 is fixed in 19 of 20 Legacy-sender cycles. VQ11-1..3 stay fixed, Story 7.5, the 30-min idle timeout and its keystroke re-arm work, and the provider matrix passes on all six real providers. One new minor finding blocks acceptance: during a server outage both shells replace the whole room with a run-level error page, and Console keeps it for up to 30 s after the server is back (VQ13-1). Two cosmetic items (VQ13-2 first-mount pop-in, VQ13-3 VQ12-4 residual).
 
 Verdict: REJECT
+
+## Decisions (2026-09-30)
+
+1. **VQ13-1:** accepted as minor. EXPERIENCE.md ("Connection lost while running") requires the rows already received to stay.
+   - When a refetch fails after data has loaded, both run pages keep the last loaded run and room: transcript, queued band and composer. Neither page swaps in the run-level error page.
+   - The error page stays only for a first load that never succeeded.
+   - Any "connection lost" hint reuses an existing surface or pattern and does not block the page. Nothing changes state on a timer.
+   - When the server is reachable again, both shells resume within about one poll interval. Console must not wait for its 30 s refresh: retry sooner while the last read failed, and refetch on reconnect.
+2. **VQ13-2:** fixed as well. Until the dock's first queue read resolves, the room shows neither a live composer nor a terminal room with no band. It uses the same `settling` treatment VQ12-1 introduced, and the pill keeps reading server data.
+3. **VQ13-3:** fixed as well. The terminal-edge half of the VQ12-4 decision is implemented: when Legacy sees the node turn terminal, it refreshes the dock at once, so `Stop` and `Queue` never wait for the next poll.
+
+Fixes are owned by the `qa13-fixes` follow-up work.
