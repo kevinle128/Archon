@@ -13,3 +13,8 @@
 
 - Mistake: Phase A's own screenshots looked right, but after merge the run log column overflowed to ~6600px (flex child without `min-w-0`) and hid the fixed-width room.
 - Rule: after each UI merge, open the real app at a common width and measure `scrollWidth` vs `innerWidth`; a "deep link does not open" report can be an off-screen layout bug.
+
+## 2026-09-29 — Stop processes only by exact PID or port you own
+
+- Mistake: a delegate matched `pgrep -f "bun --watch src/index.ts"` to stop its own scratch server and killed the user's own dev server (port 3090/5173, another worktree, real ~/.archon).
+- Rule: never select processes by command-line pattern. Record the PID when starting a process, or resolve it with `lsof -tiTCP:<own port> -sTCP:LISTEN`, and stop only that PID. Put this rule in every delegate brief that starts servers.
