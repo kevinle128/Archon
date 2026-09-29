@@ -218,3 +218,11 @@ Status: DONE_WITH_CONCERNS
 Summary: All five round-8 findings are fixed in their original triggers, including the loop restart recovery (VQ8-1) and the live-iteration follow (VQ8-2). All earlier findings stay fixed, and DeepSeek, Grok, OMP and Claude leave no child processes after Abandon. Two new minor defects remain: the Codex tool command is orphaned and keeps running after Abandon (VQ9-1), and the Console pill shows `Running` for about 25 s after Abandon of a restart-recovered node (VQ9-2). One cosmetic is logged (VQ9-3).
 
 Verdict: REJECT
+
+## Decisions (2026-09-29)
+
+1. VQ9-1: Stop and node-level abort terminate the provider's whole descendant tree for Codex as they already do for the ACP providers, without breaking same-thread continuation after Stop.
+2. VQ9-2: Abandon is an explicit user action. The abandon path may write the terminal state for nodes of that run that no live executor in this process owns; nodes with a live executor still end through the executor's own cancel path. This is not an autonomous lifecycle mutation. The Console header takes the durable terminal state with precedence over a stale live projection.
+3. VQ9-3: the observer keeps the last rendered band until the next snapshot resolves, so no empty frame appears between two non-empty snapshots.
+
+Fixes are owned by the `qa9-fixes` follow-up work.

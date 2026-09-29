@@ -41,7 +41,9 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA7 fixes merged; e2e 154/0/4; validate green
 - [x] QA round 8: REJECT (2 major incl. raised VQ8-2, 2 minor, 1 cosmetic); all VQ7 fixes hold except s8 focus
 - [x] QA8 fixes merged (loop steering stamp, follow-live, focus, optimistic send, ACP child reap); validate green; e2e 158/0/4. DeepSeek reap not yet live-verified → QA9
-- [ ] QA round 9 (final acceptance, Verdict: ACCEPT required)
+- [x] QA round 9: REJECT (0 major, 2 minor, 1 cosmetic); all VQ8 fixes hold; child reap verified on all providers incl. DeepSeek
+- [ ] QA9 fixes (Codex descendant reap, abandon of recovery-required node terminal state, band frame) — agent qa9-fixes
+- [ ] QA round 10 (final acceptance, Verdict: ACCEPT required)
 
 ## Background processes started by this session
 
