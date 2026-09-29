@@ -240,3 +240,15 @@ Verdict: REJECT
 3. **VQ13-3:** fixed as well. The terminal-edge half of the VQ12-4 decision is implemented: when Legacy sees the node turn terminal, it refreshes the dock at once, so `Stop` and `Queue` never wait for the next poll.
 
 Fixes are owned by the `qa13-fixes` follow-up work.
+
+### Decision refinements (2026-09-30, after tracing the source)
+
+- **VQ13-3:** Legacy has no event channel on the DAG run page that is faster than the dock's own ~1 s poll.
+  - The page subscribes to the `__dashboard__` SSE stream, which is its own stream slot, so it evicts no stream.
+  - On a `dag_node` or `workflow_status` event for this run, the page only invalidates the run query and kicks the dock. It does not feed the workflow store.
+  - Subscribing Legacy to the run's conversation stream is rejected, because that stream allows one writer and would evict the Console shell's stream.
+- **VQ13-2:** the room never renders a count it does not know.
+  - Before the dock's first queue read, the room shows no live composer and no `Queue` control.
+  - A terminal node shows no dock until that read resolves.
+  - The first paint of the band is an appearance, not a disappearance, so the continuity rule of VQ6-3 and VQ12-1 still holds.
+  - The 45–92 ms first-load pop-in remains by design, because no truthful earlier representation exists.
