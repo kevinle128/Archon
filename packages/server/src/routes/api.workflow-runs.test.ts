@@ -717,6 +717,7 @@ type MockSteeringQueueEntry = {
   state: string;
   last_error: string | null;
   dispatch_failure_count: number;
+  last_failure_kind: 'automatic' | 'send_now' | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -791,6 +792,7 @@ function seedSteeringQueueEntry(input: {
     state: input.state ?? 'queued',
     last_error: null,
     dispatch_failure_count: 0,
+    last_failure_kind: null,
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -1044,7 +1046,8 @@ mock.module('@archon/core/db/workflow-steering', () => ({
     workflowRunId: string,
     nodeId: string,
     messageIds: readonly string[],
-    failureMessage: string
+    failureMessage: string,
+    failureKind: 'automatic' | 'send_now'
   ) => {
     const ids = new Set(messageIds);
     for (const entry of mockSteeringQueue) {
@@ -1057,6 +1060,7 @@ mock.module('@archon/core/db/workflow-steering', () => ({
         entry.state = 'queued';
         entry.last_error = failureMessage;
         entry.dispatch_failure_count += 1;
+        entry.last_failure_kind = failureKind;
         entry.updated_at = new Date();
       }
     }
@@ -7599,6 +7603,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
             state: 'queued',
             last_error: null,
             dispatch_failure_count: 0,
+            last_failure_kind: null,
           },
           {
             message_id: B2,
@@ -7607,6 +7612,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
             state: 'queued',
             last_error: null,
             dispatch_failure_count: 0,
+            last_failure_kind: null,
           },
           {
             message_id: A1,
@@ -7615,6 +7621,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
             state: 'queued',
             last_error: null,
             dispatch_failure_count: 0,
+            last_failure_kind: null,
           },
           {
             message_id: A2,
@@ -7623,6 +7630,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
             state: 'queued',
             last_error: null,
             dispatch_failure_count: 0,
+            last_failure_kind: null,
           },
         ],
       });
@@ -7630,6 +7638,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
         expect(Object.keys(row).sort()).toEqual([
           'dispatch_failure_count',
           'last_error',
+          'last_failure_kind',
           'message',
           'message_id',
           'operator_user_id',
@@ -9239,6 +9248,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
           state: 'queued',
           last_error: null,
           dispatch_failure_count: 0,
+          last_failure_kind: null,
         },
         {
           message_id: STEER_MESSAGE_ID_2,
@@ -9247,6 +9257,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
           state: 'queued',
           last_error: null,
           dispatch_failure_count: 0,
+          last_failure_kind: null,
         },
       ],
     });
@@ -9293,6 +9304,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
           state: 'queued',
           last_error: null,
           dispatch_failure_count: 0,
+          last_failure_kind: null,
         },
         {
           message_id: STEER_MESSAGE_ID_2,
@@ -9301,6 +9313,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
           state: 'queued',
           last_error: null,
           dispatch_failure_count: 0,
+          last_failure_kind: null,
         },
       ],
     });
@@ -9376,6 +9389,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
       reverted.state = 'queued';
       reverted.last_error = 'provider startup boom';
       reverted.dispatch_failure_count += 1;
+      reverted.last_failure_kind = 'automatic';
     }
     const { app } = makeApp();
     const res = await getNodeQueue(app);
@@ -9385,6 +9399,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
         state: string;
         last_error: string | null;
         dispatch_failure_count: number;
+        last_failure_kind: string | null;
       }>;
     };
 
@@ -9393,12 +9408,14 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
       state: 'queued',
       last_error: 'provider startup boom',
       dispatch_failure_count: 1,
+      last_failure_kind: 'automatic',
     });
     expect(body.queued[1]).toMatchObject({
       message_id: STEER_MESSAGE_ID_2,
       state: 'dispatching',
       last_error: null,
       dispatch_failure_count: 0,
+      last_failure_kind: null,
     });
   });
 
@@ -10079,6 +10096,7 @@ describe('steering lifecycle classification — a settings row alone is never pr
         state: string;
         last_error: string | null;
         dispatch_failure_count: number;
+        last_failure_kind: string | null;
       }[];
     };
     expect(queueBody.execution_state).toBe('recovery_required');
@@ -10090,6 +10108,7 @@ describe('steering lifecycle classification — a settings row alone is never pr
         state: 'queued',
         last_error: null,
         dispatch_failure_count: 0,
+        last_failure_kind: null,
       },
     ]);
   });

@@ -35,6 +35,7 @@ import {
   type ClaimedSteeringMessage,
   type EnqueueSteeringMessageInput,
   type EnqueueSteeringMessageResult,
+  type SteeringDispatchFailureKind,
   type SteeringDraft,
   type SteeringDraftKey,
   type SteeringNodeSettings,
@@ -244,7 +245,7 @@ export async function upsertSteeringNodeSettings(
 }
 
 const QUEUE_COLUMNS =
-  'id, workflow_run_id, node_id, message_id, message, operator_user_id, fifo_position, state, last_error, dispatch_failure_count, created_at, updated_at';
+  'id, workflow_run_id, node_id, message_id, message, operator_user_id, fifo_position, state, last_error, dispatch_failure_count, last_failure_kind, created_at, updated_at';
 
 function parseQueueRow(raw: unknown): SteeringQueueEntry {
   const row = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
@@ -499,7 +500,9 @@ export async function markSteeringMessageDelivered(
  * was claimed first, so its position was already the smallest). `last_error`
  * carries the durable evidence the dock renders; `dispatch_failure_count`
  * is incremented, never capped — an operator's own Send now decides when to
- * stop retrying, not a server-side limit. Idempotent: the `state = 'dispatching'`
+ * stop retrying, not a server-side limit. `failureKind` names the attempt
+ * that claimed the entry (`automatic` or `send_now`) so the dock's failure
+ * copy never assumes automatic. Idempotent: the `state = 'dispatching'`
  * guard makes a second call for an already-reverted (or since-advanced)
  * entry a no-op.
  */
@@ -507,20 +510,22 @@ export async function revertSteeringQueueClaim(
   workflowRunId: string,
   nodeId: string,
   messageIds: readonly string[],
-  failureMessage: string
+  failureMessage: string,
+  failureKind: SteeringDispatchFailureKind
 ): Promise<void> {
   if (messageIds.length === 0) return;
   const dialect = getDialect();
-  const idPlaceholders = messageIds.map((_, i) => `$${String(i + 4)}`).join(', ');
+  const idPlaceholders = messageIds.map((_, i) => `$${String(i + 5)}`).join(', ');
   await pool.query(
     `UPDATE remote_agent_steering_queue_entries
      SET state = 'queued',
          last_error = $3,
          dispatch_failure_count = dispatch_failure_count + 1,
+         last_failure_kind = $4,
          updated_at = ${dialect.now()}
      WHERE workflow_run_id = $1 AND node_id = $2 AND state = 'dispatching'
        AND message_id IN (${idPlaceholders})`,
-    [workflowRunId, nodeId, failureMessage, ...messageIds]
+    [workflowRunId, nodeId, failureMessage, failureKind, ...messageIds]
   );
 }
 

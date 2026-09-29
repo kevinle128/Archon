@@ -17,7 +17,6 @@ import { buildAgentHistory, type AgentHistory, type AgentHistoryItem } from '@/l
 import {
   bareNodeLabel,
   buildExecutionHeader,
-  isRoomRecoveryRequired,
   loopMaxIterationsForNode,
   nodeKindChip,
   resolveGapHoldStatus,
@@ -1145,7 +1144,7 @@ export function ConsoleNodeRoom({
         runOfTotal={runOfTotal}
         idleAwaitExpired={idleAwaitExpired}
         iterationPrefix={iterationPrefix}
-        recoveryRequired={isRoomRecoveryRequired(dockExecutionState, computedHeader.status)}
+        recoveryRequired={dockExecutionState === 'recovery_required'}
       />
     );
 

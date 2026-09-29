@@ -1132,29 +1132,6 @@ export function resolveRunDetailRefetchIntervalMs(
 }
 
 /**
- * The room header's `recoveryRequired` pill input. A restart-recovered
- * node's dock read moves `recovery_required` -> `finished` the instant its
- * own ~1s queue poll observes the node settled — routinely BEFORE the
- * row/run status projection that pill also reads (`buildExecutionHeader`'s
- * own `runStatus` fold, refreshed by SSE or a slower heartbeat) has caught
- * up. Treating only the raw `recovery_required` signal as recovery-required
- * let that gap render a stale `Running`/`Waiting on you` pill for however
- * long the OTHER poll took. `finished` counts the same, for as long as
- * `status` — the value this decision is actually protecting — still reads
- * non-terminal; once that status itself becomes terminal (from either poll
- * landing), this stops mattering on its own, so it can never wedge the pill
- * on `Recovery required` after the run has genuinely settled.
- */
-export function isRoomRecoveryRequired(
-  dockExecutionState: SteeringExecutionState | null,
-  status: string | null
-): boolean {
-  if (dockExecutionState === 'recovery_required') return true;
-  if (dockExecutionState !== 'finished') return false;
-  return status === null || NON_TERMINAL_NODE_STATUSES.has(status);
-}
-
-/**
  * True on the exact edge a dock's queue read first reports `finished` while
  * the cached run entity is still non-terminal — the moment to force an
  * immediate run refetch instead of waiting on SSE (which a tab's own

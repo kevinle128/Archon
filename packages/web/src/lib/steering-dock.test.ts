@@ -87,7 +87,10 @@ function guidanceRow(
   messageId: string,
   message: string,
   overrides?: Partial<
-    Pick<QueuedGuidanceRow, 'operator_user_id' | 'state' | 'last_error' | 'dispatch_failure_count'>
+    Pick<
+      QueuedGuidanceRow,
+      'operator_user_id' | 'state' | 'last_error' | 'dispatch_failure_count' | 'last_failure_kind'
+    >
   >
 ): QueuedGuidanceRow {
   return {
@@ -97,6 +100,7 @@ function guidanceRow(
     state: overrides?.state ?? 'queued',
     last_error: overrides?.last_error ?? null,
     dispatch_failure_count: overrides?.dispatch_failure_count ?? 0,
+    last_failure_kind: overrides?.last_failure_kind ?? null,
   };
 }
 
@@ -471,6 +475,7 @@ describe('submission state transitions', () => {
         operatorUserId: null,
         lastError: null,
         dispatchFailureCount: 0,
+        lastFailureKind: null,
       },
     ]);
     expect(next.sendInFlight).toBe(false);
@@ -531,6 +536,7 @@ describe('withdraw transitions', () => {
     operatorUserId: null,
     lastError: null,
     dispatchFailureCount: 0,
+    lastFailureKind: null,
   });
 
   function stateWith(
@@ -914,6 +920,7 @@ describe('per-item Send now transitions', () => {
     operatorUserId: null,
     lastError: null,
     dispatchFailureCount: 0,
+    lastFailureKind: null,
   });
 
   function stateWith(
@@ -985,6 +992,7 @@ describe('pendingQueueCount', () => {
       operatorUserId: null,
       lastError: null,
       dispatchFailureCount: 0,
+      lastFailureKind: null,
     };
   }
 
@@ -1036,6 +1044,7 @@ describe('allPendingDispatching', () => {
       operatorUserId: null,
       lastError: null,
       dispatchFailureCount: 0,
+      lastFailureKind: null,
     };
   }
 
@@ -1111,6 +1120,7 @@ describe('visiblePendingReceipts', () => {
       operatorUserId: null,
       lastError: null,
       dispatchFailureCount: 0,
+      lastFailureKind: null,
     };
   }
 
@@ -1294,6 +1304,7 @@ function receipt(messageId: string, message: string): LocalSentReceipt {
     operatorUserId: null,
     lastError: null,
     dispatchFailureCount: 0,
+    lastFailureKind: null,
   };
 }
 
@@ -2170,10 +2181,16 @@ describe('steeringDockMode: finished requires explicit node-terminal evidence or
     expect(modeFor('running', { live: false, neverSent: [], nodeTerminal: false })).toBe('hidden');
   });
 
-  test('an empty or unresolved never-sent result preserves the ordinary table', () => {
-    expect(modeFor('running', { neverSent: null, nodeTerminal: true })).toBe('composer');
-    expect(modeFor('running', { neverSent: [], nodeTerminal: true })).toBe('composer');
-    expect(modeFor('awaiting', { neverSent: [], nodeTerminal: true })).toBe('blocked');
+  // Proven node-terminal evidence overrides the ordinary rowStatus-driven
+  // table (composer/blocked/detached) even with nothing undelivered to show:
+  // a terminal node never keeps offering to send while a separately-cadenced
+  // rowStatus/live prop still reads live. A finished-iteration descriptor is
+  // the one thing that still wins first (a completed occurrence on a
+  // still-live loop reads as history, not as the node itself being done).
+  test('proven node-terminal evidence with nothing undelivered hides the dock outright', () => {
+    expect(modeFor('running', { neverSent: null, nodeTerminal: true })).toBe('hidden');
+    expect(modeFor('running', { neverSent: [], nodeTerminal: true })).toBe('hidden');
+    expect(modeFor('awaiting', { neverSent: [], nodeTerminal: true })).toBe('hidden');
     expect(modeFor('completed', { neverSent: null, nodeTerminal: true })).toBe('hidden');
     expect(
       modeFor('completed', {
@@ -2188,7 +2205,7 @@ describe('steeringDockMode: finished requires explicit node-terminal evidence or
         nodeTerminal: true,
         refusal: { code: 'not_steerable_here', message: 'detached' },
       })
-    ).toBe('detached');
+    ).toBe('hidden');
   });
 
   test('copy and accessible labels are exact', () => {
@@ -2255,8 +2272,17 @@ describe('idle-await disclosure and keepalive coalescer', () => {
     expect(dispatchFailedEntry([delivered])).toBeNull();
   });
 
-  test('dispatchFailureDisclosure names the exact failure evidence', () => {
-    expect(dispatchFailureDisclosure('provider startup boom')).toBe(
+  test('dispatchFailureDisclosure names the exact failure evidence and the attempt that failed', () => {
+    expect(dispatchFailureDisclosure('provider startup boom', 'automatic')).toBe(
+      'automatic dispatch failed · provider startup boom · Send now to retry'
+    );
+    expect(dispatchFailureDisclosure('provider startup boom', 'send_now')).toBe(
+      'Send now failed · provider startup boom · Send now to retry'
+    );
+    // Pre-existing data from before this field existed reads as automatic —
+    // the only kind that could have failed before Send now retry was itself
+    // trackable.
+    expect(dispatchFailureDisclosure('provider startup boom', null)).toBe(
       'automatic dispatch failed · provider startup boom · Send now to retry'
     );
   });

@@ -1105,6 +1105,37 @@ describe('ConsoleComposerDock', () => {
     expect(sendNowButton()).not.toBeNull();
   });
 
+  // An operator's own Send now retry can fail again (same bad text, a
+  // still-unreachable provider) — the alert must name THAT attempt, never
+  // fall back to claiming it was automatic.
+  test('a retryable dispatch failure from an operator Send now retry names Send now, not automatic', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+      subState: 'idle-after-interrupt',
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue(
+        [
+          {
+            message_id: 'id-a',
+            message: 'redirect',
+            state: 'queued',
+            last_error: 'provider startup boom',
+            dispatch_failure_count: 2,
+            last_failure_kind: 'send_now',
+          },
+        ],
+        { sub_state: 'idle-after-interrupt' }
+      )
+    );
+    const alert = host.querySelector('[role="alert"]');
+    expect(alert?.getAttribute('aria-live')).toBe('assertive');
+    expect(alert?.textContent).toBe('Send now failed · provider startup boom · Send now to retry');
+  });
+
   test('an observer sees a durably-queued row stop offering withdraw the instant the projected sub-state advances past it, ahead of its own next poll', async () => {
     // Simulates the observer shell: it learns `idle-after-interrupt` →
     // `generating` from a faster external signal (a host prop backed by
@@ -1298,6 +1329,7 @@ describe('ConsoleComposerDock', () => {
       state?: ReadWorkflowNodeQueueResponse['queued'][number]['state'];
       last_error?: string | null;
       dispatch_failure_count?: number;
+      last_failure_kind?: 'automatic' | 'send_now' | null;
     }[],
     overrides?: Partial<Omit<ReadWorkflowNodeQueueResponse, 'success' | 'queued'>>
   ): ReadWorkflowNodeQueueResponse {
@@ -1313,6 +1345,7 @@ describe('ConsoleComposerDock', () => {
         state: row.state ?? 'queued',
         last_error: row.last_error ?? null,
         dispatch_failure_count: row.dispatch_failure_count ?? 0,
+        last_failure_kind: row.last_failure_kind ?? null,
       })),
       sub_state: overrides?.sub_state ?? null,
     };
@@ -2482,12 +2515,18 @@ describe('ConsoleComposerDock', () => {
     await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
     await settleSnapshot(
       ctrl,
-      okQueue([
-        { message_id: 'id-a', message: 'alpha', state: 'delivery_unknown' },
-        { message_id: 'id-b', message: 'beta', state: 'never_sent' },
-      ])
+      okQueue(
+        [
+          { message_id: 'id-a', message: 'alpha', state: 'delivery_unknown' },
+          { message_id: 'id-b', message: 'beta', state: 'never_sent' },
+        ],
+        { execution_state: 'finished' }
+      )
     );
     const items = neverSentItems();
+    // The header count and the rendered rows are the same list — they can
+    // never disagree.
+    expect(neverSentList()?.getAttribute('aria-label')).toBe('Never sent, 2');
     expect(items.map(item => item.getAttribute('data-message-id'))).toEqual(['id-a', 'id-b']);
     expect(items[0]?.textContent).toBe('1alphadelivery unknown');
     expect(items[1]?.textContent).toBe('2beta');
@@ -2515,6 +2554,12 @@ describe('ConsoleComposerDock', () => {
     await clickDelete(1);
     expect(withdrawCalls.some(c => c.messageId === 'id-b')).toBe(true);
     await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
+    // The withdraw's own corrective re-read (kicked while still polling,
+    // before this render stopped it) is still pending from that earlier
+    // moment; its eventual response is discarded once polling itself
+    // stopped, so drain it before settling the terminal one-shot fetch this
+    // render also triggered — the one carrying the durable answer.
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'keep' }]));
     await settleSnapshot(
       ctrl,
       okQueue([{ message_id: 'id-a', message: 'keep', state: 'never_sent' }])
@@ -2534,6 +2579,44 @@ describe('ConsoleComposerDock', () => {
     );
     expect(host.querySelector('ul')).toBeNull();
     expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  // The host's own `nodeTerminal` prop (fed by a faster external signal,
+  // e.g. another tab's Send now completing the node) can flip true before
+  // THIS dock's own next queue poll has reconciled the item that prop refers
+  // to — this tab's last-known local snapshot can still call it `queued`
+  // even though the server already delivered it. The never-sent band must
+  // never render that stale local entry: it renders nothing until the
+  // server's own terminal reconciliation (`dock.neverSent`) says otherwise,
+  // then reflects exactly that — which, for an item that was actually
+  // delivered, is nothing at all.
+  test("nodeTerminal arriving ahead of this dock's own queue poll never paints a stale local queue row as never-sent", async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, nodeTerminal: false, rowStatus: 'running' });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha', state: 'queued' }])
+    );
+    expect(host.querySelector('textarea')).not.toBeNull();
+
+    // The host's faster external signal lands; this dock's own queue read
+    // has not caught up yet (no new snapshot settled).
+    await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
+    expect(neverSentList()).toBeNull();
+    expect(host.textContent ?? '').not.toContain('alpha');
+
+    // The dock's own terminal one-shot fetch resolves: the server says the
+    // node is finished AND the item was actually delivered elsewhere, not
+    // never-sent — the gate is open now (this read itself reports
+    // `finished`), but a `delivered` row is still excluded on its own merits.
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha', state: 'delivered' }], {
+        execution_state: 'finished',
+      })
+    );
+    expect(neverSentList()).toBeNull();
+    expect(host.textContent ?? '').not.toContain('alpha');
   });
 
   test('exact finished anatomy: heading, alert, and no controls', async () => {
@@ -2567,10 +2650,17 @@ describe('ConsoleComposerDock', () => {
     // Abandon flips the run non-live at once; the node's own node_failed can
     // land tens of seconds later. The queued item must stay visible as
     // read-only through that whole window, not vanish until node_failed
-    // arrives.
+    // arrives. The server reports `execution_state: 'finished'` for any
+    // terminal run the instant it reads it (see api.ts's `isFinished`),
+    // regardless of whether this specific row's own reconciliation has
+    // landed yet — this dock's own read is what says so, which is exactly
+    // the one signal the still-queued row is trustworthy under.
     const ctrl = controllableRead();
     await renderDock({ readQueue: ctrl.read, live: false, nodeTerminal: false });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'redirect' }]));
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'redirect' }], { execution_state: 'finished' })
+    );
     expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
     expect(host.querySelector('textarea')).toBeNull();
     expect(

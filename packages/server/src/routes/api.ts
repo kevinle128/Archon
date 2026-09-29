@@ -6115,6 +6115,7 @@ export function registerApiRoutes(
               state: entry.state === 'withdrawn' ? ('delivery_unknown' as const) : entry.state,
               last_error: entry.last_error,
               dispatch_failure_count: entry.dispatch_failure_count,
+              last_failure_kind: entry.last_failure_kind,
             })),
             sub_state: handle?.steeringSubState() ?? null,
           },

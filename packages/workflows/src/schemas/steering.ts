@@ -52,6 +52,17 @@ export const STEERING_QUEUE_VISIBLE_STATES = STEERING_QUEUE_STATES.filter(
   state => state !== 'withdrawn'
 ) as readonly Exclude<SteeringQueueState, 'withdrawn'>[];
 
+/**
+ * Which attempt claimed an entry that a retryable dispatch failure then
+ * reverted to `queued`: `automatic` is the executor's own wake-and-claim
+ * after a natural turn boundary; `send_now` is an operator-triggered claim
+ * (blank or typed). Recorded alongside `last_error` so the dock's failure
+ * copy names the attempt that actually failed, never assuming automatic.
+ */
+export const STEERING_DISPATCH_FAILURE_KINDS = ['automatic', 'send_now'] as const;
+
+export type SteeringDispatchFailureKind = (typeof STEERING_DISPATCH_FAILURE_KINDS)[number];
+
 const nullableOperatorUserIdSchema = z.string().min(1).nullable();
 
 export const steeringDraftSchema = z
@@ -103,6 +114,8 @@ export const steeringQueueEntrySchema = z
     last_error: z.string().nullable(),
     /** Count of retryable automatic-dispatch failures this entry has been reverted from; never caps a retry. */
     dispatch_failure_count: z.number().int().min(0),
+    /** Attempt kind behind the most recent `last_error`; null until the first failure. */
+    last_failure_kind: z.enum(STEERING_DISPATCH_FAILURE_KINDS).nullable(),
     created_at: z.union([z.date(), z.string()]),
     updated_at: z.union([z.date(), z.string()]),
   })

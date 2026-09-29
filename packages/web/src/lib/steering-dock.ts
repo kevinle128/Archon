@@ -30,6 +30,15 @@ const STEERING_QUEUE_CLAIMABLE_STATES: readonly SteeringQueueItemState[] = [
   'awaiting_send_now',
 ];
 
+/**
+ * Which attempt claimed a queue entry that a retryable dispatch failure then
+ * reverted to `queued`, mirrored from the engine's
+ * `STEERING_DISPATCH_FAILURE_KINDS` (`packages/workflows/src/schemas/steering.ts`).
+ * `automatic` is the executor's own wake-and-claim after a natural turn
+ * boundary; `send_now` is an operator-triggered claim (blank or typed).
+ */
+export type SteeringDispatchFailureKind = 'automatic' | 'send_now';
+
 /** States a mounted dock still tracks as pending (not yet resolved). */
 const STEERING_QUEUE_PENDING_STATES: readonly SteeringQueueItemState[] = [
   'queued',
@@ -75,6 +84,12 @@ export interface LocalSentReceipt {
   readonly lastError: string | null;
   /** Count of retryable automatic-dispatch failures this entry has been reverted from. */
   readonly dispatchFailureCount: number;
+  /**
+   * Which attempt claimed this entry behind the most recent `lastError`:
+   * `automatic` (the executor's own wake-and-claim) or `send_now` (an
+   * operator-triggered retry). Null until the first failure.
+   */
+  readonly lastFailureKind: SteeringDispatchFailureKind | null;
 }
 
 export interface PendingSubmission {
@@ -230,9 +245,21 @@ export function dispatchFailedEntry(sent: readonly LocalSentReceipt[]): LocalSen
   return sent.find(entry => entry.state === 'queued' && entry.lastError !== null) ?? null;
 }
 
-/** Exact dispatch-failure alert copy, naming the reverted entry's evidence. */
-export function dispatchFailureDisclosure(lastError: string): string {
-  return `automatic dispatch failed · ${lastError} · Send now to retry`;
+/**
+ * Exact dispatch-failure alert copy, naming the reverted entry's evidence
+ * AND the attempt that actually failed — an operator Send now retry that
+ * fails again must never be reported as "automatic", and vice versa.
+ * `lastFailureKind` is the server's own record of which attempt claimed the
+ * entry (see `LocalSentReceipt.lastFailureKind`); `null` only for data from
+ * before this field existed, treated as automatic (the only kind that could
+ * have failed before Send now retry was itself trackable).
+ */
+export function dispatchFailureDisclosure(
+  lastError: string,
+  lastFailureKind: SteeringDispatchFailureKind | null
+): string {
+  const attempt = lastFailureKind === 'send_now' ? 'Send now' : 'automatic dispatch';
+  return `${attempt} failed · ${lastError} · Send now to retry`;
 }
 
 /** Exact finished-iteration disclosure; N is the proven live iteration. */
@@ -262,16 +289,22 @@ export const STEERING_RECOVERY_DISCLOSURE =
  * surfaces recovery); otherwise a non-live run hides the dock entirely; a
  * proven finished-iteration descriptor wins before the terminal-row hide
  * check so a completed occurrence on a still-live loop can surface the
- * read-only dock; otherwise a non-generating row hides the dock
- * (historical/cold executions must never issue a request); a real pending
- * ask keeps its blocked reason even when a refusal is stored — no request
- * should have been made from that state; only then does a stored 422
- * `not_steerable_here` flip the dock to the detached disclosure.
+ * read-only dock; a node already proven terminal (with nothing undelivered
+ * to show) hides outright rather than falling through to the row-status
+ * check below — a terminal node never keeps a live composer up just because
+ * a slower-cadenced `rowStatus`/`live` prop has not caught up to the same
+ * fact yet; otherwise a non-generating row hides the dock (historical/cold
+ * executions must never issue a request); a real pending ask keeps its
+ * blocked reason even when a refusal is stored — no request should have been
+ * made from that state; only then does a stored 422 `not_steerable_here`
+ * flip the dock to the detached disclosure.
  *
  * `neverSent` is the caller's render-time union of the server's durable
- * `never_sent` rows, the still-pending queue, and the operator's own
- * still-unsent draft text — never a client-side ledger. `finished` still
- * requires nonempty `neverSent`, so a terminal (or non-live) node with
+ * `never_sent` rows, the operator's own still-unsent draft text, and — only
+ * when this dock's OWN queue read is what reported the node finished, never
+ * from a faster external signal — the still-pending local queue (see
+ * `isPossiblyNeverSent`'s doc comment). `finished` still requires nonempty
+ * `neverSent`, so a terminal (or non-live) node with
  * nothing undelivered and a blank draft correctly falls through to hidden —
  * matching "no dock at all" once nothing survives to show. A cold-opened
  * terminal run reaches this mode as soon as its one-shot queue/draft reads
@@ -329,6 +362,14 @@ export function steeringDockMode(input: {
   if (input.finishedIteration !== null && input.finishedIteration !== undefined) {
     return 'finished-iteration';
   }
+  // Proven terminal with nothing undelivered to show (the branch above
+  // already claimed the nonempty-neverSent case): hide outright instead of
+  // falling through to the rowStatus check, which reads a separately
+  // cadenced prop that can still say `running`/`awaiting` for a short
+  // window after this dock's own queue read already learned the node is
+  // done — a finished node must never keep a live composer up while that
+  // other signal catches up.
+  if (input.nodeTerminal === true) return 'hidden';
   if (input.rowStatus !== 'running' && input.rowStatus !== 'awaiting') return 'hidden';
   if (steeringBlockedReason(input) !== null) return 'blocked';
   if (input.refusal?.code === STEERING_NOT_STEERABLE_CODE) return 'detached';
@@ -522,6 +563,10 @@ export function isQueueItemClaimable(state: SteeringQueueItemState): boolean {
  * (`dispatching`, `sent`, `delivered`) already left the queue for the
  * transcript — the opposite of undelivered — so it must never render as
  * never-sent ahead of the terminal reconciliation result (server truth).
+ * Callers gate this on `dock.executionState === 'finished'` — the one
+ * signal that is this dock's OWN queue read, not a faster external prop —
+ * before trusting the local row at all; see `finishedEntries` in
+ * ComposerDock.tsx / ConsoleComposerDock.tsx.
  */
 export function isPossiblyNeverSent(state: SteeringQueueItemState): boolean {
   return !isQueueItemInFlight(state);
@@ -680,6 +725,7 @@ export function resolveGuidanceSuccess(
     operatorUserId: null,
     lastError: null,
     dispatchFailureCount: 0,
+    lastFailureKind: null,
   };
   const sent = [...state.sent, accepted];
   return {
@@ -749,6 +795,7 @@ export function beginSendNow(
             operatorUserId: null,
             lastError: null,
             dispatchFailureCount: 0,
+            lastFailureKind: null,
           },
         ];
   return {
@@ -1040,6 +1087,8 @@ export interface QueuedGuidanceRow {
   readonly last_error: string | null;
   /** Count of retryable automatic-dispatch failures this row has been reverted from. */
   readonly dispatch_failure_count: number;
+  /** Which attempt claimed this row behind the most recent `last_error`; null until the first failure. */
+  readonly last_failure_kind: SteeringDispatchFailureKind | null;
 }
 
 /** The queue-read wire payload — the durable node queue in server FIFO order. */
@@ -1130,6 +1179,7 @@ export function applyQueueSnapshot(
       operatorUserId: row.operator_user_id,
       lastError: row.last_error,
       dispatchFailureCount: row.dispatch_failure_count,
+      lastFailureKind: row.last_failure_kind,
     }));
   const nextNeverSent: NeverSentEntry[] = snapshot.queued
     .filter(row => row.state === 'never_sent')
@@ -1147,7 +1197,8 @@ export function applyQueueSnapshot(
         row.state === state.sent[i].state &&
         row.operatorUserId === state.sent[i].operatorUserId &&
         row.lastError === state.sent[i].lastError &&
-        row.dispatchFailureCount === state.sent[i].dispatchFailureCount
+        row.dispatchFailureCount === state.sent[i].dispatchFailureCount &&
+        row.lastFailureKind === state.sent[i].lastFailureKind
     );
   const neverSentUnchanged =
     state.neverSent !== null &&

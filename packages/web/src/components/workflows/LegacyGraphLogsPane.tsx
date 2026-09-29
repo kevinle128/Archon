@@ -119,6 +119,14 @@ export interface LegacyGraphLogsPaneProps {
   onScrollTopChange?: (scrollTop: number) => void;
   askDrafts?: AskDraftByRequest;
   onAskDraftChange?: (requestId: string, draft: AskDraft) => void;
+  /**
+   * Invalidate the cached run entity on the exact edge a node room's own
+   * dock learns (via its faster-cadenced queue read) that the node just
+   * settled, before the run's own status poll/SSE has caught up — see
+   * `shouldRefetchRunOnDockFinished`. Omitted in a context with no run-entity
+   * cache to invalidate (e.g. a standalone render in tests).
+   */
+  onRunSettleHint?: () => void;
 }
 
 export function runChatMessagesRefetchInterval(status: WorkflowRunStatus): 3000 | false {
@@ -245,6 +253,7 @@ export function LegacyGraphLogsPane({
   onScrollTopChange,
   askDrafts,
   onAskDraftChange,
+  onRunSettleHint,
 }: LegacyGraphLogsPaneProps): React.ReactElement {
   const stacked = useStackedViewport();
   const paneRef = useRef<HTMLDivElement>(null);
@@ -566,6 +575,7 @@ export function LegacyGraphLogsPane({
         onScrollTopChange={onScrollTopChange}
         askDrafts={askDrafts}
         onAskDraftChange={onAskDraftChange}
+        onRunSettleHint={onRunSettleHint}
       />
       {roomFooter}
     </div>

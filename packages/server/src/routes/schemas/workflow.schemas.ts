@@ -705,6 +705,14 @@ export const readWorkflowNodeQueueParamsSchema = z
   .strict();
 
 /**
+ * Which attempt claimed a queue entry that a retryable dispatch failure then
+ * reverted to `queued`: `automatic` is the executor's own wake-and-claim
+ * after a natural turn boundary; `send_now` is an operator-triggered claim
+ * (blank or typed).
+ */
+export const steeringDispatchFailureKindSchema = z.enum(['automatic', 'send_now']);
+
+/**
  * One durable queue row on the wire, in server FIFO order. `message` stays
  * an untransformed string — the durable store holds text the send route
  * accepted verbatim. `message_id` is the caller-stamped UUID correlation
@@ -715,6 +723,8 @@ export const readWorkflowNodeQueueParamsSchema = z
  * a distinct terminal state — see `revertSteeringQueueClaim`), or that
  * terminal reconciliation marked `never_sent`; `last_error` is `null` and
  * `dispatch_failure_count` is `0` for an entry that never failed.
+ * `last_failure_kind` names the attempt behind the most recent `last_error`;
+ * `null` until the first failure.
  */
 export const queuedGuidanceMessageSchema = z
   .object({
@@ -724,6 +734,7 @@ export const queuedGuidanceMessageSchema = z
     state: steeringQueueItemStateSchema,
     last_error: z.string().nullable(),
     dispatch_failure_count: z.number().int().min(0),
+    last_failure_kind: steeringDispatchFailureKindSchema.nullable(),
   })
   .strict()
   .openapi('QueuedGuidanceMessage');

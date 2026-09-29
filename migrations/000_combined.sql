@@ -817,6 +817,7 @@ CREATE TABLE IF NOT EXISTS remote_agent_steering_queue_entries (
   state VARCHAR(32) NOT NULL DEFAULT 'queued',
   last_error TEXT,
   dispatch_failure_count INTEGER NOT NULL DEFAULT 0,
+  last_failure_kind VARCHAR(16),
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_steering_queue_run_node_message
@@ -855,6 +856,9 @@ ALTER TABLE remote_agent_pending_interactions
 
 ALTER TABLE remote_agent_steering_queue_entries
   ADD COLUMN IF NOT EXISTS dispatch_failure_count INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE remote_agent_steering_queue_entries
+  ADD COLUMN IF NOT EXISTS last_failure_kind VARCHAR(16);
 
 -- ============================================================================
 -- Table 24: Workflow node execution evidence (git attribution)
@@ -1161,6 +1165,8 @@ COMMENT ON COLUMN remote_agent_steering_queue_entries.last_error IS
   'Failure evidence for a returned-to-queue or never_sent entry; NULL otherwise.';
 COMMENT ON COLUMN remote_agent_steering_queue_entries.dispatch_failure_count IS
   'Count of retryable automatic-dispatch failures this entry has been reverted from; 0 until the first one. Never resets, and never caps a retry — each operator Send now simply tries again.';
+COMMENT ON COLUMN remote_agent_steering_queue_entries.last_failure_kind IS
+  'Which attempt kind the most recent revert-to-queued came from: automatic (auto-send claim) or send_now (operator-triggered retry); NULL until the first failure. Paired with last_error so the dock names the attempt that actually failed.';
 
 -- Steering node settings
 COMMENT ON COLUMN remote_agent_steering_node_settings.auto_send_enabled IS
