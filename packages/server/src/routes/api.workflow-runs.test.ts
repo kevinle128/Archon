@@ -716,6 +716,7 @@ type MockSteeringQueueEntry = {
   fifo_position: number;
   state: string;
   last_error: string | null;
+  dispatch_failure_count: number;
   created_at: Date;
   updated_at: Date;
 };
@@ -789,6 +790,7 @@ function seedSteeringQueueEntry(input: {
     fifo_position: scopedMax + 1,
     state: input.state ?? 'queued',
     last_error: null,
+    dispatch_failure_count: 0,
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -1037,6 +1039,27 @@ mock.module('@archon/core/db/workflow-steering', () => ({
       }
     }
     return { count };
+  },
+  revertSteeringQueueClaim: async (
+    workflowRunId: string,
+    nodeId: string,
+    messageIds: readonly string[],
+    failureMessage: string
+  ) => {
+    const ids = new Set(messageIds);
+    for (const entry of mockSteeringQueue) {
+      if (
+        entry.workflow_run_id === workflowRunId &&
+        entry.node_id === nodeId &&
+        entry.state === 'dispatching' &&
+        ids.has(entry.message_id)
+      ) {
+        entry.state = 'queued';
+        entry.last_error = failureMessage;
+        entry.dispatch_failure_count += 1;
+        entry.updated_at = new Date();
+      }
+    }
   },
 }));
 
@@ -7569,14 +7592,44 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
         capabilities: { soft_injection: false, delivery_ack: false },
         sub_state: null,
         queued: [
-          { message_id: B1, message: 'from-b-1', operator_user_id: OP_B, state: 'queued' },
-          { message_id: B2, message: 'from-b-2', operator_user_id: OP_B, state: 'queued' },
-          { message_id: A1, message: 'from-a-1', operator_user_id: OP_A, state: 'queued' },
-          { message_id: A2, message: 'from-a-2', operator_user_id: OP_A, state: 'queued' },
+          {
+            message_id: B1,
+            message: 'from-b-1',
+            operator_user_id: OP_B,
+            state: 'queued',
+            last_error: null,
+            dispatch_failure_count: 0,
+          },
+          {
+            message_id: B2,
+            message: 'from-b-2',
+            operator_user_id: OP_B,
+            state: 'queued',
+            last_error: null,
+            dispatch_failure_count: 0,
+          },
+          {
+            message_id: A1,
+            message: 'from-a-1',
+            operator_user_id: OP_A,
+            state: 'queued',
+            last_error: null,
+            dispatch_failure_count: 0,
+          },
+          {
+            message_id: A2,
+            message: 'from-a-2',
+            operator_user_id: OP_A,
+            state: 'queued',
+            last_error: null,
+            dispatch_failure_count: 0,
+          },
         ],
       });
       for (const row of queueBody.queued) {
         expect(Object.keys(row).sort()).toEqual([
+          'dispatch_failure_count',
+          'last_error',
           'message',
           'message_id',
           'operator_user_id',
@@ -9184,12 +9237,16 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
           message: 'first',
           operator_user_id: STEER_STARTER_ID,
           state: 'queued',
+          last_error: null,
+          dispatch_failure_count: 0,
         },
         {
           message_id: STEER_MESSAGE_ID_2,
           message: 'second',
           operator_user_id: STEER_STARTER_ID,
           state: 'queued',
+          last_error: null,
+          dispatch_failure_count: 0,
         },
       ],
     });
@@ -9234,12 +9291,16 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
           message: 'first',
           operator_user_id: STEER_STARTER_ID,
           state: 'queued',
+          last_error: null,
+          dispatch_failure_count: 0,
         },
         {
           message_id: STEER_MESSAGE_ID_2,
           message: 'second',
           operator_user_id: STEER_STARTER_ID,
           state: 'queued',
+          last_error: null,
+          dispatch_failure_count: 0,
         },
       ],
     });
@@ -9297,6 +9358,48 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
       STEER_MESSAGE_ID_3,
     ]);
     expect(claimedBody.queued.every(q => q.state === 'dispatching')).toBe(true);
+  });
+
+  test('exposes failure evidence for an entry a retryable dispatch failure reverted to the front', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID, 'first');
+    queueSteerItem(handle, STEER_MESSAGE_ID_2, 'second');
+    for (const entry of mockSteeringQueue) {
+      if (entry.state === 'queued') entry.state = 'dispatching';
+    }
+    // Simulate what revertSteeringQueueClaim durably applies for a retryable
+    // automatic-dispatch failure: back to 'queued' at its existing
+    // fifo_position (already the front, since it was claimed first), with
+    // failure evidence recorded.
+    const reverted = mockSteeringQueue.find(entry => entry.message_id === STEER_MESSAGE_ID);
+    if (reverted !== undefined) {
+      reverted.state = 'queued';
+      reverted.last_error = 'provider startup boom';
+      reverted.dispatch_failure_count += 1;
+    }
+    const { app } = makeApp();
+    const res = await getNodeQueue(app);
+    const body = (await res.json()) as {
+      queued: Array<{
+        message_id: string;
+        state: string;
+        last_error: string | null;
+        dispatch_failure_count: number;
+      }>;
+    };
+
+    expect(body.queued[0]).toMatchObject({
+      message_id: STEER_MESSAGE_ID,
+      state: 'queued',
+      last_error: 'provider startup boom',
+      dispatch_failure_count: 1,
+    });
+    expect(body.queued[1]).toMatchObject({
+      message_id: STEER_MESSAGE_ID_2,
+      state: 'dispatching',
+      last_error: null,
+      dispatch_failure_count: 0,
+    });
   });
 
   // -- Hot-path cost ----------------------------------------------------------
@@ -9974,6 +10077,8 @@ describe('steering lifecycle classification — a settings row alone is never pr
         message: string;
         operator_user_id: string | null;
         state: string;
+        last_error: string | null;
+        dispatch_failure_count: number;
       }[];
     };
     expect(queueBody.execution_state).toBe('recovery_required');
@@ -9983,6 +10088,8 @@ describe('steering lifecycle classification — a settings row alone is never pr
         message: 'redirect after the restart',
         operator_user_id: 'some-operator',
         state: 'queued',
+        last_error: null,
+        dispatch_failure_count: 0,
       },
     ]);
   });

@@ -31,6 +31,8 @@ import {
   createKeepaliveCoalescer,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  dispatchFailedEntry,
+  dispatchFailureDisclosure,
   effectiveNodeTerminal,
   finishedIterationDisclosure,
   focusTargetAfterSnapshot,
@@ -1337,6 +1339,7 @@ export function ConsoleComposerDock({
 
   const blocked = mode === 'blocked';
   const idle = agentMode === 'idle';
+  const dispatchFailed = dispatchFailedEntry(visibleSent);
   const pendingCount = pendingQueueCount(visibleSent);
   const statusText =
     blocked && blockedReason !== null
@@ -1397,6 +1400,9 @@ export function ConsoleComposerDock({
                     accent={index === 0}
                   >
                     {statusLabel === null ? null : <span className="flex-none">{statusLabel}</span>}
+                    {receipt.lastError !== null ? (
+                      <span className="flex-none text-text-secondary">failed</span>
+                    ) : null}
                     {claimable && canSendItemNow ? (
                       <button
                         type="button"
@@ -1463,9 +1469,19 @@ export function ConsoleComposerDock({
       >
         {idle ? (
           <>
-            <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
-              {STEERING_INTERRUPT_DISCLOSURE}
-            </p>
+            {dispatchFailed !== null ? (
+              <p
+                role="alert"
+                aria-live="assertive"
+                className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+              >
+                {dispatchFailureDisclosure(dispatchFailed.lastError ?? '')}
+              </p>
+            ) : (
+              <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+                {STEERING_INTERRUPT_DISCLOSURE}
+              </p>
+            )}
             <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
               {STEERING_IDLE_AWAIT_DISCLOSURE}
             </p>

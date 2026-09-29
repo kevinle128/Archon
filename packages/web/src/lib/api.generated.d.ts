@@ -6104,6 +6104,8 @@ export interface components {
             operator_user_id: string | null;
             /** @enum {string} */
             state: "queued" | "awaiting_send_now" | "dispatching" | "sent" | "delivered" | "delivery_unknown" | "never_sent";
+            last_error: string | null;
+            dispatch_failure_count: number;
         };
         SteeringDraftResponse: {
             /** @enum {boolean} */

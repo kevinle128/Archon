@@ -709,7 +709,12 @@ export const readWorkflowNodeQueueParamsSchema = z
  * an untransformed string — the durable store holds text the send route
  * accepted verbatim. `message_id` is the caller-stamped UUID correlation
  * key. `operator_user_id` is the author's identity, or `null` for an
- * identity-less (solo, no web auth) install.
+ * identity-less (solo, no web auth) install. `last_error` and
+ * `dispatch_failure_count` carry failure evidence for an entry a retryable
+ * automatic-dispatch failure reverted to `queued` (still at the front, not
+ * a distinct terminal state — see `revertSteeringQueueClaim`), or that
+ * terminal reconciliation marked `never_sent`; `last_error` is `null` and
+ * `dispatch_failure_count` is `0` for an entry that never failed.
  */
 export const queuedGuidanceMessageSchema = z
   .object({
@@ -717,6 +722,8 @@ export const queuedGuidanceMessageSchema = z
     message: z.string(),
     operator_user_id: z.string().nullable(),
     state: steeringQueueItemStateSchema,
+    last_error: z.string().nullable(),
+    dispatch_failure_count: z.number().int().min(0),
   })
   .strict()
   .openapi('QueuedGuidanceMessage');
