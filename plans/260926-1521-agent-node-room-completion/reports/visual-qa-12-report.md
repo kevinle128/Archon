@@ -209,3 +209,20 @@ Status: DONE_WITH_CONCERNS
 Summary: VQ11-1, VQ11-2 and VQ11-3 are fixed in their original triggers, `Recovery required` still shows for a server-reported recovery, Story 7.5 works on prompt and loop nodes, and the provider matrix passes on all six real providers. Three minor findings remain: the qa11 fixes opened a one-frame empty dock on live Abandon (VQ12-1) and a one-frame stale `Running` pill after Abandon of a recovered node (VQ12-2), and focus falls to `<body>` at a loop boundary in the shell that pressed Stop (VQ12-3). One cosmetic item (VQ12-4).
 
 Verdict: REJECT
+
+## Decisions (2026-09-29)
+
+1. **VQ12-1:** the empty-window trade-off in the qa11-fixes report is rejected. The VQ6-3 and VQ9-3 decisions still hold: a queued item stays visible without a gap through the abandon window.
+   - When the node turns terminal before the dock's own queue read has reconciled, the room keeps the last rendered band unchanged, and forces an immediate queue read.
+   - The band does not relabel the item as never-sent until the server reconciles, so VQ11-2 still holds.
+   - After the reconciled read arrives, the room shows `Never sent` or no dock.
+   - No frame shows a terminal room with the undelivered item missing.
+2. **VQ12-2:** after the first frame in which any server read reports the node terminal (run detail, SSE, abandon response, or the dock's own `finished` read), the pill never shows `Running`. This applies to live and restart-recovered nodes, in both shells.
+   - The terminal outcome comes from server data, never from inference.
+   - `Recovery required` still shows only for the literal server state.
+3. **VQ12-3:** focus never falls to `<body>` when a focused transcript row is removed at an iteration boundary.
+   - Focus moves to the equivalent last row of the new selection, or to the transcript region when the new selection has no rows.
+   - The VQ8-2 and VQ8-3 rules stay unchanged.
+4. **VQ12-4:** fixed as well. After its own `Send now` resolves, or on the terminal edge, Legacy refreshes the dock at once, so `SENDING`, `Stop` and `Queue` do not outlive a finished node.
+
+Fixes are owned by the `qa12-fixes` follow-up work.
