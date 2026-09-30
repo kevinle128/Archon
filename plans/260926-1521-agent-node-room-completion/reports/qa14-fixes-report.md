@@ -99,7 +99,7 @@ codebase, every run dispatched over HTTP with `X-Archon-User: qa14-operator`.
   recorded **592** `dag_node`/`workflow_status` messages — it was not
   starved by the other three concurrent subscribers.
 
-Evidence: `evidence/qa14-fixes/vq14-1-results.json` and `vq14-1-run.log`.
+Evidence: `evidence/qa14-fixes/vq14-1-results.json` and `vq14-1-run.txt`.
 
 ## VQ14-2 — a survivor tab could show a live composer briefly after a restart
 
@@ -173,7 +173,7 @@ The server's own PID was killed with `kill -9`, held down 12s, and restarted
 with the identical launch line (including `ARCHON_E2E_FAKE_PROVIDER=1`) on
 the same port, new PID recorded — repeated **3 times**, each restart
 targeting the exact PID the previous restart produced (`evidence/qa14-fixes/
-vq14-2-run-{1,2,3}.log`).
+vq14-2-run-{1,2,3}.txt`).
 
 In all 3 runs, in **both shells**, every frame before "restored" showed
 **exactly** the frozen pre-outage steering-control set (unchanged from

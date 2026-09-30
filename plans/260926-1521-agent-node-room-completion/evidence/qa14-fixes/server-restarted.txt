@@ -1,0 +1,9 @@
+{"level":30,"time":1790743553676,"pid":94173,"hostname":"Les-MacBook-Pro.local","module":"server","msg":"server_starting"}
+{"level":30,"time":1790743553706,"pid":94173,"hostname":"Les-MacBook-Pro.local","module":"server","port":3415,"hostname":"0.0.0.0","msg":"server_listening"}
+{"level":30,"time":1790743553707,"pid":94173,"hostname":"Les-MacBook-Pro.local","module":"server","activePlatforms":["Web"],"port":3415,"msg":"server_ready"}
+{"level":30,"time":1790743600720,"pid":96613,"hostname":"Les-MacBook-Pro.local","module":"server","msg":"server_starting"}
+{"level":30,"time":1790743600754,"pid":96613,"hostname":"Les-MacBook-Pro.local","module":"server","port":3415,"hostname":"0.0.0.0","msg":"server_listening"}
+{"level":30,"time":1790743600754,"pid":96613,"hostname":"Les-MacBook-Pro.local","module":"server","activePlatforms":["Web"],"port":3415,"msg":"server_ready"}
+{"level":30,"time":1790743652300,"pid":99168,"hostname":"Les-MacBook-Pro.local","module":"server","msg":"server_starting"}
+{"level":30,"time":1790743652339,"pid":99168,"hostname":"Les-MacBook-Pro.local","module":"server","port":3415,"hostname":"0.0.0.0","msg":"server_listening"}
+{"level":30,"time":1790743652340,"pid":99168,"hostname":"Les-MacBook-Pro.local","module":"server","activePlatforms":["Web"],"port":3415,"msg":"server_ready"}
