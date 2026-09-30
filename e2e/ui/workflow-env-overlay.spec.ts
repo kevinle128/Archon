@@ -1,55 +1,135 @@
 import { test, expect } from '../lib/playwright/suite';
+import { E2E_WORKFLOW_NAME } from '../lib/playwright/archon-runtime';
 import { T } from '../lib/playwright/timeouts';
 
 /**
- * Lane B spec for PR #73 — per-run workflow ENV overlays.
+ * Per-run workflow ENV overlays in the redesigned workflows library.
  *
- * User story: an operator opens the console, creates a named ENV overlay
- * (provider/model/effort/env), selects it when starting a workflow run, and the
- * run detail shows the resolved provider/model/effort/env snapshot; the overlay
- * is frozen and replays on resume. The whole app is real (console + API + DB);
- * the only mocked external is the AI provider — the overlay routes the run onto
- * the env-gated `e2e-fake` provider, so nothing paid is called and the run
- * detail shows `e2e-fake` as the resolved provider.
- *
- * STATUS: written from PR #73's real UI (branch archon/thread-9f31dc07) — the
- * confirmed data-testids are `env-editor-name`, `env-editor-submit`,
- * `env-node-select`, `env-node-patch`, `env-summary-list`, `run-env-chip`; the
- * Start controls are the "Start a new run" / "Start run" buttons and the "Manage"
- * button opens WorkflowEnvManageDialog. It is `fixme` because it can only run
- * once PR #73's overlay code and this e2e harness live on the SAME branch (the
- * archon-runtime fixture must boot an Archon that HAS the overlay routes/UI).
- * Unskip after PR #73 merges into a branch that also carries this e2e package.
+ * An operator opens a workflow, creates a named overlay from the Environments
+ * section, picks it next to the Run button and starts a run. The whole app is
+ * real (web UI, API, database); only the AI provider is the env-gated
+ * `e2e-fake` provider. The run record must carry the frozen overlay with the
+ * resolved model the overlay patched onto the node.
  */
-test.fixme('[P0] a workflow run started with an ENV overlay shows the resolved overlay in run detail', async ({
+const OVERLAY_NAME = 'e2e-overlay';
+const OVERLAY_MODEL = 'e2e-overlay-model';
+
+interface RunListEntry {
+  id?: string;
+  workflow_name?: string;
+}
+
+interface RunDetail {
+  run?: {
+    status?: string;
+    metadata?: {
+      envOverlay?: {
+        envName?: string;
+        resolved?: Record<string, { model?: string }> | { nodeId?: string; model?: string }[];
+      };
+    };
+  };
+}
+
+test('[P0] a workflow run started with an ENV overlay records the frozen overlay', async ({
   page,
   archon,
 }) => {
-  // A trivial one-node workflow to run under the overlay. Seeded like the other
-  // specs' e2e-usage-record; here the overlay — not the node — selects e2e-fake.
-  void archon;
-
-  // 1. Open the console draft-run card and the ENV overlay manager.
-  await page.goto('/console');
-  await page.getByRole('button', { name: /Start a new run/i }).click();
-  await page.getByRole('button', { name: 'Manage' }).click();
-
-  // 2. Create a named overlay that routes onto the fake provider.
-  await page.getByTestId('env-editor-name').fill('e2e-overlay');
-  // Select the workflow node to patch, then set its provider to e2e-fake.
-  await page.getByTestId('env-node-select').selectOption({ index: 1 });
-  // (env-node-patch / env-patch-editor carry the provider/model/effort fields —
-  //  confirm the exact provider control when first running this spec.)
-  await page.getByTestId('env-editor-submit').click();
-  await expect(page.getByTestId('env-summary-list')).toContainText('e2e-overlay');
-
-  // 3. Back on the draft card, select the overlay and start the run.
-  //    DraftRunCard passes `{ envId }` to startRun when an overlay is selected.
-  await page.getByRole('button', { name: /Start run/i }).click();
-
-  // 4. Run detail shows the overlay was applied (frozen snapshot), routed to e2e-fake.
-  await expect(page.getByTestId('run-env-chip')).toContainText('e2e-overlay', {
-    timeout: T.long,
+  // Overlay preview and editing need a project cwd; register the isolated
+  // non-git workdir as a folder project.
+  const registered = await archon.starterFetch('/api/codebases', {
+    method: 'POST',
+    body: JSON.stringify({ path: archon.workdir }),
   });
-  await expect(page.getByTestId('env-summary-list')).toContainText('e2e-fake');
+  expect(registered.ok).toBe(true);
+  const codebase = (await registered.json()) as { id: string };
+
+  const listRunIds = async (): Promise<string[]> => {
+    const res = await archon.starterFetch('/api/workflows/runs?limit=50');
+    const body = (await res.json()) as { runs?: RunListEntry[] };
+    return (body.runs ?? [])
+      .filter(run => run.workflow_name === E2E_WORKFLOW_NAME && run.id !== undefined)
+      .map(run => run.id as string);
+  };
+  const knownRunIds = new Set(await listRunIds());
+
+  // 1. Open the workflow in the library and choose the project.
+  await page.goto('/workflows');
+  await page.locator(`button[title="${E2E_WORKFLOW_NAME}"]`).click();
+  await page.locator('#workflow-run-project').selectOption(codebase.id);
+
+  // 2. Create a named overlay that patches the model of the workflow's node.
+  const environments = page.getByTestId('workflow-envs-section');
+  await environments.getByRole('button', { name: 'New environment' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByTestId('env-editor-name').fill(OVERLAY_NAME);
+  await dialog.getByRole('button', { name: 'Node' }).click();
+  await dialog.getByTestId('env-node-select').selectOption({ index: 1 });
+  await dialog.getByTestId('env-field-model').fill(OVERLAY_MODEL);
+  await dialog.getByTestId('env-editor-submit').click();
+  await expect(dialog.getByTestId('env-summary-list')).toContainText(OVERLAY_NAME, {
+    timeout: T.medium,
+  });
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(environments.getByTestId('workflow-env-rows')).toContainText(OVERLAY_NAME);
+
+  // 3. Pick the overlay next to Run: the preview shows the patched model.
+  await page.locator('#workflow-run-env').selectOption({ label: OVERLAY_NAME });
+  await expect(page.getByText(OVERLAY_MODEL).first()).toBeVisible({ timeout: T.medium });
+
+  // 4. Start the run with the overlay.
+  await page.locator('#workflow-run-message').fill('run with overlay');
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+
+  // 5. The run record carries the overlay name and the resolved patched model.
+  let runId: string | undefined;
+  await expect
+    .poll(
+      async () => {
+        runId = (await listRunIds()).find(id => !knownRunIds.has(id));
+        return runId;
+      },
+      { timeout: T.long }
+    )
+    .toBeDefined();
+  if (runId === undefined) throw new Error('run id was not observed');
+  await archon.waitForRunStatus(runId, 'completed', T.xlong);
+
+  const detailRes = await archon.starterFetch(`/api/workflows/runs/${encodeURIComponent(runId)}`);
+  const detail = (await detailRes.json()) as RunDetail;
+  const overlay = detail.run?.metadata?.envOverlay;
+  expect(overlay?.envName).toBe(OVERLAY_NAME);
+  expect(JSON.stringify(overlay?.resolved ?? null)).toContain(OVERLAY_MODEL);
+});
+
+test('[P1] deleting an ENV overlay from the manage dialog removes it after inline confirmation', async ({
+  page,
+  archon,
+}) => {
+  const registered = await archon.starterFetch('/api/codebases', {
+    method: 'POST',
+    body: JSON.stringify({ path: archon.workdir }),
+  });
+  expect(registered.ok).toBe(true);
+  const codebase = (await registered.json()) as { id: string };
+
+  await page.goto('/workflows');
+  await page.locator(`button[title="${E2E_WORKFLOW_NAME}"]`).click();
+  await page.locator('#workflow-run-project').selectOption(codebase.id);
+
+  const environments = page.getByTestId('workflow-envs-section');
+  await environments.getByRole('button', { name: 'New environment' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByTestId('env-editor-name').fill('to-delete');
+  await dialog.getByTestId('env-editor-submit').click();
+  await expect(dialog.getByTestId('env-summary-list')).toContainText('to-delete', {
+    timeout: T.medium,
+  });
+
+  await dialog.getByRole('button', { name: 'Delete to-delete' }).click();
+  await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(dialog.getByTestId('env-summary-list')).not.toContainText('to-delete', {
+    timeout: T.medium,
+  });
 });
