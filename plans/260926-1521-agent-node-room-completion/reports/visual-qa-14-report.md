@@ -225,3 +225,23 @@ Status: DONE_WITH_CONCERNS
 Summary: VQ13-1, VQ13-2 and VQ13-3 are fixed in their original triggers in both shells, and every earlier finding stays fixed over at least 10 cycles per race. Story 7.5, the 30-min idle timeout with its keystroke re-arm, the mockup walk and the six-provider matrix all pass. One new minor finding blocks acceptance: the Legacy terminal-edge fix subscribes to the single-slot `__dashboard__` stream, so any second dashboard subscriber (another Legacy tab, the Console runs page, the Legacy dashboard) evicts it every ~3 s. When the node ends during an evicted window, Legacy's `Stop` / `Queue` again wait for the 1 s poll (10 / 10 at +1014…1036 ms), and the Console runs page's stream is disconnected about half the time, which drops the events of those windows (VQ14-1). One cosmetic item: VQ14-2, a 97–180 ms unconfirmed Legacy composer on survivor tabs after a restart.
 
 Verdict: REJECT
+
+## Decisions (2026-09-30)
+
+1. **VQ14-1:** accepted as minor. The round-13 refinement assumed the `__dashboard__` stream evicts no other stream, and that assumption was wrong.
+   - The dashboard stream is a broadcast channel. The server now fans it out to every open subscriber and no longer keeps one writer per slot.
+   - A new dashboard subscriber no longer closes the one before it, and each subscriber gets every event.
+   - Per-conversation streams keep their current single-writer behaviour.
+   - Legacy keeps its run-terminal subscription on the dashboard stream.
+   - Tests cover these cases, each with neither connection being dropped:
+     - two Legacy run tabs
+     - Legacy together with the Console runs page
+     - Legacy together with the Legacy dashboard
+2. **VQ14-2:** the VQ13-2 rule also applies to tabs that survive a server restart.
+   - After a failed dock read, the dock ignores the sub-state that the run read projects.
+   - It shows no live controls until its own next queue read succeeds.
+3. **Test harness:** Console opens live streams on `VITE_API_PORT` (default 3090). Every isolated web server must set both `PORT` and `VITE_API_PORT` to its own API port.
+   - Console live-stream checks from round 13 and from the qa13-fixes work that ran without `VITE_API_PORT` are treated as unverified.
+   - Round 14 re-verified them with both variables set.
+
+Fixes are owned by the `qa14-fixes` follow-up work.
