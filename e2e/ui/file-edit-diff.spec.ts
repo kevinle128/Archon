@@ -31,6 +31,9 @@ import { T } from '../lib/playwright/timeouts';
  * imports product sources, so a provider-side drift fails here loudly.
  */
 
+// `console` is the deep-link (`?node=`) way into the run detail; `legacy` is the
+// click-through way. Both land in the same room, so they share one design
+// contract. The key stays `console` so scenario ids stay stable.
 type Surface = 'console' | 'legacy';
 
 const ROW = 'details[data-tool-id]';
@@ -41,8 +44,8 @@ const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
 const NARROW_VIEWPORT = { width: 390, height: 844 } as const;
 const ROOM_TOLERANCE_PX = 2;
 
-/** Design reference widths: Legacy room authored at 460px, Console at 520px. */
-const REFERENCE_WIDTH: Record<Surface, number> = { console: 520, legacy: 460 };
+/** Design reference width: the room is authored at 460px. */
+const REFERENCE_WIDTH: Record<Surface, number> = { console: 460, legacy: 460 };
 /**
  * The forced shared width Legacy must also hold. Both rooms are now fixed
  * pixel widths with no drag handle (520px Console, 460px Legacy,
@@ -54,7 +57,7 @@ const REFERENCE_WIDTH: Record<Surface, number> = { console: 520, legacy: 460 };
  */
 const SHARED_WIDTH = 460;
 const ROOM_PANEL_ID: Record<Surface, string> = {
-  console: 'console-run-room',
+  console: 'legacy-run-room',
   legacy: 'legacy-run-room',
 };
 // Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
@@ -589,12 +592,7 @@ for (const surface of ['console', 'legacy'] as const) {
       };
     });
     expect(afterRaw.insideDiff, 'Tab past Raw never lands inside the diff').toBe(false);
-    if (surface === 'console') {
-      expect(afterRaw.tag, 'Console Tab past Raw reaches a button').toBe('BUTTON');
-      expect(afterRaw.text, 'Console Tab past Raw reaches Re-run').toContain('Re-run');
-    } else {
-      expect(afterRaw.insideRow, 'Legacy Tab past Raw leaves the tool row').toBe(false);
-    }
+    expect(afterRaw.insideRow, 'Tab past Raw leaves the tool row').toBe(false);
 
     // Raw round-trip: the table unmounts, the stored payload shows the
     // original old_string, and closing Raw restores the identical diff.

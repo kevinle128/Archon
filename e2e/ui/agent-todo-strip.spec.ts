@@ -31,13 +31,16 @@ import { T } from '../lib/playwright/timeouts';
  * and todo-strip-metrics.json are written to the plan's reports/evidence/ dir.
  */
 
+// `console` is the deep-link (`?node=`) way into the run detail; `legacy` is the
+// click-through way. Both land in the same room, so the two share one design
+// contract. The key stays `console` so scenario ids stay stable.
 type Surface = 'console' | 'legacy';
 
 const STRIP = 'section[aria-label="Todo"]';
 const TOOL_ROW = 'details[data-tool-id]';
 const TODO_METER = '[data-testid="todo-meter"]';
 const SCROLLER_TESTID: Record<Surface, string> = {
-  console: 'console-node-room-scroll',
+  console: 'node-transcript-scroll',
   legacy: 'node-transcript-scroll',
 };
 
@@ -51,12 +54,8 @@ const EVIDENCE_DIR = join(
 );
 const METRICS_FILE = join(EVIDENCE_DIR, 'todo-strip-metrics.json');
 
-// Legacy's room region is the fixed 460px panel itself. Console's panel is a
-// fixed 520px width (`CONSOLE_ROOM_WIDTH_PX`), but the region inside it gets
-// a 4px outset margin on each side while the todo strip is visible
-// (`allowOutsetFocus` in ConsoleNodeRoom) — every test in this file shows the
-// strip, so the measured region is consistently 520 − 8 = 512.
-const TARGET_ROOM_WIDTH: Record<Surface, number> = { console: 512, legacy: 460 };
+// The room region is the fixed 460px panel itself.
+const TARGET_ROOM_WIDTH: Record<Surface, number> = { console: 460, legacy: 460 };
 const ROOM_TOLERANCE_PX = 2;
 const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
 const SWEEP_VIEWPORTS = [
@@ -66,15 +65,14 @@ const SWEEP_VIEWPORTS = [
   { name: '390x844', width: 390, height: 844 },
 ] as const;
 const ROOM_PANEL_ID: Record<Surface, string> = {
-  console: 'console-run-room',
+  console: 'legacy-run-room',
   legacy: 'legacy-run-room',
 };
 // Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
 const ROOM_RATIO_MIN = 24;
 const ROOM_RATIO_MAX = 60;
-// The one deliberate surface delta: --accent-bright on Legacy, --running on Console.
 const RUNNING_TOKEN: Record<Surface, string> = {
-  console: 'var(--running)',
+  console: 'var(--accent-bright)',
   legacy: 'var(--accent-bright)',
 };
 const STATUS_WORDS = ['completed', 'in progress', 'blocked', 'pending', 'abandoned'] as const;
@@ -1152,7 +1150,7 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(await button.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
 
     // Keyboard activation carries :focus-visible and the contracted outline:
-    // 2px solid opaque --accent-bright, −2px Legacy / +2px Console offset.
+    // 2px solid opaque --accent-bright, −2px offset.
     await button.press('Enter');
     await expect(button).toHaveAttribute('aria-expanded', 'true');
     const focus = await button.evaluate(el => {
@@ -1168,7 +1166,7 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(focus.focusVisible, 'keyboard activation carries :focus-visible').toBe(true);
     expect(focus.style).toBe('solid');
     expect(focus.width).toBe('2px');
-    expect(focus.offset).toBe(surface === 'console' ? '2px' : '-2px');
+    expect(focus.offset).toBe('-2px');
     const accent = await resolveColorIn(room, 'var(--accent-bright)');
     expect(focus.color, 'focus outline resolves to --accent-bright').toBe(accent.resolved);
 
@@ -1274,22 +1272,9 @@ for (const surface of ['console', 'legacy'] as const) {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
 
     // A same-scope update must preserve focus + expansion. The fixture run is
-    // terminal so the 1s live poll is idle; Console proves it with a real
-    // item-set change (Tool calls off), Legacy with a scroll-follow
-    // transition that re-renders the pane under the same scope key.
-    if (surface === 'console') {
-      const toggle = page.getByRole('checkbox', { name: 'Tool calls' });
-      await toggle.dispatchEvent('click'); // dispatched: keeps focus on the strip
-      await expect(room.locator(TOOL_ROW)).toHaveCount(0);
-      await expect(strip).toHaveCount(1);
-      await expect(button).toHaveAttribute('aria-expanded', 'true');
-      expect(
-        await button.evaluate(el => el.ownerDocument.activeElement === el),
-        'focus survives the same-scope content update'
-      ).toBe(true);
-      await toggle.dispatchEvent('click');
-      await expect(room.locator(TOOL_ROW).first()).toBeVisible({ timeout: T.medium });
-    } else {
+    // terminal so the 1s live poll is idle; a scroll-follow transition
+    // re-renders the pane under the same scope key.
+    {
       const scroller = room.getByTestId(SCROLLER_TESTID.legacy);
       const scrollBefore = await scroller.evaluate(el => el.scrollTop);
       await scroller.evaluate(el => {
@@ -1307,35 +1292,20 @@ for (const surface of ['console', 'legacy'] as const) {
 
     // Scope navigation mounts a new, collapsed control: switch to the no-todo
     // room and back without reloading the page.
-    if (surface === 'console') {
-      const otherOpener = page
-        .locator('button[id^="console-log-"]')
-        .filter({ hasText: TODO_STRIP_NO_TODO_NODE })
-        .first();
-      await otherOpener.click();
-      await expect(roomRegion(page, TODO_STRIP_NO_TODO_NODE)).toBeVisible({
-        timeout: T.medium,
-      });
-      expect(await page.locator(STRIP).count()).toBe(0);
-      const todoOpener = page
-        .locator('button[id^="console-log-"]')
-        .filter({ hasText: TODO_STRIP_TODO_NODE })
-        .first();
-      await todoOpener.click();
-    } else {
-      await page
-        .getByRole('button', { name: new RegExp(TODO_STRIP_NO_TODO_NODE) })
-        .first()
-        .click();
-      await expect(roomRegion(page, TODO_STRIP_NO_TODO_NODE)).toBeVisible({
-        timeout: T.medium,
-      });
-      expect(await page.locator(STRIP).count()).toBe(0);
-      await page
-        .getByRole('button', { name: new RegExp(TODO_STRIP_TODO_NODE) })
-        .first()
-        .click();
-    }
+    // Switching scope goes through the Logs tab's node list.
+    await page.getByRole('tab', { name: 'Logs' }).click();
+    await page
+      .getByRole('button', { name: new RegExp(TODO_STRIP_NO_TODO_NODE) })
+      .first()
+      .click();
+    await expect(roomRegion(page, TODO_STRIP_NO_TODO_NODE)).toBeVisible({
+      timeout: T.medium,
+    });
+    expect(await page.locator(STRIP).count()).toBe(0);
+    await page
+      .getByRole('button', { name: new RegExp(TODO_STRIP_TODO_NODE) })
+      .first()
+      .click();
     const reopened = roomRegion(page, TODO_STRIP_TODO_NODE);
     await expect(reopened).toBeVisible({ timeout: T.medium });
     const reopenedStrip = reopened.locator(STRIP);
@@ -1485,18 +1455,6 @@ for (const surface of ['console', 'legacy'] as const) {
     ).toBe(true);
   });
 }
-
-test('[P1] todo strip remains when Console hides tool calls', async ({ page, archon }) => {
-  test.setTimeout(T.xlong * 2);
-  const run = await runTodoStrip(page, archon);
-  const room = await openNodeRoom(page, 'console', run.runId, TODO_STRIP_TODO_NODE);
-  const strip = room.locator(STRIP);
-  await expect(strip).toHaveCount(1);
-  await expect(room.locator(TOOL_ROW).first()).toBeVisible({ timeout: T.medium });
-  await page.getByRole('checkbox', { name: 'Tool calls' }).uncheck();
-  await expect(room.locator(TOOL_ROW)).toHaveCount(0);
-  await expect(strip).toHaveCount(1);
-});
 
 test('[P1] todo strip tones clear contrast floors on both surfaces', async ({
   page,

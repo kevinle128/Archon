@@ -65,15 +65,15 @@ const EVIDENCE_DIR = join(
   'evidence'
 );
 
-// Room width is `roomRatio`% of the split container (default 40). Legacy's
-// container is the viewport (1150 × 0.4 = 460); Console subtracts the ~280px
-// project rail (1430 → ~1150 container → ~460). Asserted within ±8px and the
+// The room is a fixed 460px panel. The viewport must leave the run pane at
+// least 60rem wide after the 248px sidebar, or the room falls back to the
+// single-column layout: 1400 − 248 = 1152px. Asserted within ±8px and the
 // measured value is recorded in the artifact name/report.
-const CONSOLE_WIDE_VIEWPORT = { width: 1430, height: 560 } as const;
-const LEGACY_WIDE_VIEWPORT = { width: 1150, height: 560 } as const;
+const CONSOLE_WIDE_VIEWPORT = { width: 1400, height: 560 } as const;
+const LEGACY_WIDE_VIEWPORT = { width: 1400, height: 560 } as const;
 const NARROW_VIEWPORT = { width: 390, height: 844 } as const;
 const ROOM_PANEL_ID: Record<'console' | 'legacy', string> = {
-  console: 'console-run-room',
+  console: 'legacy-run-room',
   legacy: 'legacy-run-room',
 };
 
@@ -420,11 +420,10 @@ async function expectNoLiveRegion(scroller: Locator): Promise<void> {
   await expect(scroller.locator('[aria-live], [role="status"], [role="alert"]')).toHaveCount(0);
 }
 
-// Design reference widths: both rooms are fixed pixel widths with no drag
-// handle (`packages/web/src/lib/room-split-layout.ts`) — 520px Console,
-// 460px Legacy.
+// Design reference width: the room is a fixed pixel width with no drag handle
+// (`packages/web/src/lib/room-split-layout.ts`) — 460px.
 const AUTHORITATIVE_ROOM_WIDTH: Record<'console' | 'legacy', number> = {
-  console: 520,
+  console: 460,
   legacy: 460,
 };
 
@@ -482,35 +481,24 @@ test('[P1] [V:occurrence-nav.console-scopes] Console occurrence requests, sectio
     await expect
       .poll(() => observed.records.some(record => record.occurrenceId === null))
       .toBe(true);
-    await expectGroupHeadings(room, [LABEL_A, LABEL_B]);
+    // Every group is displayable: the status-only ones — retry pair
+    // ('Run 1 · failed' / 'Run 2 · retry · failed') and the nested-loop
+    // disambiguation ('… · loopX' / '… · loopY') — render beside the two
+    // content groups.
+    await expectGroupHeadings(room, ALL_LABELS);
     await expectDomOrderMatchesVisual(room);
     await expectHeadingTokens(room.getByRole('heading', { name: LABEL_A, level: 3, exact: true }));
 
     // Navigator contract: real label, disabled placeholder with the live
-    // count, options verbatim in displayable-group order (status-only groups
-    // are absent while the System filter is off — options derive from
-    // displayable groups, not raw groups).
+    // count, options verbatim in group order.
     const navigator = navigatorSelect(page);
     await expect(navigator).toBeVisible({ timeout: T.medium });
-    expect(await navigator.locator('option').allTextContents()).toEqual([
-      '2 occurrences',
-      LABEL_A,
-      LABEL_B,
-    ]);
-    await expect(navigator.locator('option').first()).toBeDisabled();
-    await expect(navigator).toHaveValue('');
-
-    // System on: the status-only groups become displayable — retry pair
-    // ('Run 1 · failed' / 'Run 2 · retry · failed') and the nested-loop
-    // disambiguation ('… · loopX' / '… · loopY') — with no new request.
-    const requestsBefore = observed.records.length;
-    await page.getByLabel('System', { exact: true }).check();
-    await expectGroupHeadings(room, ALL_LABELS);
     expect(await navigator.locator('option').allTextContents()).toEqual([
       '6 occurrences',
       ...ALL_LABELS,
     ]);
-    expect(observed.records.length, 'filter toggles must not refetch').toBe(requestsBefore);
+    await expect(navigator.locator('option').first()).toBeDisabled();
+    await expect(navigator).toHaveValue('');
 
     // Occurrence selection sends the occurrence filter alone — CAP-6 forbids
     // keying the room's transcript on attempt_id, since a steered node's
@@ -545,7 +533,7 @@ test('[P1] [V:occurrence-nav.console-scopes] Console occurrence requests, sectio
     await shot(page, room, 'console-focus-select.png');
 
     // Commit on change: heading focus + scroll + aria-controls on the select.
-    const scroller = room.locator('[data-testid="console-node-room-scroll"]');
+    const scroller = room.locator('[data-testid="node-transcript-scroll"]');
     await navigator.selectOption(await navigatorOptionValue(page, LABEL_B));
     await expect.poll(async () => activeElementId(page)).toMatch(new RegExp(`occ-${OCC_B}$`));
     expect(
@@ -572,7 +560,7 @@ test('[P1] [V:occurrence-nav.console-scopes] Console occurrence requests, sectio
   }
 });
 
-test('[P1] [V:occurrence-nav.console-filters] Console filters collapse displayable groups', async ({
+test('[P1] [V:occurrence-nav.execution-filter] Execution filtering removes the navigator without dropping focus', async ({
   page,
   archon,
 }) => {
@@ -581,37 +569,22 @@ test('[P1] [V:occurrence-nav.console-filters] Console filters collapse displayab
   await openRunDetail(page, runId, OCC_NODE);
   const room = roomRegion(page);
   await expect(room).toBeVisible({ timeout: T.medium });
-  await expectGroupHeadings(room, [LABEL_A, LABEL_B]);
+  await expectGroupHeadings(room, ALL_LABELS);
   const navigator = navigatorSelect(page);
 
-  // Show the status-only groups, navigate to one, then hide System again: the
-  // removed target collapses the select back to its placeholder with the
-  // surviving count. Focus stays on the toggle the reader used (never <body>);
-  // the non-interactive heading-removal redirect is covered by component tests.
-  await page.getByLabel('System', { exact: true }).check();
-  await expectGroupHeadings(room, ALL_LABELS);
+  // Navigate to a group, then filter to one execution: the removed target
+  // collapses the room to a single flat group, the navigator leaves, and focus
+  // lands somewhere reachable — never <body>.
   await navigator.selectOption(await navigatorOptionValue(page, LABEL_C));
   await expect.poll(async () => activeElementId(page)).toMatch(new RegExp(`occ-${OCC_C}$`));
-  await page.getByLabel('System', { exact: true }).uncheck();
-  await expect(navigator).toHaveValue('');
-  expect(await navigator.locator('option').allTextContents()).toEqual([
-    '2 occurrences',
-    LABEL_A,
-    LABEL_B,
-  ]);
-  await expect(room.getByRole('heading', { name: LABEL_C, exact: true })).toHaveCount(0);
-  await expectGroupHeadings(room, [LABEL_A, LABEL_B]);
-  const activeTag = await page.evaluate(() => document.activeElement?.tagName ?? '');
-  expect(activeTag === 'BODY', 'focus must not fall back to <body>').toBe(false);
-
-  // Hide tool calls: Iteration 2's only row is a tool call — one displayable
-  // group remains, so headers and the navigator are both removed.
-  await page.getByLabel('Tool calls', { exact: true }).uncheck();
+  await selectExecution(page, OCC_A);
   await expect(room.getByRole('heading')).toHaveCount(0);
   await expect(navigatorSelect(page)).toHaveCount(0);
   await expect(room.getByText(REPLY_A)).toBeVisible();
+  const activeTag = await page.evaluate(() => document.activeElement?.tagName ?? '');
+  expect(activeTag === 'BODY', 'focus must not fall back to <body>').toBe(false);
 
-  const scroller = room.locator('[data-testid="console-node-room-scroll"]');
+  const scroller = room.locator('[data-testid="node-transcript-scroll"]');
   await expectNoHorizontalOverflow(page, scroller);
   await shot(page, room, 'console-filtered-flat.png');
 });
@@ -750,13 +723,13 @@ test('[P1] [V:occurrence-nav.live] Live append holds position, partial failure k
   await openRunDetail(page, runId, OCC_NODE);
   const room = roomRegion(page);
   await expect(room).toBeVisible({ timeout: T.medium });
-  await expectGroupHeadings(room, [LABEL_A, LABEL_B]);
+  await expectGroupHeadings(room, ALL_LABELS);
 
   // Navigator jump puts the room in manual-hold (jumpToOccurrence clears
   // follow): a live append must not move the viewport, and the running row
   // surfaces 'Jump to latest' to re-pin.
   const navigator = navigatorSelect(page);
-  const scroller = room.locator('[data-testid="console-node-room-scroll"]');
+  const scroller = room.locator('[data-testid="node-transcript-scroll"]');
   await navigator.selectOption(await navigatorOptionValue(page, LABEL_B));
   await expect.poll(async () => activeElementId(page)).toMatch(new RegExp(`occ-${OCC_B}$`));
   const heldScrollTop = await scroller.evaluate(el => el.scrollTop);
@@ -806,7 +779,7 @@ test('[P1] [V:occurrence-nav.live] Live append holds position, partial failure k
     timeout: T.medium,
   });
   await expect(room.getByRole('button', { name: 'Retry' })).toBeVisible();
-  await expectGroupHeadings(room, [LABEL_A, LABEL_B]);
+  await expectGroupHeadings(room, ALL_LABELS);
   await shot(page, room, 'console-partial-error.png');
   await page.unrouteAll();
 });
@@ -820,13 +793,13 @@ test('[P1] [V:occurrence-nav.narrow] Narrow viewport keeps both navigators witho
   await openRunDetail(page, runId, OCC_NODE);
   const room = roomRegion(page);
   await expect(room).toBeVisible({ timeout: T.medium });
-  await expectGroupHeadings(room, [LABEL_A, LABEL_B]);
+  await expectGroupHeadings(room, ALL_LABELS);
   const navigator = navigatorSelect(page);
   await expect(navigator).toBeVisible({ timeout: T.medium });
   // The control stays operable: options elide but still activate.
   await navigator.selectOption(await navigatorOptionValue(page, LABEL_B));
   await expect.poll(async () => activeElementId(page)).toMatch(new RegExp(`occ-${OCC_B}$`));
-  const scroller = room.locator('[data-testid="console-node-room-scroll"]');
+  const scroller = room.locator('[data-testid="node-transcript-scroll"]');
   await expectNoHorizontalOverflow(page, scroller);
   const width = await page
     .locator(`#${ROOM_PANEL_ID.console}`)

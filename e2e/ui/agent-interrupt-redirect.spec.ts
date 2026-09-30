@@ -69,7 +69,7 @@ const OPERATOR_EVIDENCE_DIR = join(
 const MEASUREMENTS_FILE = join(EVIDENCE_DIR, 'us-005-measurements.json');
 
 const SCROLLER_TESTID: Record<Surface, string> = {
-  console: 'console-node-room-scroll',
+  console: 'node-transcript-scroll',
   legacy: 'node-transcript-scroll',
 };
 
@@ -1265,6 +1265,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(page.getByText(LOOP_DONE_TEXT).first()).toBeVisible();
     await expect(page.getByText('×2')).toHaveCount(0);
     if (surface === 'console') {
+      await page.getByRole('tab', { name: 'Logs' }).click();
       const order = await page.evaluate(() => {
         const text = (document.querySelector('main') ?? document.body).textContent ?? '';
         return {
@@ -1277,12 +1278,14 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(order.group, '×1 group header exists').toBeGreaterThanOrEqual(0);
       expect(order.echo).toBeGreaterThan(order.group);
       expect(order.done).toBeGreaterThan(order.echo);
-      // Scoped to the log stream list only: the open room's own header
+      // Scoped to the node run list only: the open room's own header
       // legitimately repeats the same "steer-loop ×1" label alongside it, so
       // counting across the whole page would double-count one iteration
       // instead of catching a genuine second one.
       await expect(
-        page.getByTestId('console-run-log-scroll').getByRole('button', { name: /steer-loop ×/ })
+        page.getByRole('navigation', { name: 'Node runs' }).getByRole('button', {
+          name: /steer-loop ×/,
+        })
       ).toHaveCount(1);
     }
   });
