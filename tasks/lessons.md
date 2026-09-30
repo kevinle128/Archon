@@ -18,3 +18,8 @@
 
 - Mistake: a delegate matched `pgrep -f "bun --watch src/index.ts"` to stop its own scratch server and killed the user's own dev server (port 3090/5173, another worktree, real ~/.archon).
 - Rule: never select processes by command-line pattern. Record the PID when starting a process, or resolve it with `lsof -tiTCP:<own port> -sTCP:LISTEN`, and stop only that PID. Put this rule in every delegate brief that starts servers.
+
+## Isolated web servers need both API port variables (2026-09-30)
+
+- Pattern: briefs started Vite with `PORT=<api>` only. Vite's proxy used it, but Console opens its live streams directly on `VITE_API_PORT`, whose default is 3090, the user's server. Round 14 found Console streams reaching 3090 for about 15 minutes.
+- Rule: every isolated web server is started with `PORT=<api> VITE_API_PORT=<api>`. Before measuring anything, confirm in the browser network log that Console's streams go to that API port.
