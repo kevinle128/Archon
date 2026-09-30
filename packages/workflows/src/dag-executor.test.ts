@@ -2430,6 +2430,53 @@ describe('executeDagWorkflow -- operator delivery acknowledgement (CAP-13)', () 
     expect(rows.find(r => r.message_id === 'ack-1')?.state).toBe('delivered');
   });
 
+  it('delivers only the soft-injected entry on its echo and leaves the other queued entry undelivered', async () => {
+    const mockDeps = createMockDeps();
+    const runId = 'dag-test-run-id';
+    for (const id of ['queued-1', 'injected-2']) {
+      await mockDeps.store.enqueueSteeringMessage({
+        workflow_run_id: runId,
+        node_id: 'review',
+        message_id: id,
+        message: `text for ${id}`,
+        operator_user_id: 'op-1',
+        initial_state: 'queued',
+      });
+    }
+    // Per-item Send now claims exactly the selected entry.
+    await mockDeps.store.claimSteeringMessageForSoftInjection(runId, 'review', 'injected-2');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'operator_delivery_ack', messageId: 'injected-2' };
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'dag-session-id' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      createMockPlatform(),
+      'conv-dag',
+      testDir,
+      {
+        name: 'dag-soft-inject-ack',
+        nodes: [{ id: 'review', prompt: 'do the thing' }],
+      },
+      makeWorkflowRun(runId),
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await mockDeps.store.listSteeringQueue(runId, 'review');
+    expect(rows.find(r => r.message_id === 'injected-2')?.state).toBe('delivered');
+    expect(rows.find(r => r.message_id === 'queued-1')?.state).not.toBe('delivered');
+  });
+
   it('never advances an id it did not echo', async () => {
     const mockDeps = createMockDeps();
     const runId = 'dag-test-run-id';

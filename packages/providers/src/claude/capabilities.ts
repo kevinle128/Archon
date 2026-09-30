@@ -72,22 +72,24 @@ export const CLAUDE_CAPABILITIES: ProviderCapabilities = {
   // exact tool_use id that was cut short — a real per-tool proof, not a
   // guess from turn-level timing.
   interruptedToolStatus: true,
-  // Verified false against the real SDK (spike:softinject:claude, 0.3.209):
-  // Query.streamInput() delivers a pushed message only as a NEW queued turn
-  // (a second `result` event), never into the turn already streaming — the
-  // Anthropic API has no primitive to alter an in-flight completion. Holds
-  // for both a mid-token-stream push and a push at a between-tool-calls
-  // boundary, and with `priority: 'next'` explicitly set (undocumented SDK
-  // field — tested per a reviewer's hypothesis, disproven). Confirmed
-  // unchanged in the sdk.d.ts shipped with 0.3.283.
-  softInjection: false,
+  // Verified TRUE against the real SDK (spike:softinject:claude, 0.3.209,
+  // haiku, three runs): a `SDKUserMessage` pushed onto the live streaming
+  // input while the model is between tool calls is folded into the SAME turn -
+  // exactly one `result`, the first result contains the injected instruction,
+  // tokens were still streaming after the push, and the terminal reason is
+  // `completed`. An earlier spike reported a second `result` only because it
+  // capped the run at `maxTurns: 1`, which cut the first turn off before the
+  // injected message could join it.
+  softInjection: true,
   // Verified TRUE against the real SDK (spike:softinject:claude, 0.3.209):
   // starting the CLI with `--replay-user-messages` (via `extraArgs`, wired
-  // in provider.ts only when `operatorMessageId` is set) makes it re-emit
+  // in provider.ts when `operatorMessageId` is set or a soft-injection
+  // channel is offered) makes it re-emit
   // the stdin-delivered user message on stdout (`type: 'user', isReplay:
   // true`) carrying the exact caller-stamped `uuid`. Scoped to a SINGLE
-  // durable operator message per turn (dag-executor sets `operatorMessageId`
-  // only when exactly one queue entry is being delivered) — a combined
+  // durable operator message (dag-executor sets `operatorMessageId` only
+  // when exactly one queue entry is being delivered; a soft-injected item
+  // carries its own id) — a combined
   // multi-message prompt has no one id to attribute an echo to and gets no
   // ack, which is an accurate `sent` rather than a false `delivered`.
   deliveryAck: true,
