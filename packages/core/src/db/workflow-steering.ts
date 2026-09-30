@@ -582,6 +582,37 @@ export async function claimSteeringMessageForSoftInjection(
   });
 }
 
+/**
+ * Returns every `sent` entry of one node that has no operator row in the
+ * durable transcript to `queued`, keeping its FIFO position (the front of the
+ * queue). A soft-injected message is `sent` as soon as the transport takes it,
+ * but only the operator row proves the model read it, and the in-memory
+ * ledger that tracks the gap does not survive a restart. Entries whose row
+ * exists are left as they are. Idempotent.
+ */
+export async function restoreUnreadSoftInjections(
+  workflowRunId: string,
+  nodeId: string
+): Promise<{ count: number }> {
+  const dialect = getDialect();
+  const messageIdSql =
+    getDatabaseType() === 'postgresql'
+      ? "(m.metadata->>'message_id')"
+      : "json_extract(m.metadata, '$.message_id')";
+  const result = await pool.query(
+    `UPDATE remote_agent_steering_queue_entries
+     SET state = 'queued', updated_at = ${dialect.now()}
+     WHERE workflow_run_id = $1 AND node_id = $2 AND state = 'sent'
+       AND NOT EXISTS (
+         SELECT 1 FROM remote_agent_workflow_node_messages m
+         WHERE m.workflow_run_id = $1 AND m.node_id = $2
+           AND ${messageIdSql} = remote_agent_steering_queue_entries.message_id
+       )`,
+    [workflowRunId, nodeId]
+  );
+  return { count: result.rowCount ?? 0 };
+}
+
 const RECONCILE_STATES = ['queued', 'awaiting_send_now', 'dispatching'] as const;
 
 /**

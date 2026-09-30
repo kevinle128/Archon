@@ -35,6 +35,7 @@ const {
   markSteeringMessageDelivered,
   claimSteeringMessageForSoftInjection,
   revertSteeringSoftInjectionClaim,
+  restoreUnreadSoftInjections,
   reconcileNeverSentSteeringMessages,
 } = await import('./workflow-steering');
 
@@ -624,6 +625,61 @@ describe('revertSteeringSoftInjectionClaim', () => {
     await revertSteeringSoftInjectionClaim('run-1', 'review', 'm-delivered');
     const rows = await listSteeringQueue('run-1', 'review');
     expect(rows.find(r => r.message_id === 'm-delivered')?.state).toBe('delivered');
+  });
+});
+
+describe('restoreUnreadSoftInjections', () => {
+  async function enqueueSent(messageId: string): Promise<void> {
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: messageId,
+      message: messageId,
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await claimSteeringMessageForSoftInjection('run-1', 'review', messageId);
+  }
+
+  async function appendOperatorRow(messageId: string): Promise<void> {
+    await db.query(
+      `INSERT INTO remote_agent_workflow_node_messages (id, workflow_run_id, node_id, seq, kind, payload, metadata)
+       VALUES ($1, 'run-1', 'review', 1, 'text', '{"text":"x"}', $2)`,
+      [`row-${messageId}`, JSON.stringify({ origin: 'operator', message_id: messageId })]
+    );
+  }
+
+  test('returns a sent entry with no operator row to queued and keeps its place', async () => {
+    await enqueueSent('m-1');
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-2',
+      message: 'second',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    expect(await restoreUnreadSoftInjections('run-1', 'review')).toEqual({ count: 1 });
+    const rows = await listSteeringQueue('run-1', 'review');
+    expect(rows.map(r => [r.message_id, r.state])).toEqual([
+      ['m-1', 'queued'],
+      ['m-2', 'queued'],
+    ]);
+  });
+
+  test('leaves a sent entry that already has an operator row', async () => {
+    await enqueueSent('m-1');
+    await appendOperatorRow('m-1');
+    expect(await restoreUnreadSoftInjections('run-1', 'review')).toEqual({ count: 0 });
+    const rows = await listSteeringQueue('run-1', 'review');
+    expect(rows[0]?.state).toBe('sent');
+  });
+
+  test('is scoped to one node and ignores delivered entries', async () => {
+    await enqueueSent('m-1');
+    await markSteeringMessageDelivered('run-1', 'review', 'm-1');
+    expect(await restoreUnreadSoftInjections('run-1', 'review')).toEqual({ count: 0 });
+    expect(await restoreUnreadSoftInjections('run-1', 'other')).toEqual({ count: 0 });
   });
 });
 

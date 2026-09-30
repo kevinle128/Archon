@@ -6134,6 +6134,12 @@ export function registerApiRoutes(
           }
         }
 
+        // No live handle means no in-memory ledger: a soft-injected entry still
+        // `sent` with no operator row in the durable transcript was never read
+        // by the model, so it returns to the queue instead of staying `sent`.
+        if (handle === undefined) {
+          await workflowSteeringDb.restoreUnreadSoftInjections(runId, nodeId);
+        }
         const queued = await workflowSteeringDb.listSteeringQueue(runId, nodeId);
         return c.json(
           {
