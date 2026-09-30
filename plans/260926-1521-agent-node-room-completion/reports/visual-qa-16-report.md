@@ -262,3 +262,17 @@ Status: DONE_WITH_CONCERNS
 Summary: Per-item `Send now` works on Claude (12 cycles) and Grok ACP (5) with no Stop, same-turn replies, correct row order and no false Never-sent, and queue-only transports show no per-item `Send now`. Every earlier finding, Story 7.5, the 30-min idle timeout and the provider matrix hold in the redesigned run detail at 460 px and in the single-column layout. Three findings block acceptance: a soft-injected message accepted before a server restart stays `sent` forever and is shown nowhere (VQ16-1, major); focus falls to `<body>` after a per-item `Send now` (VQ16-2, minor); and the injected item is shown nowhere for one frame at the hand-off to its row in 3 of 36 Claude tab observations (VQ16-3, minor).
 
 Verdict: REJECT
+
+## Decisions (2026-10-01)
+
+1. **VQ16-1:** major, and it will be fixed. This follows the earlier late-injection decision: a message must never stay `sent` if nobody knows whether it was delivered.
+   - During restart recovery, any soft-injected entry that has no operator row in the transcript goes back to the front of the queue as `queued`.
+   - The operator row lives in the durable transcript, so it is the proof of delivery that survives a restart. The in-memory ledger does not survive one.
+   - The room then shows the entry in the restored `QUEUED · saved to server` band. If the node ends, terminal reconciliation lists it as `NEVER SENT`.
+   - Entries that already have an operator row stay as they are.
+2. **VQ16-2:** after a per-item `Send now`, focus follows the withdraw focus rule. It moves to the same control on the next queued item. If no item is left, it moves to the message field. It never falls to `<body>`, whether the user clicked or pressed `Enter`.
+3. **VQ16-3:** the VQ12-1 continuity rule applies. The dock keeps the injected entry until its operator row has rendered in the transcript, not for a fixed single poll. No frame shows the item in neither place.
+4. **VQ16-4:** fixed as well. The band header count always matches the items it shows. When Stop lands, the entry that was in flight goes straight back into `WILL SEND · n`.
+5. **VQ16-5:** accepted. The usage disclosure comes from the owner's redesign (commit 7c80e270) and changes no state or control.
+
+Fixes are owned by the `qa16-fixes` follow-up work.
