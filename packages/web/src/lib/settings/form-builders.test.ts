@@ -1,0 +1,259 @@
+import { describe, test, expect } from 'bun:test';
+import {
+  buildAssistantUpdate,
+  buildTiersUpdate,
+  buildAliasesUpdate,
+  seedAliasRows,
+  seedTiers,
+  tierDefaultHint,
+  aliasNameError,
+  tiersForScope,
+  aliasesForScope,
+  seedUserDefault,
+  userDefaultArgs,
+} from './form-builders';
+import type {
+  AssistantConfigForm,
+  SafeConfigTiers,
+  TiersForm,
+  TierRowForm,
+  UserAiPrefs,
+} from './types';
+
+function form(over: Partial<AssistantConfigForm> = {}): AssistantConfigForm {
+  return {
+    assistant: 'claude',
+    models: {},
+    modelReasoningEffort: '',
+    webSearchMode: '',
+    ...over,
+  };
+}
+
+describe('buildAssistantUpdate', () => {
+  test('passes the default assistant through', () => {
+    expect(buildAssistantUpdate(form({ assistant: 'codex' })).assistant).toBe('codex');
+  });
+
+  test('omits a provider whose model is blank (never writes {model: ""})', () => {
+    const body = buildAssistantUpdate(form({ models: { claude: '', pi: '   ' } }));
+    expect(body.assistants).toBeUndefined();
+  });
+
+  test('trims the model before writing it', () => {
+    const body = buildAssistantUpdate(form({ models: { claude: '  sonnet  ' } }));
+    expect(body.assistants).toEqual({ claude: { model: 'sonnet' } });
+  });
+
+  test('a provider with only a model writes just { model }', () => {
+    const body = buildAssistantUpdate(form({ models: { pi: 'anthropic/claude-haiku-4-5' } }));
+    expect(body.assistants).toEqual({ pi: { model: 'anthropic/claude-haiku-4-5' } });
+  });
+
+  test('codex attaches reasoning effort + web search alongside its model', () => {
+    const body = buildAssistantUpdate(
+      form({
+        assistant: 'codex',
+        models: { codex: 'gpt-6-sol' },
+        modelReasoningEffort: 'high',
+        webSearchMode: 'live',
+      })
+    );
+    expect(body.assistants).toEqual({
+      codex: { model: 'gpt-6-sol', modelReasoningEffort: 'high', webSearchMode: 'live' },
+    });
+  });
+
+  test('codex options attach even when its model is blank (effort-only edit)', () => {
+    const body = buildAssistantUpdate(
+      form({ models: { codex: '' }, modelReasoningEffort: 'medium' })
+    );
+    expect(body.assistants).toEqual({ codex: { modelReasoningEffort: 'medium' } });
+  });
+
+  test('reasoning/web-search are NOT attached to non-codex providers', () => {
+    const body = buildAssistantUpdate(
+      form({ models: { claude: 'opus' }, modelReasoningEffort: 'high', webSearchMode: 'live' })
+    );
+    expect(body.assistants).toEqual({ claude: { model: 'opus' } });
+  });
+
+  test('everything blank → just the assistant, no assistants key', () => {
+    const body = buildAssistantUpdate(form({ models: { claude: '', codex: '' } }));
+    expect(body).toEqual({ assistant: 'claude' });
+  });
+});
+
+const BLANK: TierRowForm = { provider: '', model: '', effort: '' };
+function tierForm(
+  over: Partial<Record<'small' | 'medium' | 'large', Partial<TierRowForm>>>
+): TiersForm {
+  return {
+    small: { ...BLANK, ...over.small },
+    medium: { ...BLANK, ...over.medium },
+    large: { ...BLANK, ...over.large },
+  };
+}
+
+describe('buildTiersUpdate', () => {
+  test('a fully-set row → entry with provider/model/effort', () => {
+    const body = buildTiersUpdate(
+      tierForm({ large: { provider: 'claude', model: 'opus', effort: 'high' } })
+    );
+    expect(body.tiers.large).toEqual({ provider: 'claude', model: 'opus', effort: 'high' });
+  });
+
+  test('omits effort when blank', () => {
+    const body = buildTiersUpdate(tierForm({ large: { provider: 'claude', model: 'opus' } }));
+    expect(body.tiers.large).toEqual({ provider: 'claude', model: 'opus' });
+  });
+
+  test('blank provider → null (unset)', () => {
+    const body = buildTiersUpdate(tierForm({ large: { provider: '', model: 'opus' } }));
+    expect(body.tiers.large).toBeNull();
+  });
+
+  test('blank model → null (unset) — the OR-blank branch is not inverted', () => {
+    const body = buildTiersUpdate(tierForm({ large: { provider: 'claude', model: '' } }));
+    expect(body.tiers.large).toBeNull();
+  });
+
+  test('always sends all three tiers (set + null)', () => {
+    const body = buildTiersUpdate(tierForm({ small: { provider: 'claude', model: 'haiku' } }));
+    expect(body.tiers.small).toEqual({ provider: 'claude', model: 'haiku' });
+    expect(body.tiers.medium).toBeNull();
+    expect(body.tiers.large).toBeNull();
+  });
+
+  test('trims identity fields but preserves effort byte-for-byte', () => {
+    const body = buildTiersUpdate(
+      tierForm({ large: { provider: '  claude ', model: ' opus ', effort: ' high ' } })
+    );
+    expect(body.tiers.large).toEqual({ provider: 'claude', model: 'opus', effort: ' high ' });
+  });
+});
+
+describe('buildAliasesUpdate / seedAliasRows', () => {
+  test('complete rows become entries, effort optional', () => {
+    const body = buildAliasesUpdate(
+      [
+        { name: '@fast', provider: 'claude', model: 'haiku', effort: '' },
+        { name: '@deep', provider: 'codex', model: 'gpt-5.5', effort: 'high' },
+      ],
+      []
+    );
+    expect(body.aliases['@fast']).toEqual({ provider: 'claude', model: 'haiku' });
+    expect(body.aliases['@deep']).toEqual({ provider: 'codex', model: 'gpt-5.5', effort: 'high' });
+  });
+
+  test('preserves alias effort byte-for-byte', () => {
+    const body = buildAliasesUpdate(
+      [{ name: '@deep', provider: 'codex', model: 'gpt-5.5', effort: '  future-codex  ' }],
+      []
+    );
+    expect(body.aliases['@deep']).toEqual({
+      provider: 'codex',
+      model: 'gpt-5.5',
+      effort: '  future-codex  ',
+    });
+  });
+
+  test('baseline names missing from the rows are sent as null (delete)', () => {
+    const body = buildAliasesUpdate([], ['@fast']);
+    expect(body.aliases['@fast']).toBeNull();
+  });
+
+  test('rename = old name null + new name set', () => {
+    const body = buildAliasesUpdate(
+      [{ name: '@quick', provider: 'claude', model: 'haiku', effort: '' }],
+      ['@fast']
+    );
+    expect(body.aliases['@fast']).toBeNull();
+    expect(body.aliases['@quick']).toEqual({ provider: 'claude', model: 'haiku' });
+  });
+
+  test('incomplete rows are dropped (no accidental writes)', () => {
+    const body = buildAliasesUpdate(
+      [
+        { name: '@', provider: 'claude', model: '', effort: '' },
+        { name: '', provider: 'claude', model: 'haiku', effort: '' },
+      ],
+      []
+    );
+    expect(Object.keys(body.aliases)).toEqual([]);
+  });
+
+  test('seedAliasRows sorts by name and fills effort with empty string', () => {
+    const rows = seedAliasRows({
+      '@z': { provider: 'codex', model: 'gpt-5.5' },
+      '@a': { provider: 'claude', model: 'haiku', effort: 'low' },
+    });
+    expect(rows.map(r => r.name)).toEqual(['@a', '@z']);
+    expect(rows[0]).toEqual({ name: '@a', provider: 'claude', model: 'haiku', effort: 'low' });
+    expect(rows[1]?.effort).toBe('');
+  });
+});
+
+describe('scope handling', () => {
+  const cfg = {
+    tiers: { large: { provider: 'claude', model: 'opus' } },
+    tierDefaults: { small: { provider: 'codex', model: 'gpt-5.5' } },
+    aliases: { '@fast': { provider: 'claude', model: 'haiku' } },
+  } as unknown as SafeConfigTiers & {
+    aliases: Record<string, { provider: string; model: string }>;
+  };
+  const prefs: UserAiPrefs = {
+    tiers: { small: { provider: 'pi', model: 'x/y' } },
+    aliases: { '@mine': { provider: 'pi', model: 'a/b' } },
+  };
+
+  test('install scope reads config tiers/aliases, user scope reads prefs', () => {
+    expect(tiersForScope('install', cfg, prefs)?.large?.model).toBe('opus');
+    expect(tiersForScope('user', cfg, prefs)?.small?.model).toBe('x/y');
+    expect(Object.keys(aliasesForScope('install', cfg, prefs) ?? {})).toEqual(['@fast']);
+    expect(Object.keys(aliasesForScope('user', cfg, prefs) ?? {})).toEqual(['@mine']);
+  });
+
+  test('user scope with no prefs yields an empty source, never install values', () => {
+    expect(tiersForScope('user', cfg, undefined)).toBeUndefined();
+    expect(aliasesForScope('user', cfg, undefined)).toBeUndefined();
+  });
+
+  test('seedTiers leaves unset tiers blank', () => {
+    const f = seedTiers(cfg.tiers);
+    expect(f.large).toEqual({ provider: 'claude', model: 'opus', effort: '' });
+    expect(f.small).toEqual({ provider: '', model: '', effort: '' });
+  });
+
+  test('tierDefaultHint: user scope falls back to the install tier first', () => {
+    expect(tierDefaultHint(cfg, 'large', 'user')).toBe('claude/opus');
+    expect(tierDefaultHint(cfg, 'large', 'install')).toBe('built-in default');
+    expect(tierDefaultHint(cfg, 'small', 'install')).toBe('codex/gpt-5.5');
+    expect(tierDefaultHint(cfg, 'small', 'user')).toBe('codex/gpt-5.5');
+  });
+});
+
+describe('per-user default assistant', () => {
+  test('seeds blanks when nothing is stored', () => {
+    expect(seedUserDefault({})).toEqual({ provider: '', model: '' });
+  });
+
+  test('blank provider clears both provider and model', () => {
+    expect(userDefaultArgs({ provider: '', model: 'opus' })).toEqual([null, null]);
+  });
+
+  test('blank model with a provider clears only the model pin', () => {
+    expect(userDefaultArgs({ provider: 'claude', model: '' })).toEqual(['claude', null]);
+  });
+
+  test('provider and model are sent together', () => {
+    expect(userDefaultArgs({ provider: 'claude', model: 'opus' })).toEqual(['claude', 'opus']);
+  });
+});
+
+describe('aliasNameError', () => {
+  test('accepts @name', () => expect(aliasNameError('@review')).toBeNull());
+  test('rejects a missing @', () => expect(aliasNameError('review')).toContain('@'));
+  test('rejects a bare @', () => expect(aliasNameError('@')).not.toBeNull());
+  test('rejects reserved tier names', () => expect(aliasNameError('@Large')).toContain('reserved'));
+});
