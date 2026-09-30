@@ -1,0 +1,4 @@
+gc01 TWOrow 2 firstAckAgentText 39 ONErow 104 ackBeforeFollowUpTurn True
+gc02 TWOrow 2 firstAckAgentText 41 ONErow 118 ackBeforeFollowUpTurn True
+gl01 TWOrow 2 firstAckAgentText 34 ONErow 71 ackBeforeFollowUpTurn True
+gl02 TWOrow 2 firstAckAgentText 33 ONErow 104 ackBeforeFollowUpTurn True

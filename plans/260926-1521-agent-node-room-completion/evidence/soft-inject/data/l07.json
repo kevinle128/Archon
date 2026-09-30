@@ -1,0 +1,51 @@
+{
+  "tag": "l07",
+  "sender": "l",
+  "observer": "c",
+  "R": "32d5c9e7ac0ba811d86acdc8840ba65e",
+  "node": "cl-node",
+  "shotBefore": "/Users/dale/orca/Archon/.claude/worktrees/agent-a4b1bef9c53f33b3c/plans/260926-1521-agent-node-room-completion/evidence/soft-inject/scripts/shots/app-legacy-l07-before.png",
+  "click": { "status": 200, "resolvedMs": 26 },
+  "shotSent": "/Users/dale/orca/Archon/.claude/worktrees/agent-a4b1bef9c53f33b3c/plans/260926-1521-agent-node-room-completion/evidence/soft-inject/scripts/shots/app-legacy-l07-sent.png",
+  "status": "completed",
+  "frames": {
+    "l": [
+      [1790767981043, "Running|Stop,Queue|0|0||||||"],
+      [1790767981076, "Running|Stop,Queue|1|1|QUEUED · 1|ONE||||"],
+      [1790767981110, "Running|Stop,Queue|2|2|QUEUED · 2|ONE,TWO||||"],
+      [1790767982385, "Running|Stop,Queue|1|1|QUEUED · 1|ONE,TWO*||||"],
+      [1790767982951, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:sent|||"],
+      [1790767993436, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:delivered|||"],
+      [1790768037472, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered|||"],
+      [1790768038479, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent|||"],
+      [1790768039985, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:delivered|||"],
+      [1790768040735, "Completed||0|0|||TWO:delivered,ONE:delivered|||"]
+    ],
+    "c": [
+      [1790767981051, "Running|Stop,Queue|0|0||||||"],
+      [1790767981802, "Running|Stop,Queue|2|2|QUEUED · 2|ONE,TWO||||"],
+      [1790767982553, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:sent|||"],
+      [1790767992844, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:delivered|||"],
+      [1790768038019, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered|||"],
+      [1790768038781, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent|||"],
+      [1790768040022, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:delivered|||"],
+      [1790768040808, "Completed||0|0|||TWO:delivered,ONE:delivered|||"]
+    ]
+  },
+  "shotEnd": "/Users/dale/orca/Archon/.claude/worktrees/agent-a4b1bef9c53f33b3c/plans/260926-1521-agent-node-room-completion/evidence/soft-inject/scripts/shots/app-legacy-l07-end.png",
+  "clickedAt": 1790767982351,
+  "roomWidth": { "l": 460, "c": 520 },
+  "queue": [
+    ["l07 ONE keep", "delivered"],
+    ["l07 TWO: end", "delivered"]
+  ],
+  "rowCount": 25,
+  "attempts": ["a6037537-c87b-4738-8323-14d779801d4c"],
+  "promptRows": 1,
+  "operatorRows": [
+    [5, "l07 TWO: end y"],
+    [22, "l07 ONE keep t"]
+  ],
+  "ackInAgentText": 3,
+  "toolRowsAfterInjection": 10
+}
