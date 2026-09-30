@@ -37,7 +37,7 @@ Minimalism:
 | `--accent` (AI accent)                   | `#4F46E5` | `#818CF8` |
 | `--on-accent`                            | `#FFFFFF` | `#0B0B0F` |
 | `--accent-soft` (user bubble, selection) | `#EEF0FF` | `#1E1B3A` |
-| `--ok`                                   | `#15803D` | `#4ADE80` |
+| `--ok`                                   | `#166534` | `#4ADE80` |
 | `--warn`                                 | `#B45309` | `#FBBF24` |
 | `--err`                                  | `#DC2626` | `#F87171` |
 

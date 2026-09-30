@@ -29,7 +29,8 @@
   --on-solid: #ffffff;
   /* Modal backdrop. */
   --scrim: rgb(24 24 27 / 0.45);
-  --success: #15803d;
+  /* Clears 4.5:1 on --surface-hover, the darkest light surface a success glyph sits on. */
+  --success: #166534;
   --warning: #b45309;
   --error: #dc2626;
   /* Status pill borders in the node room header: the status hue blended into
