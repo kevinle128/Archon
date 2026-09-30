@@ -553,11 +553,10 @@ export function WorkflowCanvas({
         panOnDrag
         selectionOnDrag={false}
         fitView
-        colorMode="dark"
         className="bg-background"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--border)" />
-        <MiniMap className="!bg-surface !border-border" maskColor="rgba(0,0,0,0.6)" />
+        <MiniMap className="!bg-surface !border-border" />
         <Controls />
       </ReactFlow>
 

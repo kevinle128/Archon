@@ -39,11 +39,7 @@ export function ConversationItem({
   const navigate = useNavigate();
   const params = useParams<{ conversationId: string }>();
 
-  const displayName = conversation.title
-    ? conversation.title.length > 30
-      ? conversation.title.slice(0, 30) + '...'
-      : conversation.title
-    : 'Untitled conversation';
+  const displayName = conversation.title ?? 'Untitled conversation';
 
   const lastActivity = conversation.last_activity_at
     ? new Date(
@@ -112,17 +108,17 @@ export function ConversationItem({
       to={`/chat/${encodeURIComponent(conversation.platform_conversation_id)}`}
       className={({ isActive }): string =>
         cn(
-          'group relative flex min-h-[2.75rem] w-full items-start gap-2 rounded-md px-3 py-2 transition-colors duration-150',
-          isActive ? 'border-l-2 border-l-primary bg-accent-muted' : 'hover:bg-surface-elevated'
+          'group relative flex min-h-11 w-full items-start gap-3 rounded-lg px-3 py-2 transition-colors duration-150',
+          isActive ? 'bg-background' : 'hover:bg-surface-elevated'
         )
       }
     >
       <div
         className={cn(
-          'h-2 w-2 shrink-0 rounded-full',
-          status === 'running' && 'bg-primary animate-pulse',
+          'mx-1 mt-2 h-2 w-2 shrink-0 rounded-full',
+          status === 'running' && 'bg-primary animate-pulse motion-reduce:animate-none',
           status === 'failed' && 'bg-destructive',
-          status === 'idle' && 'bg-text-tertiary'
+          status === 'idle' && 'bg-transparent'
         )}
       />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -150,17 +146,15 @@ export function ConversationItem({
               {displayName}
             </span>
             {conversation.platform_type !== 'web' && (
-              <span className="text-[10px] font-medium uppercase tracking-wider text-text-tertiary bg-surface-secondary rounded px-1 py-0.5 shrink-0">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-text-tertiary bg-surface-elevated rounded px-1 py-0.5 shrink-0">
                 {conversation.platform_type}
               </span>
             )}
           </div>
         )}
         {renameError && <span className="text-[10px] text-error">{renameError}</span>}
-        <span className="truncate text-[11px] text-text-tertiary">{lastActivity}</span>
-        {projectName && (
-          <span className="truncate text-[10px] text-text-tertiary">{projectName}</span>
-        )}
+        <span className="truncate text-xs text-text-tertiary">{lastActivity}</span>
+        {projectName && <span className="truncate text-xs text-text-tertiary">{projectName}</span>}
       </div>
       {!isEditing && (
         <>
@@ -177,7 +171,7 @@ export function ConversationItem({
                   inputRef.current?.select();
                 }, 0);
               }}
-              className="p-1 rounded hover:bg-surface-elevated"
+              className="p-1 rounded hover:bg-surface-hover"
               title="Rename conversation"
             >
               <Pencil className="h-3.5 w-3.5 text-text-tertiary hover:text-primary" />
@@ -189,7 +183,7 @@ export function ConversationItem({
                 setDeleteError(null);
                 setDeleteDialogOpen(true);
               }}
-              className="p-1 rounded hover:bg-surface-elevated"
+              className="p-1 rounded hover:bg-surface-hover"
               title="Delete conversation"
             >
               <Trash2 className="h-3.5 w-3.5 text-text-tertiary hover:text-error" />
@@ -214,7 +208,7 @@ export function ConversationItem({
         </>
       )}
       {badge !== undefined && badge > 0 && (
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-error text-[10px] font-semibold text-white px-1">
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-error text-[10px] font-semibold text-on-solid px-1">
           {badge > 99 ? '99+' : String(badge)}
         </span>
       )}

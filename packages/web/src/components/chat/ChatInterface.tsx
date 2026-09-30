@@ -755,9 +755,9 @@ export function ChatInterface({
       {(conversationsError || codebasesError) && (
         <div className="flex gap-2 px-4 py-1">
           {conversationsError && (
-            <span className="text-xs text-red-400">Failed to load conversations</span>
+            <span className="text-xs text-error">Failed to load conversations</span>
           )}
-          {codebasesError && <span className="text-xs text-red-400">Failed to load projects</span>}
+          {codebasesError && <span className="text-xs text-error">Failed to load projects</span>}
         </div>
       )}
       <MessageList

@@ -124,7 +124,7 @@ export function QuickAddPicker({
             className={cn(
               'mt-2 w-full rounded px-3 py-1.5 text-xs font-medium transition-colors',
               inputValue.trim()
-                ? 'bg-primary text-white hover:bg-primary/90 cursor-pointer'
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer'
                 : 'bg-surface border border-border text-text-tertiary cursor-not-allowed'
             )}
           >

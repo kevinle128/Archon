@@ -227,7 +227,7 @@ export function BuilderToolbar({
             onClick={onRun}
             disabled={!workflowName.trim() || hasUnsavedChanges}
             title={hasUnsavedChanges ? 'Save the workflow before running' : undefined}
-            className="bg-node-command hover:bg-node-command/90 text-white"
+            className="bg-node-command hover:bg-node-command/90 text-on-solid"
           >
             Run
           </Button>

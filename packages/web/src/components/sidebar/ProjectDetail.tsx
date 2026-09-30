@@ -78,10 +78,6 @@ export function ProjectDetail({
     return map;
   }, [runs]);
 
-  const handleNewChat = (): void => {
-    navigate('/chat');
-  };
-
   const handleRunClick = (run: WorkflowRunResponse): void => {
     navigate(`/workflows/runs/${run.id}`);
   };
@@ -105,28 +101,19 @@ export function ProjectDetail({
     });
 
   return (
-    <div className="min-w-0 flex flex-col gap-3">
+    <div className="min-w-0 flex flex-col gap-3 pt-3">
       <div className="px-1">
-        <h3 className="text-sm font-semibold text-text-primary truncate">{projectName}</h3>
+        <h3 className="text-sm font-medium text-text-primary truncate">{projectName}</h3>
         {repositoryUrl && (
           <p className="text-[10px] text-text-tertiary truncate">{repositoryUrl}</p>
         )}
       </div>
 
-      <button
-        onClick={handleNewChat}
-        className="mx-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-accent-hover transition-colors"
-      >
-        New Chat
-      </button>
-
       <WorkflowInvoker codebaseId={codebaseId} />
 
       {/* Conversations section */}
       <div>
-        <span className="px-1 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-          Conversations
-        </span>
+        <span className="px-1 text-xs font-medium text-text-tertiary">Conversations</span>
         <div className="mt-1 flex flex-col gap-0.5">
           {isErrorConversations ? (
             <span className="px-1 text-xs text-error">Failed to load — retrying</span>
@@ -146,9 +133,7 @@ export function ProjectDetail({
 
       {/* Workflow runs section */}
       <div>
-        <span className="px-1 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-          Workflow Runs
-        </span>
+        <span className="px-1 text-xs font-medium text-text-tertiary">Workflow Runs</span>
         <div className="mt-1 flex flex-col gap-0.5">
           {isErrorRuns ? (
             <span className="px-1 text-xs text-error">Failed to load — retrying</span>
@@ -177,7 +162,7 @@ export function ProjectDetail({
       {/* Active worktrees section */}
       {(isErrorEnvironments || activeEnvironments.length > 0) && (
         <div>
-          <span className="px-1 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
+          <span className="px-1 text-xs font-medium text-text-tertiary">
             Active Worktrees{!isErrorEnvironments && ` (${String(activeEnvironments.length)})`}
           </span>
           <div className="mt-1 flex flex-col gap-0.5">

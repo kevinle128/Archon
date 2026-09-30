@@ -590,7 +590,7 @@ function AssistantConfigSection({ config }: { config: SafeConfigResponse }): Rea
             </Button>
             {saveMsg && (
               <span
-                className={`text-sm ${saveMsg.type === 'success' ? 'text-green-500' : 'text-destructive'}`}
+                className={`text-sm ${saveMsg.type === 'success' ? 'text-success' : 'text-destructive'}`}
               >
                 {saveMsg.text}
               </span>

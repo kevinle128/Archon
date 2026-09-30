@@ -9,7 +9,7 @@ export function WorkflowsPage(): React.ReactElement {
         <h1 className="text-lg font-semibold text-text-primary">Workflows</h1>
         <Link
           to="/workflows/builder"
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90 transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
           <Plus className="size-4" />
           New Workflow

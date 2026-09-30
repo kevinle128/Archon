@@ -209,7 +209,7 @@ function MessageBubbleRaw({ message }: MessageBubbleProps): React.ReactElement {
                   {message.files.map((file: FileAttachment) => (
                     <div
                       key={file.id}
-                      className="flex items-center gap-1 rounded-md bg-black/10 px-1.5 py-0.5 text-xs text-text-secondary"
+                      className="flex items-center gap-1 rounded-md bg-surface-elevated px-1.5 py-0.5 text-xs text-text-secondary"
                       title={file.name}
                     >
                       <Paperclip className="h-3 w-3 shrink-0" />

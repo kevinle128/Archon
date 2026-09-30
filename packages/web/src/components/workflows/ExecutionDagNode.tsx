@@ -32,10 +32,10 @@ const STATUS_STYLES: Partial<Record<WorkflowStepStatus, string>> = {
 const DEFAULT_STYLE = 'border-l-2 border-border bg-surface-elevated';
 
 const TYPE_COLORS: Record<string, string> = {
-  command: 'text-purple-400',
+  command: 'text-node-command',
   prompt: 'text-accent-bright',
-  bash: 'text-amber-400',
-  loop: 'text-orange-400',
+  bash: 'text-node-bash',
+  loop: 'text-node-loop',
   route_loop: 'text-node-loop',
   approval: 'text-node-approval',
   plannotator_gate: 'text-node-approval',

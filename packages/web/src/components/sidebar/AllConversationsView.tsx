@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { listConversations, listWorkflowRuns } from '@/lib/api';
 import type { CodebaseResponse } from '@/lib/api';
+import { SidebarSectionHeader } from '@/components/sidebar/SidebarSectionHeader';
 import { ConversationItem } from '@/components/conversations/ConversationItem';
 import { useProject } from '@/contexts/ProjectContext';
 
@@ -13,7 +13,6 @@ interface AllConversationsViewProps {
 export function AllConversationsView({
   searchQuery,
 }: AllConversationsViewProps): React.ReactElement {
-  const navigate = useNavigate();
   const { codebases } = useProject();
 
   const { data: conversations, isError: isErrorConversations } = useQuery({
@@ -51,10 +50,6 @@ export function AllConversationsView({
     }
   }
 
-  const handleNewChat = (): void => {
-    navigate('/chat');
-  };
-
   const filtered = conversations?.filter(conv => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
@@ -62,21 +57,12 @@ export function AllConversationsView({
   });
 
   return (
-    <div className="flex flex-col gap-3">
-      <button
-        onClick={handleNewChat}
-        className="mx-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-accent-hover transition-colors"
-      >
-        New Chat
-      </button>
-
+    <div className="flex flex-col">
       <div>
-        <span className="px-1 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-          All Conversations
-        </span>
-        <div className="mt-1 flex flex-col gap-0.5">
+        <SidebarSectionHeader title="Recent" />
+        <div className="flex flex-col gap-0.5">
           {isErrorConversations ? (
-            <span className="px-1 text-xs text-error">Failed to load — retrying</span>
+            <span className="px-3 text-xs text-error">Failed to load — retrying</span>
           ) : filtered && filtered.length > 0 ? (
             filtered.map(conv => (
               <ConversationItem
@@ -87,7 +73,7 @@ export function AllConversationsView({
               />
             ))
           ) : (
-            <span className="px-1 text-xs text-text-tertiary">
+            <span className="px-3 text-xs text-text-tertiary">
               {conversations && conversations.length > 0
                 ? 'No matching conversations'
                 : 'No conversations yet — start a new chat!'}
