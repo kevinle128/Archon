@@ -251,6 +251,29 @@ describe('mapWorkflowRunDetail', () => {
     const nonStringError = mapWorkflowRunDetail(runDetail({ metadata: { error: { code: 7 } } }));
     expect(nonStringError.runError).toBeNull();
   });
+
+  test('carries the usage report and the legacy run total', () => {
+    const mapped = mapWorkflowRunDetail(runDetail({ metadata: { total_cost_usd: 1.25 } }));
+    expect(mapped.usage).toBeNull();
+    expect(mapped.legacyCostUsd).toBe(1.25);
+    expect(mapWorkflowRunDetail(runDetail()).legacyCostUsd).toBeNull();
+  });
+
+  test('parses a pending ENV overlay and drops a malformed one', () => {
+    const overlay = {
+      envId: 'e1',
+      envName: 'fast',
+      workflowName: 'demo',
+      patches: { plan: { model: 'haiku' } },
+      skippedNodeIds: [],
+    };
+    const mapped = mapWorkflowRunDetail(runDetail({ metadata: { envOverlay: overlay } }));
+    expect(mapped.envOverlay?.envName).toBe('fast');
+    expect(mapped.envOverlay?.complete).toBe(false);
+    expect(
+      mapWorkflowRunDetail(runDetail({ metadata: { envOverlay: 'legacy' } })).envOverlay
+    ).toBeNull();
+  });
 });
 
 describe('emptyAskActionStates', () => {
