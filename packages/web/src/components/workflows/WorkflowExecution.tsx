@@ -15,7 +15,7 @@ import { buildLogRows } from './build-log-rows';
 import { StepLogs } from './StepLogs';
 import { WorkflowLogs } from './WorkflowLogs';
 import { WorkflowDagViewer } from './WorkflowDagViewer';
-import { ArtifactSummary } from './ArtifactSummary';
+import { RunArtifactsPanel } from '@/components/run-artifacts/RunArtifactsPanel';
 import { WorkflowNodeRetryAction } from './WorkflowNodeRetryAction';
 import { DagRunTabs, type WorkflowRunView } from './source-control/dag-run-tabs';
 import { SourceControlTab } from './source-control/source-control-tab';
@@ -418,6 +418,9 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   const [workerRunId, setWorkerRunId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<WorkflowRunView>('graph');
   const [showArtifacts, setShowArtifacts] = useState(false);
+  const closeArtifacts = useCallback((): void => {
+    setShowArtifacts(false);
+  }, []);
   const [actionError, setActionError] = useState<string | null>(null);
   // Increments on every user-initiated node click to trigger scroll in WorkflowLogs
   const [nodeScrollTrigger, setNodeScrollTrigger] = useState(0);
@@ -1317,7 +1320,6 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
               </button>
               <button
                 type="button"
-                disabled={workflow.artifacts.length === 0}
                 aria-pressed={showArtifacts}
                 onClick={(): void => {
                   setShowArtifacts(value => !value);
@@ -1385,15 +1387,19 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
 
         {error ? <p className="px-8 py-1 text-xs text-error">Failed to load — retrying</p> : null}
 
-        <div data-testid="legacy-run-shell-chrome">
-          {retryActionPanel}
-          {(showArtifacts || !isRunning) && workflow.artifacts.length > 0 ? (
-            <div className="border-t border-border p-3">
-              <ArtifactSummary artifacts={workflow.artifacts} runId={runId} />
-            </div>
+        <div data-testid="legacy-run-shell-chrome">{retryActionPanel}</div>
+        {/* The panel sits beside the body so an open node room stays usable. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{renderBody()}</div>
+          {showArtifacts ? (
+            <RunArtifactsPanel
+              key={runId}
+              runId={runId}
+              reportedArtifacts={workflow.artifacts}
+              onClose={closeArtifacts}
+            />
           ) : null}
         </div>
-        {renderBody()}
       </div>
     </runUsageContext.Provider>
   );

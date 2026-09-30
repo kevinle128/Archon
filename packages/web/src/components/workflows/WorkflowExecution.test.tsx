@@ -589,6 +589,9 @@ describe('WorkflowExecution room visit', () => {
       if (path === '/api/workflows/demo') {
         return Promise.resolve(jsonResponse(visitWorkflowDefinition()));
       }
+      if (path === '/api/runs/run-1/artifacts') {
+        return Promise.resolve(jsonResponse({ files: [] }));
+      }
       if (path.includes('/nodes/') && path.endsWith('/messages')) {
         return Promise.resolve(
           jsonResponse({ messages: [], hasMore: false, highWatermark: 0 } satisfies {
@@ -1004,10 +1007,13 @@ describe('WorkflowExecution room visit', () => {
       'room closed',
       () => host.querySelector('[data-testid="legacy-node-room"]') === null
     );
-    expect(host.querySelector('[data-testid="legacy-run-shell-chrome"]')?.textContent).toContain(
-      'Artifacts'
+    const artifactsButton = await clickNamed('Artifacts');
+    await flushUntil(
+      'artifacts panel',
+      () => host.querySelector('[data-testid="run-artifacts-panel"]') !== null
     );
-    expect(host.querySelector('[data-testid="legacy-run-shell-chrome"]')?.textContent).toContain(
+    expect(artifactsButton.hasAttribute('disabled')).toBe(false);
+    expect(host.querySelector('[data-testid="run-artifacts-panel"]')?.textContent).toContain(
       'ship-it'
     );
     expect(host.textContent).toContain('Logs');
