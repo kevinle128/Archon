@@ -82,4 +82,6 @@ Evidence: `plans/260926-1521-agent-node-room-completion/evidence/soft-inject/` (
 
 **4. Grok `--single`:** a unit test in `steering-dock.test.ts` shows a snapshot with the provider capability but no projected sub-state gives `queue-only` mode, so the dock offers no per-item `Send now`.
 
+Full e2e UI suite after these changes (`ARCHON_E2E_PORT_BASE=3580`, after `git merge develop-2`, which was already up to date): 162 passed, 4 skipped, 0 failed. The first run had one failure in `agent-queue-guidance.spec.ts` `route-smoke` (a detached CLI run answered 422 where the test expects 409; that path is untouched here). It passed 3 of 3 alone and the second full run passed. `bun run validate` is green.
+
 Earlier reading that a soft-injected Claude entry is `delivered` at the echo still holds. Only a message redelivered after a drop stays `sent` (its drain turn carries no uuid, so no echo), with its operator row shown.
