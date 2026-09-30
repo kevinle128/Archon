@@ -1,0 +1,126 @@
+{
+  "msToClear": 386,
+  "frameCount": 24,
+  "frames": [
+    {
+      "t": 627.3000001907349,
+      "hasStop": false,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 644.2000000476837,
+      "hasStop": false,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 659.9000000953674,
+      "hasStop": false,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 678.4000000953674,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 694.7000000476837,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 710,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 727,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 744.7000000476837,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 760.1000001430511,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 777.5,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 793.3000001907349,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 811.1000001430511,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 828.1000001430511,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 844.7000000476837,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 861.3000001907349,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 876.1000001430511,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 893.6000001430511,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 910.5,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 927,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 944.9000000953674,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 961.4000000953674,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 985.4000000953674,
+      "hasStop": true,
+      "hasQueueOrSendNow": true
+    },
+    {
+      "t": 1009.6000001430511,
+      "hasStop": false,
+      "hasQueueOrSendNow": false
+    },
+    {
+      "t": 1011.1000001430511,
+      "hasStop": false,
+      "hasQueueOrSendNow": false
+    }
+  ]
+}
