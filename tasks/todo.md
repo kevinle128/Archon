@@ -89,7 +89,8 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] Phase 1-2 foundation + sidebar shell committed (ca44f10e); route cleanup (307768b0); plans (f21d1daf)
 - [x] Phases 3-7 committed: builder 57d55bd7, dashboard+workflows 52d9433c, chat 90a83b88, run detail 4555d1b6, settings+console port 29ce10b8; web tests all green
 - [x] Phase 8 committed (6d6dc184 core reviewUrl fix, 904546c5 console removal + polish, e27bd941 docs, cdd79711 e2e routes); bun run validate EXIT 0
-- [ ] Gap: console-only features not yet in the new UI: workflow ENV overlay manager + picker, run cost strip + per-node usage breakdown; 21 HITL e2e specs still target console markup (owner decision pending)
+- [x] Console gaps ported: ENV overlay manager + picker (7f36612e), run cost + per-node usage + run ENV overlay (7c80e270); HITL e2e 31 pass / 0 fail (b2bfd6c4); success token AA fix (c8c389e4); env dialog test teardown fix (97c42b5e); bun run validate EXIT 0
+- [ ] Still missing vs console (owner decision): Reply-to-parent-conversation action on run page, docked Artifacts panel
 - [ ] Docs-site binaries still show the old shield logo (packages/docs-web/src/assets/logo.png, public/favicon.png)
 - [ ] Step 3: after owner approves screens, plan the implementation in packages/web (tokens in index.css, brand guide update per AGENTS.md)
 - [ ] Decision for user: delete `packages/web/src/experiments/console/` (308 files) in follow-up; move `install-happy-dom` test helper to `src/test/` first
