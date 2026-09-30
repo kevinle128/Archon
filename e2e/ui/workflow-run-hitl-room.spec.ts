@@ -649,6 +649,46 @@ test('[P1] [V:hitl.legacy-navigation] Legacy navigation and timeline survive wit
   });
 });
 
+test('[P1] [V:hitl.reply-parent-unavailable] Run chat reply disabled when parent unavailable', async ({
+  page,
+  archon,
+}) => {
+  await page.setViewportSize(SPLIT_VIEWPORT);
+  const started = await archon.runHitlWorkflow();
+  await openRunDetail(page, started.runId);
+  await waitForRunTitle(page, 'e2e-hitl-run');
+  await page.getByRole('tab', { name: 'Chat' }).click();
+  await expect(page.getByRole('form', { name: 'Run conversation composer' })).toBeVisible();
+  const sendButton = page.getByRole('button', { name: 'Send' });
+  await expect(sendButton).toBeDisabled();
+  await expect(
+    page.getByPlaceholder('This run has no parent conversation, so replies cannot be delivered.')
+  ).toBeVisible();
+});
+
+test('[P1] [V:hitl.reply-parent] Run chat reply posts to the exact parent web conversation', async ({
+  browser,
+  archon,
+}) => {
+  await pageWaitStarter(browser, archon, async page => {
+    await page.setViewportSize(SPLIT_VIEWPORT);
+    const webRun = await archon.runHitlWorkflowViaWeb();
+    const posts: string[] = [];
+    page.on('request', request => {
+      if (request.method() !== 'POST') return;
+      posts.push(new URL(request.url()).pathname);
+    });
+    await openRunDetail(page, webRun.runId);
+    await waitForRunTitle(page, 'e2e-hitl-run');
+    await page.getByRole('tab', { name: 'Chat' }).click();
+    await page.getByLabel('Message the run conversation').fill('parent-reply-from-room-spec');
+    await page.getByRole('button', { name: 'Send' }).click();
+    const expected = `/api/conversations/${encodeURIComponent(webRun.conversationId)}/message`;
+    await expect.poll(() => posts.includes(expected)).toBe(true);
+    expect(posts.includes('/api/conversations')).toBe(false);
+  });
+});
+
 /**
  * The document must never become the scroller for a Legacy run room: the root
  * keeps scrollTop 0 and no more than 2px of scroll slack while the transcript

@@ -333,9 +333,9 @@ test('[P1] [V:hitl.production-controls] production chrome keeps Artifacts and do
   await expect(page.getByRole('button', { name: /^Replay$/i })).toHaveCount(0);
   await expect(page.locator('#btn-replay')).toHaveCount(0);
   await expect(page.locator('#view-toggle')).toHaveCount(0);
-  // The run has written no artifacts, so the control stays in place but is
-  // disabled instead of opening an empty list.
+  // The control is always enabled: it opens a browser over every file on disk,
+  // so a run without event-reported artifacts still has something to show.
   const artifacts = page.getByRole('button', { name: /^Artifacts/ });
   await expect(artifacts).toBeVisible();
-  await expect(artifacts).toBeDisabled();
+  await expect(artifacts).toBeEnabled();
 });
