@@ -125,7 +125,7 @@ function enrichApprovalPayload(
     const configured = process.env.ARCHON_PUBLIC_URL?.trim();
     if (!configured) throw new Error('ARCHON_PUBLIC_URL is required for approval callbacks');
     const url = requireHttpUrl(configured, 'ARCHON_PUBLIC_URL');
-    url.pathname = `/console/p/${encodeURIComponent(run.codebase_id)}/r/${encodeURIComponent(run.id)}`;
+    url.pathname = `/workflows/runs/${encodeURIComponent(run.id)}`;
     url.search = '';
     url.hash = '';
     reviewUrl = url.toString();

@@ -54,6 +54,7 @@ packages/docs-web/
 docs/
 claude-design/
 plans/260912-1405-agent-steering/mockup-live-interaction.html
+plans/260930-1702-ui-redesign-directions/**/*.html
 AGENTS.md
 CLAUDE.md
 README.md

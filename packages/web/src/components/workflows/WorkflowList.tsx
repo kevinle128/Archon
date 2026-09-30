@@ -13,6 +13,12 @@ import {
 } from '@/lib/api';
 import { useProject } from '@/contexts/ProjectContext';
 import { WorkflowCard } from '@/components/workflows/WorkflowCard';
+import { WorkflowEnvPicker } from '@/components/workflow-envs/WorkflowEnvPicker';
+import { WorkflowEnvPreviewTable } from '@/components/workflow-envs/WorkflowEnvPreviewTable';
+import { WorkflowEnvironmentsSection } from '@/components/workflow-envs/WorkflowEnvironmentsSection';
+import { runWorkflowWithEnv } from '@/lib/workflow-envs/api';
+import { envStartBlockReason, isStartBlockedBySelectedEnv } from '@/lib/workflow-envs/draft-env';
+import { useWorkflowEnvPreview, useWorkflowEnvs } from '@/lib/workflow-envs/queries';
 import { partitionWorkflows } from '@/components/workflows/partition-workflows';
 import { cn } from '@/lib/utils';
 import {
@@ -27,6 +33,8 @@ interface WorkflowEntry {
   workflow: WorkflowDefinition;
   source: WorkflowSource;
 }
+
+const ENV_NEEDS_PROJECT = 'Select a project to run with an environment.';
 
 const CONTROL_CLASS =
   'min-h-11 w-full rounded-[10px] border border-border bg-background px-3 text-sm text-text-primary placeholder:text-text-tertiary outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:opacity-50';
@@ -67,9 +75,14 @@ interface WorkflowDetailProps {
   onRunMessageChange: (value: string) => void;
   projectId: string | null;
   onProjectChange: (id: string | null) => void;
+  /** Project cwd of the chosen project; ENV previews and editing need it. */
+  projectCwd: string | undefined;
+  /** Selected ENV overlay id for this workflow, or null for the plain YAML. */
+  envId: string | null;
+  onEnvChange: (envId: string | null) => void;
   running: boolean;
   runError: string | null;
-  onRun: () => void;
+  onRun: (envId: string | null) => void;
 }
 
 function WorkflowDetail({
@@ -78,6 +91,9 @@ function WorkflowDetail({
   onRunMessageChange,
   projectId,
   onProjectChange,
+  projectCwd,
+  envId,
+  onEnvChange,
   running,
   runError,
   onRun,
@@ -94,6 +110,22 @@ function WorkflowDetail({
     const kind = nodeKind(node);
     kindCounts.set(kind, (kindCounts.get(kind) ?? 0) + 1);
   }
+  // Previews need a project cwd, so without one an ENV cannot be used and the run falls back to YAML.
+  const hasCwd = projectCwd !== undefined && projectCwd.length > 0;
+  const effectiveEnvId = hasCwd ? envId : null;
+  const { data: envSummaries, error: envListError } = useWorkflowEnvs(workflow.name);
+  const {
+    data: envPreview,
+    error: envPreviewError,
+    loading: envPreviewLoading,
+  } = useWorkflowEnvPreview(workflow.name, projectCwd, effectiveEnvId);
+  const envBlockArgs = {
+    selectedEnvId: effectiveEnvId,
+    preview: envPreview,
+    previewError: envPreviewError,
+  };
+  const envBlocksRun = isStartBlockedBySelectedEnv(envBlockArgs);
+  const envBlockReason = envStartBlockReason(envBlockArgs);
   const kindSummary = [...kindCounts.entries()].map(([k, n]) => `${String(n)} ${k}`).join(', ');
 
   return (
@@ -126,14 +158,16 @@ function WorkflowDetail({
             onKeyDown={(e): void => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                onRun();
+                if (!envBlocksRun) onRun(effectiveEnvId);
               }
             }}
           />
           <button
             type="button"
-            onClick={onRun}
-            disabled={running || !runMessage.trim()}
+            onClick={(): void => {
+              onRun(effectiveEnvId);
+            }}
+            disabled={running || !runMessage.trim() || envBlocksRun}
             className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] bg-accent px-4 text-sm font-medium text-on-accent outline-none transition-opacity duration-150 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
           >
             <Play className="size-4" strokeWidth={1.75} />
@@ -146,36 +180,63 @@ function WorkflowDetail({
             Edit in Builder
           </Link>
         </div>
-        <div className="flex items-center gap-2 text-xs text-text-secondary">
-          <label htmlFor="workflow-run-project">Project</label>
-          <div className="relative w-56">
-            <select
-              id="workflow-run-project"
-              value={projectId ?? ''}
-              onChange={(e): void => {
-                onProjectChange(e.target.value || null);
-              }}
-              className={cn(CONTROL_CLASS, 'appearance-none pr-9')}
-            >
-              <option value="">No project</option>
-              {codebases?.map(cb => (
-                <option key={cb.id} value={cb.id}>
-                  {cb.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary"
-              strokeWidth={1.75}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-text-secondary">
+          <div className="flex items-center gap-2">
+            <label htmlFor="workflow-run-project">Project</label>
+            <div className="relative w-56">
+              <select
+                id="workflow-run-project"
+                value={projectId ?? ''}
+                onChange={(e): void => {
+                  onProjectChange(e.target.value || null);
+                }}
+                className={cn(CONTROL_CLASS, 'appearance-none pr-9')}
+              >
+                <option value="">No project</option>
+                {codebases?.map(cb => (
+                  <option key={cb.id} value={cb.id}>
+                    {cb.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary"
+                strokeWidth={1.75}
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2" title={hasCwd ? undefined : ENV_NEEDS_PROJECT}>
+            <span aria-hidden>Environment</span>
+            <WorkflowEnvPicker
+              envs={envSummaries ?? []}
+              value={effectiveEnvId}
+              onChange={onEnvChange}
+              disabled={running || !hasCwd}
+              listError={envListError !== undefined}
             />
           </div>
         </div>
+        {effectiveEnvId !== null && (
+          <WorkflowEnvPreviewTable
+            preview={envPreview}
+            loading={
+              envPreviewLoading || (envPreview === undefined && envPreviewError === undefined)
+            }
+            error={envPreviewError}
+            envSelected
+          />
+        )}
+        {envBlockReason !== null && !runError && (
+          <p className="text-xs text-text-tertiary">{envBlockReason}</p>
+        )}
         {runError && (
           <p role="alert" className="text-xs text-error">
             {runError}
           </p>
         )}
       </div>
+
+      <WorkflowEnvironmentsSection workflowName={workflow.name} projectCwd={projectCwd} />
 
       {whenText && (
         <DetailSection title="When to use">
@@ -253,6 +314,11 @@ export function WorkflowList(): React.ReactElement {
   const [runMessage, setRunMessage] = useState('');
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
+  // The overlay choice is stored with its workflow name so switching workflows
+  // (including the list's fallback selection) never carries an overlay across.
+  const [envChoice, setEnvChoice] = useState<{ workflow: string; envId: string | null } | null>(
+    null
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<WorkflowCategory>('All');
   const { codebases, selectedProjectId } = useProject();
@@ -270,7 +336,7 @@ export function WorkflowList(): React.ReactElement {
     detailRef.current?.scrollTo({ top: 0 });
   };
 
-  const handleRun = async (workflowName: string): Promise<void> => {
+  const handleRun = async (workflowName: string, envId: string | null): Promise<void> => {
     if (!runMessage.trim() || running) return;
     setRunning(true);
     setRunError(null);
@@ -278,7 +344,12 @@ export function WorkflowList(): React.ReactElement {
     let workflowStarted = false;
     try {
       ({ conversationId } = await createConversation(localProjectId ?? undefined));
-      await runWorkflow(workflowName, conversationId, runMessage.trim());
+      const message = runMessage.trim();
+      if (envId !== null) {
+        await runWorkflowWithEnv(workflowName, conversationId, message, envId);
+      } else {
+        await runWorkflow(workflowName, conversationId, message);
+      }
       workflowStarted = true;
       setRunMessage('');
       navigate(`/chat/${conversationId}`);
@@ -507,10 +578,15 @@ export function WorkflowList(): React.ReactElement {
             onRunMessageChange={setRunMessage}
             projectId={localProjectId}
             onProjectChange={setLocalProjectId}
+            projectCwd={selectedCwd}
+            envId={envChoice?.workflow === selectedEntry.workflow.name ? envChoice.envId : null}
+            onEnvChange={(envId): void => {
+              setEnvChoice({ workflow: selectedEntry.workflow.name, envId });
+            }}
             running={running}
             runError={runError}
-            onRun={(): void => {
-              void handleRun(selectedEntry.workflow.name);
+            onRun={(envId): void => {
+              void handleRun(selectedEntry.workflow.name, envId);
             }}
           />
         )}

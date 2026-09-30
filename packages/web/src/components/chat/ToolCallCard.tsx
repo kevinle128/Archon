@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import {
   toolBodyPresentation,
   toolRawPayloadJson,
+  headlineAfterLabel,
   toolRowPresentation,
   type ToolBody,
   type ToolOutcome,
@@ -284,7 +285,7 @@ export function ToolCallCard({ tool }: ToolCallCardProps): React.ReactElement {
           {presentation.label}
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-primary">
-          {presentation.headline}
+          {headlineAfterLabel(presentation)}
         </span>
         <Badges badges={presentation.badges} />
       </button>

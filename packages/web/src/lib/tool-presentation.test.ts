@@ -11,6 +11,7 @@ import {
   MAX_GENERIC_KEYS_SCANNED,
   MAX_GENERIC_SCALAR_CODE_POINTS,
   MAX_HEADLINE_SOURCE_CODE_UNITS,
+  headlineAfterLabel,
   toolBodyPresentation,
   toolPresentation,
   toolRawPayloadJson,
@@ -154,6 +155,15 @@ describe('mcp names', () => {
   test('mcp without scalar input falls back to the compact label headline', () => {
     const presentation = call('mcp__github__create_issue', { nested: { deep: true } });
     expect(presentation.headline).toBe('github · create_issue');
+  });
+
+  test('a row whose headline is only its label prints the label once', () => {
+    const bare = call('mcp__archon__AskHuman');
+    expect(bare.label).toBe('archon · AskHuman');
+    expect(headlineAfterLabel(bare)).toBe('');
+    const withFacts = call('mcp__github__create_issue', { title: 'bug' });
+    expect(headlineAfterLabel(withFacts)).toBe(withFacts.headline);
+    expect(headlineAfterLabel(withFacts)).not.toBe('');
   });
 
   test('malformed mcp names fall through to normal resolution', () => {

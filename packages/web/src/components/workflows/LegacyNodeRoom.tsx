@@ -23,6 +23,7 @@ import type { AskActionStateByRequest } from './ask-answer-controller';
 import { nodeStatusLabel } from './awaiting-chrome';
 import type { LogRow } from './build-log-rows';
 import { ChildWorkflowRoom } from './ChildWorkflowRoom';
+import { NodeUsageDisclosure } from '@/components/run-usage/NodeUsageDisclosure';
 import { GateRoom } from './GateRoom';
 import { LoopGroupRoom } from './LoopGroupRoom';
 import { NodeRoomHeader, type ExecutionHeaderOption } from './NodeRoomHeader';
@@ -350,6 +351,7 @@ export function LegacyNodeRoom({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {header}
+      <NodeUsageDisclosure nodeId={row.nodeId} />
       {body}
     </div>
   );

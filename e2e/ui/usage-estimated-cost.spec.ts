@@ -24,8 +24,10 @@ test('[P1] a tokens-only run shows an estimated cost, not a reported one', async
   await openCostForRun(page, runId);
 
   // Estimated column carries the computed cost, prefixed ≈.
-  await expect(page.getByText('≈$12.00').first()).toBeVisible({ timeout: T.medium });
-  await expect(page.getByText('openai').first()).toBeVisible();
+  await expect(page.locator('#set-usage').getByText('≈$12.00').first()).toBeVisible({
+    timeout: T.medium,
+  });
+  await expect(page.locator('#set-usage').getByText('openai').first()).toBeVisible();
   // No reported USD for this run: reported renders as n/a, so no bare "$12.00".
-  await expect(page.getByText('$12.00', { exact: true })).toHaveCount(0);
+  await expect(page.locator('#set-usage').getByText('$12.00', { exact: true })).toHaveCount(0);
 });

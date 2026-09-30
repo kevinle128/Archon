@@ -68,6 +68,13 @@ import { nodeMessageScopeKey, type NodeMessageSelection } from '@/lib/node-messa
 import type { AskDraft, AskDraftByRequest } from './parse-ask-envelope';
 import { ensureUtc, formatDurationMs, formatStarted } from '@/lib/format';
 import { ChevronRight, FileText } from 'lucide-react';
+import { parseRunEnvOverlay } from '@/lib/run-usage/parse-run-env-overlay';
+import { readLegacyRunCost } from '@/lib/run-usage/run-usage';
+import type { RunEnvOverlay } from '@/components/workflow-envs/WorkflowEnvResolvedTable';
+import { RunEnvOverlayMeta } from '@/components/run-usage/RunEnvOverlayMeta';
+import type { RunDetailUsage } from '@/lib/settings/usage';
+import { RunCostMeta } from '@/components/run-usage/RunCostMeta';
+import { runUsageContext, type RunUsageValue } from '@/components/run-usage/run-usage-context';
 import { readRoomRatio, writeRoomRatio } from '@/lib/room-split-layout';
 import { settleRunningDagNodesForTerminalStatus } from '@/lib/workflow-utils';
 import type {
@@ -123,6 +130,11 @@ export interface WorkflowRunQueryData {
   viewerIsStarter: boolean;
   starterDisplayName: string | null;
   runError: string | null;
+  /** Direct-run usage grouped by node; null when the usage query failed. */
+  usage: RunDetailUsage;
+  legacyCostUsd: number | null;
+  /** Strictly parsed `metadata.envOverlay`; null when absent or malformed. */
+  envOverlay: RunEnvOverlay | null;
 }
 
 export function mapWorkflowRunDetail(
@@ -169,6 +181,9 @@ export function mapWorkflowRunDetail(
     viewerIsStarter: data.viewer_is_starter,
     starterDisplayName: data.starter_display_name,
     runError: typeof metadataError === 'string' ? metadataError : null,
+    usage: data.usage,
+    legacyCostUsd: readLegacyRunCost(data.run.metadata),
+    envOverlay: parseRunEnvOverlay(data.run.metadata),
   };
 }
 
@@ -1017,6 +1032,10 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   const elapsed = startedAt ? Math.max(0, completedAt - startedAt) : 0;
 
   const isRunning = workflow.status === 'running' || workflow.status === 'pending';
+  const runUsageValue: RunUsageValue | undefined =
+    queryData === undefined
+      ? undefined
+      : { usage: queryData.usage, legacyCostUsd: queryData.legacyCostUsd };
 
   // Pick the platform ID for logs: worker takes precedence over conversation.
   const logsPlatformId = workerPlatformId ?? conversationPlatformId;
@@ -1201,167 +1220,181 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   };
 
   return (
-    <div className="legacy-run-view flex flex-col h-full min-h-0 overflow-hidden">
-      {/* Header */}
-      <div className="grid gap-2 border-b border-border px-8 pt-4">
-        <nav
-          aria-label="Breadcrumb"
-          className="flex flex-wrap items-center gap-1 text-sm text-text-secondary"
-        >
-          <button
-            type="button"
-            onClick={(): void => {
-              navigate('/dashboard');
-            }}
-            className="-ml-2 inline-flex min-h-11 cursor-pointer items-center rounded-[10px] px-2 transition-colors duration-150 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
+    <runUsageContext.Provider value={runUsageValue}>
+      <div className="legacy-run-view flex flex-col h-full min-h-0 overflow-hidden">
+        {/* Header */}
+        <div className="grid gap-2 border-b border-border px-8 pt-4">
+          <nav
+            aria-label="Breadcrumb"
+            className="flex flex-wrap items-center gap-1 text-sm text-text-secondary"
           >
-            Dashboard
-          </button>
-          <ChevronRight aria-hidden="true" strokeWidth={2} className="h-4 w-4 text-text-tertiary" />
-          <span>{workflow.workflowName}</span>
-          <ChevronRight aria-hidden="true" strokeWidth={2} className="h-4 w-4 text-text-tertiary" />
-          <span className="font-mono">{runId.slice(0, 8)}</span>
-        </nav>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex min-w-0 flex-wrap items-center gap-4">
-            <h1 className="min-w-0 truncate font-mono text-xl font-medium text-text-primary">
-              {workflow.workflowName}
-            </h1>
-            <StatusBadge status={workflow.status} />
-            <WorkflowAskChrome
-              status={workflow.status}
-              pendingInteractions={queryData?.pendingInteractions ?? []}
-              nodeStates={queryData?.nodeStates ?? []}
-              runError={queryData?.runError ?? null}
-              onSelectAwaitingNode={(nodeId, interaction): void => {
-                const row = chooseExecutionForInteraction(executionRows, interaction);
-                if (row === null) return;
-                handleOpenRoom(row.id, nodeId, null, false);
-                const requestId = interaction.tool_use_id;
-                let attempts = 0;
-                const focusAsk = (): void => {
-                  const card = document.getElementById(askCardId(requestId, 'room'));
-                  if (card === null) {
-                    if (attempts < 30) {
-                      attempts += 1;
-                      requestAnimationFrame(focusAsk);
-                    }
-                    return;
-                  }
-                  card.focus();
-                  const control = card.querySelector(
-                    'input:not([disabled]), textarea:not([disabled]), button:not([disabled])'
-                  );
-                  if (control instanceof HTMLElement) control.focus();
-                };
-                requestAnimationFrame(focusAsk);
+            <button
+              type="button"
+              onClick={(): void => {
+                navigate('/dashboard');
               }}
-              onRequestGraphView={(): void => undefined}
+              className="-ml-2 inline-flex min-h-11 cursor-pointer items-center rounded-[10px] px-2 transition-colors duration-150 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
+            >
+              Dashboard
+            </button>
+            <ChevronRight
+              aria-hidden="true"
+              strokeWidth={2}
+              className="h-4 w-4 text-text-tertiary"
             />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {workerRunId && (
+            <span>{workflow.workflowName}</span>
+            <ChevronRight
+              aria-hidden="true"
+              strokeWidth={2}
+              className="h-4 w-4 text-text-tertiary"
+            />
+            <span className="font-mono">{runId.slice(0, 8)}</span>
+          </nav>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex min-w-0 flex-wrap items-center gap-4">
+              <h1 className="min-w-0 truncate font-mono text-xl font-medium text-text-primary">
+                {workflow.workflowName}
+              </h1>
+              <StatusBadge status={workflow.status} />
+              <WorkflowAskChrome
+                status={workflow.status}
+                pendingInteractions={queryData?.pendingInteractions ?? []}
+                nodeStates={queryData?.nodeStates ?? []}
+                runError={queryData?.runError ?? null}
+                onSelectAwaitingNode={(nodeId, interaction): void => {
+                  const row = chooseExecutionForInteraction(executionRows, interaction);
+                  if (row === null) return;
+                  handleOpenRoom(row.id, nodeId, null, false);
+                  const requestId = interaction.tool_use_id;
+                  let attempts = 0;
+                  const focusAsk = (): void => {
+                    const card = document.getElementById(askCardId(requestId, 'room'));
+                    if (card === null) {
+                      if (attempts < 30) {
+                        attempts += 1;
+                        requestAnimationFrame(focusAsk);
+                      }
+                      return;
+                    }
+                    card.focus();
+                    const control = card.querySelector(
+                      'input:not([disabled]), textarea:not([disabled]), button:not([disabled])'
+                    );
+                    if (control instanceof HTMLElement) control.focus();
+                  };
+                  requestAnimationFrame(focusAsk);
+                }}
+                onRequestGraphView={(): void => undefined}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {workerRunId && (
+                <button
+                  type="button"
+                  onClick={(): void => {
+                    navigate(`/workflows/runs/${workerRunId}`);
+                  }}
+                  className={HEADER_BUTTON_CLASS}
+                  title="View workflow run details"
+                >
+                  Run Details
+                </button>
+              )}
               <button
                 type="button"
+                disabled={workflow.status !== 'failed' && workflow.status !== 'paused'}
+                title={
+                  workflow.status === 'failed' || workflow.status === 'paused'
+                    ? 'Resume from the last completed node'
+                    : 'Only a failed or paused run can resume'
+                }
                 onClick={(): void => {
-                  navigate(`/workflows/runs/${workerRunId}`);
+                  void handleRunAction('resume');
+                }}
+                className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-accent px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-background disabled:text-text-tertiary motion-reduce:transition-none"
+              >
+                Resume
+              </button>
+              <button
+                type="button"
+                disabled={workflow.artifacts.length === 0}
+                aria-pressed={showArtifacts}
+                onClick={(): void => {
+                  setShowArtifacts(value => !value);
                 }}
                 className={HEADER_BUTTON_CLASS}
-                title="View workflow run details"
               >
-                Run Details
+                <FileText aria-hidden="true" strokeWidth={2} className="h-4 w-4" />
+                Artifacts
               </button>
+              <button
+                type="button"
+                disabled={isTerminal(workflow.status)}
+                onClick={(): void => {
+                  if (window.confirm('Abandon this run? It will be marked cancelled.')) {
+                    void handleRunAction('abandon');
+                  }
+                }}
+                className={`${HEADER_BUTTON_CLASS} text-error`}
+              >
+                Abandon
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-text-tertiary">
+            <span>
+              run <b className="font-mono font-normal text-text-primary">{runId}</b>
+            </span>
+            {codebaseName && (
+              <span>
+                project <b className="font-mono font-normal text-text-primary">{codebaseName}</b>
+              </span>
             )}
-            <button
-              type="button"
-              disabled={workflow.status !== 'failed' && workflow.status !== 'paused'}
-              title={
-                workflow.status === 'failed' || workflow.status === 'paused'
-                  ? 'Resume from the last completed node'
-                  : 'Only a failed or paused run can resume'
-              }
-              onClick={(): void => {
-                void handleRunAction('resume');
-              }}
-              className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-accent px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-background disabled:text-text-tertiary motion-reduce:transition-none"
-            >
-              Resume
-            </button>
-            <button
-              type="button"
-              disabled={workflow.artifacts.length === 0}
-              aria-pressed={showArtifacts}
-              onClick={(): void => {
-                setShowArtifacts(value => !value);
-              }}
-              className={HEADER_BUTTON_CLASS}
-            >
-              <FileText aria-hidden="true" strokeWidth={2} className="h-4 w-4" />
-              Artifacts
-            </button>
-            <button
-              type="button"
-              disabled={isTerminal(workflow.status)}
-              onClick={(): void => {
-                if (window.confirm('Abandon this run? It will be marked cancelled.')) {
-                  void handleRunAction('abandon');
-                }
-              }}
-              className={`${HEADER_BUTTON_CLASS} text-error`}
-            >
-              Abandon
-            </button>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-text-tertiary">
-          <span>
-            run <b className="font-mono font-normal text-text-primary">{runId}</b>
-          </span>
-          {codebaseName && (
+            {startedAt > 0 && (
+              <span>
+                started{' '}
+                <b className="font-mono font-normal text-text-primary">
+                  {formatStarted(new Date(startedAt).toISOString())}
+                </b>
+              </span>
+            )}
             <span>
-              project <b className="font-mono font-normal text-text-primary">{codebaseName}</b>
+              active{' '}
+              <b className="font-mono font-normal text-text-primary">{formatDurationMs(elapsed)}</b>
             </span>
+            <RunCostMeta />
+            {queryData?.envOverlay != null ? (
+              <RunEnvOverlayMeta overlay={queryData.envOverlay} />
+            ) : null}
+          </div>
+          {actionError !== null ? (
+            <p role="alert" className="text-xs text-error">
+              {actionError}
+            </p>
+          ) : null}
+          {isDag && (
+            <div className="-mx-3">
+              <DagRunTabs
+                activeView={activeView}
+                parentPlatformId={parentPlatformId}
+                onValueChange={setActiveView}
+              />
+            </div>
           )}
-          {startedAt > 0 && (
-            <span>
-              started{' '}
-              <b className="font-mono font-normal text-text-primary">
-                {formatStarted(new Date(startedAt).toISOString())}
-              </b>
-            </span>
-          )}
-          <span>
-            active{' '}
-            <b className="font-mono font-normal text-text-primary">{formatDurationMs(elapsed)}</b>
-          </span>
         </div>
-        {actionError !== null ? (
-          <p role="alert" className="text-xs text-error">
-            {actionError}
-          </p>
-        ) : null}
-        {isDag && (
-          <div className="-mx-3">
-            <DagRunTabs
-              activeView={activeView}
-              parentPlatformId={parentPlatformId}
-              onValueChange={setActiveView}
-            />
-          </div>
-        )}
-      </div>
 
-      {error ? <p className="px-8 py-1 text-xs text-error">Failed to load — retrying</p> : null}
+        {error ? <p className="px-8 py-1 text-xs text-error">Failed to load — retrying</p> : null}
 
-      <div data-testid="legacy-run-shell-chrome">
-        {retryActionPanel}
-        {(showArtifacts || !isRunning) && workflow.artifacts.length > 0 ? (
-          <div className="border-t border-border p-3">
-            <ArtifactSummary artifacts={workflow.artifacts} runId={runId} />
-          </div>
-        ) : null}
+        <div data-testid="legacy-run-shell-chrome">
+          {retryActionPanel}
+          {(showArtifacts || !isRunning) && workflow.artifacts.length > 0 ? (
+            <div className="border-t border-border p-3">
+              <ArtifactSummary artifacts={workflow.artifacts} runId={runId} />
+            </div>
+          ) : null}
+        </div>
+        {renderBody()}
       </div>
-      {renderBody()}
-    </div>
+    </runUsageContext.Provider>
   );
 }

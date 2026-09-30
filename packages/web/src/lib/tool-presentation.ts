@@ -773,6 +773,15 @@ function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation
   };
 }
 
+/**
+ * Headline text for a row that already prints its label as a chip. A row with
+ * no facts of its own carries the label as its headline; showing that text
+ * again would repeat the label, so the row prints nothing after the chip.
+ */
+export function headlineAfterLabel(presentation: { label: string; headline: string }): string {
+  return presentation.headline === presentation.label ? '' : presentation.headline;
+}
+
 /** Safe generic row used when resolution itself fails; the sent name is only reused if it is chip-worthy. */
 function safePresentation(input: ToolPresentationInput): ToolPresentation {
   try {

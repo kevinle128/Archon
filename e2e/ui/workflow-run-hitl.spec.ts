@@ -76,34 +76,6 @@ test('[P1] [V:hitl.loop-occurrences] inspect-twice occurrences stay distinct in 
   expect(occurrenceIds.size).toBeGreaterThanOrEqual(2);
 });
 
-test('[P1] [V:hitl.console-tool-output] HITL Console room collapses the call to a readable tool row', async ({
-  page,
-  archon,
-}) => {
-  const started = await archon.runHitlWorkflow();
-  await openRunDetail(page, started.runId, HITL_INSPECT_NODE);
-  const room = page.getByRole('region', { name: `${HITL_INSPECT_NODE} room` });
-  await expect(room).toBeVisible({
-    timeout: T.medium,
-  });
-  const rows = room.locator('details[data-tool-id]');
-  await expect(rows).toHaveCount(1);
-  const summary = room.locator('details[data-tool-id] > summary');
-  await expect(summary).toBeVisible({ timeout: T.medium });
-  await expect(rows.first()).toHaveJSProperty('open', false);
-  await expect(summary).toContainText('Read');
-  await expect(summary).toContainText('HITL_TOOL_INPUT.txt');
-  await expect(summary).toContainText('succeeded');
-  // Raw is the only disclosure: closed by default, and nothing below the
-  // summary mounts until the row opens — no Raw control, no payload markup.
-  // DOM selector — the absent control is absent from the accessibility tree.
-  const rawToggle = rows.locator('button[aria-expanded]');
-  await expect(rawToggle).toHaveCount(0);
-  await expect(rows.locator('details')).toHaveCount(0);
-  await expect(rows.locator('pre')).toHaveCount(0);
-  await expect(rows.getByText(HITL_TOOL_OUTPUT)).toHaveCount(0);
-});
-
 test('[P1] [V:hitl.legacy-tool-output] HITL Legacy room collapses the call to a readable tool row', async ({
   page,
   archon,
@@ -185,7 +157,7 @@ test('[P1] [V:hitl.ask-authorization] starter can answer Ask; teammate is forbid
   }
 });
 
-test('[P1] [V:hitl.console-ask-submit] Console Ask card submit continues only after explicit CLI resume', async ({
+test('[P1] [V:hitl.ask-submit] Ask card submit continues only after explicit CLI resume', async ({
   browser,
   archon,
 }) => {
@@ -221,66 +193,56 @@ test('[P1] [V:hitl.console-ask-submit] Console Ask card submit continues only af
   }
 });
 
-for (const surface of ['console', 'legacy'] as const) {
-  test(`[P1] [V:hitl.${surface}-unowned-ask] ${surface} solo unowned Ask can answer, persist, and resume`, async ({
-    browser,
-    archon,
-  }) => {
-    test.skip(
-      process.env.ARCHON_E2E_PROOF !== '1',
-      'Run this known-regression scenario through verify-archon against an explicit target'
-    );
-    const started = await archon.runUnownedHitlWorkflow();
-    const context = await createIdentityContext(browser, archon.baseURL, 'starter');
-    try {
-      const page = await context.newPage();
-      const before = await getRunDetail(page, started.runId);
-      expect(before.status).toBe('paused');
-      expect(before.user_id, 'CLI must create a genuinely unowned run').toBeNull();
-      expect(before.viewer_is_starter).toBe(false);
-      const requestId = before.pending_interactions.find(
-        row => row.node_id === HITL_ASK_NODE && row.status === 'pending'
-      )?.tool_use_id;
-      if (!requestId) throw new Error('missing pending Ask request id');
+test(`[P1] [V:hitl.unowned-ask] solo unowned Ask can answer, persist, and resume`, async ({
+  browser,
+  archon,
+}) => {
+  test.skip(
+    process.env.ARCHON_E2E_PROOF !== '1',
+    'Run this known-regression scenario through verify-archon against an explicit target'
+  );
+  const started = await archon.runUnownedHitlWorkflow();
+  const context = await createIdentityContext(browser, archon.baseURL, 'starter');
+  try {
+    const page = await context.newPage();
+    const before = await getRunDetail(page, started.runId);
+    expect(before.status).toBe('paused');
+    expect(before.user_id, 'CLI must create a genuinely unowned run').toBeNull();
+    expect(before.viewer_is_starter).toBe(false);
+    const requestId = before.pending_interactions.find(
+      row => row.node_id === HITL_ASK_NODE && row.status === 'pending'
+    )?.tool_use_id;
+    if (!requestId) throw new Error('missing pending Ask request id');
 
-      if (surface === 'console') {
-        await openRunDetail(page, started.runId, HITL_ASK_NODE);
-      } else {
-        await openLegacyRunDetail(page, started.runId);
-        await page.getByRole('tab', { name: 'Logs', exact: true }).click();
-        await page
-          .getByRole('button', { name: new RegExp(HITL_ASK_NODE) })
-          .first()
-          .click();
-      }
-      const room = page.getByRole('region', { name: `${HITL_ASK_NODE} room` });
-      await expect(room).toBeVisible({ timeout: T.medium });
-      await submitAskYes(page, room, started.runId, requestId);
-      expect((await getRunDetail(page, started.runId)).status).toBe('running');
-      await archon.resumeWorkflow(started.runId);
-      await archon.waitForRunStatus(started.runId, 'completed');
-      await page.reload();
-      await expect(page.getByText(/^completed$/i).first()).toBeVisible();
-      if (surface === 'legacy') {
-        await page.getByRole('tab', { name: 'Logs', exact: true }).click();
-        await page
-          .getByRole('button', { name: new RegExp(HITL_ASK_NODE) })
-          .first()
-          .click();
-      }
-      await expect(room.getByText(/Answered/).first()).toBeVisible();
-      await expect(room.getByRole('button', { name: 'Submit' })).toHaveCount(0);
-      const after = await getRunDetail(page, started.runId);
-      expect(after.pending_interactions.find(row => row.tool_use_id === requestId)?.answer).toEqual(
-        {
-          answers: [{ questionId: 'proceed', value: 'yes' }],
-        }
-      );
-    } finally {
-      await context.close();
-    }
-  });
-}
+    await openLegacyRunDetail(page, started.runId);
+    await page.getByRole('tab', { name: 'Logs', exact: true }).click();
+    await page
+      .getByRole('button', { name: new RegExp(HITL_ASK_NODE) })
+      .first()
+      .click();
+    const room = page.getByRole('region', { name: `${HITL_ASK_NODE} room` });
+    await expect(room).toBeVisible({ timeout: T.medium });
+    await submitAskYes(page, room, started.runId, requestId);
+    expect((await getRunDetail(page, started.runId)).status).toBe('running');
+    await archon.resumeWorkflow(started.runId);
+    await archon.waitForRunStatus(started.runId, 'completed');
+    await page.reload();
+    await expect(page.getByText(/^completed$/i).first()).toBeVisible();
+    await page.getByRole('tab', { name: 'Logs', exact: true }).click();
+    await page
+      .getByRole('button', { name: new RegExp(HITL_ASK_NODE) })
+      .first()
+      .click();
+    await expect(room.getByText(/Answered/).first()).toBeVisible();
+    await expect(room.getByRole('button', { name: 'Submit' })).toHaveCount(0);
+    const after = await getRunDetail(page, started.runId);
+    expect(after.pending_interactions.find(row => row.tool_use_id === requestId)?.answer).toEqual({
+      answers: [{ questionId: 'proceed', value: 'yes' }],
+    });
+  } finally {
+    await context.close();
+  }
+});
 
 test('[P1] [V:hitl.cli-composer] CLI-origin composer cannot approve; Chat tab stays visible without a web parent', async ({
   page,
@@ -371,9 +333,9 @@ test('[P1] [V:hitl.production-controls] production chrome keeps Artifacts and do
   await expect(page.getByRole('button', { name: /^Replay$/i })).toHaveCount(0);
   await expect(page.locator('#btn-replay')).toHaveCount(0);
   await expect(page.locator('#view-toggle')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /^Artifacts/ })).toBeVisible();
-  await page.getByRole('button', { name: /^Artifacts/ }).click();
-  await expect(page.getByText(/No artifacts written to disk for this run/i)).toBeVisible({
-    timeout: T.medium,
-  });
+  // The run has written no artifacts, so the control stays in place but is
+  // disabled instead of opening an empty list.
+  const artifacts = page.getByRole('button', { name: /^Artifacts/ });
+  await expect(artifacts).toBeVisible();
+  await expect(artifacts).toBeDisabled();
 });

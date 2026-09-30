@@ -14,6 +14,10 @@ test('[P1] a run with no recorded usage shows "no usage", never $0', async ({ pa
 
   await openCostForRun(page, runId);
 
-  await expect(page.getByText('No usage recorded')).toBeVisible({ timeout: T.medium });
-  await expect(page.getByText(/not the same as a known \$0\.00 cost/)).toBeVisible();
+  await expect(page.locator('#set-usage').getByText('No usage recorded')).toBeVisible({
+    timeout: T.medium,
+  });
+  await expect(
+    page.locator('#set-usage').getByText(/not the same as a known \$0\.00 cost/)
+  ).toBeVisible();
 });

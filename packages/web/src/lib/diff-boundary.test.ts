@@ -1,7 +1,7 @@
 /**
  * Source-ownership boundaries for the CAP-5 inline file-edit diff:
  * `lib/diff-hunks.ts` is the only production caller of `structuredPatch`,
- * both node-room renderers consume `FileDiff`/`toHunkData` and never the
+ * the node-room renderer consumes `FileDiff`/`toHunkData` and never the
  * differ or the `diff` package, the moved adapter types come from generated
  * API types, and third-party diff imports stay on the v3.3.3 specifiers
  * already proven by source control.
@@ -13,7 +13,6 @@ import { join } from 'node:path';
 const SRC_ROOT = join(import.meta.dir, '..');
 
 const LEGACY_RENDERER = 'components/workflows/NodeRoom.tsx';
-const CONSOLE_RENDERER = 'experiments/console/components/inspect/ConsoleAgentHistoryList.tsx';
 const DIFFER = 'lib/diff-hunks.ts';
 const ADAPTER = 'lib/git-hunk-adapter.ts';
 
@@ -89,8 +88,8 @@ describe('inline diff source boundaries', () => {
     expect(offenders).toEqual([DIFFER]);
   });
 
-  test('neither node-room renderer imports diff or the differ module', async () => {
-    for (const relativePath of [LEGACY_RENDERER, CONSOLE_RENDERER]) {
+  test('the node-room renderer imports diff or the differ module', async () => {
+    for (const relativePath of [LEGACY_RENDERER]) {
       const specs = (await importsOf(relativePath)).map(site => site.spec);
       const forbidden = specs.filter(
         spec =>
@@ -118,7 +117,7 @@ describe('inline diff source boundaries', () => {
   });
 
   test('third-party diff imports stay on the proven react-diff-view specifiers', async () => {
-    for (const relativePath of [LEGACY_RENDERER, CONSOLE_RENDERER]) {
+    for (const relativePath of [LEGACY_RENDERER]) {
       const sites = (await importsOf(relativePath)).filter(site =>
         site.spec.startsWith('react-diff-view')
       );
