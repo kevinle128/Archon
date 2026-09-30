@@ -18,6 +18,7 @@ import {
   isPossiblyNeverSent,
   isQueueItemClaimable,
   isQueueShortcut,
+  markQueueReadFailed,
   neverSentBandHeader,
   neverSentListLabel,
   nextFocusAfterRemoval,
@@ -341,6 +342,43 @@ describe('syncProjectedSubState', () => {
     const queueOnly = stateWith([receipt('a', 'alpha')], { subState: null });
     const synced = syncProjectedSubState(queueOnly, 'generating');
     expect(synced.sent).toEqual([receipt('a', 'alpha')]);
+  });
+
+  test("while this dock's own last read failed, a fresh projection is ignored entirely", () => {
+    // The exact restart-survivor race: this dock's own read has not
+    // reconciled since a `kill -9`, but a host page's own, separately-
+    // cadenced run read recovered first and projects a stale optimistic
+    // sub-state that would otherwise show live controls this dock never
+    // itself confirmed.
+    const failed = markQueueReadFailed(createSteeringDockState('idle-after-interrupt'));
+    const synced = syncProjectedSubState(failed, 'generating');
+    expect(synced).toBe(failed);
+    expect(synced.subState).toBe('idle-after-interrupt');
+    expect(synced.lastReadFailed).toBe(true);
+  });
+
+  test('once the flag clears, a later projection change applies normally again', () => {
+    const failed = markQueueReadFailed(createSteeringDockState('idle-after-interrupt'));
+    // The dock's own next read succeeding is what lifts the freeze in
+    // practice (`applyQueueSnapshot`); reconstructing that transition here
+    // keeps this test scoped to `syncProjectedSubState` alone.
+    const recovered = { ...failed, lastReadFailed: false };
+    const synced = syncProjectedSubState(recovered, 'generating');
+    expect(synced.subState).toBe('generating');
+  });
+});
+
+describe('markQueueReadFailed', () => {
+  test('sets the flag on a state that has never failed', () => {
+    const state = createSteeringDockState('generating');
+    const marked = markQueueReadFailed(state);
+    expect(marked.lastReadFailed).toBe(true);
+    expect(marked).not.toBe(state);
+  });
+
+  test('is idempotent — a second call on an already-failed state is a no-op', () => {
+    const marked = markQueueReadFailed(createSteeringDockState('generating'));
+    expect(markQueueReadFailed(marked)).toBe(marked);
   });
 });
 
@@ -1489,6 +1527,23 @@ describe('applyQueueSnapshot', () => {
       0
     );
     expect(next).toBe(state);
+  });
+
+  test('a successful read clears lastReadFailed even when nothing else in the snapshot changed', () => {
+    const failed = markQueueReadFailed(
+      stateWith([receipt('a', 'alpha')], {
+        neverSent: [],
+        executionState: 'live',
+        autoSend: false,
+        softInjection: false,
+      })
+    );
+    expect(failed.lastReadFailed).toBe(true);
+    const next = applyQueueSnapshot(failed, mkSnapshot([guidanceRow('a', 'alpha')]), 0);
+    // The fast path must not fire just because every other field is
+    // unchanged — reaching this function at all means the read succeeded.
+    expect(next).not.toBe(failed);
+    expect(next.lastReadFailed).toBe(false);
   });
 
   test('a stale generation returns the identical state and preserves the queue', () => {

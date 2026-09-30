@@ -41,6 +41,7 @@ import {
   isPossiblyNeverSent,
   isQueueItemClaimable,
   isQueueShortcut,
+  markQueueReadFailed,
   neverSentBandHeader,
   neverSentDisclosure,
   neverSentListLabel,
@@ -807,29 +808,37 @@ export function ConsoleComposerDock({
           return next;
         });
       },
-      onError: finishedMode
-        ? (error): void => {
-            if (attemptGenerationRef.current !== attemptGen) return;
-            const normalized = toSteeringRequestError(error);
-            if (normalized.status === 422 && normalized.code === 'not_steerable_here') {
-              setReadDetached(true);
-              setReadNotify(null);
-              setDock(current => (current.sent.length === 0 ? current : { ...current, sent: [] }));
-              return;
-            }
-            if (normalized.status === 409) {
-              setReadDetached(false);
-              setReadNotify(null);
-              setDock(current => (current.sent.length === 0 ? current : { ...current, sent: [] }));
-              return;
-            }
-            // network (0) / 5xx: silent retry; last snapshot retained
-            if (normalized.status === 0 || normalized.status >= 500) return;
-            // other 4xx: notify + stop (poller already stops non-retryable)
-            setReadDetached(false);
-            setReadNotify(normalized.message);
-          }
-        : undefined,
+      onError: (error): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
+        const normalized = toSteeringRequestError(error);
+        // A transport/5xx failure means this dock's own read could not reach
+        // the server just now — freeze `subState` against a host page's own,
+        // faster-recovering projection until this dock's own next read
+        // succeeds (see `markQueueReadFailed`'s doc comment). A 409/422 is a
+        // real answer FROM the server, not a failure to reach it, so it never
+        // sets this.
+        if (normalized.status === 0 || normalized.status >= 500) {
+          setDock(current => markQueueReadFailed(current));
+        }
+        if (!finishedMode) return;
+        if (normalized.status === 422 && normalized.code === 'not_steerable_here') {
+          setReadDetached(true);
+          setReadNotify(null);
+          setDock(current => (current.sent.length === 0 ? current : { ...current, sent: [] }));
+          return;
+        }
+        if (normalized.status === 409) {
+          setReadDetached(false);
+          setReadNotify(null);
+          setDock(current => (current.sent.length === 0 ? current : { ...current, sent: [] }));
+          return;
+        }
+        // network (0) / 5xx: silent retry; last snapshot retained
+        if (normalized.status === 0 || normalized.status >= 500) return;
+        // other 4xx: notify + stop (poller already stops non-retryable)
+        setReadDetached(false);
+        setReadNotify(normalized.message);
+      },
       intervalMs: pollIntervalMs,
     });
     pollingHandleRef.current = handle;
