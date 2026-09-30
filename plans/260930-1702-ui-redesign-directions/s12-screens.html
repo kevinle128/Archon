@@ -1,0 +1,1050 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archon S12 Screens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;600;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  /* Locked S12 Swiss Pixel Border tokens. Flat: no radius, no shadow except 1px/2px inset rings on rows, no gradient, no texture. */
+  :root {
+    --bg: #F2F2EF; --row: #E6E6E1; --ink: #111111; --text-2: #3A3A36; --text-3: #5A5A54;
+    --accent: #1F2BFF; --on-accent: #FFFFFF; --ok: #0B6E3A; --warn: #8A5200; --err: #D0021B;
+    --sans: "Schibsted Grotesk", "Helvetica Neue", Arial, system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; border-radius: 0; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/1.5 var(--sans); padding: 12px 16px 16px; min-width: 0; }
+  a { color: inherit; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .mono { font-family: var(--mono); }
+  .nw { white-space: nowrap; }
+  .t2 { color: var(--text-2); } .t3 { color: var(--text-3); }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); } .acc { color: var(--accent); }
+
+  /* ---------- Mockup screen index (outside the app frame) ---------- */
+  .index { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .index b { font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); margin-right: 6px; }
+  .index a { font: 600 12px var(--sans); text-decoration: none; padding: 4px 10px; box-shadow: inset 0 0 0 1px var(--ink); }
+  .index a[aria-current="page"] { background: var(--ink); color: var(--bg); }
+
+  /* ---------- App frame ---------- */
+  .frame { border: 2px solid var(--ink); display: flex; flex-direction: column; height: max(720px, calc(100vh - 66px)); min-width: 0; }
+  .bar { display: flex; align-items: center; gap: 20px; height: 56px; padding: 0 16px; border-bottom: 2px solid var(--ink); flex: none; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; flex: none; }
+  .brand svg { width: 26px; height: 26px; display: block; }
+  .wm { font: 900 20px/1 var(--sans); letter-spacing: -0.04em; text-transform: uppercase; }
+  .nav { display: flex; gap: 2px; }
+  .nav a { font-weight: 600; font-size: 14px; text-decoration: none; padding: 7px 14px; display: flex; align-items: center; gap: 8px; }
+  .nav a:hover { background: var(--row); }
+  .nav a.on { background: var(--accent); color: var(--on-accent); }
+  .nav .count { font: 600 11px var(--mono); padding: 0 5px; box-shadow: inset 0 0 0 1px currentColor; }
+  .bar .right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+  .needs { font-weight: 600; font-size: 13px; text-decoration: none; color: var(--accent); padding: 5px 10px; box-shadow: inset 0 0 0 2px var(--accent); white-space: nowrap; }
+  .ver { font: 400 12px var(--mono); color: var(--text-2); }
+  .user { font-size: 13px; color: var(--text-2); white-space: nowrap; }
+  main { flex: 1; min-height: 0; display: flex; }
+  .screen { flex: 1; min-width: 0; min-height: 0; }
+  .note { flex: none; border-top: 2px solid var(--ink); padding: 5px 16px; font-size: 12px; color: var(--text-2); }
+
+  /* Logo runner: steps across crossbar columns 2, 3, 4 only while a run is active. */
+  .frame.active-run .bar .runner { animation: run 1.8s steps(1) infinite; }
+  @keyframes run { 0% { transform: translateX(0); } 33.3% { transform: translateX(8px); } 66.6% { transform: translateX(16px); } }
+
+  /* ---------- Shared primitives ---------- */
+  .panel { border: 2px solid var(--ink); background: var(--bg); min-width: 0; }
+  .ph { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 2px solid var(--ink); }
+  .ph h3 { margin: 0; font: 800 16px/1.2 var(--sans); }
+  .ph .meta { font: 400 12px var(--mono); color: var(--text-2); }
+  .pb { padding: 14px; }
+  .h1 { font: 900 40px/1 var(--sans); letter-spacing: -0.03em; margin: 0; }
+  .h2 { font: 800 24px/1.15 var(--sans); letter-spacing: -0.02em; margin: 0; }
+  .lbl { font: 600 11px/1.3 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+  .kind { font: 600 11px/1.3 var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); white-space: nowrap; }
+  .st { font: 600 11px/1.3 var(--mono); letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+  .row .st.fail { background: var(--bg); padding: 1px 4px; }
+  .st.run { color: var(--ink); } .st.wait { color: var(--accent); } .st.done { color: var(--ok); } .st.fail { color: var(--err); } .st.pend { color: var(--text-3); } .st.cancel { color: var(--warn); } .st.skip { color: var(--text-3); }
+  .row { background: var(--row); box-shadow: inset 0 0 0 1px var(--ink); }
+  .row.sel, .row.wait { box-shadow: inset 0 0 0 2px var(--accent); }
+  .btn { font: 700 13px/1 var(--sans); padding: 9px 14px; border: 0; cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+  .btn.pri { background: var(--accent); color: var(--on-accent); }
+  .btn.sec { background: transparent; box-shadow: inset 0 0 0 1px var(--ink); }
+  .btn.sec:hover { background: var(--row); }
+  .btn.dgr { background: transparent; color: var(--err); box-shadow: inset 0 0 0 1px var(--err); }
+  .btn.sm { padding: 6px 10px; font-size: 12px; }
+  .btn[disabled] { color: var(--text-3); box-shadow: inset 0 0 0 1px var(--text-3); cursor: not-allowed; background: transparent; }
+  .field { display: grid; gap: 5px; }
+  .field > span { font-size: 12px; font-weight: 600; color: var(--text-2); }
+  .in { background: var(--bg); border: 1px solid var(--ink); padding: 8px 10px; font-size: 13px; width: 100%; min-width: 0; }
+  .in:hover { background: var(--row); }
+  .in::placeholder { color: var(--text-3); }
+  .in:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+  select.in { appearance: none; padding-right: 28px; background-image: none; }
+  .sel-wrap { position: relative; min-width: 0; }
+  .sel-wrap::after { content: ""; position: absolute; right: 11px; top: 50%; width: 6px; height: 6px; margin-top: -5px; border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); transform: rotate(45deg); pointer-events: none; }
+  textarea.in { resize: vertical; line-height: 1.45; }
+  .chip { font: 600 12px var(--mono); padding: 3px 8px; background: var(--row); white-space: nowrap; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 0; flex-wrap: wrap; }
+  .tab { font: 600 13px var(--sans); padding: 8px 12px; border: 0; background: transparent; cursor: pointer; box-shadow: inset 0 0 0 1px var(--ink); margin-right: -1px; white-space: nowrap; }
+  .tab .n { font: 400 11px var(--mono); color: var(--text-2); margin-left: 4px; }
+  .tab[aria-selected="true"] { background: var(--ink); color: var(--bg); }
+  .tab[aria-selected="true"] .n { color: var(--bg); }
+  .prog { height: 8px; background: var(--row); box-shadow: inset 0 0 0 1px var(--ink); overflow: hidden; }
+  .prog i { display: block; height: 100%; width: var(--p, 0%); background: var(--accent); animation: fill .9s steps(6) both; }
+  @keyframes fill { from { width: 0; } }
+  .scroll { overflow: auto; min-height: 0; }
+  .split { display: grid; min-height: 0; }
+  hr.rule { border: 0; border-top: 2px solid var(--ink); margin: 0; }
+  pre.code { margin: 0; font: 400 12.5px/1.6 var(--mono); white-space: pre; overflow: auto; padding: 12px 14px; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; }
+  .kv dt { color: var(--text-2); } .kv dd { margin: 0; font-family: var(--mono); font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  /* ---------- 1 Chat ---------- */
+  #s-chat { display: grid; grid-template-columns: 300px minmax(0, 1fr); }
+  .convs { border-right: 2px solid var(--ink); display: flex; flex-direction: column; min-height: 0; }
+  .convs .top { padding: 14px; display: grid; gap: 10px; border-bottom: 2px solid var(--ink); }
+  .convs .top .pr { display: flex; justify-content: space-between; align-items: center; }
+  .convs .list { padding: 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; align-content: start; }
+  .grp { font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); padding: 8px 4px 2px; }
+  .conv { display: grid; gap: 2px; padding: 9px 11px; text-decoration: none; cursor: pointer; }
+  .conv .tt { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .conv .ct { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv .tt .sub { min-width: 0; }
+  .ph .lbl { white-space: nowrap; }
+  .conv { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+  .conv > * { min-width: 0; }
+  .conv .sub { font: 400 11.5px var(--mono); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thread { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
+  .thead { padding: 16px 22px; border-bottom: 2px solid var(--ink); display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .msgs { padding: 22px; display: grid; gap: 20px; align-content: start; }
+  .msg { display: grid; gap: 8px; max-width: 820px; }
+  .msg .who { font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); }
+  .msg.user { justify-self: end; max-width: 620px; }
+  .msg.user .body { background: var(--row); box-shadow: inset 0 0 0 1px var(--ink); padding: 12px 14px; }
+  .msg p { margin: 0; font-size: 15px; }
+  .tool { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 8px 12px; font: 400 12.5px var(--mono); }
+  .tool .cmd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .runcard .rc-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; }
+  .runcard .nodes { display: grid; gap: 4px; }
+  .nrow { display: grid; grid-template-columns: 80px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 10px; font-size: 13px; }
+  .nrow .id { font: 400 12.5px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .composer { border-top: 2px solid var(--ink); padding: 14px 22px; display: grid; gap: 10px; }
+  .composer .acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  /* ---------- 2 Dashboard ---------- */
+  #s-dashboard { padding: 22px 24px; display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); gap: 16px; overflow: auto; }
+  .head { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; }
+  .head p { margin: 6px 0 0; color: var(--text-2); }
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .tile { padding: 12px 14px; display: grid; gap: 2px; }
+  .tile .num { font: 900 36px/1 var(--sans); letter-spacing: -0.03em; }
+  .tile.wait { box-shadow: inset 0 0 0 2px var(--accent); border-color: var(--accent); }
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .filters .grow { flex: 1 1 200px; min-width: 180px; }
+  .runs { display: grid; gap: 6px; align-content: start; }
+  .rgrid { display: grid; grid-template-columns: 104px minmax(220px, 1.4fr) minmax(130px, 1fr) 124px 118px 176px; gap: 12px; align-items: center; }
+  .rhead { padding: 0 12px 4px; }
+  .rrow { padding: 10px 12px; cursor: pointer; }
+  .rrow .wfid { font: 600 13.5px var(--mono); white-space: nowrap; }
+  .rrow .sub { font: 400 11.5px var(--mono); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rrow .acts { display: flex; gap: 6px; justify-content: flex-end; }
+  .rrow .errline { grid-column: 1 / -1; font: 400 12px var(--mono); color: var(--err); background: var(--bg); padding: 6px 8px; box-shadow: inset 0 0 0 1px var(--err); overflow-wrap: anywhere; }
+  .pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+
+  /* ---------- 3 Workflows ---------- */
+  #s-workflows { display: grid; grid-template-columns: minmax(340px, 420px) minmax(0, 1fr); min-height: 0; }
+  .wlist { border-right: 2px solid var(--ink); display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  .wlist .top { padding: 16px; display: grid; gap: 12px; border-bottom: 2px solid var(--ink); }
+  .wrows { padding: 10px; display: grid; gap: 5px; align-content: start; }
+  .wrow { display: grid; gap: 2px; padding: 9px 11px; cursor: pointer; text-align: left; border: 0; width: 100%; }
+  .wrow .id { font: 600 13px var(--mono); white-space: nowrap; }
+  .wrow .sub { font-size: 12px; color: var(--text-2); display: flex; gap: 10px; white-space: nowrap; }
+  .wdetail { padding: 24px 28px; display: grid; gap: 20px; align-content: start; }
+  .wdetail .title { display: grid; gap: 8px; }
+  .runform { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
+  .sect h4 { margin: 0 0 6px; font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); }
+  .sect p { margin: 0; font-size: 15px; max-width: 78ch; white-space: pre-line; }
+  .ntable { display: grid; gap: 5px; }
+  .ntr { display: grid; grid-template-columns: 30px 98px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 12px; }
+  .ntr .num { font: 400 12px var(--mono); color: var(--text-2); }
+  .ntr .id { font: 600 13px var(--mono); white-space: nowrap; }
+  .ntr .sub { font: 400 11.5px var(--mono); color: var(--text-2); overflow-wrap: anywhere; }
+
+  /* ---------- 4 Run detail ---------- */
+  #s-run { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; }
+  .rhead-top { padding: 16px 22px 14px; display: grid; gap: 10px; border-bottom: 2px solid var(--ink); }
+  .crumb { font: 400 12px var(--mono); color: var(--text-2); }
+  .crumb a { text-decoration: none; } .crumb a:hover { text-decoration: underline; }
+  .rtitle { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .rtitle .l { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .rmeta { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 400 12px var(--mono); color: var(--text-2); }
+  .rmeta b { color: var(--ink); font-weight: 600; }
+  .rtabs { padding: 10px 22px; border-bottom: 2px solid var(--ink); display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .tabpanel { min-height: 0; }
+  #tp-graph { display: grid; grid-template-columns: minmax(380px, 1fr) minmax(440px, 1.1fr); gap: 16px; padding: 16px 22px; min-height: 0; }
+  .graph { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  .gsum { display: grid; gap: 8px; padding: 12px 14px; border-bottom: 2px solid var(--ink); }
+  .dag { padding: 16px 18px 20px; display: grid; justify-items: start; }
+  .gnode { width: 100%; max-width: 460px; display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; gap: 4px 10px; padding: 10px 12px; cursor: pointer; }
+  .gnode .id { font: 600 14px var(--mono); white-space: nowrap; }
+  .gnode .sub { grid-column: 2 / -1; font: 400 11.5px var(--mono); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gnode.pend { background: var(--bg); }
+  .gnode.pend .id { color: var(--text-2); font-weight: 400; }
+  .edge { width: 2px; height: 16px; background: var(--ink); margin-left: 52px; }
+  .edge.dim { background: var(--text-3); }
+  .room { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; min-height: 0; }
+  .room .rh { padding: 12px 14px; border-bottom: 2px solid var(--ink); display: grid; gap: 8px; }
+  .room .rh .l1 { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+  .todo { display: flex; gap: 6px 14px; flex-wrap: wrap; padding: 8px 14px; border-bottom: 2px solid var(--ink); font-size: 12.5px; }
+  .todo span { white-space: nowrap; }
+  .transcript { padding: 14px; display: grid; gap: 14px; align-content: start; }
+  .amsg p { margin: 0 0 8px; font-size: 14.5px; } .amsg p:last-child { margin: 0; }
+  .ask { border: 2px solid var(--accent); padding: 12px 14px; display: grid; gap: 9px; }
+  .ask .other { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
+  .ask .q { font: 800 18px/1.3 var(--sans); margin: 0; }
+  .opt { display: flex; gap: 10px; align-items: flex-start; padding: 7px 11px; cursor: pointer; font-size: 14px; }
+  .opt input { accent-color: var(--accent); margin-top: 3px; }
+  .dock { border-top: 2px solid var(--ink); padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .static { padding: 16px 22px; display: grid; gap: 12px; align-content: start; overflow: auto; }
+  .log { display: grid; grid-template-columns: 70px 150px 190px minmax(0, 1fr); gap: 12px; padding: 6px 12px; font: 400 12px var(--mono); }
+  .log .id { white-space: nowrap; }
+  .term { background: var(--ink); color: var(--bg); }
+  .term pre.code { color: #F2F2EF; }
+  .fc { display: grid; grid-template-columns: minmax(0, 1fr) 70px 70px; gap: 12px; padding: 8px 12px; font: 400 12.5px var(--mono); }
+
+  /* ---------- 5 Builder ---------- */
+  #s-builder { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  .btool { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 2px solid var(--ink); flex-wrap: wrap; }
+  .btool .name { font: 600 14px var(--mono); padding: 6px 10px; box-shadow: inset 0 0 0 1px var(--ink); white-space: nowrap; }
+  .btool .sp { flex: 1; }
+  .bbody { display: grid; grid-template-columns: 210px minmax(0, 1fr) 340px; min-height: 0; }
+  .palette { border-right: 2px solid var(--ink); padding: 12px; display: grid; gap: 10px; align-content: start; }
+  .pitem { display: grid; gap: 1px; padding: 7px 10px; cursor: grab; }
+  .pitem .d { font-size: 11.5px; color: var(--text-2); line-height: 1.35; }
+  .center { display: grid; grid-template-rows: minmax(0, 1fr) 230px; min-height: 0; }
+  .canvas { position: relative; overflow: auto; border-bottom: 2px solid var(--ink); }
+  .canvas .stage { position: relative; width: 600px; height: 470px; margin: 0 auto; }
+  .canvas svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cnode { position: absolute; width: 260px; padding: 10px 12px; display: grid; gap: 3px; cursor: pointer; border: 0; text-align: left; }
+  .cnode .id { font: 600 13.5px var(--mono); white-space: nowrap; }
+  .cnode .sub { font: 400 11.5px var(--mono); color: var(--text-2); white-space: nowrap; }
+  .port { position: absolute; left: 50%; width: 10px; height: 10px; margin-left: -5px; background: var(--bg); box-shadow: inset 0 0 0 2px var(--ink); }
+  .port.in { top: -5px; } .port.out { bottom: -5px; }
+  .zoom { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 0; background: var(--bg); }
+  .yaml { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  .yaml pre.code .hl { background: var(--row); display: inline-block; width: 100%; box-shadow: inset 2px 0 0 var(--accent); }
+  .inspector { border-left: 2px solid var(--ink); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
+  .insp { padding: 14px; display: grid; gap: 12px; align-content: start; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+  .check input { accent-color: var(--accent); }
+  .valid { border-top: 2px solid var(--ink); padding: 10px 14px; display: grid; gap: 4px; font-size: 12.5px; }
+
+  /* ---------- 6 Settings ---------- */
+  #s-settings { display: grid; grid-template-columns: 210px minmax(0, 1fr); min-height: 0; }
+  .snav { border-right: 2px solid var(--ink); padding: 16px 12px; display: grid; gap: 4px; align-content: start; }
+  .snav button { text-align: left; border: 0; background: transparent; padding: 8px 10px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .snav button:hover { background: var(--row); }
+  .snav button.on { background: var(--accent); color: var(--on-accent); }
+  .sbody { padding: 22px 28px 40px; display: grid; gap: 20px; align-content: start; }
+  .sbody .panel { max-width: 1040px; scroll-margin-top: 16px; }
+  .ph p { margin: 2px 0 0; font-size: 12.5px; color: var(--text-2); }
+  .prow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; padding: 10px 12px; align-items: center; }
+  .prow .nm { font: 600 13.5px var(--mono); white-space: nowrap; }
+  .prow .sub { font: 400 11.5px var(--mono); color: var(--text-2); overflow-wrap: anywhere; }
+  .agent { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 12px; padding: 12px; }
+  .agent .an { display: grid; gap: 3px; align-content: start; }
+  .agent .an b { font-size: 14.5px; }
+  .creds { display: grid; gap: 6px; }
+  .cred { display: grid; grid-template-columns: minmax(150px, 190px) minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 7px 10px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--ink); }
+  .cred .v { font: 600 12.5px var(--mono); white-space: nowrap; }
+  .cred .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .device { grid-column: 1 / -1; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 8px 10px; box-shadow: inset 0 0 0 2px var(--accent); font-size: 13px; }
+  .device .code { font: 600 18px var(--mono); letter-spacing: .12em; }
+  .scope { display: inline-flex; }
+  .tier { display: grid; grid-template-columns: 90px 150px minmax(0, 1fr) 130px; gap: 10px; align-items: center; padding: 10px 12px; }
+  .tier .nm { font: 600 13px var(--mono); }
+  .alias { display: grid; grid-template-columns: 130px 140px minmax(0, 1fr) 120px auto; gap: 10px; align-items: center; padding: 10px 12px; }
+  .tbl-wrap { overflow-x: auto; }
+  table.usage { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+  table.usage th { font: 600 11px var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); text-align: right; padding: 8px 10px; border-bottom: 2px solid var(--ink); white-space: nowrap; }
+  table.usage td { padding: 9px 10px; border-bottom: 1px solid var(--ink); text-align: right; font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+  table.usage th:first-child, table.usage td:first-child { text-align: left; }
+  table.usage tr.total td { font-weight: 600; border-bottom: 2px solid var(--ink); background: var(--row); }
+  .ufilters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .sys { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .sys .row { padding: 10px 12px; display: grid; gap: 2px; }
+  .sys .row b { font: 600 15px var(--mono); }
+
+  /* ---------- Narrow widths (1280, 1024) ---------- */
+  @media (max-width: 1300px) {
+    .bbody { grid-template-columns: 190px minmax(0, 1fr) 310px; }
+    .tier { grid-template-columns: 80px 130px minmax(0, 1fr) 110px; }
+  }
+  @media (max-width: 1180px) {
+    #s-chat { grid-template-columns: 250px minmax(0, 1fr); }
+    #s-workflows { grid-template-columns: minmax(320px, 360px) minmax(0, 1fr); }
+    #s-settings { grid-template-columns: 180px minmax(0, 1fr); }
+    .user { display: none; }
+    .sbody { padding: 18px 20px 32px; }
+    .agent { grid-template-columns: 1fr; }
+    .alias { grid-template-columns: 120px 120px minmax(0, 1fr) 100px auto; }
+    .ufilters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sys { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rgrid { grid-template-columns: 96px minmax(200px, 1.4fr) minmax(110px, 1fr) 112px 104px 160px; gap: 10px; }
+  }
+  @media (max-width: 1100px) {
+    .bbody { grid-template-columns: 172px minmax(0, 1fr) 290px; }
+    .canvas .stage { width: 520px; }
+    .wdetail { padding: 20px; }
+    .log { grid-template-columns: 64px 140px minmax(0, 1fr); } .log .tool-n { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="index" aria-label="Mockup screens">
+  <b>S12 screens</b>
+  <a href="#chat">1 Chat</a><a href="#dashboard">2 Dashboard</a><a href="#workflows">3 Workflows</a><a href="#run">4 Run detail</a><a href="#builder">5 Builder</a><a href="#settings">6 Settings</a>
+</nav>
+
+<div class="frame active-run" id="frame">
+  <header class="bar">
+    <a class="brand" href="#chat" aria-label="Archon home"><span data-logo></span><span class="wm">Archon</span></a>
+    <nav class="nav" aria-label="Main">
+      <a href="#chat" data-nav="chat">Chat</a>
+      <a href="#dashboard" data-nav="dashboard">Dashboard <span class="count" title="Running workflows" id="navRunning">1</span></a>
+      <a href="#workflows" data-nav="workflows">Workflows</a>
+      <a href="#settings" data-nav="settings">Settings</a>
+    </nav>
+    <div class="right">
+      <a class="needs" href="#run">2 runs need you</a>
+      <span class="ver">v0.9.0</span>
+      <span class="user">kevinle128</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- ================= 1 Chat ================= -->
+    <section class="screen" id="s-chat" aria-label="Chat">
+      <aside class="convs">
+        <div class="top">
+          <a class="btn pri" href="#chat" style="justify-content:center">New Chat</a>
+          <div class="pr"><span class="lbl t2">Project</span><button class="btn sec sm" type="button">Add</button></div>
+          <label class="sel-wrap"><span class="sr">Project</span><select class="in"><option>All Projects</option><option selected>anhle128/Archon</option><option>kevinle128/billing-service</option></select></label>
+          <input class="in" type="search" placeholder="Search..." aria-label="Search conversations">
+        </div>
+        <div class="list scroll" id="convList"></div>
+      </aside>
+      <div class="thread">
+        <div class="thead">
+          <div style="display:grid;gap:6px;min-width:0">
+            <h2 class="h2">Full review for issue #266</h2>
+            <div class="chips"><span class="chip">anhle128/Archon</span><span class="chip">codex · gpt-5.5 · xhigh</span><span class="chip">Web</span></div>
+          </div>
+          <div style="display:flex;gap:8px"><button class="btn sec sm" type="button">Rename</button><button class="btn sec sm" type="button">Delete</button></div>
+        </div>
+        <div class="msgs scroll">
+          <div class="msg user"><span class="who">You · 18:47</span>
+            <div class="body"><p>Run a full review on issue #266 and fix what it finds.<br><span class="mono" style="font-size:13px">https://github.com/kevinle128/Archon/issues/266</span></p></div>
+          </div>
+          <div class="msg"><span class="who">Archon · codex gpt-5.5 · 18:48</span>
+            <p>Issue #266 asks to match the approved Console and Legacy room anatomy. That needs an investigation, a fix, and a five-agent review, so I am starting <span class="mono">archon-issue-review-full</span> in a fresh worktree off <span class="mono">develop</span>.</p>
+            <div class="tool row"><span class="kind">Bash</span><span class="cmd">archon workflow run archon-issue-review-full --detach "https://github.com/kevinle128/Archon/issues/266"</span><span class="t2">1.2s</span><span class="st done">OK</span></div>
+          </div>
+          <div class="msg" style="max-width:720px">
+            <div class="panel runcard">
+              <div class="ph"><h3 class="mono" style="font-size:15px">archon-issue-review-full</h3><span class="st run">Running</span></div>
+              <div class="pb" style="display:grid;gap:12px">
+                <div class="rc-top">
+                  <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px"><span><b>1/13</b> nodes</span><span class="t2">now <span class="mono">implement</span></span><span class="t2 mono">4m 18s</span><span class="t2 mono">$0.41</span></div>
+                  <span class="mono t2" style="font-size:12px">run 3b7e19d2</span>
+                </div>
+                <div class="prog" style="--p:8%"><i></i></div>
+                <div class="nodes" id="chatNodes"></div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn pri" href="#dashboard">View run</a><button class="btn sec" type="button">Cancel</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="msg"><span class="who">Archon · 18:48</span>
+            <p>I will post the summary here when the review finishes, or sooner if a node needs your input.</p>
+          </div>
+        </div>
+        <div class="composer">
+          <textarea class="in" rows="2" placeholder="Message Archon..." aria-label="Message"></textarea>
+          <div class="acts"><button class="btn sec sm" type="button">Attach</button><span class="chip">Scope: anhle128/Archon</span><span style="flex:1"></span><span class="t3" style="font-size:12px">Enter to send · Shift+Enter for a new line</span><button class="btn pri" type="button">Send</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 2 Dashboard ================= -->
+    <section class="screen" id="s-dashboard" aria-label="Dashboard" hidden>
+      <div class="head">
+        <div><h1 class="h1">Dashboard</h1><p>All workflow runs across projects.</p></div>
+        <div class="t2 mono" style="font-size:12px">Capacity <b style="color:var(--ink)">1/10</b> active · 0 queued</div>
+      </div>
+      <div class="tiles">
+        <div class="panel tile"><span class="lbl t2">Running</span><span class="num" id="tRunning">1</span><span class="t2" style="font-size:12px">archon-issue-review-full</span></div>
+        <div class="panel tile wait"><span class="lbl acc">Awaiting input</span><span class="num acc" id="tAwait">2</span><span class="t2" style="font-size:12px">ak-feature waits at plan</span></div>
+        <div class="panel tile"><span class="lbl err">Failed</span><span class="num" id="tFailed">1</span><span class="t2" style="font-size:12px">Last 7 days</span></div>
+        <div class="panel tile"><span class="lbl t2">Cancelled</span><span class="num" id="tCancelled">1</span><span class="t2" style="font-size:12px">Last 7 days</span></div>
+      </div>
+      <div class="filters">
+        <div class="tabs" role="tablist" aria-label="Status" id="statusTabs"></div>
+        <label class="sel-wrap"><span class="sr">Project</span><select class="in" id="dProject" style="width:auto;min-width:210px"><option value="">All Projects</option></select></label>
+        <label class="sel-wrap"><span class="sr">Date range</span><select class="in" style="width:auto"><option>Today</option><option selected>Last 7 days</option><option>Last 30 days</option><option>All time</option></select></label>
+        <input class="in grow" type="search" id="dSearch" placeholder="Search runs, issues, ids" aria-label="Search runs">
+      </div>
+      <div class="runs">
+        <div class="rgrid rhead lbl t2"><span>Status</span><span>Workflow</span><span>Input</span><span>Progress</span><span>Started</span><span style="text-align:right">Actions</span></div>
+        <div id="runRows" class="runs"></div>
+        <div class="pager"><span class="t2" id="pagerText">Showing 5 of 5 runs</span>
+          <div style="display:flex;gap:8px;align-items:center"><span class="t2">Per page</span><div class="tabs"><button class="tab" aria-selected="true" type="button">10</button><button class="tab" type="button">25</button><button class="tab" type="button">50</button></div><button class="btn sec sm" type="button" disabled>Previous</button><button class="btn sec sm" type="button" disabled>Next</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 3 Workflows ================= -->
+    <section class="screen" id="s-workflows" aria-label="Workflows" hidden>
+      <div class="wlist">
+        <div class="top">
+          <div style="display:flex;justify-content:space-between;align-items:end;gap:10px"><h1 class="h1" style="font-size:34px">Workflows</h1><a class="btn pri sm" href="#builder">New Workflow</a></div>
+          <input class="in" type="search" id="wSearch" placeholder="Search workflows..." aria-label="Search workflows">
+          <div class="tabs" role="tablist" aria-label="Category" id="catTabs"></div>
+          <div class="t2" style="font-size:12px" id="wCount"></div>
+        </div>
+        <div class="wrows scroll" id="wRows"></div>
+      </div>
+      <div class="wdetail scroll" id="wDetail"></div>
+    </section>
+
+    <!-- ================= 4 Run detail ================= -->
+    <section class="screen" id="s-run" aria-label="Run detail" hidden>
+      <div class="rhead-top">
+        <div class="crumb"><a href="#dashboard">Dashboard</a> / ak-feature / 0c991b2b</div>
+        <div class="rtitle">
+          <div class="l"><h1 class="h1" style="font-size:34px">ak-feature</h1><span class="st wait" style="font-size:13px">Paused · awaiting input at plan</span></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sec" type="button" disabled title="Answer the pending question to continue">Resume</button><button class="btn sec" type="button">View artifacts</button><button class="btn dgr" type="button">Abandon</button></div>
+        </div>
+        <div class="rmeta">
+          <span>run <b>0c991b2b6ae98cdc</b></span><span>project <b>anhle128/Archon</b></span><span>input <b>issues/266</b></span><span>worktree <b>thread-ae64452a</b></span><span>base <b>develop</b></span><span>started <b>30 Sep 16:51</b></span><span>active <b>12m 39s</b></span><span>cost <b>$1.87</b></span>
+        </div>
+      </div>
+      <div class="rtabs">
+        <div class="tabs" role="tablist" aria-label="Run views" id="runTabs">
+          <button class="tab" role="tab" aria-selected="true" data-tp="graph" type="button">Graph</button><button class="tab" role="tab" data-tp="logs" type="button">Logs</button><button class="tab" role="tab" data-tp="chat" type="button">Chat</button><button class="tab" role="tab" data-tp="scm" type="button">Source Control</button><button class="tab" role="tab" data-tp="files" type="button">Files changed<span class="n">3</span></button><button class="tab" role="tab" data-tp="term" type="button">Terminal</button>
+        </div>
+        <span class="t2 mono" style="font-size:12px">last activity 17:04:26</span>
+      </div>
+
+      <div class="tabpanel" id="tp-graph">
+        <div class="panel graph">
+          <div class="gsum">
+            <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b style="font-size:15px">8 nodes</b><span class="mono" style="font-size:12px"><span class="ok">1 done</span> · <span class="acc">1 awaiting</span> · <span class="t3">6 pending</span></span></div>
+            <div class="prog" style="--p:12.5%"><i></i></div>
+          </div>
+          <div class="dag scroll" id="dag"></div>
+        </div>
+        <div class="panel room">
+          <div class="rh">
+            <div class="l1"><div style="display:flex;gap:10px;align-items:baseline;min-width:0"><span class="kind">Prompt</span><h3 class="h2 mono" style="font-size:20px">plan</h3></div><span class="st wait">Awaiting input</span></div>
+            <div class="rmeta"><span>claude · <b>opus</b></span><span>context <b>fresh</b></span><span>started <b>16:51:58</b></span><span>asked <b>17:04:26</b></span><span>output <b>plan_path</b></span></div>
+          </div>
+          <div class="todo" aria-label="Todo"><span class="lbl t2">Todo 2/4</span><span class="ok">Done · Read issue #266</span><span class="ok">Done · Map room shells</span><span class="acc">Now · Confirm scope</span><span class="t3">Next · Write plan</span></div>
+          <div class="transcript scroll">
+            <div class="amsg"><span class="lbl t2">Agent · 17:03</span>
+              <p>I read issue #266 and the approved room anatomy notes. Both room shells already exist and stay independent, so the plan is mostly layout work.</p>
+              <p>One decision changes the phases, so I need it before I write the plan.</p>
+            </div>
+            <div class="tool row"><span class="kind">Read</span><span class="cmd">packages/web/src/App.tsx</span><span class="t2">110 ms</span><span class="st done">OK</span></div>
+            <div class="ask" role="group" aria-labelledby="askQ">
+              <div style="display:flex;justify-content:space-between;gap:10px"><span class="lbl acc">Plan needs you</span><span class="lbl t2">Question 1 of 1</span></div>
+              <p class="q" id="askQ">Should the plan include a data migration?</p>
+              <label class="opt row"><input type="radio" name="mig"> <span>Yes. Add a migration phase for the stored room layout.</span></label>
+              <label class="opt row"><input type="radio" name="mig" checked> <span>No. Keep the schema as it is and change layout only.</span></label>
+              <div class="other"><input class="in" placeholder="Other: type your own answer" aria-label="Other answer"><button class="btn pri" type="button">Send now</button><button class="btn sec" type="button">Decline</button></div>
+            </div>
+          </div>
+          <div class="dock"><input class="in" placeholder="Message the agent..." aria-label="Message the agent"><button class="btn sec" type="button">Queue</button></div>
+        </div>
+      </div>
+
+      <div class="tabpanel static" id="tp-logs" hidden>
+        <div class="panel"><div class="ph"><h3>Logs</h3><span class="meta">step events · newest last</span></div>
+          <div class="pb" style="display:grid;gap:4px" id="logRows"></div></div>
+      </div>
+      <div class="tabpanel static" id="tp-chat" hidden>
+        <div class="panel" style="max-width:820px"><div class="ph"><h3>Chat</h3><span class="meta">conversation f6a66ae1</span></div>
+          <div class="pb" style="display:grid;gap:14px">
+            <div class="msg user"><span class="who">You · 16:51</span><div class="body"><p class="mono" style="font-size:13px">https://github.com/kevinle128/Archon/issues/266</p></div></div>
+            <div class="msg"><span class="who">Archon · 16:51</span><p>Started <span class="mono">ak-feature</span> in worktree <span class="mono">thread-ae64452a</span>.</p></div>
+            <div class="msg"><span class="who">Archon · 17:04</span><p><b>plan</b> needs you: Should the plan include a data migration?</p></div>
+          </div></div>
+      </div>
+      <div class="tabpanel static" id="tp-scm" hidden>
+        <div class="panel" style="max-width:900px"><div class="ph"><h3>Source Control</h3><span class="meta">worktree thread-ae64452a</span></div>
+          <div class="pb" style="display:grid;gap:14px">
+            <dl class="kv"><dt>Branch</dt><dd>archon/thread-ae64452a</dd><dt>Base</dt><dd>develop</dd><dt>Ahead / behind</dt><dd>0 / 0</dd><dt>Isolation</dt><dd>worktree, in place</dd><dt>Path</dt><dd>~/.archon/workspaces/anhle128/Archon/worktrees/archon/thread-ae64452a</dd></dl>
+            <div class="row" style="padding:10px 12px;font-size:13px">No commits yet. The plan node writes files only; commits start at <span class="mono">ralph-loop-run</span>.</div>
+          </div></div>
+      </div>
+      <div class="tabpanel static" id="tp-files" hidden>
+        <div class="panel" style="max-width:900px"><div class="ph"><h3>Files changed</h3><span class="meta">3 files · uncommitted</span></div>
+          <div class="pb" style="display:grid;gap:4px">
+            <div class="fc lbl t2"><span>Path</span><span style="text-align:right">Added</span><span style="text-align:right">Removed</span></div>
+            <div class="fc row"><span>plans/reports/requirements-260930-1651-anr-3-1-room-anatomy.md</span><span class="ok" style="text-align:right">+142</span><span style="text-align:right">0</span></div>
+            <div class="fc row"><span>plans/260930-1651-anr-3-1-room-anatomy/plan.md</span><span class="ok" style="text-align:right">+64</span><span style="text-align:right">0</span></div>
+            <div class="fc row"><span>plans/260930-1651-anr-3-1-room-anatomy/phase-01-room-geometry.md</span><span class="ok" style="text-align:right">+38</span><span style="text-align:right">0</span></div>
+          </div></div>
+      </div>
+      <div class="tabpanel static" id="tp-term" hidden>
+        <div class="panel term" style="max-width:980px"><div class="ph" style="border-color:var(--bg)"><h3 style="color:var(--bg)">Terminal</h3><span class="meta" style="color:#E6E6E1">zsh · thread-ae64452a</span></div>
+<pre class="code">$ git status --short
+?? plans/260930-1651-anr-3-1-room-anatomy/
+?? plans/reports/requirements-260930-1651-anr-3-1-room-anatomy.md
+$ bun run type-check
+$ tsc --noEmit -p packages/web
+Done in 11.4s
+$ </pre></div>
+      </div>
+    </section>
+
+    <!-- ================= 5 Builder ================= -->
+    <section class="screen" id="s-builder" aria-label="Builder" hidden>
+      <div class="btool">
+        <a class="crumb" href="#workflows" style="text-decoration:none">Workflows /</a>
+        <span class="name">archon-adversarial-dev</span>
+        <span class="lbl warn">Unsaved changes</span>
+        <span class="sp"></span>
+        <div class="tabs" role="tablist" aria-label="View mode"><button class="tab" aria-selected="true" type="button">Graph</button><button class="tab" type="button">YAML</button></div>
+        <button class="btn sec sm" type="button">Undo</button><button class="btn sec sm" type="button">Redo</button>
+        <button class="btn sec sm" type="button">Validate</button><button class="btn sec sm" type="button">Run</button><button class="btn pri sm" type="button">Save</button>
+      </div>
+      <div class="bbody">
+        <aside class="palette scroll" aria-label="Node library">
+          <input class="in" type="search" placeholder="Search nodes" aria-label="Search nodes">
+          <div id="palette" style="display:grid;gap:10px"></div>
+        </aside>
+        <div class="center">
+          <div class="canvas" aria-label="Canvas">
+            <div class="stage" id="stage"></div>
+            <div class="zoom"><button class="tab" type="button">-</button><button class="tab" type="button" aria-selected="true">100%</button><button class="tab" type="button">+</button><button class="tab" type="button">Fit</button></div>
+          </div>
+          <div class="yaml">
+            <div class="ph" style="padding:8px 14px"><h3 style="font-size:14px">YAML preview</h3><span class="meta">archon-adversarial-dev.yaml · read only</span></div>
+            <pre class="code scroll" id="yaml"></pre>
+          </div>
+        </div>
+        <aside class="inspector" aria-label="Inspector">
+          <div class="ph"><h3>Inspector</h3><span class="kind" id="inspKind">Loop</span></div>
+          <div class="insp scroll" id="insp"></div>
+          <div class="valid"><b class="ok">Valid</b><span class="t2">4 nodes · 0 errors · 1 warning</span><span class="warn">adversarial-sprint: until and until_bash both set; until_bash decides completion.</span></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ================= 6 Settings ================= -->
+    <section class="screen" id="s-settings" aria-label="Settings" hidden>
+      <nav class="snav" aria-label="Settings sections" id="snav"></nav>
+      <div class="sbody scroll" id="sbody">
+        <h1 class="h1">Settings</h1>
+
+        <section class="panel" id="set-projects">
+          <div class="ph"><div><h3>Projects</h3><p>Registered codebases. Env vars are injected into Claude, Codex, bash and script nodes.</p></div></div>
+          <div class="pb" style="display:grid;gap:10px">
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px"><input class="in" placeholder="GitHub URL or local path" aria-label="GitHub URL or local path"><button class="btn pri" type="button">Add project</button></div>
+            <div id="projRows" style="display:grid;gap:6px"></div>
+          </div>
+        </section>
+
+        <section class="panel" id="set-assistant">
+          <div class="ph"><div><h3>Assistant defaults</h3><p>Install-wide default assistant and per-provider model. Workflow and node settings override these.</p></div></div>
+          <div class="pb" style="display:grid;gap:14px">
+            <div class="two" style="max-width:640px">
+              <label class="field"><span>Default Assistant</span><span class="sel-wrap"><select class="in"><option>claude</option><option selected>codex</option><option>grok</option><option>pi</option><option>opencode</option><option>copilot</option></select></span></label>
+              <label class="field"><span>Max concurrent conversations</span><input class="in mono" value="10"></label>
+            </div>
+            <div class="row" style="padding:12px;display:grid;gap:10px">
+              <b>Claude (Anthropic)</b>
+              <div class="two" style="max-width:640px"><label class="field"><span>Model</span><span class="sel-wrap"><select class="in"><option>sonnet</option><option selected>opus</option><option>haiku</option></select></span></label></div>
+            </div>
+            <div class="row" style="padding:12px;display:grid;gap:10px">
+              <b>Codex (OpenAI)</b>
+              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">
+                <label class="field"><span>Model</span><input class="in mono" value="gpt-5.5"></label>
+                <label class="field"><span>Reasoning Effort</span><input class="in mono" value="xhigh"></label>
+                <label class="field"><span>Web Search</span><span class="sel-wrap"><select class="in"><option selected>disabled</option><option>cached</option><option>live</option></select></span></label>
+              </div>
+            </div>
+            <div class="t2" style="font-size:12.5px">grok, opencode, pi, copilot, qodercli, omp, deepseek and devin have no install default and use their SDK default.</div>
+            <div><button class="btn pri" type="button">Save defaults</button></div>
+            <hr class="rule">
+            <div style="display:grid;gap:10px">
+              <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap"><b>Your default model</b><span class="lbl t2">Just me · overrides the install default in chat</span></div>
+              <div style="display:grid;grid-template-columns:minmax(0,200px) minmax(0,260px) auto auto 1fr;gap:10px;align-items:end">
+                <label class="field"><span>Assistant</span><span class="sel-wrap"><select class="in"><option selected>claude</option><option>codex</option><option>pi</option></select></span></label>
+                <label class="field"><span>Chat model</span><input class="in mono" value="opus"></label>
+                <button class="btn pri" type="button">Save mine</button><button class="btn sec" type="button">Clear</button>
+              </div>
+              <div class="t2" style="font-size:12.5px">Chat model order: your default, then the large tier, then the install model for that assistant. Workflows still resolve the large tier.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="set-providers">
+          <div class="ph"><div><h3>AI providers</h3><p>API keys and subscription logins, stored encrypted per user. Runs use the credentials of the person who starts them.</p></div><span class="lbl ok">Vault active</span></div>
+          <div class="pb" style="display:grid;gap:8px" id="agents"></div>
+        </section>
+
+        <section class="panel" id="set-github">
+          <div class="ph"><div><h3>GitHub connection</h3><p>Your GitHub identity for commits, pull requests and workflows that declare requires: [github].</p></div><span class="lbl ok">Connected</span></div>
+          <div class="pb" style="display:grid;gap:10px">
+            <div class="prow row"><div><div class="nm">@kevinle128</div><div class="sub">device flow · commits as kevinle128@users.noreply.github.com</div></div><button class="btn dgr sm" type="button">Disconnect</button></div>
+            <div class="t2" style="font-size:12.5px">Not connected yet? Connect starts the device flow: open github.com/login/device and enter the 8 character code shown here.</div>
+          </div>
+        </section>
+
+        <section class="panel" id="set-tiers">
+          <div class="ph"><div><h3>Model tiers</h3><p>What small, medium and large resolve to in workflows and chat.</p></div>
+            <div class="scope tabs" role="tablist" aria-label="Scope"><button class="tab" aria-selected="true" type="button">This install</button><button class="tab" type="button">Just me</button></div></div>
+          <div class="pb" style="display:grid;gap:6px">
+            <div class="tier lbl t2" style="padding-top:0;padding-bottom:0"><span>Tier</span><span>Provider</span><span>Model</span><span>Effort</span></div>
+            <div id="tierRows" style="display:grid;gap:6px"></div>
+            <div style="display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap"><button class="btn pri" type="button">Save tiers</button><button class="btn sec" type="button">Cancel</button><span class="t2" style="font-size:12.5px">Default marks a built-in preset for the default provider (codex).</span></div>
+          </div>
+        </section>
+
+        <section class="panel" id="set-aliases">
+          <div class="ph"><div><h3>Aliases</h3><p>Custom @names for a provider, model and effort. Use them as model: "@review" in a node.</p></div>
+            <div class="scope tabs" role="tablist" aria-label="Scope"><button class="tab" aria-selected="true" type="button">This install</button><button class="tab" type="button">Just me</button></div></div>
+          <div class="pb" style="display:grid;gap:8px">
+            <div class="row" style="padding:10px 12px;font-size:13px;background:var(--bg)">No aliases saved yet. One draft row below.</div>
+            <div class="alias lbl t2" style="padding-top:0;padding-bottom:0"><span>Name</span><span>Provider</span><span>Model</span><span>Effort</span><span></span></div>
+            <div class="alias row sel">
+              <input class="in mono" value="@review" aria-label="Alias name">
+              <span class="sel-wrap"><select class="in" aria-label="Provider"><option selected>claude</option><option>codex</option><option>pi</option></select></span>
+              <input class="in mono" value="opus" aria-label="Model">
+              <span class="sel-wrap"><select class="in" aria-label="Effort"><option>medium</option><option selected>high</option><option>xhigh</option></select></span>
+              <button class="btn sec sm" type="button">Remove</button>
+            </div>
+            <div class="t3" style="font-size:12px">Names start with @. small, medium and large are reserved.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sec" type="button">Add alias</button><button class="btn pri" type="button">Save aliases</button></div>
+          </div>
+        </section>
+
+        <section class="panel" id="set-usage">
+          <div class="ph"><div><h3>Usage and cost</h3><p>Token usage and spend reported by providers. Estimated USD applies list prices where the provider reports none.</p></div></div>
+          <div class="pb" style="display:grid;gap:12px">
+            <div class="ufilters">
+              <label class="field"><span>From</span><input class="in mono" value="2026-09-24"></label>
+              <label class="field"><span>Through</span><input class="in mono" value="2026-09-30"></label>
+              <label class="field"><span>Group by</span><span class="sel-wrap"><select class="in"><option selected>Provider</option><option>Agent</option><option>Model</option><option>Project</option><option>Run</option><option>Day</option><option>Node (needs run id)</option></select></span></label>
+              <label class="field"><span>Kind</span><span class="sel-wrap"><select class="in"><option selected>Any kind</option><option>Unclassified</option><option>Advisor</option><option>Subagent</option></select></span></label>
+              <label class="field"><span>Project</span><span class="sel-wrap"><select class="in"><option>All projects</option><option>anhle128/Archon</option><option>kevinle128/billing-service</option></select></span></label>
+              <label class="field"><span>Agent provider</span><input class="in mono" placeholder="any"></label>
+              <label class="field"><span>Provider</span><input class="in mono" placeholder="any"></label>
+              <label class="field"><span>Model</span><input class="in mono" placeholder="any"></label>
+              <label class="field"><span>Run ID</span><input class="in mono" placeholder="any"></label>
+              <label class="field"><span>Node ID</span><input class="in mono" placeholder="needs run id"></label>
+              <div style="display:flex;gap:8px;align-items:end"><button class="btn pri" type="button">Apply</button><button class="btn sec" type="button">Refresh</button></div>
+            </div>
+            <div class="tbl-wrap">
+              <table class="usage">
+                <thead><tr><th>Provider</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Cache read</th><th>Reported USD</th><th>Estimated USD</th></tr></thead>
+                <tbody id="usageRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="set-system">
+          <div class="ph"><div><h3>System</h3><p>Health, concurrency and platform adapters.</p></div><span class="lbl ok">Healthy</span></div>
+          <div class="pb" style="display:grid;gap:10px">
+            <div class="sys">
+              <div class="row"><span class="lbl t2">Database</span><b>sqlite</b></div>
+              <div class="row"><span class="lbl t2">Concurrency</span><b>1/10</b></div>
+              <div class="row"><span class="lbl t2">Queued</span><b>0</b></div>
+              <div class="row"><span class="lbl t2">Version</span><b>0.9.0</b></div>
+            </div>
+            <div class="chips"><span class="chip">Web · active</span><span class="chip">CLI · active</span><span class="chip t2">Slack · not configured</span><span class="chip t2">Telegram · not configured</span><span class="chip t2">Discord · not configured</span><span class="chip t2">GitHub webhooks · not configured</span></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="note">Sample values: node durations after setup, costs, token counts, credential states, conversation titles and the archon-issue-review-full run started from Chat. Workflows, nodes, projects, providers, config and the four ak-feature runs come from the live API on 30 Sep 2026. Times in Asia/Saigon.</footer>
+</div>
+
+<script>
+/* Live /api/workflows on 30 Sep 2026: [id, kind, depends_on, provider, model] per node. */
+const WF = [{"n":"archon-issue-review-full","s":"bundled","d":"Use when: User wants a FULL, COMPREHENSIVE fix + review pipeline for a GitHub issue.\nTriggers: \"full review\", \"comprehensive fix\", \"fix with full review\", \"deep review\", \"issue review full\".\nNOT for: Simple issue fixes (use archon-fix-github-issue instead),\nquestions about issues, CI failures, PR reviews, general exploration.\n\nFull workflow:\n1. Investigate issue -> root cause analysis, implementation plan\n2. Implement fix -> code changes, tests, PR creation\n3. Comprehensive review -> 5 parallel agents with scope awareness\n4. Fix review issues -> address CRITICAL/HIGH findings\n5. Final summary -> decision matrix, follow-up recommendations","x":[["investigate","command",[],"",""],["implement","command",["investigate"],"",""],["review__verify-pr-base","bash",["implement"],"",""],["review__review-scope","prompt",["review__verify-pr-base"],"",""],["review__sync","prompt",["review__review-scope"],"",""],["review__code-review","prompt",["review__sync"],"",""],["review__error-handling","prompt",["review__sync"],"",""],["review__test-coverage","prompt",["review__sync"],"",""],["review__comment-quality","prompt",["review__sync"],"",""],["review__docs-impact","prompt",["review__sync"],"",""],["review__synthesize","prompt",["review__code-review","review__error-handling","review__test-coverage","review__comment-quality","review__docs-impact"],"",""],["review__implement-fixes","prompt",["review__synthesize"],"",""],["summary","command",["review__implement-fixes"],"",""]]},{"n":"archon-comprehensive-pr-review","s":"bundled","d":"Use when: User wants a comprehensive code review of a pull request with automatic fixes.\nTriggers: \"review this PR\", \"review PR #123\", \"comprehensive review\", \"full PR review\",\n\"review and fix\", \"check this PR\", \"code review\".\nDoes: Syncs PR with main (rebase if needed) -> runs 5 specialized review agents in parallel ->\nsynthesizes findings -> auto-fixes CRITICAL/HIGH issues -> reports remaining issues.\nNOT for: Quick questions about a PR, checking CI status, simple \"what changed\" queries.\n\nThis workflow produces artifacts in $ARTIFACTS_DIR/../reviews/pr-{number}/ and posts\na comprehensive review comment to the GitHub PR.","x":[["scope","command",[],"",""],["sync","command",["scope"],"",""],["code-review","command",["sync"],"",""],["error-handling","command",["sync"],"",""],["test-coverage","command",["sync"],"",""],["comment-quality","command",["sync"],"",""],["docs-impact","command",["sync"],"",""],["synthesize","command",["code-review","error-handling","test-coverage","comment-quality","docs-impact"],"",""],["implement-fixes","command",["synthesize"],"",""]]},{"n":"archon-ralph-dag-project-aware","s":"bundled","d":"Use when: User wants a Ralph implementation loop whose per-iteration validation\nadapts to the target repo's own toolchain (cargo / bun / go / uv …),\ninstead of the bun-hardcoded archon-ralph-dag.\nTriggers: \"ralph project aware\", \"ralph dag project aware\", \"project-aware ralph\".\n\nDAG workflow that:\n1. Detects input: existing prd.json, existing prd.md (needs stories), or raw idea\n2. Generates prd.md + prd.json if needed, without mutating Git lifecycle state\n3. Validates PRD files, reads project context, and installs dependencies\n4. Runs the project-aware Ralph loop, leaving validated changes uncommitted\n5. Reports completion only after every story passes\n\nReturns: The structured `implement` result with `done:true` only when every story\npasses, or `done:false` with blocker evidence for the caller.\nThe caller owns staging, commits, push, pull request, and blocker handling.\n\nAccepts: An idea description, a path to an existing prd.md, or a directory with\nprd.md + prd.json.","x":[["detect-input","prompt",[],"claude","sonnet"],["generate-prd","prompt",["detect-input"],"omp",""],["ready-prd","bash",["detect-input"],"omp",""],["validate-prd","bash",["ready-prd","generate-prd"],"omp",""],["implement","loop",["validate-prd"],"omp","xai-oauth/grok-4.5"],["report","prompt",["implement"],"claude","sonnet"]]},{"n":"speckit-ralph-native-feature","s":"bundled","d":"Use when: User explicitly wants the Speckit SDD pipeline with Archon-native Ralph iterations.\nTriggers: \"speckit ralph native\", \"native ralph feature\", \"ralph native workflow\",\n\"speckit native loop\", \"native ralph loop\".\nDoes: Specify → clarify (with Plannotator live review when questions exist) → red-team\n(with Plannotator live review gate) → plan → tasks → analyze → tasks-to-ralph →\nnative Ralph loop → sync-back →\nconverge gate → human review before retry → final Ralph pass on exhaustion →\nBMAD sprint status update → PR creation.\nNOT for: Speckit feature requests that do not explicitly require the native Ralph loop.\nNOT for: Quick one-file fixes, bug fixes, PR reviews.\nNOT for: When a spec already exists (use archon-speckit-plan-to-tasks instead).\nNOT for: Spec generation only without planning (use archon-speckit-spec instead).","x":[["setup","bash",[],"codex","gpt-5.5"],["specify","prompt",["setup"],"claude","fable"],["clarify","prompt",["specify"],"codex","gpt-6-sol"],["clarify-file-check","bash",["clarify"],"codex","gpt-5.5"],["clarify-respond","prompt",["clarify-file-check"],"omp","xai-oauth/grok-4.6"],["clarify-gate","gate",["clarify-respond"],"codex","gpt-5.5"],["clarify-apply","prompt",["clarify-gate"],"claude","sonnet"],["red-team","prompt",["clarify-file-check","clarify-respond","clarify-gate","clarify-apply"],"claude","claude-opus-4-8[1M]"],["red-team-respond","prompt",["red-team"],"codex","gpt-6-sol"],["red-team-gate","gate",["red-team-respond"],"codex","gpt-5.5"],["red-team-apply","prompt",["red-team-gate"],"claude","sonnet"],["plan","prompt",["red-team-apply"],"codex","gpt-6-astra"],["tasks","prompt",["plan"],"omp","xai-oauth/grok-4.6"],["analyze","prompt",["tasks"],"codex","gpt-6-sol"],["analyze-respond","prompt",["analyze"],"omp","xai-oauth/grok-4.6"],["analyze-apply","prompt",["analyze-respond"],"claude","sonnet"],["ralph-tasks-to-ralph","bash",["analyze-apply","speckit-converge-review-gate"],"codex","gpt-5.5"],["ralph-native-preflight","bash",["ralph-tasks-to-ralph"],"codex","gpt-5.5"],["ralph-loop-run","loop",["ralph-native-preflight"],"grok","grok-4.5"],["ralph-sync-back","prompt",["ralph-loop-run"],"omp","xai-oauth/grok-4.5"],["speckit-converge","prompt",["ralph-sync-back"],"codex","gpt-6-sol"],["speckit-converge-gate","route",["speckit-converge"],"codex","gpt-5.5"],["speckit-converge-review-gate","gate",[],"codex","gpt-5.5"],["speckit-final-ralph-tasks-to-ralph","bash",["speckit-converge-gate"],"codex","gpt-5.5"],["speckit-final-ralph-native-preflight","bash",["speckit-final-ralph-tasks-to-ralph"],"codex","gpt-5.5"],["speckit-final-ralph-loop-run","loop",["speckit-final-ralph-native-preflight"],"omp","anthropic/claude-sonnet-5"],["speckit-final-ralph-sync-back","prompt",["speckit-final-ralph-loop-run"],"codex","gpt-5.6-terra"],["cargo-clean-before-pr","bash",["speckit-converge-gate"],"codex","gpt-5.5"],["speckit-final-cargo-clean-before-pr","bash",["speckit-final-ralph-sync-back"],"codex","gpt-5.5"],["update-bmad-sprint-status","prompt",["cargo-clean-before-pr","speckit-final-cargo-clean-before-pr"],"codex","gpt-5.6-terra"],["create-pull-request","command",["update-bmad-sprint-status"],"omp","cursor/composer-2.5"]]},{"n":"archon-architect","s":"bundled","d":"Use when: User wants an architectural sweep, complexity reduction, or codebase health improvement.\nTriggers: \"architect\", \"simplify codebase\", \"reduce complexity\", \"architectural sweep\",\n\"clean up architecture\", \"codebase health\", \"fix architecture\".\nDoes: Scans codebase metrics -> analyzes architecture with principled lens -> plans targeted\nsimplifications -> executes fixes with self-review loops (hooks) -> validates -> creates PR.\nNOT for: Single-file fixes, feature development, bug fixes, PR reviews.\n\nDAG workflow showcasing per-node hooks:\n- PostToolUse hooks create organic quality loops (lint after write, self-review)\n- PreToolUse hooks inject architectural principles before changes\n- Different nodes have different trust levels and steering","x":[["scan-metrics","bash",[],"claude",""],["analyze","prompt",["scan-metrics"],"claude",""],["plan","prompt",["analyze"],"claude",""],["simplify","prompt",["plan"],"claude",""],["validate","bash",["simplify"],"claude",""],["fix-failures","prompt",["validate"],"claude",""],["create-pr","prompt",["fix-failures"],"claude",""],["verify-pr-base","bash",["create-pr"],"claude",""]]},{"n":"archon-interactive-prd","s":"bundled","d":"Use when: User wants to create a PRD through guided conversation.\nTriggers: \"create a prd\", \"new prd\", \"interactive prd\", \"plan a feature\",\n\"product requirements\", \"write a prd\".\nNOT for: Autonomous PRD generation without human input (use archon-ralph-generate).\n\nInteractive workflow that guides the user through problem-first PRD creation:\n1. Understand the idea → ask foundation questions → wait for answers\n2. Research market & codebase → ask deep dive questions → wait for answers\n3. Assess technical feasibility → ask scope questions → wait for answers\n4. Generate PRD → validate technical claims against codebase → output","x":[["initiate","prompt",[],"claude","medium"],["foundation-gate","approval",["initiate"],"claude",""],["research","prompt",["foundation-gate"],"claude","medium"],["deepdive-gate","approval",["research"],"claude",""],["technical","prompt",["deepdive-gate"],"claude","medium"],["scope-gate","approval",["technical"],"claude",""],["generate","prompt",["scope-gate"],"claude","medium"],["validate","prompt",["generate"],"claude","medium"]]},{"n":"archon-resolve-conflicts","s":"bundled","d":"Use when: PR has merge conflicts that need resolution.\nTriggers: \"resolve conflicts\", \"fix merge conflicts\", \"rebase this PR\", \"resolve this\",\n\"fix conflicts\", \"merge conflicts\", \"rebase and fix\".\nDoes: Fetches latest base branch -> analyzes conflicts -> auto-resolves simple conflicts ->\npresents options for complex conflicts -> commits and pushes resolution.\nNOT for: PRs without conflicts, general rebasing without conflicts, squashing commits.\n\nThis workflow helps resolve merge conflicts by analyzing the conflicting changes,\nautomatically resolving where intent is clear, and presenting options for complex conflicts.","x":[["resolve","command",[],"omp","cursor/cursor-grok-4.5"]]},{"n":"archon-adversarial-dev","s":"bundled","d":"Use when: User wants to build a complete application from scratch using adversarial development.\nTriggers: \"adversarial dev\", \"adversarial development\", \"build with adversarial\", \"gan dev\",\n\"adversarial build\", \"build app adversarially\", \"adversarial coding\".\nDoes: Three-role GAN-inspired development : Planner creates spec with sprints, then a state-machine\nloop alternates between Generator (builds code) and Evaluator (attacks it) with hard pass/fail\nthresholds. The evaluator's job is to BREAK what the generator builds. If any criterion scores\nbelow 7/10, the sprint goes back to the generator with adversarial feedback. Stops on sprint\nfailure after max retries.\nNOT for: Bug fixes, PR reviews, refactoring existing code, simple one-off tasks.\n\nBased on Anthropic's harness design article for long-running application development.\nSeparates planning, building, and evaluation into distinct roles with adversarial tension.","x":[["plan","prompt",[],"claude","medium"],["init-workspace","bash",["plan"],"claude","medium"],["adversarial-sprint","loop",["init-workspace"],"claude","large"],["report","prompt",["adversarial-sprint"],"claude","small"]]},{"n":"archon-plan-to-pr","s":"bundled","d":"Use when: You have an existing implementation plan and want to execute it end-to-end.\nInput: Path to a plan file ($ARTIFACTS_DIR/plan.md or .agents/plans/*.md)\nOutput: PR ready for merge with comprehensive review completed\n\nFull workflow:\n1. Read plan, setup branch, extract scope limits\n2. Verify plan research is still valid\n3. Implement all tasks with type-checking\n4. Run full validation suite\n5. Create PR with template, mark ready\n6. Comprehensive code review (5 parallel agents with scope limit awareness)\n7. Synthesize and fix review findings\n8. Final summary with decision matrix -> GitHub comment + follow-up recommendations\n\nNOT for: Creating plans from scratch (use archon-idea-to-pr), quick fixes, standalone reviews.","x":[["plan-setup","command",[],"",""],["confirm-plan","command",["plan-setup"],"",""],["implement-tasks","command",["confirm-plan"],"claude","large"],["validate","command",["implement-tasks"],"",""],["finalize-pr","command",["validate"],"",""],["review__verify-pr-base","bash",["finalize-pr"],"",""],["review__review-scope","prompt",["review__verify-pr-base"],"",""],["review__sync","prompt",["review__review-scope"],"",""],["review__code-review","prompt",["review__sync"],"",""],["review__error-handling","prompt",["review__sync"],"",""],["review__test-coverage","prompt",["review__sync"],"",""],["review__comment-quality","prompt",["review__sync"],"",""],["review__docs-impact","prompt",["review__sync"],"",""],["review__synthesize","prompt",["review__code-review","review__error-handling","review__test-coverage","review__comment-quality","review__docs-impact"],"",""],["review__implement-fixes","prompt",["review__synthesize"],"",""],["workflow-summary","command",["review__implement-fixes"],"",""]]},{"n":"ak-feature","s":"bundled","d":"Use when: User wants to build a feature end-to-end with the Claude Kit (ck)\npipeline in a worktree.\nTriggers: \"ak feature\", \"ck feature\", \"claudekit feature\", \"ck plan and cook\",\n\"ck deep tdd\", \"plan then cook\", \"ck pipeline\", \"claude kit feature\".\nDoes: read the requested feature and its linked requirements -> deep TDD\nplanning (/ak:plan --deep --tdd) -> independent Codex verify +\nfix of the plan -> conversion of the plan into a Ralph PRD (prd.md +\nprd.json) CO-LOCATED with it -> autonomous story-by-story implementation\nvia a native in-parent Ralph loop -> Codex repairs any remaining Ralph\nblockers, plan gaps, or defects -> create a PR after the Codex repair\nstep. Never trusts ralph-loop-run.\nNOT for: quick one-file fixes, bug fixes, PR reviews, or running an existing\nplan (use ak-implement for an existing plan).","x":[["setup","bash",[],"claude",""],["plan","prompt",["setup"],"claude","opus"],["verify-and-fix-plan","prompt",["plan"],"codex","gpt-6-sol"],["build-ralph-prd","prompt",["verify-and-fix-plan"],"devin","swe-2-max"],["ralph-native-preflight","bash",["build-ralph-prd"],"claude",""],["ralph-loop-run","loop",["ralph-native-preflight"],"omp","xai-oauth/grok-4.5"],["codex-final-fix","prompt",["ralph-loop-run"],"codex","gpt-5.6-terra"],["create-pull-request","command",["codex-final-fix"],"devin","swe-2-high"]]},{"n":"bmad-readiness-correct-course-loop","s":"bundled","d":"Use when: User wants to run BMAD implementation readiness, automatically correct planning issues, and repeat until readiness is clean.\nTriggers: \"bmad readiness correct course loop\", \"check readiness until clean\", \"readiness correct course\", \"bmad implementation readiness loop\".\nDoes: Validates BMAD command support, extracts approved Claude Design features before bmad-check-implementation-readiness, evaluates readiness, routes positive results to completion, and routes negative results through bmad-correct-course before rerunning readiness.\nNOT for: Story implementation, code review fix loops, or manual planning review sessions.","x":[["validate-bmad-command","bash",[],"codex","gpt-5.5"],["claude-design-feature-extractor","prompt",["validate-bmad-command"],"codex","gpt-5.5"],["bmad-check-implementation-readiness","command",["claude-design-feature-extractor","bmad-correct-course"],"codex","gpt-5.5"],["readiness-evaluator","prompt",["bmad-check-implementation-readiness"],"codex","gpt-5.5"],["route-loop","route",["readiness-evaluator"],"codex","gpt-5.5"],["bmad-correct-course","command",[],"codex","gpt-5.5"],["create-pull-request","command",["route-loop"],"codex","gpt-5.4"],["readiness-loop-error","bash",["route-loop"],"codex","gpt-5.5"]]},{"n":"archon-feature-development","s":"bundled","d":"Use when: Implementing a feature from an existing plan.\nInput: Path to a plan file ($ARTIFACTS_DIR/plan.md) or GitHub issue containing a plan.\nDoes: Implements the plan with validation loops -> creates pull request.\nNOT for: Creating plans (plans should be created separately), bug fixes, code reviews.","x":[["implement","command",[],"claude","large"],["create-pr","command",["implement"],"",""],["verify-pr-base","bash",["create-pr"],"",""]]},{"n":"archon-workflow-builder","s":"bundled","d":"Use when: User wants to create a new custom workflow for their project.\nTriggers: \"build me a workflow\", \"create a workflow\", \"generate a workflow\",\n\"new workflow\", \"make a workflow for\", \"workflow builder\".\nDoes: Scans codebase -> extracts intent (JSON) -> generates YAML -> validates -> saves.\nNOT for: Editing existing workflows or creating non-workflow files.","x":[["scan-codebase","bash",[],"",""],["extract-intent","prompt",["scan-codebase"],"","small"],["generate-yaml","prompt",["extract-intent"],"",""],["validate-yaml","bash",["generate-yaml"],"",""],["save-or-report","prompt",["validate-yaml"],"",""]]},{"n":"archon-smart-pr-review","s":"bundled","d":"Use when: User wants a smart, efficient PR review that adapts to PR complexity.\nTriggers: \"smart review\", \"review this PR\", \"review PR #123\", \"efficient review\",\n\"smart PR review\", \"quick review\".\nDoes: Gathers PR scope -> classifies complexity -> routes to only relevant review agents ->\nsynthesizes findings -> auto-fixes CRITICAL/HIGH issues.\nNOT for: When you explicitly want ALL review agents (use archon-comprehensive-pr-review instead).\n\nUnlike the comprehensive review, this workflow classifies the PR first and only runs\nthe review agents that are relevant. A 3-line typo fix skips test-coverage and docs-impact.","x":[["scope","command",[],"",""],["sync","command",["scope"],"",""],["classify","prompt",["scope"],"","small"],["code-review","command",["classify","sync"],"",""],["error-handling","command",["classify","sync"],"",""],["test-coverage","command",["classify","sync"],"",""],["comment-quality","command",["classify","sync"],"",""],["docs-impact","command",["classify","sync"],"",""],["synthesize","command",["code-review","error-handling","test-coverage","comment-quality","docs-impact"],"",""],["implement-fixes","command",["synthesize"],"",""],["check-ntfy","bash",["implement-fixes"],"",""],["notify","prompt",["check-ntfy","synthesize","implement-fixes"],"",""]]},{"n":"speckit-ralph-native-no-hitl-feature","s":"bundled","d":"Use when: User wants Speckit SDD with Archon-native Ralph iterations and no\nPlannotator HITL on clarify/red-team.\nTriggers: \"speckit ralph native no hitl\", \"native ralph no hitl\",\n\"speckit native no-hitl\", \"ralph native without plannotator\",\n\"speckit ralph native unattended clarify\".\nDoes: Specify → clarify → red-team → plan → tasks → analyze → tasks-to-ralph →\nnative Ralph loop → sync-back →\nconverge gate → human review before retry → final Ralph pass on exhaustion →\nBMAD sprint status update → PR creation.\nNOT for: Speckit feature requests that need Plannotator review on clarify/red-team\n(use speckit-ralph-native-feature instead).\nNOT for: Quick one-file fixes, bug fixes, PR reviews.\nNOT for: When a spec already exists (use archon-speckit-plan-to-tasks instead).\nNOT for: Spec generation only without planning (use archon-speckit-spec instead).","x":[["setup","bash",[],"codex","gpt-5.5"],["specify","prompt",["setup"],"omp","xai-oauth/grok-4.6"],["clarify","prompt",["specify"],"codex","gpt-6-sol"],["clarify-file-check","bash",["clarify"],"codex","gpt-5.5"],["clarify-respond","prompt",["clarify-file-check"],"omp","xai-oauth/grok-4.6"],["clarify-apply","prompt",["clarify-respond"],"claude","sonnet"],["red-team","prompt",["clarify-file-check","clarify-respond","clarify-apply"],"claude","claude-opus-4-8[1M]"],["red-team-respond","prompt",["red-team"],"omp","xai-oauth/grok-4.6"],["red-team-apply","prompt",["red-team-respond"],"claude","sonnet"],["plan","prompt",["red-team-apply"],"omp","xai-oauth/grok-4.6"],["tasks","prompt",["plan"],"codex","gpt-6-sol"],["analyze","prompt",["tasks"],"codex","gpt-6-sol"],["analyze-respond","prompt",["analyze"],"omp","xai-oauth/grok-4.6"],["analyze-apply","prompt",["analyze-respond"],"claude","sonnet"],["ralph-tasks-to-ralph","bash",["analyze-apply","speckit-converge-review-gate"],"codex","gpt-5.5"],["ralph-native-preflight","bash",["ralph-tasks-to-ralph"],"codex","gpt-5.5"],["ralph-loop-run","loop",["ralph-native-preflight"],"omp","alibaba-token-plan/qwen3.8-max"],["ralph-sync-back","prompt",["ralph-loop-run"],"codex","gpt-5.6-terra"],["speckit-converge","prompt",["ralph-sync-back"],"codex","gpt-6-sol"],["speckit-converge-gate","route",["speckit-converge"],"codex","gpt-5.5"],["speckit-converge-review-gate","gate",[],"codex","gpt-5.5"],["speckit-final-ralph-tasks-to-ralph","bash",["speckit-converge-gate"],"codex","gpt-5.5"],["speckit-final-ralph-native-preflight","bash",["speckit-final-ralph-tasks-to-ralph"],"codex","gpt-5.5"],["speckit-final-ralph-loop-run","loop",["speckit-final-ralph-native-preflight"],"omp","cursor/cursor-grok-4.5"],["speckit-final-ralph-sync-back","prompt",["speckit-final-ralph-loop-run"],"codex","gpt-5.6-terra"],["cargo-clean-before-pr","bash",["speckit-converge-gate"],"codex","gpt-5.5"],["speckit-final-cargo-clean-before-pr","bash",["speckit-final-ralph-sync-back"],"codex","gpt-5.5"],["update-bmad-sprint-status","prompt",["cargo-clean-before-pr","speckit-final-cargo-clean-before-pr"],"codex","gpt-5.6-terra"],["create-pull-request","command",["update-bmad-sprint-status"],"omp","cursor/gemini-3.8-flash"]]},{"n":"archon-validate-pr","s":"bundled","d":"Use when: User wants a thorough PR validation that tests both main (bug present) and feature branch (bug fixed).\nTriggers: \"validate PR\", \"validate pr #123\", \"test this PR\", \"verify PR\", \"full PR validation\",\n\"validate pull request\", \"test PR end-to-end\".\nDoes: Fetches PR info -> finds free ports -> parallel code review (main vs feature) ->\nE2E test on main (reproduce bug) -> E2E test on feature (verify fix) -> final verdict report.\nNOT for: Quick code-only reviews (use archon-smart-pr-review), fixing issues, general exploration.\n\nThis workflow is designed for running in parallel : each instance finds its own free ports\nto avoid conflicts. Produces artifacts in $ARTIFACTS_DIR/ and posts a validation report.","x":[["fetch-pr","bash",[],"claude","large"],["find-ports","bash",[],"claude","large"],["resolve-paths","bash",["fetch-pr"],"claude","large"],["code-review-main","command",["fetch-pr","resolve-paths"],"claude","large"],["code-review-feature","command",["fetch-pr","resolve-paths","code-review-main"],"claude","large"],["classify-testability","prompt",["fetch-pr"],"claude","small"],["e2e-test-main","command",["classify-testability","find-ports","resolve-paths","code-review-main","code-review-feature"],"claude","large"],["e2e-test-feature","command",["e2e-test-main","find-ports","resolve-paths"],"claude","large"],["cleanup-processes","bash",["e2e-test-main","e2e-test-feature"],"claude","large"],["final-report","command",["code-review-main","code-review-feature","e2e-test-main","e2e-test-feature","classify-testability","cleanup-processes"],"claude","large"]]},{"n":"ak-implement","s":"bundled","d":"Use when: User already has an implementation plan and wants it executed\nunattended in a worktree (no /ak:plan).\nTriggers: \"ak implement\", \"implement plan\", \"ralph implement plan\",\n\"run existing plan\", \"implement from plans/\".\nDoes: resolve the plan source from $ARGUMENTS : a GitHub issue (URL or #N) whose\nbody links the plan, or a local plan dir / .md file ->\nconvert plan into a Ralph PRD (prd.md + prd.json) CO-LOCATED with it ->\nautonomous story-by-story implementation via a native in-parent Ralph loop ->\nCodex repairs any remaining Ralph blockers, plan gaps, or defects ->\ncreate a PR after the Codex repair step.\nNever trusts ralph-loop-run.\nInput: REQUIRED. A GitHub issue URL / #N whose body links a plan path, OR a plan\ndirectory (plans/<slug>/, specs/<slug>/) or a .md plan file\n(e.g. docs/superpowers/plans/<name>.md).\nNOT for: creating a plan from scratch (use ck-feature), quick one-file fixes,\nbug fixes, or PR reviews.","x":[["setup","bash",[],"omp",""],["resolve-plan-source","prompt",["setup"],"claude","sonnet"],["resolve-plan","bash",["resolve-plan-source"],"omp",""],["verify-and-fix-plan","prompt",["resolve-plan"],"codex","gpt-6-sol"],["build-ralph-prd","prompt",["verify-and-fix-plan"],"devin","swe-2-max"],["ralph-native-preflight","bash",["build-ralph-prd"],"omp",""],["ralph-loop-run","loop",["ralph-native-preflight"],"omp","xai-oauth/grok-4.5"],["codex-final-fix","prompt",["ralph-loop-run"],"codex","gpt-5.6-terra"],["create-pull-request","command",["codex-final-fix"],"devin","swe-2-high"]]},{"n":"archon-refactor-safely","s":"bundled","d":"Use when: User wants to refactor code safely with continuous validation and behavior preservation.\nTriggers: \"refactor\", \"refactor safely\", \"split this file\", \"extract module\", \"break up\",\n\"decompose\", \"safe refactor\", \"split file\", \"extract into modules\".\nDoes: Scans refactoring scope -> analyzes impact (read-only) -> plans ordered task list ->\nexecutes with type-check hooks after every edit -> validates full suite ->\nverifies behavior preservation (read-only) -> creates PR with before/after comparison.\nNOT for: Bug fixes (use archon-fix-github-issue), feature development (use archon-feature-development),\ngeneral architecture sweeps (use archon-architect), PR reviews.\n\nKey safety features:\n- Analysis and verification nodes are read-only (denied_tools: [Write, Edit, Bash])\n- PreToolUse hooks check if each edit is in the plan\n- PostToolUse hooks force type-check after every file change\n- Behavior verification confirms no logic changes after refactoring","x":[["scan-scope","bash",[],"claude",""],["analyze-impact","prompt",["scan-scope"],"claude",""],["plan-refactor","prompt",["analyze-impact"],"claude",""],["execute-refactor","prompt",["plan-refactor"],"claude","large"],["validate","bash",["execute-refactor"],"claude",""],["fix-failures","prompt",["validate"],"claude",""],["verify-behavior","prompt",["fix-failures"],"claude",""],["create-pr","prompt",["verify-behavior"],"claude",""],["verify-pr-base","bash",["create-pr"],"claude",""]]},{"n":"archon-superpower-feature-verify-loop","s":"bundled","d":"Use when: Manual Superpowers brainstorming is complete and the user wants the\nfeature built, then proved with project-local verify-archon before\nany pull request.\nTriggers: \"superpower feature verify\", \"superpower verify loop\",\n\"archon-superpower-feature-verify-loop\".\nDoes: Same early Superpowers pipeline as superpower-feature (plan → Codex plan\nrepair → Ralph PRD → in-parent Ralph implement, no PR). Then proposes\naffected behaviors and deterministically normalizes, executes, and checks\nselected user paths. Failures run a max-3 fix, commit,\nreselect, and re-prove route_loop. Only a complete executable PASS opens\na PR naming behaviors, scenarios, and evidence. Exhaustion writes a blocked report and stops\nwith a non-zero exit : it does not open a green PR.\nNOT for: Brainstorming itself, verify-only without implementation, Mini/PM2/\nTailscale proofs, or review-only work. Never start or stop Oceanlabs Mini.\nInput: The approved brainstorm result, product notes, design spec path, or\nrequirements from the manual Superpowers brainstorming step. Run from\nthe anhle128/Archon checkout that contains the project-local verification\ncatalog and deterministic helper under `.agents/skills/verify-archon/`.","x":[["setup","bash",[],"omp","xai-oauth/grok-4.6"],["write-plan","prompt",["setup"],"claude","opus"],["review-fix-plan","prompt",["write-plan"],"codex","gpt-6-sol"],["build-ralph-prd","prompt",["review-fix-plan"],"omp","cursor/composer-2.5"],["validate-prd","bash",["build-ralph-prd"],"omp","xai-oauth/grok-4.6"],["ralph-loop-run","loop",["validate-prd"],"omp","cursor/cursor-grok-4.6"],["begin-verify","bash",["ralph-loop-run","fix-verify"],"omp","xai-oauth/grok-4.6"],["finalize-change","prompt",["begin-verify"],"codex","gpt-6-sol"],["prepare-verify","bash",["finalize-change"],"omp","xai-oauth/grok-4.6"],["select-verify-targets","prompt",["prepare-verify"],"grok","grok-4.6"],["normalize-verify-targets","bash",["select-verify-targets"],"omp","xai-oauth/grok-4.6"],["prove","bash",["normalize-verify-targets"],"omp","xai-oauth/grok-4.6"],["record-verify","bash",["prove"],"omp","xai-oauth/grok-4.6"],["verify-gate","route",["record-verify"],"omp","xai-oauth/grok-4.6"],["fix-verify","prompt",[],"omp","cursor/gpt-6-sol"],["authorize-pr","bash",["verify-gate"],"omp","xai-oauth/grok-4.6"],["create-pull-request","command",["authorize-pr"],"omp","cursor/composer-2.5"],["verify-blocked","bash",["verify-gate"],"omp","xai-oauth/grok-4.6"]]},{"n":"archon-idea-to-pr","s":"bundled","d":"Use when: You have a feature idea or description and want end-to-end development.\nInput: Feature description in natural language, or path to a PRD file\nOutput: PR ready for merge with comprehensive review completed\n\nFull workflow:\n1. Create comprehensive implementation plan with codebase analysis\n2. Setup branch and extract scope limits\n3. Verify plan research is still valid\n4. Implement all tasks with type-checking\n5. Run full validation suite\n6. Create PR with template, mark ready\n7. Comprehensive code review (5 parallel agents with scope limit awareness)\n8. Synthesize and fix review findings\n9. Final summary with decision matrix -> GitHub comment + follow-up recommendations\n\nNOT for: Executing existing plans (use archon-plan-to-pr), quick fixes, standalone reviews.","x":[["create-plan","command",[],"",""],["plan-setup","command",["create-plan"],"",""],["confirm-plan","command",["plan-setup"],"",""],["implement-tasks","command",["confirm-plan"],"claude","large"],["validate","command",["implement-tasks"],"",""],["finalize-pr","command",["validate"],"",""],["review__verify-pr-base","bash",["finalize-pr"],"",""],["review__review-scope","prompt",["review__verify-pr-base"],"",""],["review__sync","prompt",["review__review-scope"],"",""],["review__code-review","prompt",["review__sync"],"",""],["review__error-handling","prompt",["review__sync"],"",""],["review__test-coverage","prompt",["review__sync"],"",""],["review__comment-quality","prompt",["review__sync"],"",""],["review__docs-impact","prompt",["review__sync"],"",""],["review__synthesize","prompt",["review__code-review","review__error-handling","review__test-coverage","review__comment-quality","review__docs-impact"],"",""],["review__implement-fixes","prompt",["review__synthesize"],"",""],["workflow-summary","command",["review__implement-fixes"],"",""]]},{"n":"archon-assist","s":"bundled","d":"Use when: No other workflow matches the request.\nHandles: Questions, debugging, exploration, one-off tasks, explanations, CI failures, general help.\nCapability: Full Claude Code agent with all tools available.\nNote: Will inform user when assist mode is used for tracking.","x":[["assist","command",[],"",""]]},{"n":"archon-create-issue","s":"bundled","d":"Use when: User wants to report a bug or problem as a GitHub issue with automated reproduction.\nTriggers: \"create issue\", \"file a bug\", \"report this bug\", \"open an issue for\",\n\"create github issue\", \"report issue\", \"log this bug\".\nDoes: Classifies problem area (haiku) -> gathers context in parallel (templates, git state, duplicates) ->\ninvestigates relevant code -> reproduces the issue using area-specific tools (agent-browser, CLI, DB queries) ->\ngates on reproduction success -> creates issue with full evidence OR reports back if cannot reproduce.\nNOT for: Feature requests, enhancements, or non-bug work. Only for bugs/problems.\n\nReproduction gating: If the issue cannot be reproduced, the workflow does NOT create an issue.\nInstead, it reports what was tried and suggests next steps to the user.","x":[["classify","prompt",[],"","small"],["fetch-template","bash",["classify"],"",""],["git-context","bash",["classify"],"",""],["dedup-check","bash",["classify"],"",""],["investigate","prompt",["classify","git-context"],"",""],["start-server","bash",["classify"],"",""],["reproduce","prompt",["classify","git-context","investigate","start-server"],"",""],["cleanup-server","bash",["reproduce"],"",""],["check-reproduction","bash",["cleanup-server"],"",""],["report-failure","prompt",["check-reproduction"],"",""],["draft-issue","prompt",["check-reproduction","fetch-template","dedup-check","investigate"],"",""],["create-issue","prompt",["draft-issue"],"",""]]},{"n":"archon-test-loop-dag","s":"bundled","d":"Use when: User explicitly says \"test-loop-dag\" or \"run test-loop-dag\".\nIMPORTANT: This is a DAG workflow with a loop node that iterates until completion.\nNOT for: General testing questions or debugging.\nDoes: Initializes a counter, iterates until it reaches 3, then reports completion.","x":[["setup","bash",[],"",""],["loop-counter","loop",["setup"],"",""],["report","prompt",["loop-counter"],"",""]]},{"n":"harness-service-sync-upstream","s":"bundled","d":"Use when: User wants to port one upstream grok-build commit from a\nharness-service GitHub issue into that repo and open a PR.\nRun from the harness-service checkout (cwd), not the Archon repo.\nTriggers: \"sync upstream\", \"sync upstream commit\", \"port upstream\",\n\"harness-service-sync-upstream\", \"sync grok-build commit\",\n\"port grok-build\", \"upstream issue\", \"upstream-sync issue\".\nDoes: Run sync-upstream-commit on $ARGUMENTS -> cargo clean -> create PR\ninto develop that closes the issue.\nNOT for: Intake/ticketizing a commit (scripts/upstream_sync/run_intake.py),\nvalidating an existing PR (harness-validate-feature-pr),\nbulk-sync of a commit range, or Archon-the-product work.\nPrereq: Codex skill `sync-upstream-commit` installed\n(~/.codex/skills/sync-upstream-commit). GitHub identity for gh.\nInput: A GitHub issue URL from kevinle128/billing-service\n(preferred), or a raw grok-build commit URL or SHA.\nExample: https://github.com/kevinle128/billing-service/issues/176","x":[["sync","prompt",[],"omp","cursor/cursor-grok-4.5"],["cargo-clean-before-pr","bash",["sync"],"codex",""],["create-pull-request","command",["cargo-clean-before-pr"],"codex","gpt-5.6-terra"]]},{"n":"archon-piv-loop","s":"bundled","d":"Use when: User wants guided Plan-Implement-Validate development with human-in-the-loop.\nTriggers: \"piv\", \"piv loop\", \"plan implement validate\", \"guided development\",\n\"structured development\", \"build a feature\", \"develop with review\".\nNOT for: Autonomous implementation without planning (use archon-feature-development).\nNOT for: PRD creation (use archon-interactive-prd).\nNOT for: Ralph story-based implementation (use archon-ralph-dag).\n\nInteractive PIV loop workflow : the foundational AI coding methodology:\n1. EXPLORE: Iterative conversation with human to understand the problem (arbitrary rounds)\n2. PLAN: Create structured plan -> iterative review & revision (arbitrary rounds)\n3. IMPLEMENT: Autonomous task-by-task implementation from plan (Ralph loop)\n4. VALIDATE: Automated code review -> iterative human feedback & fixes (arbitrary rounds)\n\nThe PIV loop comes AFTER a PRD exists. Each PIV loop focuses on ONE granular feature or bug fix.\nInput: A description of what to build, a path to an existing plan, or a GitHub issue number.","x":[["explore","loop",[],"claude",""],["create-plan","prompt",["explore"],"claude","medium"],["refine-plan","loop",["create-plan"],"claude",""],["implement-setup","bash",["refine-plan"],"claude",""],["implement","loop",["implement-setup"],"claude","large"],["code-review","prompt",["implement"],"claude","medium"],["fix-feedback","loop",["code-review"],"claude",""],["finalize","prompt",["fix-feedback"],"claude","medium"],["verify-pr-base","bash",["finalize"],"claude",""]]},{"n":"archon-ralph-dag","s":"bundled","d":"Use when: User wants to run a Ralph implementation loop.\nTriggers: \"ralph\", \"run ralph\", \"ralph dag\", \"run ralph dag\".\n\nDAG workflow that:\n1. Detects input: existing prd.json, existing prd.md (needs stories), or raw idea\n2. Generates prd.md + prd.json if needed (explores codebase, breaks into stories)\n3. Validates PRD files, reads project context, installs dependencies\n4. Runs Ralph loop (fresh context per iteration) implementing one story per iteration\n5. Creates PR and reports completion\n\nAccepts: An idea description, a path to an existing prd.md, or a directory with prd.md + prd.json","x":[["detect-input","prompt",[],"claude","small"],["generate-prd","command",["detect-input"],"claude",""],["validate-prd","bash",["detect-input","generate-prd"],"claude",""],["implement","loop",["validate-prd"],"claude","large"],["verify-pr-base","bash",["implement"],"claude",""],["report","prompt",["verify-pr-base"],"claude",""]]},{"n":"archon-remotion-generate","s":"bundled","d":"Use when: User wants to generate or modify a Remotion video composition using AI.\nTriggers: \"create a video\", \"generate video\", \"remotion\", \"make an animation\",\n\"video about\", \"animate\".\nDoes: AI writes Remotion React code -> renders preview stills -> renders full video ->\nsummarizes the output.\nRequires: A Remotion project in the working directory (src/index.ts, src/Root.tsx).\nOptional: Install the remotion-best-practices skill for higher quality output:\nnpx skills add remotion-dev/skills","x":[["check-project","bash",[],"",""],["generate","prompt",["check-project"],"",""],["render-preview","bash",["generate"],"",""],["render-video","bash",["render-preview"],"",""],["summary","prompt",["render-video"],"","small"]]},{"n":"archon-fix-github-issue","s":"bundled","d":"Use when: User wants to FIX, RESOLVE, or IMPLEMENT a solution for a GitHub issue.\nTriggers: \"fix this issue\", \"implement issue #123\", \"resolve this bug\", \"fix it\",\n\"fix issue\", \"resolve issue\", \"fix #123\".\nNOT for: Comprehensive multi-agent reviews (use archon-issue-review-full),\nquestions about issues, CI failures, PR reviews, general exploration.\n\nDAG workflow that:\n1. Classifies the issue (bug/feature/enhancement/etc)\n2. Researches context (web research + codebase exploration via investigate/plan)\n3. Routes to investigate (bugs) or plan (features) based on classification\n4. Implements the fix/feature with validation\n5. Creates a draft PR using the repo's PR template\n6. Runs smart review (always code review + CLAUDE.md check, conditional additional agents)\n7. Aggressively self-fixes all findings (tests, docs, error handling)\n8. Simplifies changed code (implements fixes directly, not just reports)\n9. Reports results back to the GitHub issue with follow-up suggestions","x":[["parse-request","command",[],"claude","small"],["fetch-issue","bash",["parse-request"],"claude","medium"],["classify","prompt",["fetch-issue"],"claude","small"],["web-research","command",["classify"],"claude","medium"],["investigate","command",["classify","web-research"],"claude","medium"],["plan","command",["classify","web-research"],"claude","medium"],["bridge-artifacts","bash",["investigate","plan"],"claude","medium"],["implement","command",["bridge-artifacts"],"claude","large"],["validate","command",["implement"],"claude","medium"],["create-pr","prompt",["validate"],"claude","medium"],["verify-pr-base","bash",["create-pr"],"claude","medium"],["review-scope","command",["verify-pr-base"],"claude","medium"],["review-classify","prompt",["review-scope"],"claude","small"],["code-review","command",["review-classify"],"claude","medium"],["error-handling","command",["review-classify"],"claude","medium"],["test-coverage","command",["review-classify"],"claude","medium"],["comment-quality","command",["review-classify"],"claude","medium"],["docs-impact","command",["review-classify"],"claude","medium"],["synthesize","command",["code-review","error-handling","test-coverage","comment-quality","docs-impact"],"claude","medium"],["self-fix","command",["synthesize"],"claude","medium"],["simplify","command",["self-fix"],"claude","medium"],["report","command",["simplify"],"claude","medium"]]},{"n":"archon-review-block","s":"bundled","d":"Building block : included by other workflows via `include: archon-review-block`;\nnot intended for standalone runs. Provides the shared 9-node PR review sub-DAG:\nverify PR base -> scope -> sync -> 5 parallel review agents -> synthesize -> implement fixes.\n\nIncluded by archon-idea-to-pr, archon-plan-to-pr, and archon-issue-review-full so the\nreview flow lives in exactly one file. The including workflow supplies the upstream\ndependency (the node the review should run after); `$review.output` on the parent\nresolves to this block's terminal node (implement-fixes).","x":[["verify-pr-base","bash",[],"",""],["review-scope","command",["verify-pr-base"],"",""],["sync","command",["review-scope"],"",""],["code-review","command",["sync"],"",""],["error-handling","command",["sync"],"",""],["test-coverage","command",["sync"],"",""],["comment-quality","command",["sync"],"",""],["docs-impact","command",["sync"],"",""],["synthesize","command",["code-review","error-handling","test-coverage","comment-quality","docs-impact"],"",""],["implement-fixes","command",["synthesize"],"",""]]},{"n":"archon-agent-skills-feature","s":"bundled","d":"Use when: User wants to build a feature end-to-end with the agent-skills\n(Addy Osmani) command pipeline, running fully unattended in a worktree.\nTriggers: \"agent-skills feature\", \"plan build test review\", \"addy pipeline\",\n\"agent skills workflow\", \"opus plan codex build\".\nDoes: Claude Opus plans (/plan) -> Codex reviews + fixes the plan -> Codex\nimplements the plan via the ultragoal skill (oh-my-codex) -> Codex makes\nthe suite green (/test) -> Codex reviews the diff (/review) and writes\ntasks/review-report.md.\nNOT for: quick one-file fixes, bug fixes, PR reviews.\nPrereq: the agent-skills commands/skills must be installed for BOTH Claude\n(project/user .claude) AND Codex (~/.codex/prompts or .agents/skills);\nthe repo ships no Codex install out of the box.","x":[["setup","bash",[],"codex",""],["plan","prompt",["setup"],"claude","opus"],["review-plan","prompt",["plan"],"codex",""],["build","prompt",["review-plan"],"codex",""],["test","prompt",["build"],"codex",""],["review","prompt",["test"],"codex",""]]},{"n":"harness-validate-feature-pr","s":"bundled","d":"Use when: User wants to validate or review a harness-service feature PR on the\nfeature checkout only : confirm claimed HTTP/SSE and/or TUI behavior\nworks, without proving a bug on develop/base.\nTriggers: \"validate feature PR\", \"validate feature pr #123\", \"verify feature PR\",\n\"review feature PR\", \"feature PR validation\", \"test feature PR\",\n\"harness validate feature pr\".\nDoes: Fetches PR info -> checks out the PR head in an engine-owned isolated\nworktree -> allocates an HTTP port -> prepares isolated GIGO_HOME\n(SQLite + runner token) -> code review of the PR checkout ->\nclassifies HTTP/SSE vs TUI vs both vs review-only and emits typed\nhttp_requests -> one supervised bash node launches the daemon, runs\nbaseline plus those validated requests, and trap-cleans the daemon in\nthe same shell (and/or pager PTY) -> cleanup leftover ports/sessions ->\nverdict report + gh pr comment.\nNOT for: Bugfix PRs that need bug-on-base then fix-on-feature proof\n(use harness-validate-pr when that workflow exists).\nArchon-the-product validation (use archon-validate-pr /\narchon-validate-feature-pr). cargo test --workspace, browser E2E,\nfixing the PR, general exploration.\nRuns in an engine-owned worktree checked out at the PR head, so it\nworks from any trigger without a manual pre-checkout; --no-worktree\nhard-errors.","x":[["fetch-pr","bash",[],"",""],["find-port","bash",[],"",""],["resolve-paths","bash",["fetch-pr"],"",""],["check-sync-manifest","bash",["fetch-pr","resolve-paths"],"",""],["prepare-sqlite","bash",["find-port"],"",""],["classify-testability","prompt",["fetch-pr"],"",""],["code-review","command",["fetch-pr","resolve-paths"],"",""],["runtime-http","bash",["classify-testability","find-port","resolve-paths","prepare-sqlite","code-review"],"",""],["runtime-tui","command",["fetch-pr","classify-testability","find-port","resolve-paths","prepare-sqlite","code-review"],"",""],["cleanup-processes","bash",["runtime-http","runtime-tui"],"",""],["final-report","command",["code-review","runtime-http","runtime-tui","classify-testability","check-sync-manifest","cleanup-processes"],"",""],["post-report","bash",["final-report","check-sync-manifest"],"",""]]},{"n":"speckit-feature","s":"bundled","d":"Use when: User wants to develop a feature using the speckit SDD (Spec-Driven Development) pipeline end-to-end.\nTriggers: \"speckit feature\", \"spec-driven\", \"sdd pipeline\", \"full speckit\", \"speckit full\",\n\"specify plan implement\", \"speckit end-to-end\", \"feature with speckit\",\n\"speckit pipeline\", \"sdd feature\".\nDoes: Specify → clarify (with Plannotator live review when questions exist) → red-team\n(with Plannotator live review gate) → plan → tasks → analyze → tasks-to-ralph →\nralph.sh → sync-back →\nconverge gate → human review before retry → final Ralph pass on exhaustion →\nBMAD sprint status update → PR creation.\nNOT for: Quick one-file fixes, bug fixes, PR reviews.\nNOT for: When a spec already exists (use archon-speckit-plan-to-tasks instead).\nNOT for: Spec generation only without planning (use archon-speckit-spec instead).","x":[["setup","bash",[],"codex",""],["specify","prompt",["setup"],"claude","opus"],["clarify","prompt",["specify"],"codex","gpt-6-sol"],["clarify-file-check","bash",["clarify"],"codex",""],["clarify-respond","prompt",["clarify-file-check"],"omp","xai-oauth/grok-4.6"],["clarify-gate","gate",["clarify-respond"],"codex",""],["clarify-apply","prompt",["clarify-gate"],"claude","sonnet"],["red-team","prompt",["clarify-file-check","clarify-respond","clarify-gate","clarify-apply"],"claude","claude-opus-4-8[1M]"],["red-team-respond","prompt",["red-team"],"omp","xai-oauth/grok-4.6"],["red-team-gate","gate",["red-team-respond"],"codex",""],["red-team-apply","prompt",["red-team-gate"],"claude","sonnet"],["plan","prompt",["red-team-apply"],"claude","opus"],["tasks","prompt",["plan"],"codex","gpt-6-sol"],["analyze","prompt",["tasks"],"codex","gpt-6-sol"],["analyze-respond","prompt",["analyze"],"omp","xai-oauth/grok-4.6"],["analyze-apply","prompt",["analyze-respond"],"claude","sonnet"],["ralph-tasks-to-ralph","bash",["analyze-apply","speckit-converge-review-gate"],"codex",""],["ralph-loop-run","bash",["ralph-tasks-to-ralph"],"codex",""],["ralph-sync-back","prompt",["ralph-loop-run"],"codex","gpt-5.6-terra"],["speckit-converge","prompt",["ralph-sync-back"],"codex","gpt-6-sol"],["speckit-converge-gate","route",["speckit-converge"],"codex",""],["speckit-converge-review-gate","gate",[],"codex",""],["speckit-final-ralph-tasks-to-ralph","bash",["speckit-converge-gate"],"codex",""],["speckit-final-ralph-loop-run","bash",["speckit-final-ralph-tasks-to-ralph"],"codex",""],["speckit-final-ralph-sync-back","prompt",["speckit-final-ralph-loop-run"],"codex","gpt-5.6-terra"],["cargo-clean-before-pr","bash",["speckit-converge-gate"],"codex",""],["speckit-final-cargo-clean-before-pr","bash",["speckit-final-ralph-sync-back"],"codex",""],["update-bmad-sprint-status","prompt",["cargo-clean-before-pr","speckit-final-cargo-clean-before-pr"],"codex","gpt-5.6-terra"],["create-pull-request","command",["update-bmad-sprint-status"],"codex","gpt-5.6-terra"]]},{"n":"cost-multi-provider","s":"global","d":"Mỗi node một provider (model theo speckit-ralph) : so cách tính tiền / ghi usage.","x":[["claude-node","prompt",[],"claude","sonnet"],["codex-node","prompt",[],"codex","gpt-5.6-sol"],["omp-node","prompt",[],"omp","xai-oauth/grok-4.6"]]},{"n":"plannotator-gate-web-smoke","s":"global","d":"Use when: A maintainer wants to verify the stabilized Plannotator gate lifecycle from Archon Web UI.\nTriggers: \"test plannotator gate web\", \"plannotator web smoke\", \"verify live review flow\".\nDoes: Exercises annotation rework and Plannotator approval, then exercises Web UI approval while the live supervisor owns continuation, and proves downstream execution happened once.\nNOT for: Production document review or unattended automation.","x":[["create-rework-review","bash",[],"codex","gpt-5.6-terra"],["annotation-rework-gate","gate",["create-rework-review"],"codex","gpt-5.6-terra"],["create-web-approval-review","bash",["annotation-rework-gate"],"codex","gpt-5.6-terra"],["web-approval-gate","gate",["create-web-approval-review"],"codex","gpt-5.6-terra"],["prove-downstream-once","bash",["web-approval-gate"],"codex","gpt-5.6-terra"]]},{"n":"e2e-opencode-inline-multi-agents","s":"project","d":"OpenCode E2E for multi-agent parallel execution : verifies all configured agents run and their outputs are aggregated.","x":[["multi","prompt",[],"opencode","opencode/big-pickle"],["inline","prompt",["multi"],"opencode","opencode/big-pickle"],["assert","bash",["multi","inline"],"opencode","opencode/big-pickle"]]},{"n":"archon-fix-github-issue-experimental","s":"project","d":"EXPERIMENTAL: Path A variant of archon-fix-github-issue. Same DAG shape : same nodes,\nsame dependencies, same command files. Additions:\n- Two extra classifier fields: `scope` (small/medium/large) and `needs_external_research`.\n- A new `smoke-validate` node that checks the issue's concrete claims (file paths,\nline numbers, symbols, repro commands) against the current codebase before any\nskip gate fires. Every skip gate has a `claims_accurate == 'false'` override so an\ninaccurate issue cannot cause a skip.\n- `when:` gates on web-research and 4 reviewers so small, claim-verified issues\nskip them. For medium/large issues or when the issue claims don't match the code,\nbehavior is identical to the full workflow.\n\nSkip gates (all overridden when smoke-validate flags the issue as inaccurate):\n- web-research → runs when needs_external_research=='true' OR smoke=='false'\n- error-handling → runs when review-classify says yes AND (scope!='small' OR smoke=='false')\n- test-coverage → same as error-handling\n- comment-quality → same as error-handling\n- docs-impact → same as error-handling\n\nAlways runs (same as full): classify, smoke-validate, investigate/plan, bridge-artifacts,\nimplement, validate, create-pr, review-scope, review-classify, code-review, synthesize,\nself-fix, simplify, report.\n\nUse when: User wants to FIX, RESOLVE, or IMPLEMENT a solution for a GitHub issue.\nTriggers: \"fix this issue\", \"implement issue #123\", \"resolve this bug\", \"fix it\",\n\"fix issue\", \"resolve issue\", \"fix #123\".\nNOT for: Comprehensive multi-agent reviews (use archon-issue-review-full),\nquestions about issues, CI failures, PR reviews, general exploration.\n\nDAG workflow that:\n1. Classifies the issue (bug/feature/enhancement/etc)\n2. Researches context (web research + codebase exploration via investigate/plan)\n3. Routes to investigate (bugs) or plan (features) based on classification\n4. Implements the fix/feature with validation\n5. Creates a draft PR using the repo's PR template\n6. Runs smart review (alw","x":[["prep-worktree","prompt",[],"","small"],["assert-deps-installed","bash",["prep-worktree"],"","medium"],["parse-request","command",[],"","small"],["fetch-issue","bash",["parse-request"],"","medium"],["classify","prompt",["fetch-issue"],"","small"],["smoke-validate","prompt",["classify"],"","medium"],["web-research","command",["classify","smoke-validate"],"","medium"],["investigate","command",["classify","web-research"],"","medium"],["plan","command",["classify","web-research"],"","medium"],["bridge-artifacts","bash",["investigate","plan"],"","medium"],["implement","command",["bridge-artifacts","assert-deps-installed"],"","large"],["assert-implemented","bash",["implement"],"","medium"],["validate","command",["assert-implemented"],"","medium"],["create-pr","prompt",["validate"],"","medium"],["capture-pr-number","bash",["create-pr"],"","medium"],["pr-exists","bash",["capture-pr-number"],"","medium"],["review-scope","command",["capture-pr-number"],"","medium"],["review-classify","prompt",["review-scope"],"","small"],["code-review","command",["review-classify"],"","medium"],["review-gate","bash",["review-classify","smoke-validate"],"","medium"],["error-handling","command",["review-classify","review-gate"],"","medium"],["test-coverage","command",["review-classify","review-gate"],"","medium"],["comment-quality","command",["review-classify","review-gate"],"","medium"],["docs-impact","command",["review-classify","review-gate"],"","medium"],["synthesize","command",["code-review","error-handling","test-coverage","comment-quality","docs-impact","pr-exists"],"","medium"],["self-fix","command",["synthesize"],"","medium"],["simplify","command",["self-fix"],"","medium"],["report","command",["simplify"],"","medium"]]},{"n":"archon-fix-github-issue-minimax","s":"project","d":"EXPERIMENTAL (Minimax): MiniMax-M3 (via the Pi provider) variant of\narchon-fix-github-issue-experimental. Identical DAG shape : same nodes, same\ndependencies, same command files, same skip gates : but runs on the Pi provider\nwith MiniMax-M3 instead of Claude/Codex.\n\nModel: minimax/MiniMax-M3 for ALL nodes (set at the workflow level). There is a\nsingle MiniMax-M3 model, so : unlike the Codex variant : there is no lightweight\nclassifier tier; classify/review-classify run on the same model. Pi has no native\nstructured-output mode, so the `output_format` nodes rely on Pi's best-effort\nprompt-augmentation + JSON extraction (no schema validation) : gate evaluation may\nbe flakier than on Claude/Codex.\n\nAdditions (same as the experimental Claude variant):\n- Two extra classifier fields: `scope` (small/medium/large) and `needs_external_research`.\n- A new `smoke-validate` node that checks the issue's concrete claims (file paths,\nline numbers, symbols, repro commands) against the current codebase before any\nskip gate fires. Every skip gate has a `claims_accurate == 'false'` override so an\ninaccurate issue cannot cause a skip.\n- `when:` gates on web-research and 4 reviewers so small, claim-verified issues\nskip them. For medium/large issues or when the issue claims don't match the code,\nbehavior is identical to the full workflow.\n\nSkip gates (all overridden when smoke-validate flags the issue as inaccurate):\n- web-research → runs when needs_external_research=='true' OR smoke=='false'\n- error-handling → runs when review-classify says yes AND (scope!='small' OR smoke=='false')\n- test-coverage → same as error-handling\n- comment-quality → same as error-handling\n- docs-impact → same as error-handling\n\nAlways runs (same as full): classify, smoke-validate, investigate/plan, bridge-artifacts,\nimplement, validate, create-pr, review-scope, review-classify, code-review, synthesize,\nself-fix, simplify, report.\n\nUse when: User wants to FIX, RESOLVE, or IMPLEMENT a solution for a GitHub issue ","x":[["extract-issue-number","prompt",[],"pi","minimax/MiniMax-M3"],["fetch-issue","bash",["extract-issue-number"],"pi","minimax/MiniMax-M3"],["classify","prompt",["fetch-issue"],"pi","minimax/MiniMax-M3"],["smoke-validate","prompt",["classify"],"pi","minimax/MiniMax-M3"],["web-research","command",["classify","smoke-validate"],"pi","minimax/MiniMax-M3"],["investigate","command",["classify","web-research"],"pi","minimax/MiniMax-M3"],["plan","command",["classify","web-research"],"pi","minimax/MiniMax-M3"],["bridge-artifacts","bash",["investigate","plan"],"pi","minimax/MiniMax-M3"],["implement","command",["bridge-artifacts"],"pi","minimax/MiniMax-M3"],["validate","command",["implement"],"pi","minimax/MiniMax-M3"],["create-pr","prompt",["validate"],"pi","minimax/MiniMax-M3"],["review-scope","command",["create-pr"],"pi","minimax/MiniMax-M3"],["review-classify","prompt",["review-scope"],"pi","minimax/MiniMax-M3"],["code-review","command",["review-classify"],"pi","minimax/MiniMax-M3"],["error-handling","command",["review-classify"],"pi","minimax/MiniMax-M3"],["test-coverage","command",["review-classify"],"pi","minimax/MiniMax-M3"],["comment-quality","command",["review-classify"],"pi","minimax/MiniMax-M3"],["docs-impact","command",["review-classify"],"pi","minimax/MiniMax-M3"],["synthesize","command",["code-review","error-handling","test-coverage","comment-quality","docs-impact"],"pi","minimax/MiniMax-M3"],["self-fix","command",["synthesize"],"pi","minimax/MiniMax-M3"],["simplify","command",["self-fix"],"pi","minimax/MiniMax-M3"],["report","command",["simplify"],"pi","minimax/MiniMax-M3"]]},{"n":"archon-release","s":"project","d":"Use when: User says \"/release\", \"release\", \"cut a release\", \"ship it\",\n\"release to main\", or asks to release the project.\nTriggers: \"/release\", \"/release minor\", \"/release major\", \"ship it\",\n\"release patch\", \"release minor\", \"release major\".\nDoes: Cuts a release from the dev branch end-to-end. Validates state,\nsmoke-tests the compiled binary, bumps version, drafts a changelog\nfrom commits via AI, gets human approval, then commits, opens a PR,\ntags after merge, creates the GitHub release, and updates the\nHomebrew formula and tap.\nNOT for: Hotfix recovery from a broken release CI run (manual recovery\npath), publishing release notes only, retroactive tagging.\n\nPass `--dry-run` (or `dry-run`) anywhere in the message to preview every\nstep without touching git, GitHub, the filesystem, or any remote state.\nBump type defaults to `patch`. Accepts: `patch`, `minor`, `major`.\n\nExamples:\narchon workflow run archon-release \"\" # patch release\narchon workflow run archon-release \"minor\" # minor release\narchon workflow run archon-release \"patch --dry-run\" # dry-run patch\narchon workflow run archon-release \"--dry-run\" # dry-run patch (implicit)","x":[["parse-args","script",[],"claude","sonnet"],["validate-state","bash",["parse-args"],"claude","sonnet"],["preflight-smoke","script",["validate-state"],"claude","sonnet"],["abort-if-smoke-failed","cancel",["preflight-smoke"],"claude","sonnet"],["detect-stack","script",["preflight-smoke"],"claude","sonnet"],["bump-version","script",["detect-stack","parse-args"],"claude","sonnet"],["collect-commits","bash",["validate-state"],"claude","sonnet"],["abort-if-no-commits","cancel",["collect-commits"],"claude","sonnet"],["collect-diff-stat","bash",["validate-state"],"claude","sonnet"],["draft-changelog","prompt",["bump-version","collect-commits","collect-diff-stat"],"claude","sonnet"],["save-draft-json","bash",["draft-changelog"],"claude","sonnet"],["format-changelog","script",["save-draft-json","draft-changelog","bump-version","parse-args"],"claude","sonnet"],["review-summary","prompt",["format-changelog","collect-commits","bump-version","parse-args"],"claude","haiku"],["review-changelog","approval",["review-summary"],"claude","sonnet"],["write-files","script",["review-changelog","bump-version","format-changelog"],"claude","sonnet"],["commit-and-push","bash",["write-files","bump-version"],"claude","sonnet"],["create-pr","bash",["commit-and-push","format-changelog","bump-version"],"claude","sonnet"],["merge-summary","prompt",["create-pr"],"claude","haiku"],["wait-for-merge","approval",["merge-summary"],"claude","sonnet"],["tag-and-release","bash",["wait-for-merge","bump-version","format-changelog"],"claude","sonnet"],["sync-dev-with-main","bash",["tag-and-release"],"claude","sonnet"],["check-homebrew","bash",["validate-state"],"claude","sonnet"],["wait-for-binaries","bash",["sync-dev-with-main","check-homebrew","bump-version"],"claude","sonnet"],["fetch-and-update-formula","script",["wait-for-binaries","bump-version"],"claude","sonnet"],["commit-formula","bash",["fetch-and-update-formula","bump-version"],"claude","sonnet"],["sync-tap","script",["commit-formula","bump-version"],"claude","sonnet"],["final-summary","script",["review-changelog","write-files","commit-and-push","create-pr","wait-for-merge","tag-and-release","sync-dev-with-main","wait-for-binaries","fetch-and-update-formula","commit-formula","sync-tap"],"claude","sonnet"]]},{"n":"archon-fix-github-issue-codex","s":"project","d":"EXPERIMENTAL (Codex): Codex/GPT-5.5 variant of archon-fix-github-issue-experimental.\nIdentical DAG shape : same nodes, same dependencies, same command files, same skip\ngates : but runs on the Codex provider instead of Claude.\n\nModel tiering (mirrors the Claude variant's haiku/sonnet/opus split):\n- gpt-5.4-mini → the lightweight classifier nodes (`classify`, `review-classify`).\nThere is no gpt-5.5-mini in the current OpenAI lineup; gpt-5.4-mini is the\nofficial \"fast, efficient mini model for subagents\".\n- gpt-5.5 → everything else: smoke-validate, web-research, investigate/plan,\nimplement, validate, create-pr, all review agents, synthesize, self-fix,\nsimplify, report. (\"gpt-5.5-codex\" is not a real slug : the newest 5.5 coding\nmodel is simply gpt-5.5, set at the workflow level and inherited by these nodes.)\n\nAdditions (same as the experimental Claude variant):\n- Two extra classifier fields: `scope` (small/medium/large) and `needs_external_research`.\n- A new `smoke-validate` node that checks the issue's concrete claims (file paths,\nline numbers, symbols, repro commands) against the current codebase before any\nskip gate fires. Every skip gate has a `claims_accurate == 'false'` override so an\ninaccurate issue cannot cause a skip.\n- `when:` gates on web-research and 4 reviewers so small, claim-verified issues\nskip them. For medium/large issues or when the issue claims don't match the code,\nbehavior is identical to the full workflow.\n\nSkip gates (all overridden when smoke-validate flags the issue as inaccurate):\n- web-research → runs when needs_external_research=='true' OR smoke=='false'\n- error-handling → runs when review-classify says yes AND (scope!='small' OR smoke=='false')\n- test-coverage → same as error-handling\n- comment-quality → same as error-handling\n- docs-impact → same as error-handling\n\nAlways runs (same as full): classify, smoke-validate, investigate/plan, bridge-artifacts,\nimplement, validate, create-pr, review-scope, review-classify, code-review, synthesi","x":[["extract-issue-number","prompt",[],"codex","gpt-5.5"],["fetch-issue","bash",["extract-issue-number"],"codex","gpt-5.5"],["classify","prompt",["fetch-issue"],"codex","gpt-5.4-mini"],["smoke-validate","prompt",["classify"],"codex","gpt-5.5"],["web-research","command",["classify","smoke-validate"],"codex","gpt-5.5"],["investigate","command",["classify","web-research"],"codex","gpt-5.5"],["plan","command",["classify","web-research"],"codex","gpt-5.5"],["bridge-artifacts","bash",["investigate","plan"],"codex","gpt-5.5"],["implement","command",["bridge-artifacts"],"codex","gpt-5.5"],["validate","command",["implement"],"codex","gpt-5.5"],["create-pr","prompt",["validate"],"codex","gpt-5.5"],["review-scope","command",["create-pr"],"codex","gpt-5.5"],["review-classify","prompt",["review-scope"],"codex","gpt-5.4-mini"],["code-review","command",["review-classify"],"codex","gpt-5.5"],["error-handling","command",["review-classify"],"codex","gpt-5.5"],["test-coverage","command",["review-classify"],"codex","gpt-5.5"],["comment-quality","command",["review-classify"],"codex","gpt-5.5"],["docs-impact","command",["review-classify"],"codex","gpt-5.5"],["synthesize","command",["code-review","error-handling","test-coverage","comment-quality","docs-impact"],"codex","gpt-5.5"],["self-fix","command",["synthesize"],"codex","gpt-5.5"],["simplify","command",["self-fix"],"codex","gpt-5.5"],["report","command",["simplify"],"codex","gpt-5.5"]]},{"n":"maintainer-standup","s":"project","d":"Use when: Maintainer wants their morning briefing : what changed on dev,\nwhat's in the review queue, what to focus on today across PRs and issues.\nTriggers: \"morning standup\", \"maintainer standup\", \"what's new today\",\n\"daily brief\", \"morning brief\", \"what should i work on today\",\n\"start my day\".\nDoes: Pulls latest dev, fetches all open PRs and assigned issues, cross-\nreferences against direction.md to flag polite-decline candidates,\ncompares against prior run state to surface progress (merged, closed,\nwhat you shipped), produces a prioritized P1-P4 brief. Saves dated\nbrief + state for next-run continuity.\nNOT for: Fixing issues (use archon-fix-github-issue), reviewing a specific\nPR (use archon-comprehensive-pr-review), repo-wide triage automation\n(use repo-triage).","x":[["git-status","script",[],"claude","sonnet"],["gh-data","script",[],"claude","sonnet"],["read-context","script",[],"claude","sonnet"],["synthesize","command",["git-status","gh-data","read-context"],"claude","sonnet"],["persist","bash",["synthesize"],"claude","sonnet"]]},{"n":"marketplace-pr-review-and-merge","s":"project","d":"Automatically reviews a marketplace submission PR. Verifies scope (only\nmarketplace.ts changed), fetches source at pinned SHA, validates schema,\nruns a deterministic security scan, runs a Haiku AI review, then decides:\nauto-merge / auto-approve / request-changes / reject.\nClean submissions (scan severity none, AI approval) are auto-merged.\nTriggers: \"marketplace review\", \"review marketplace PR <n>\",\n\"marketplace-pr-review-and-merge <n>\".\nArguments: PR number (integer).","x":[["fetch-pr-metadata","bash",[],"claude","claude-haiku-4-5-20251001"],["verify-scope","bash",["fetch-pr-metadata"],"claude","claude-haiku-4-5-20251001"],["parse-entry","script",["verify-scope"],"claude","claude-haiku-4-5-20251001"],["fetch-source","script",["parse-entry"],"claude","claude-haiku-4-5-20251001"],["validate-schema","script",["fetch-source"],"claude","claude-haiku-4-5-20251001"],["security-scan","script",["fetch-source"],"claude","claude-haiku-4-5-20251001"],["bundle-source","script",["fetch-source"],"claude","claude-haiku-4-5-20251001"],["ai-review","prompt",["validate-schema","security-scan","bundle-source"],"claude","claude-haiku-4-5-20251001"],["persist-ai-review","bash",["ai-review"],"claude","claude-haiku-4-5-20251001"],["decide","script",["persist-ai-review","fetch-pr-metadata"],"claude","claude-haiku-4-5-20251001"],["act","bash",["decide"],"claude","claude-haiku-4-5-20251001"]]},{"n":"maintainer-review-pr","s":"project","d":"Use when: Maintainer wants a deep review on a SINGLE PR they've already\ndecided is worth reviewing (e.g. picked from the standup brief).\nTriggers: \"maintainer review\", \"maintainer review pr <n>\",\n\"review pr as maintainer\".\nDoes: Fetches the PR + diff, classifies which review aspects apply,\nruns the relevant aspects (code-review, error-handling, test-coverage,\ncomment-quality, docs-impact) in parallel, synthesizes findings, posts\na draft comment to the PR, and records the review in shared state so\nthe next maintainer-standup can mark \"✓ reviewed Nd ago\".\nProvider: Pi (Minimax M3) : runs cheaper than Claude. Each review aspect\nis its own Archon node, so Pi handles them as independent calls.\nNOT for: Comprehensive review of a PR you've already decided to merge\n(use archon-comprehensive-pr-review). Quick triage of all open PRs\n(use maintainer-standup). Direction/scope gating on\nunfiltered PRs : that path was removed; the maintainer is expected\nto have done that filtering when picking the PR.","x":[["extract-pr-number","prompt",[],"pi","minimax/MiniMax-M3"],["fetch-pr","bash",["extract-pr-number"],"pi","minimax/MiniMax-M3"],["fetch-diff","bash",["fetch-pr"],"pi","minimax/MiniMax-M3"],["review-classify","prompt",["fetch-pr","fetch-diff"],"pi","minimax/MiniMax-M3"],["code-review","command",["review-classify"],"pi","minimax/MiniMax-M3"],["error-handling","command",["review-classify"],"pi","minimax/MiniMax-M3"],["test-coverage","command",["review-classify"],"pi","minimax/MiniMax-M3"],["comment-quality","command",["review-classify"],"pi","minimax/MiniMax-M3"],["docs-impact","command",["review-classify"],"pi","minimax/MiniMax-M3"],["synthesize-review","command",["code-review","error-handling","test-coverage","comment-quality","docs-impact"],"pi","minimax/MiniMax-M3"],["post-review","bash",["synthesize-review"],"pi","minimax/MiniMax-M3"],["record-review","script",["post-review"],"pi","minimax/MiniMax-M3"],["report","command",["record-review"],"pi","minimax/MiniMax-M3"]]},{"n":"repo-triage-minimax","s":"project","d":"Periodic repo maintenance : in parallel, triages open issues (labels + dedup detection + 3-day auto-close) and cross-references open PRs against open issues (conservative: suggests Closes #X only when a PR fully addresses an issue, never closes anything itself). State is persisted under $STATE_DIR/ so prior runs are remembered. Designed for periodic runs; safe to re-run; idempotent.","x":[["state-preflight","bash",[],"pi","minimax/MiniMax-M2.7"],["triage-issues","prompt",["state-preflight"],"pi","minimax/MiniMax-M2.7"],["closed-dedup-check","prompt",["triage-issues"],"pi","minimax/MiniMax-M2.7"],["closed-pr-dedup-check","prompt",["state-preflight"],"pi","minimax/MiniMax-M2.7"],["link-prs","prompt",["state-preflight"],"pi","minimax/MiniMax-M2.7"],["stale-nudge","prompt",["state-preflight"],"pi","minimax/MiniMax-M2.7"],["digest","prompt",["triage-issues","link-prs","closed-dedup-check","closed-pr-dedup-check","stale-nudge"],"pi","minimax/MiniMax-M2.7"]]},{"n":"maintainer-standup-minimax","s":"project","d":"Minimax variant of maintainer-standup. Identical workflow shape : same\ngather scripts, same synthesizer command, same persist node : but the\nsynthesize node runs on Pi/Minimax M2.7 instead of Claude Sonnet.\nUse when: nested-Claude-Code session hangs (#1067) block the Claude variant,\nor when you'd rather not spend Claude tokens on the daily brief.\nTriggers: \"morning standup minimax\", \"standup minimax\", \"daily brief minimax\".\nNOT for: First-time setup : run the Claude variant first to validate state.","x":[["git-status","script",[],"pi","minimax/MiniMax-M2.7"],["gh-data","script",[],"pi","minimax/MiniMax-M2.7"],["read-context","script",[],"pi","minimax/MiniMax-M2.7"],["synthesize","command",["git-status","gh-data","read-context"],"pi","minimax/MiniMax-M2.7"],["persist","bash",["synthesize"],"pi","minimax/MiniMax-M2.7"]]},{"n":"repo-triage","s":"project","d":"Periodic repo maintenance : in parallel, triages open issues (labels + dedup detection + 3-day auto-close) and cross-references open PRs against open issues (conservative: suggests Closes #X only when a PR fully addresses an issue, never closes anything itself). State is persisted under $STATE_DIR/ so prior runs are remembered. Designed for periodic runs; safe to re-run; idempotent.","x":[["state-preflight","bash",[],"",""],["triage-issues","prompt",["state-preflight"],"","sonnet"],["closed-dedup-check","prompt",["triage-issues"],"","sonnet"],["closed-pr-dedup-check","prompt",["state-preflight"],"","sonnet"],["link-prs","prompt",["state-preflight"],"","sonnet"],["stale-nudge","prompt",["state-preflight"],"","sonnet"],["digest","prompt",["triage-issues","link-prs","closed-dedup-check","closed-pr-dedup-check","stale-nudge"],"","sonnet"]]},{"n":"e2e-opencode-all-nodes-smoke","s":"project","d":"OpenCode provider smoke across every CI-compatible node type.","x":[["prompt-node","prompt",[],"opencode","opencode/big-pickle"],["command-node","command",[],"opencode","opencode/big-pickle"],["loop-node","loop",[],"opencode","opencode/big-pickle"],["hook-node","prompt",[],"opencode","opencode/big-pickle"],["bash-json-node","bash",[],"opencode","opencode/big-pickle"],["script-bun-node","script",[],"opencode","opencode/big-pickle"],["script-python-node","script",[],"opencode","opencode/big-pickle"],["downstream","bash",["prompt-node"],"opencode","opencode/big-pickle"],["gated","bash",["bash-json-node"],"opencode","opencode/big-pickle"],["merge","bash",["downstream","gated","script-bun-node","script-python-node"],"opencode","opencode/big-pickle"],["assert","bash",["merge","loop-node","command-node","hook-node"],"opencode","opencode/big-pickle"]]},{"n":"e2e-deterministic","s":"project","d":"Pure DAG engine test. Exercises bash, script (bun/uv), conditions, and trigger rules with zero API calls.","x":[["bash-echo","bash",[],"",""],["script-bun","script",[],"",""],["script-python","script",[],"",""],["bash-read-output","bash",["bash-echo"],"",""],["branch-true","bash",["bash-echo"],"",""],["branch-false","bash",["bash-echo"],"",""],["merge-node","bash",["branch-true","branch-false"],"",""],["verify-all","bash",["bash-read-output","script-bun","script-python","merge-node"],"",""]]},{"n":"e2e-worktree-disabled","s":"project","d":"Pinned-isolation-off smoke. Asserts cwd is the repo root rather than a worktree path, regardless of how the workflow is invoked.","x":[["print-cwd","bash",[],"",""],["assert-live-checkout","bash",["print-cwd"],"",""]]},{"n":"e2e-minimax-smoke","s":"project","d":"Use when: Verifying that Minimax M2.7 loads via the Pi provider with the\nuser's local Pi auth (api_key in ~/.pi/agent/auth.json).\nTriggers: \"minimax smoke\", \"test minimax\", \"verify minimax\", \"minimax test\".\nDoes: Sends three tiny prompts to Minimax M2.7 (math, self-identification,\nstructured JSON), asserts non-empty output and basic plausibility.\nNOT for: Production work : connectivity / capability sanity check only.","x":[["hello","prompt",[],"pi","minimax/MiniMax-M2.7"],["identify","prompt",["hello"],"pi","minimax/MiniMax-M2.7"],["json","prompt",["hello"],"pi","minimax/MiniMax-M2.7"],["assert","bash",["hello","identify","json"],"pi","minimax/MiniMax-M2.7"]]},{"n":"e2e-pi-smoke","s":"project","d":"Smoke test for Pi community provider. Verifies prompt response via sendQuery.","x":[["simple","prompt",[],"pi","anthropic/claude-haiku-4-5"],["assert","bash",["simple"],"pi","anthropic/claude-haiku-4-5"]]},{"n":"test-ralph-deepseek","s":"project","d":"Build a Ralph PRD from an existing plan under ./plans, then implement it with DeepSeek.","x":[["resolve-plan","bash",[],"omp","alibaba-token-plan/deepseek-v4.1-flash"],["build-ralph-prd","prompt",["resolve-plan"],"devin","swe-2-max"],["ralph-native-preflight","bash",["build-ralph-prd"],"omp","alibaba-token-plan/deepseek-v4.1-flash"],["ralph-loop-run","loop",["ralph-native-preflight"],"omp","alibaba-token-plan/deepseek-v4.1-flash"]]},{"n":"archon-test-pi","s":"project","d":"Simple test workflow to verify the pi provider works with Archon.\nTriggers: \"test pi\", \"test pi provider\".","x":[["hello","prompt",[],"pi","kiro/minimax-m2-5"],["hello-ollama","prompt",[],"pi","ollama/qwen3.5"],["verify","prompt",["hello","hello-ollama"],"pi","kiro/minimax-m2-5"]]},{"n":"e2e-joins","s":"project","d":"ENGINE-PRIMITIVE TEST : join semantics and per-node flags, with ZERO AI nodes.\nRuns in seconds and costs nothing, so it can go in a loop.\n\nCovers the gaps `e2e-deterministic` leaves: `trigger_rule: all_done` and\n`none_failed_min_one_success` against a SKIPPED upstream (skips are the cheap way\nto make joins interesting without failing the run), `always_run`, `output_type`\nsidecars, and a `loop_group` terminating on `until_bash` rather than a signal.\n\nEnds `completed`. Any assertion failure fails a bash node, so a red run means a\nreal regression. The deliberately-failing counterpart is `e2e-fanout-allsuccess`,\nwhich is expected to fail : see its header.\n\nUsage: archon workflow run e2e-joins \"\"","x":[["seed","bash",[],"",""],["taken","bash",["seed"],"",""],["skipped","bash",["seed"],"",""],["join-all-done","bash",["taken","skipped"],"",""],["join-none-failed","bash",["taken","skipped"],"",""],["after-skip","bash",["skipped"],"",""],["countdown","loop_group",["seed"],"",""],["verify","bash",["join-all-done","join-none-failed","after-skip","countdown"],"",""]]},{"n":"e2e-claude-smoke","s":"project","d":"Smoke test for Claude provider. Verifies prompt response.","x":[["simple","prompt",[],"claude","haiku"],["assert","bash",["simple"],"claude","haiku"]]},{"n":"e2e-copilot-abort","s":"project","d":"Manual test: start, then Ctrl-C. Verifies abort wiring.","x":[["long","prompt",[],"copilot","gpt-5-mini"]]},{"n":"e2e-container-smoke","s":"project","d":"Container-isolation smoke. Asserts bash nodes run in-container (hostname == container id, overlay mounts present) and an overlay write is visible in the merged view. Host-unchanged + teardown are asserted by the CI job.","x":[["assert-in-container","bash",[],"",""],["overlay-write","bash",["assert-in-container"],"",""],["overlay-read","bash",["overlay-write"],"",""]]},{"n":"e2e-qodercli-smoke","s":"project","d":"Smoke test for the Qoder CLI community provider on this local machine.","x":[["simple","prompt",[],"qodercli","Lite"],["structured","prompt",["simple"],"qodercli","Lite"],["assert","bash",["simple","structured"],"qodercli","Lite"]]},{"n":"minimax-isolate","s":"project","d":"RCA isolation for the MiniMax-M3 / Pi stall (the classify hang in\narchon-fix-github-issue-minimax). Four independent nodes, each with a 90s\nidle_timeout so a stall fails fast instead of waiting 30 min. Disambiguates\nwhether the trigger is `output_format` (structured-output augmentation) or\nprompt size : and whether forcing low thinking unblocks it.\n\nExpected reads:\n- small-plain ok, small-structured STALL → output_format / JSON-mode is the trigger\n- small-* ok, large-plain STALL → prompt size is the trigger\n- small-structured-lowthink ok → it's M3 silently reasoning under JSON-mode","x":[["small-plain","prompt",[],"pi","minimax/MiniMax-M3"],["small-structured","prompt",[],"pi","minimax/MiniMax-M3"],["small-structured-lowthink","prompt",[],"pi","minimax/MiniMax-M3"],["large-plain","prompt",[],"pi","minimax/MiniMax-M3"]]},{"n":"e2e-structured-output","s":"project","d":"Structured-output happy path: validation + declared field access + schemaless JSON access.","x":[["classify","prompt",[],"claude","haiku"],["use-fields","bash",["classify"],"claude","haiku"],["emit-json","bash",[],"claude","haiku"],["use-schemaless","bash",["emit-json"],"claude","haiku"]]},{"n":"e2e-structured-output-failfast","s":"project","d":"NEGATIVE smoke: $node.output ref to a field not in the schema must fail the node, not resolve to empty.","x":[["classify","prompt",[],"claude","haiku"],["bad-ref","bash",["classify"],"claude","haiku"]]},{"n":"e2e-deepseek-v4-flash-smoke","s":"project","d":"Smoke test for the DeepSeek community provider with alibaba/deepseek-v4.1-flash. Verifies plain and structured responses.","x":[["simple","prompt",[],"deepseek","alibaba/deepseek-v4.1-flash"],["structured","prompt",["simple"],"deepseek","alibaba/deepseek-v4.1-flash"],["assert","bash",["simple","structured"],"deepseek","alibaba/deepseek-v4.1-flash"]]},{"n":"e2e-mixed-providers","s":"project","d":"Tests Claude and Codex providers in the same workflow with cross-provider output refs.","x":[["claude-node","prompt",[],"claude","haiku"],["codex-node","prompt",[],"codex","gpt-5.6-luna"],["assert","bash",["claude-node","codex-node"],"claude","haiku"]]},{"n":"e2e-codex-smoke","s":"project","d":"E2E smoke test for Codex provider. Runs a simple prompt + structured output node.","x":[["simple","prompt",[],"codex","gpt-5.6-luna"],["structured","prompt",["simple"],"codex","gpt-5.6-luna"],["assert","bash",["simple","structured"],"codex","gpt-5.6-luna"]]},{"n":"e2e-copilot-all-nodes-smoke","s":"project","d":"Copilot provider smoke across every CI-compatible node type plus Copilot-specific options.","x":[["prompt-node","prompt",[],"copilot","gpt-5-mini"],["command-node","command",[],"copilot","gpt-5-mini"],["loop-node","loop",[],"copilot","gpt-5-mini"],["structured-node","prompt",[],"copilot","gpt-5-mini"],["bash-json-node","bash",[],"copilot","gpt-5-mini"],["script-bun-node","script",[],"copilot","gpt-5-mini"],["script-python-node","script",[],"copilot","gpt-5-mini"],["downstream","bash",["prompt-node"],"copilot","gpt-5-mini"],["gated","bash",["bash-json-node"],"copilot","gpt-5-mini"],["structured-check","bash",["structured-node"],"copilot","gpt-5-mini"],["merge","bash",["downstream","gated","structured-check","script-bun-node","script-python-node"],"copilot","gpt-5-mini"],["assert","bash",["merge","loop-node","command-node"],"copilot","gpt-5-mini"]]},{"n":"e2e-devin-smoke","s":"project","d":"Smoke test for the Devin CLI community provider. Verifies plain and structured responses.","x":[["simple","prompt",[],"devin","swe-2-max"],["structured","prompt",["simple"],"devin","swe-2-max"],["assert","bash",["simple","structured"],"devin","swe-2-max"]]},{"n":"minimax-smoke","s":"project","d":"Minimal smoke test for the Pi / MiniMax-M3 provider. A single trivial prompt\nnode : no output_format, no tools, no large context : to check whether Pi can\nreach MiniMax-M3 and stream a first token at all.\n\nDiagnostic for the stall seen in archon-fix-github-issue-minimax, where the\n`classify` node (large prompt + output_format augmentation) hung with zero\noutput for 30 min × 3 retries. This isolates the question: does M3/Pi respond\nto a tiny prompt (→ the stall is prompt-size / structured-output specific), or\ndoes it hang even here (→ Pi/M3 is broken outright)?\n\n`idle_timeout: 120000` (2 min) so a stall fails fast instead of waiting 30 min.","x":[["ping","prompt",[],"pi","minimax/MiniMax-M3"]]},{"n":"e2e-pi-all-nodes-smoke","s":"project","d":"Pi provider smoke across every CI-compatible node type.","x":[["prompt-node","prompt",[],"pi","anthropic/claude-haiku-4-5"],["command-node","command",[],"pi","anthropic/claude-haiku-4-5"],["loop-node","loop",[],"pi","anthropic/claude-haiku-4-5"],["bash-json-node","bash",[],"pi","anthropic/claude-haiku-4-5"],["script-bun-node","script",[],"pi","anthropic/claude-haiku-4-5"],["script-python-node","script",[],"pi","anthropic/claude-haiku-4-5"],["downstream","bash",["prompt-node"],"pi","anthropic/claude-haiku-4-5"],["gated","bash",["bash-json-node"],"pi","anthropic/claude-haiku-4-5"],["merge","bash",["downstream","gated","script-bun-node","script-python-node"],"pi","anthropic/claude-haiku-4-5"],["assert","bash",["merge","loop-node","command-node"],"pi","anthropic/claude-haiku-4-5"]]},{"n":"minimax-seq","s":"project","d":"Sequential RCA for the MiniMax-M3 / Pi stall : nodes chained (no concurrency)\nso the concurrency confound from minimax-isolate is removed. Disentangles\nreasoning level (default vs effort:low) from output_format. Each node: 45s\nidle_timeout + max_attempts 1 (fail fast). Runs a → b → c → d.\n\nDecisive read:\n- b (default + structured) STALLS while c (effort:low + structured) PASSES\n→ the default reasoning level is the root cause; low-think is the workaround.","x":[["a-default-plain","prompt",[],"pi","minimax/MiniMax-M3"],["b-default-structured","prompt",["a-default-plain"],"pi","minimax/MiniMax-M3"],["c-low-structured","prompt",["b-default-structured"],"pi","minimax/MiniMax-M3"],["d-low-plain","prompt",["c-low-structured"],"pi","minimax/MiniMax-M3"]]},{"n":"e2e-fanout-allsuccess","s":"project","d":"ENGINE-PRIMITIVE TEST : the inverse of `e2e-fanout-alldone`. Same literal item list with one failing\nchild, but `join: all_success` instead of `all_done`.\n\n**This workflow is EXPECTED TO FAIL.** That is the assertion: under `all_success`\na single failed child must fail the fan-out node, where `all_done` aggregates it\nand continues (t6 proves that half). A green run here is the regression.\n\nZero AI nodes : children are e2e-echo-child, one bash node each. Costs nothing.\n\nPass condition: run status `failed`, failure attributed to node `spread`,\nand `report` skipped by trigger_rule.\n\nUsage: archon workflow run e2e-fanout-allsuccess \"\"","x":[["spread","workflow",[],"",""],["report","bash",["spread"],"",""]]},{"n":"test-ralph-devin","s":"project","d":"Build a Ralph PRD from an existing plan under ./plans, then implement it with Devin.","x":[["resolve-plan","bash",[],"devin","swe-2-max"],["build-ralph-prd","prompt",["resolve-plan"],"devin","swe-2-max"],["ralph-native-preflight","bash",["build-ralph-prd"],"devin","swe-2-max"],["ralph-loop-run","loop",["ralph-native-preflight"],"devin","swe-2-max"]]},{"n":"e2e-fanout-alldone","s":"project","d":"ENGINE-PRIMITIVE TEST : the `all_done` vs `all_success` difference, with ZERO AI.\nChildren are e2e-echo-child (one bash node), so a full fan-out costs seconds.\n\nOne item in the list is `fail-3`, which makes that child exit non-zero. Under\n`join: all_done` the node still aggregates and the run continues : a failed child\nbecomes `{error, status}` in the output rather than killing the node. That is the\nhalf `rasmus-tests/t3-triage-fanout` cannot show, because all its children succeed.\n\n`items` is a LITERAL JSON array here rather than a `$node.output` ref, which also\ncovers the literal-list form of `fan_out.items`.\n\nUsage: archon workflow run e2e-fanout-alldone \"\"","x":[["spread","workflow",[],"",""],["verify","bash",["spread"],"",""]]},{"n":"e2e-echo-child","s":"project","d":"ENGINE-PRIMITIVE TEST : the cheapest possible fan-out child. One bash node.\nEchoes its `$ARGUMENTS` so the parent can prove output threading per index.\n\nExists so fan-out mechanics (spawn, concurrency, join, parent linkage) can be\nexercised for effectively zero cost. `rasmus-tests/t3-triage-fanout` does the\nsame with real AI probes and takes minutes; this takes seconds.\n\n`fail-<n>` as the argument makes it exit non-zero, which is how `e2e-fanout-alldone`\nand `e2e-fanout-allsuccess` drive the join difference between them.","x":[["echo","bash",[],"",""]]},{"n":"e2e-grok-smoke","s":"project","d":"E2E smoke test for Grok Build. Runs a simple prompt and a structured output node.","x":[["simple","prompt",[],"omp",""],["structured","prompt",["simple"],"omp",""],["assert","bash",["simple","structured"],"omp",""]]},{"n":"t2-review-block","s":"project","d":"ENGINE-PRIMITIVE TEST : a shared building block, not a standalone workflow.\nAuthored once, pulled into any workflow that needs a review pass via `include:`.\n\nTakes two load-time inputs: `$INPUTS.base` (branch to diff against) and\n`$INPUTS.focus` (what the reviewer should care about). Both are substituted at\nDISCOVERY time, before anything executes : a missing one fails the load.","x":[["gather","bash",[],"","@mini"],["critique","prompt",["gather"],"","@mini"]]},{"n":"t1-fix-issue","s":"project","d":"ENGINE-PRIMITIVE TEST : not a quality workflow. Prompts are deliberately minimal;\nthe point is to exercise the engine, not to produce good output.\n\nProves: bash node (stdout as output) · structured output + strict `.field` access ·\n`when:` on a structured field · `cancel:` as a first-class outcome · `loop_group`\nself-heal, where BOTH the validation failure and the review findings feed the next\nimplement iteration via `$LOOP_PREV` · `until:` signal · `max_iterations` bound.\n\nNO ARTIFACTS. Nothing writes to $ARTIFACTS_DIR. Every hand-off between nodes is\n`$node.output`. This is the by-reference-vs-by-value experiment (#2123, #1848) run\nas a workflow: if in-and-out alone is sufficient here, that is evidence.\n\nUsage: archon workflow run t1-fix-issue \"<issue-number>\"","x":[["fetch","bash",[],"","@mini"],["assess","prompt",["fetch"],"","@mini"],["bail","cancel",["assess"],"","@mini"],["build","loop_group",["assess"],"","@mini"],["open-pr","bash",["build"],"","@mini"]]},{"n":"t3-triage-fanout","s":"project","d":"ENGINE-PRIMITIVE TEST : fan-out over unlabelled issues, one child run each.\n\nProves: `fan_out` over a runtime item list (#2224, merged 5 Aug) · `max_parallel` ·\n`join: all_done` · child runs with `parent_run_id` · terminal outputs threading back\ninto the parent as `$node.output`.\n\nREAD-ONLY BY DESIGN. No child writes anything, so no child needs isolation : this is\nthe common fan-out shape, and the one that shows isolation is not a prerequisite.\nLabels are proposed to a human, never applied.\n\nThe assertions that matter here are negative: a child returning `needs-human` must\nnot fail the parent, and abandoning the parent must cascade-cancel the children.\n\nUsage: archon workflow run t3-triage-fanout \"\"","x":[["find","bash",[],"","@mini"],["probe-each","workflow",["find"],"","@mini"],["triage","prompt",["probe-each"],"","@mini"]]},{"n":"t2-fix-issue-include","s":"project","d":"ENGINE-PRIMITIVE TEST : t1 with the review step pulled in by reference instead of\nwritten inline. Same task, different composition.\n\nProves: `include:` load-time inlining · `with:` inputs and the `$INPUTS.<name>`\nmacro (#2467, merged 5 Aug) · namespacing : the block's internal `$gather.output`\nref must survive being renamed to `review__gather` · `$includeId.output` resolving\nto the block's terminal node.\n\nWorth running once with a required input REMOVED, to confirm it fails the LOAD\nrather than reaching a model.\n\nUsage: archon workflow run t2-fix-issue-include \"<issue-number>\"","x":[["fetch","bash",[],"","@mini"],["implement","prompt",["fetch"],"","@mini"],["review__gather","bash",["implement"],"","@mini"],["review__critique","prompt",["review__gather"],"","@mini"],["summary","prompt",["review__critique"],"","@mini"]]},{"n":"t8-slow-child","s":"project","d":"ENGINE-PRIMITIVE TEST : a child that takes long enough to interrupt. One bash node\nthat sleeps, so cascade-cancel can be observed without spending a model call.","x":[["wait","bash",[],"",""]]},{"n":"t4-subrun","s":"project","d":"ENGINE-PRIMITIVE TEST : the minimal sub-run. A parent that does nothing except\nstart one child and use its result.\n\nProves: `workflow:` as a runtime child run (#2121 phase 2) · its own run row with\n`parent_run_id` · `input:` forwarding as the child's `$ARGUMENTS` · the child's\nterminal output threading back as `$node.output`.\n\nDeliberately trivial. If this fails, the sub-run mechanism is what failed : there\nis nothing else in the graph to blame.\n\nUsage: archon workflow run t4-subrun \"<issue-number>\"","x":[["delegate","workflow",[],"","@mini"],["report","prompt",["delegate"],"","@mini"]]},{"n":"t8-cascade","s":"project","d":"ENGINE-PRIMITIVE TEST : cascade-cancel. Fans out three sleeping children, so the\nparent can be abandoned mid-flight and the children observed.\n\nPass condition: abandoning the parent leaves every non-terminal child `cancelled`,\nnot orphaned `running`. Nothing here spends a model call.\n\nUsage: archon workflow run t8-cascade \"\" --detach # then: archon workflow abandon <id>","x":[["spread","workflow",[],"",""],["after","bash",["spread"],"",""]]},{"n":"t3-probe-issue","s":"project","d":"ENGINE-PRIMITIVE TEST : the fan-out child. Probes ONE issue and reports a triage\nverdict. Read-only: it reads the issue, reads the code, reads direction.md, and\nwrites nothing. No labels are applied : the parent reports proposals to a human.\n\nRuns standalone too: archon workflow run t3-probe-issue \"<issue-number>\"","x":[["issue","bash",[],"","@mini"],["probe","prompt",["issue"],"","@mini"]]},{"n":"e2e-opencode-smoke","s":"project","d":"Smoke test for the OpenCode community provider.","x":[["simple","prompt",[],"opencode",""],["assert","bash",["simple"],"opencode",""]]}];
+
+/* ---------- Locked 7x7 pixel A. Runner sits on the crossbar (row 3) at column 2. ---------- */
+function pixelA() {
+  const rows = ['..###..', '.##.##.', '##...##', '#######', '##...##', '##...##', '##...##'];
+  const cells = rows.map((row, y) => [...row].map((c, x) => c === '#'
+    ? `<rect x="${4 + x * 8}" y="${4 + y * 8}" width="8" height="8" fill="#111111"/>` : '').join('')).join('');
+  return `<svg viewBox="0 0 64 64" aria-hidden="true" shape-rendering="crispEdges">${cells}` +
+    `<rect class="runner" x="20" y="28" width="8" height="8" fill="#1F2BFF"/></svg>`;
+}
+document.querySelectorAll('[data-logo]').forEach(el => { el.innerHTML = pixelA(); });
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/* API timestamps are UTC; show Asia/Saigon (UTC+7). */
+function ict(utc) {
+  const [d, t] = utc.split(' '); const [Y, M, D] = d.split('-').map(Number); const [h, m, s] = t.split(':').map(Number);
+  const x = new Date(Date.UTC(Y, M - 1, D, h + 7, m, s));
+  const p = n => String(n).padStart(2, '0');
+  return { day: `${x.getUTCDate()} ${MON[x.getUTCMonth()]}`, time: `${p(x.getUTCHours())}:${p(x.getUTCMinutes())}` };
+}
+function secs(a, b) { const f = s => Date.parse(s.replace(' ', 'T') + 'Z'); return Math.round((f(b) - f(a)) / 1000); }
+function dur(sec) { if (sec < 60) return `${sec}s`; const m = Math.floor(sec / 60), s = sec % 60; if (m < 60) return `${m}m ${String(s).padStart(2, '0')}s`; return `${Math.floor(m / 60)}h ${m % 60}m`; }
+
+/* ---------- Projects (live /api/codebases) ---------- */
+const PROJECTS = [
+  { id: 'ee0bbaa7', name: 'anhle128/Archon', kind: 'repo', url: 'git@github.com:anhle128/Archon.git', branch: 'feat/pr-e2e-verification-pipeline', path: '~/code/archon', env: 3 },
+  { id: 'a8515a7a', name: 'kevinle128/billing-service', kind: 'repo', url: 'git@github.com:kevinle128/billing-service.git', branch: null, path: '~/code/billing-service', env: 0 },
+];
+
+/* ---------- Runs (four live runs + the sample run started from Chat) ---------- */
+const RUNS = [
+  { id: '3b7e19d2c4a84f0e', wf: 'archon-issue-review-full', status: 'running', project: 'anhle128/Archon', input: 'issues/266', started: '2026-09-30 11:48:12', last: '2026-09-30 11:52:30', done: 1, total: 13, at: 'implement', sample: true },
+  { id: '0c991b2b6ae98cdc', wf: 'ak-feature', status: 'paused', await: true, project: 'anhle128/Archon', input: 'issues/266', started: '2026-09-30 09:51:47', last: '2026-09-30 10:04:26', done: 1, total: 8, at: 'plan' },
+  { id: 'd65601686a10206e', wf: 'ak-feature', status: 'paused', await: true, project: 'anhle128/Archon', input: 'issues/266', started: '2026-09-26 07:15:32', last: '2026-09-26 07:30:10', done: 1, total: 8, at: 'plan' },
+  { id: '1f79327cd07e07a0', wf: 'ak-feature', status: 'failed', project: 'anhle128/Archon', input: 'issues/266', started: '2026-09-26 06:57:31', last: '2026-09-26 06:58:09', done: 1, total: 11, at: 'resolve-bmad-story',
+    error: "resolve-bmad-story: SDK returned codex_turn_failed. invalid_request_error: The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account." },
+  { id: '9314eb315a98799c', wf: 'ak-feature', status: 'cancelled', project: 'anhle128/Archon', input: 'issues/192', started: '2026-09-26 06:37:29', last: '2026-09-26 06:37:36', done: 6, total: 8, at: 'ralph-loop-run' },
+];
+const ST = { running: ['Running', 'run'], paused: ['Paused', 'wait'], failed: ['Failed', 'fail'], cancelled: ['Cancelled', 'cancel'], completed: ['Completed', 'done'], pending: ['Pending', 'pend'] };
+
+/* ---------- Router ---------- */
+const SCREENS = ['chat', 'dashboard', 'workflows', 'run', 'builder', 'settings'];
+const NAV_OF = { run: 'dashboard', builder: 'workflows' };
+function route() {
+  const h = (location.hash || '#chat').slice(1);
+  const s = SCREENS.includes(h) ? h : 'chat';
+  SCREENS.forEach(x => { document.getElementById('s-' + x).hidden = x !== s; });
+  document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === (NAV_OF[s] || s)));
+  document.querySelectorAll('.index a').forEach(a => { if (a.getAttribute('href') === '#' + s) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  if (s === 'run') { const t = document.querySelector('#s-run .transcript'); t.scrollTop = t.scrollHeight; }
+  if (s === 'builder') scrollYaml();
+}
+window.addEventListener('hashchange', route);
+
+/* ---------- 1 Chat ---------- */
+const CONVS = [
+  ['Today'],
+  ['Full review for issue #266', 'anhle128/Archon · Web · 18:48', 'run', 'Running', true],
+  ['Issue #266 room anatomy', 'anhle128/Archon · Web · 16:51', 'wait', 'Awaiting', false, '#run'],
+  ['Earlier'],
+  ['Issue #266 room anatomy, retry', 'anhle128/Archon · Web · 26 Sep', 'wait', 'Awaiting'],
+  ['Issue #266 plan on gpt-6-sol', 'anhle128/Archon · CLI · 26 Sep', 'fail', 'Failed'],
+  ['Issue #192 abandoned run redirect', 'anhle128/Archon · Web · 26 Sep', 'cancel', 'Cancelled'],
+  ['Port upstream grok-build commit', 'billing-service · CLI · 24 Sep', 'pend', 'Idle'],
+];
+document.getElementById('convList').innerHTML = CONVS.map(c => c.length === 1 ? `<div class="grp">${c[0]}</div>` :
+  `<a class="conv row${c[4] ? ' sel' : ''}" href="${c[5] || '#chat'}"><b class="ct">${esc(c[0])}</b><span class="tt"><span class="sub">${esc(c[1])}</span><span class="st ${c[2]}">${c[3]}</span></span></a>`).join('');
+
+function wfByName(n) { return WF.find(w => w.n === n); }
+(function chatNodes() {
+  const wf = wfByName('archon-issue-review-full');
+  const st = i => i === 0 ? ['Done 2m 51s', 'done'] : i === 1 ? ['Running', 'run'] : ['Pending', 'pend'];
+  const shown = wf.x.slice(0, 5);
+  document.getElementById('chatNodes').innerHTML = shown.map((n, i) =>
+    `<div class="nrow row${i === 1 ? ' sel' : ''}"><span class="kind">${n[1]}</span><span class="id">${esc(n[0])}</span><span class="st ${st(i)[1]}">${st(i)[0]}</span></div>`).join('') +
+    `<div class="t2" style="font-size:12.5px;padding:2px 2px 0">+${wf.x.length - shown.length} more nodes: review agents, synthesize, implement fixes, summary</div>`;
+})();
+
+/* ---------- 2 Dashboard ---------- */
+let dStatus = 'all';
+const dProject = document.getElementById('dProject');
+dProject.innerHTML += PROJECTS.map(p => `<option>${esc(p.name)}</option>`).join('');
+function renderStatusTabs() {
+  const counts = { all: RUNS.length, running: 0, paused: 0, completed: 0, failed: 0, cancelled: 0, pending: 0 };
+  RUNS.forEach(r => counts[r.status]++);
+  const label = { all: 'All', running: 'Running', paused: 'Paused', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', pending: 'Pending' };
+  document.getElementById('statusTabs').innerHTML = Object.keys(label).map(k =>
+    `<button class="tab" role="tab" type="button" data-status="${k}" aria-selected="${dStatus === k}">${label[k]}<span class="n">${counts[k]}</span></button>`).join('');
+}
+function actions(r) {
+  if (r.status === 'running') return `<a class="btn sec sm" href="#dashboard">View</a><button class="btn dgr sm" type="button">Cancel</button>`;
+  if (r.await) return `<a class="btn pri sm" href="#run">Answer</a><button class="btn dgr sm" type="button">Abandon</button>`;
+  if (r.status === 'failed') return `<button class="btn sec sm" type="button">Resume</button><button class="btn dgr sm" type="button">Delete</button>`;
+  return `<button class="btn dgr sm" type="button">Delete</button>`;
+}
+function renderRuns() {
+  const q = document.getElementById('dSearch').value.trim().toLowerCase();
+  const p = dProject.value && dProject.value !== 'All Projects' ? dProject.value : '';
+  const list = RUNS.filter(r => (dStatus === 'all' || r.status === dStatus) && (!p || r.project === p) &&
+    (!q || `${r.wf} ${r.id} ${r.input} ${r.at}`.toLowerCase().includes(q)));
+  document.getElementById('runRows').innerHTML = list.length ? list.map(r => {
+    const s = ST[r.status]; const t = ict(r.started); const pct = Math.round(r.done / r.total * 100);
+    const statusTxt = r.await ? 'Awaiting' : s[0];
+    return `<div class="rgrid rrow row${r.await ? ' wait' : ''}" data-href="${r.await && r.id.startsWith('0c99') ? '#run' : ''}">
+      <span class="st ${s[1]}">${statusTxt}</span>
+      <span style="min-width:0"><span class="wfid">${esc(r.wf)}</span><span class="sub" style="display:block">${esc(r.project)} · ${r.id.slice(0, 8)}</span></span>
+      <span style="min-width:0"><span class="mono" style="font-size:12.5px">${esc(r.input)}</span><span class="sub" style="display:block">at ${esc(r.at)}</span></span>
+      <span style="display:grid;gap:4px"><span class="mono" style="font-size:12px">${r.done}/${r.total} nodes</span><span class="prog" style="--p:${pct}%"><i></i></span></span>
+      <span class="mono" style="font-size:12px">${t.day} ${t.time}<span class="t2" style="display:block">${dur(secs(r.started, r.last))}</span></span>
+      <span class="acts">${actions(r)}</span>
+      ${r.error ? `<span class="errline">${esc(r.error)}</span>` : ''}
+    </div>`;
+  }).join('') : `<div class="row" style="padding:14px;background:var(--bg)">No runs match these filters.</div>`;
+  document.getElementById('pagerText').textContent = `Showing ${list.length} of ${RUNS.length} runs`;
+}
+document.getElementById('statusTabs').addEventListener('click', e => { const b = e.target.closest('[data-status]'); if (!b) return; dStatus = b.dataset.status; renderStatusTabs(); renderRuns(); });
+document.getElementById('dSearch').addEventListener('input', renderRuns);
+dProject.addEventListener('change', renderRuns);
+document.getElementById('runRows').addEventListener('click', e => { if (e.target.closest('a,button')) return; const r = e.target.closest('[data-href]'); if (r && r.dataset.href) location.hash = r.dataset.href; });
+renderStatusTabs(); renderRuns();
+
+/* ---------- 3 Workflows (live /api/workflows, same category and parsing rules as the current UI) ---------- */
+const CATEGORIES = ['All', 'CI/CD', 'Code Review', 'Automation', 'Development'];
+function category(name, d) {
+  const l = `${name} ${d}`.toLowerCase();
+  if (l.includes('review')) return 'Code Review';
+  if (l.includes('validate') || l.includes('test-loop') || /\bci\b/.test(l)) return 'CI/CD';
+  if (['create-issue', 'resolve-conflict', 'refactor', 'fix-github-issue', 'ralph'].some(k => l.includes(k))) return 'Automation';
+  return 'Development';
+}
+function displayName(n) { const AC = new Set(['pr', 'ci', 'dag', 'prd', 'api', 'ai']); return n.replace(/^archon-/, '').split('-').map(w => AC.has(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)).join(' '); }
+function parseDesc(t) {
+  const grab = re => { const m = re.exec(t); return m ? m[1].trim().replace(/\s*\n\s*/g, ' ') : ''; };
+  const when = grab(/Use when:\s*(.+?)(?=\n\s*(?:Triggers:|Does:|NOT for:|Constraints:|Handles:|Capability:|Input:|\n\n)|$)/s) || grab(/Handles:\s*(.+?)(?=\n\s*(?:Capability:|Note:|\n\n)|$)/s);
+  const trig = grab(/Triggers:\s*(.+?)(?=\n\s*(?:Does:|NOT for:|Constraints:|\n\n)|$)/s);
+  const triggers = [...trig.matchAll(/"([^"]+)"/g)].map(m => m[1]);
+  const does = grab(/Does:\s*(.+?)(?=\n\s*(?:NOT for:|Constraints:|\n\n)|$)/s) || grab(/Capability:\s*(.+?)(?=\n\s*(?:Note:|\n\n)|$)/s);
+  const not = grab(/(?:NOT for|Constraints):\s*(.+?)(?=\n\n|$)/s);
+  return { when, triggers, does, not, raw: t };
+}
+WF.forEach(w => { w.cat = category(w.n, w.d); w.p = parseDesc(w.d); });
+let wCat = 'All', wSel = 'ak-feature';
+function renderWorkflows() {
+  const q = document.getElementById('wSearch').value.trim().toLowerCase();
+  const inQ = w => !q || w.n.toLowerCase().includes(q) || w.d.toLowerCase().includes(q);
+  document.getElementById('catTabs').innerHTML = CATEGORIES.map(c => {
+    const n = WF.filter(w => inQ(w) && (c === 'All' || w.cat === c)).length;
+    return `<button class="tab" role="tab" type="button" data-cat="${c}" aria-selected="${wCat === c}">${c}<span class="n">${n}</span></button>`;
+  }).join('');
+  const list = WF.filter(w => inQ(w) && (wCat === 'All' || w.cat === wCat));
+  document.getElementById('wCount').textContent = `${list.length} of ${WF.length} workflows · bundled, global and project sources`;
+  document.getElementById('wRows').innerHTML = list.map(w =>
+    `<button class="wrow row${w.n === wSel ? ' sel' : ''}" type="button" data-wf="${esc(w.n)}"><span class="id">${esc(w.n)}</span><span class="sub"><span>${w.x.length} ${w.x.length === 1 ? 'node' : 'nodes'}</span><span>${w.s}</span><span>${w.cat}</span></span></button>`).join('')
+    || `<div class="row" style="padding:12px;background:var(--bg)">No workflows match.</div>`;
+  renderDetail();
+}
+function renderDetail() {
+  const w = wfByName(wSel); if (!w) return;
+  const p = w.p; const kinds = {};
+  w.x.forEach(n => { kinds[n[1]] = (kinds[n[1]] || 0) + 1; });
+  const sect = (h, body) => body ? `<div class="sect"><h4>${h}</h4>${body}</div>` : '';
+  document.getElementById('wDetail').innerHTML = `
+    <div class="title">
+      <span class="lbl t2">${w.cat} · ${w.s}</span>
+      <h2 class="h1">${esc(displayName(w.n))}</h2>
+      <span class="mono" style="font-size:14px">${esc(w.n)}</span>
+    </div>
+    <div class="runform"><input class="in" placeholder="Enter a message for this workflow..." aria-label="Message for this workflow"><button class="btn pri" type="button">Run</button><a class="btn sec" href="#builder">Edit in Builder</a></div>
+    ${sect('When to use', p.when ? `<p>${esc(p.when)}</p>` : (!p.does ? `<p>${esc(p.raw.split('\n\n')[0])}</p>` : ''))}
+    ${sect('Triggers', p.triggers.length ? `<div class="chips">${p.triggers.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : '')}
+    ${sect('Does', p.does ? `<p>${esc(p.does)}</p>` : '')}
+    ${sect('Not for', p.not ? `<p>${esc(p.not)}</p>` : '')}
+    <div class="sect"><h4>Nodes · ${w.x.length} · ${Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(', ')}</h4>
+      <div class="ntable">${w.x.map((n, i) => `<div class="ntr row"><span class="num">${String(i + 1).padStart(2, '0')}</span><span class="kind">${n[1]}</span>
+        <span style="min-width:0"><span class="id">${esc(n[0])}</span><span class="sub" style="display:block">${n[2].length ? 'after ' + esc(n[2].join(', ')) : 'entry node'}${n[3] || n[4] ? ' · ' + esc([n[3], n[4]].filter(Boolean).join(' ')) : ' · inherits model'}</span></span></div>`).join('')}</div></div>`;
+}
+document.getElementById('wSearch').addEventListener('input', renderWorkflows);
+document.getElementById('catTabs').addEventListener('click', e => { const b = e.target.closest('[data-cat]'); if (!b) return; wCat = b.dataset.cat; renderWorkflows(); });
+document.getElementById('wRows').addEventListener('click', e => { const b = e.target.closest('[data-wf]'); if (!b) return; wSel = b.dataset.wf; renderWorkflows(); });
+renderWorkflows();
+
+/* ---------- 4 Run detail (live node states for run 0c991b2b) ---------- */
+(function dag() {
+  const wf = wfByName('ak-feature');
+  const state = { setup: ['Done', 'done', '9.7s'], plan: ['Awaiting', 'wait', '12m 28s'] };
+  document.getElementById('dag').innerHTML = wf.x.map((n, i) => {
+    const s = state[n[0]] || ['Pending', 'pend', ''];
+    const cls = s[1] === 'wait' ? 'row wait' : s[1] === 'pend' ? 'row pend' : 'row';
+    const sub = [[n[3], n[4]].filter(Boolean).join(' '), s[2]].filter(Boolean).join(' · ');
+    return (i ? `<div class="edge${s[1] === 'pend' ? ' dim' : ''}"></div>` : '') +
+      `<div class="gnode ${cls}" tabindex="0"><span class="kind">${n[1]}</span><span class="id">${esc(n[0])}</span><span class="st ${s[1]}">${s[0]}</span><span></span><span class="sub">${esc(sub)}</span></div>`;
+  }).join('');
+})();
+document.getElementById('logRows').innerHTML = [
+  ['16:51:47', 'workflow', 'workflow_started', 'ak-feature · codex gpt-5.5 default · base develop'],
+  ['16:51:48', 'setup', 'node_started', 'bash'],
+  ['16:51:57', 'setup', 'node_completed', '9.7s · CLAUDE KIT FEATURE PIPELINE, feature issues/266'],
+  ['16:51:58', 'plan', 'node_started', 'claude opus · context fresh'],
+  ['16:52:10', 'plan', 'tool_called', 'Bash gh issue view 266 --repo kevinle128/Archon'],
+  ['16:53:53', 'plan', 'tool_called', 'Read ~/.claude/skills/ak-plan/SKILL.md'],
+  ['16:54:30', 'plan', 'task_activity', 'subagent started: Map current Node Room shells'],
+  ['17:02:25', 'plan', 'tool_called', 'Write plans/reports/requirements-260930-1651-anr-3-1-room-anatomy.md'],
+  ['17:04:26', 'plan', 'node_awaiting', 'ask · Should the plan include a data migration?'],
+].map(r => `<div class="log row"><span>${r[0]}</span><span class="id">${r[1]}</span><span class="tool-n">${r[2]}</span><span style="min-width:0;overflow-wrap:anywhere">${esc(r[3])}</span></div>`).join('');
+document.getElementById('runTabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-tp]'); if (!b) return;
+  document.querySelectorAll('#runTabs [data-tp]').forEach(t => t.setAttribute('aria-selected', t === b));
+  ['graph', 'logs', 'chat', 'scm', 'files', 'term'].forEach(k => { document.getElementById('tp-' + k).hidden = k !== b.dataset.tp; });
+});
+
+/* ---------- 5 Builder (live archon-adversarial-dev) ---------- */
+const PALETTE = [
+  ['Basics', [['prompt', 'Inline prompt to an agent'], ['command', 'Named command file'], ['bash', 'Shell script, no AI'], ['script', 'TypeScript or Python via bun or uv']]],
+  ['Flow', [['approval', 'Pause for a human decision'], ['loop', 'Repeat until a check passes'], ['loop_group', 'Repeat a sub-graph'], ['workflow', 'Start a child run'], ['fan_out', 'One child run per item']]],
+  ['Advanced', [['include', 'Inline another workflow'], ['route_loop', 'Route between agents in a loop']]],
+];
+document.getElementById('palette').innerHTML = PALETTE.map(([g, items]) => `<div style="display:grid;gap:5px"><span class="lbl t2">${g}</span>${items.map(([k, d]) =>
+  `<div class="pitem row" draggable="true"><span class="kind" style="color:var(--ink)">${k}</span><span class="d">${d}</span></div>`).join('')}</div>`).join('');
+const BNODES = [
+  { id: 'plan', kind: 'prompt', sub: 'claude · medium · 4 tools', x: 170, y: 24 },
+  { id: 'init-workspace', kind: 'bash', sub: 'timeout 30000 ms', x: 170, y: 134 },
+  { id: 'adversarial-sprint', kind: 'loop', sub: 'large · max 60 · until_bash', x: 170, y: 244 },
+  { id: 'report', kind: 'prompt', sub: 'small · trigger all_done', x: 170, y: 354 },
+];
+let bSel = 'adversarial-sprint';
+const YAML = `name: archon-adversarial-dev
+provider: claude
+model: medium
+nodes:
+  - id: plan
+    prompt: |
+      You are a product planning expert. Your job is to take a short user prompt
+      and expand it into a comprehensive product specification.
+    allowed_tools: [Read, Write, Glob, Grep]
+
+  - id: init-workspace
+    depends_on: [plan]
+    bash: |
+      ARTIFACTS="$ARTIFACTS_DIR"
+      mkdir -p "$ARTIFACTS/contracts" "$ARTIFACTS/feedback" "$ARTIFACTS/app"
+    timeout: 30000
+
+  - id: adversarial-sprint
+    depends_on: [init-workspace]
+    model: large
+    idle_timeout: 600000
+    loop:
+      prompt: |
+        # Adversarial Development: Sprint Loop
+        Read $ARTIFACTS_DIR/state.json to determine the current phase.
+      until: ALL_SPRINTS_COMPLETE
+      until_bash: grep -qE '"status"\\s*:\\s*"(complete|failed)"' "$ARTIFACTS_DIR/state.json"
+      max_iterations: 60
+      fresh_context: true
+
+  - id: report
+    depends_on: [adversarial-sprint]
+    trigger_rule: all_done
+    model: small
+    context: fresh
+    allowed_tools: [Read, Write, Glob, Grep]
+    prompt: |
+      You are a project reporter. Generate a comprehensive summary of the run.`;
+const INSP = {
+  'plan': ['Prompt', `<div class="two"><label class="field"><span>Provider</span><span class="sel-wrap"><select class="in"><option selected>claude</option><option>codex</option></select></span></label><label class="field"><span>Model</span><input class="in mono" value="medium"></label></div>
+    <label class="field"><span>Prompt</span><textarea class="in mono" rows="6">You are a product planning expert. Your job is to take a short user prompt and expand it into a comprehensive product specification.</textarea></label>
+    <label class="field"><span>Allowed tools</span><input class="in mono" value="Read, Write, Glob, Grep"></label>`],
+  'init-workspace': ['Bash', `<label class="field"><span>Script</span><textarea class="in mono" rows="7">ARTIFACTS="$ARTIFACTS_DIR"
+mkdir -p "$ARTIFACTS/contracts"
+mkdir -p "$ARTIFACTS/feedback"
+mkdir -p "$ARTIFACTS/app"</textarea></label>
+    <div class="two"><label class="field"><span>Timeout (ms)</span><input class="in mono" value="30000"></label><label class="field"><span>Depends on</span><input class="in mono" value="plan"></label></div>`],
+  'adversarial-sprint': ['Loop', `<div class="two"><label class="field"><span>Provider</span><span class="sel-wrap"><select class="in"><option selected>claude</option><option>codex</option><option>pi</option></select></span></label><label class="field"><span>Model</span><span class="sel-wrap"><select class="in"><option>small</option><option>medium</option><option selected>large</option><option>@review</option></select></span></label></div>
+    <label class="field"><span>Loop prompt</span><textarea class="in mono" rows="4"># Adversarial Development: Sprint Loop
+Read $ARTIFACTS_DIR/state.json to determine the current phase.</textarea></label>
+    <label class="field"><span>until (signal)</span><input class="in mono" value="ALL_SPRINTS_COMPLETE"></label>
+    <label class="field"><span>until_bash (exit 0 ends the loop)</span><textarea class="in mono" rows="2">grep -qE '"status"\\s*:\\s*"(complete|failed)"' "$ARTIFACTS_DIR/state.json"</textarea></label>
+    <div class="two"><label class="field"><span>max_iterations</span><input class="in mono" value="60"></label><label class="field"><span>idle_timeout (ms)</span><input class="in mono" value="600000"></label></div>
+    <label class="check"><input type="checkbox" checked> fresh_context on every iteration</label>
+    <div class="two"><label class="field"><span>Depends on</span><input class="in mono" value="init-workspace"></label><label class="field"><span>trigger_rule</span><span class="sel-wrap"><select class="in"><option selected>all_success</option><option>all_done</option><option>one_success</option></select></span></label></div>`],
+  'report': ['Prompt', `<div class="two"><label class="field"><span>Provider</span><span class="sel-wrap"><select class="in"><option selected>claude</option></select></span></label><label class="field"><span>Model</span><input class="in mono" value="small"></label></div>
+    <label class="field"><span>Prompt</span><textarea class="in mono" rows="5">You are a project reporter. Generate a comprehensive summary of the adversarial development run.</textarea></label>
+    <div class="two"><label class="field"><span>trigger_rule</span><span class="sel-wrap"><select class="in"><option>all_success</option><option selected>all_done</option></select></span></label><label class="field"><span>context</span><span class="sel-wrap"><select class="in"><option selected>fresh</option><option>shared</option></select></span></label></div>`],
+};
+function renderBuilder() {
+  const edges = BNODES.slice(1).map((n, i) => { const a = BNODES[i]; return `<line x1="50%" y1="${a.y + 66}" x2="50%" y2="${n.y}" stroke="#111111" stroke-width="2" shape-rendering="crispEdges"/>`; }).join('');
+  document.getElementById('stage').innerHTML = `<svg class="edges" aria-hidden="true">${edges}</svg>` + BNODES.map(n =>
+    `<button class="cnode row${n.id === bSel ? ' sel' : ''}" type="button" data-bn="${n.id}" style="left:calc(50% - 130px);top:${n.y}px"><span class="port in"></span><span class="kind">${n.kind}</span><span class="id">${n.id}</span><span class="sub">${n.sub}</span><span class="port out"></span></button>`).join('');
+  const i = INSP[bSel];
+  document.getElementById('inspKind').textContent = i[0];
+  document.getElementById('insp').innerHTML = `<label class="field"><span>Node id</span><input class="in mono" value="${bSel}"></label>` + i[1];
+  const lines = YAML.split('\n'); let on = false;
+  document.getElementById('yaml').innerHTML = lines.map(l => {
+    if (/^  - id: /.test(l)) on = l.endsWith(' ' + bSel);
+    return on && l.trim() ? `<span class="hl">${esc(l)}</span>` : esc(l);
+  }).join('\n');
+  scrollYaml();
+}
+/* Bring the selected node's YAML block into view (needs the screen to be visible). */
+function scrollYaml() {
+  const pre = document.getElementById('yaml'), hl = pre.querySelector('.hl');
+  if (hl) pre.scrollTop = hl.offsetTop - pre.offsetTop - 12;
+}
+document.getElementById('stage').addEventListener('click', e => { const b = e.target.closest('[data-bn]'); if (!b) return; bSel = b.dataset.bn; renderBuilder(); });
+renderBuilder();
+
+/* ---------- 6 Settings ---------- */
+const SNAV = [['set-projects', 'Projects'], ['set-assistant', 'Assistant defaults'], ['set-providers', 'AI providers'], ['set-github', 'GitHub'], ['set-tiers', 'Model tiers'], ['set-aliases', 'Aliases'], ['set-usage', 'Usage and cost'], ['set-system', 'System']];
+document.getElementById('snav').innerHTML = SNAV.map(([id, l], i) => `<button type="button" data-to="${id}" class="${i ? '' : 'on'}">${l}</button>`).join('');
+document.getElementById('snav').addEventListener('click', e => {
+  const b = e.target.closest('[data-to]'); if (!b) return;
+  document.querySelectorAll('#snav button').forEach(x => x.classList.toggle('on', x === b));
+  document.getElementById(b.dataset.to).scrollIntoView({ block: 'start' });
+});
+/* Keep the section index in step with scrolling. */
+const sbody = document.getElementById('sbody');
+sbody.addEventListener('scroll', () => {
+  let cur = SNAV[0][0];
+  SNAV.forEach(([id]) => { if (document.getElementById(id).offsetTop - sbody.offsetTop <= sbody.scrollTop + 40) cur = id; });
+  document.querySelectorAll('#snav button').forEach(x => x.classList.toggle('on', x.dataset.to === cur));
+});
+document.getElementById('projRows').innerHTML = PROJECTS.map(p => `<div class="prow row"><div style="min-width:0"><div class="nm">${esc(p.name)}</div>
+  <div class="sub">${p.kind} · ${esc(p.url)}${p.branch ? ' · ' + esc(p.branch) : ''}</div><div class="sub">${esc(p.path)} · ${p.env} env vars</div></div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="btn sec sm" type="button">Edit env vars</button><button class="btn dgr sm" type="button">Remove</button></div></div>`).join('');
+/* Agent to credential matrix from the provider registry (live /api/providers). States are sample. */
+const AGENTS = [
+  ['claude', 'Claude (Anthropic)', 'Ready', 'done', [['anthropic', 'API key, subscription', 'Subscription · Claude Max', 'done', ['Disconnect']]]],
+  ['codex', 'Codex (OpenAI)', 'Ready', 'done', [['openai', 'API key, subscription', 'Subscription · ChatGPT Pro', 'done', ['Disconnect']]]],
+  ['grok', 'Grok (xAI)', 'Needs credential', 'cancel', [['xai', 'API key', 'Not connected', 'pend', ['Add API key']]]],
+  ['pi', 'Pi (community)', 'Ready', 'done', [['anthropic', 'API key, subscription', 'Uses your Anthropic subscription', 'done', []], ['minimax', 'API key', 'API key · minimax-m3', 'done', ['Disconnect']], ['openrouter', 'API key', 'Ambient env detected', 'done', []]], 'Add backend'],
+  ['copilot', 'Copilot (GitHub)', 'Needs credential', 'cancel', [['github-copilot', 'API key, subscription', 'Waiting for device login', 'wait', ['Cancel']]], null, true],
+  ['opencode', 'OpenCode (community)', 'Dynamic', 'pend', [['backends', 'from the OpenCode runtime', 'Not inspected yet', 'pend', ['Inspect backends']]]],
+  ['deepseek', 'DeepSeek Harness (community)', 'Ready', 'done', [['deepseek', 'API key', 'API key · alibaba', 'done', ['Disconnect']]]],
+  ['devin', 'Devin CLI (community)', 'Ready', 'done', [['devin', 'ambient', 'Ambient CLI login detected', 'done', []]]],
+  ['qodercli', 'Qoder CLI', 'Ready', 'done', [['none', 'no credential', 'Uses the Qoder CLI login', 'pend', []]]],
+  ['omp', 'OMP CLI', 'Ready', 'done', [['none', 'no credential', 'Uses the OMP CLI login', 'pend', []]]],
+];
+document.getElementById('agents').innerHTML = AGENTS.map(a => `<div class="agent row${a[6] ? ' sel' : ''}">
+  <div class="an"><b>${esc(a[1])}</b><span class="mono t2" style="font-size:12px">${a[0]}</span><span class="st ${a[3]}">${a[2]}</span></div>
+  <div class="creds">${a[4].map(c => `<div class="cred"><span><span class="v">${c[0]}</span><span class="t2" style="display:block;font-size:11.5px">${c[1]}</span></span>
+    <span class="st ${c[3]}" style="white-space:normal">${c[2]}</span><span class="acts">${c[4].map(b => `<button class="btn ${b === 'Disconnect' ? 'dgr' : b === 'Cancel' ? 'sec' : 'pri'} sm" type="button">${b}</button>`).join('')}</span>
+    ${a[6] ? `<div class="device"><span>Open <b class="mono">github.com/login/device</b> and enter</span><span class="code">4F2A-9C1D</span><span class="t2">expires in 14:32</span></div>` : ''}</div>`).join('')}
+    ${a[5] ? `<div><button class="btn sec sm" type="button">${a[5]}</button> <span class="t2" style="font-size:12px">29 Pi backends available</span></div>` : ''}</div></div>`).join('');
+const TIERS = [['small', 'minimal'], ['medium', 'medium'], ['large', 'high']];
+document.getElementById('tierRows').innerHTML = TIERS.map(([t, e]) => `<div class="tier row"><span class="nm">${t}</span>
+  <span class="sel-wrap"><select class="in" aria-label="${t} provider"><option>claude</option><option selected>codex</option><option>pi</option></select></span>
+  <span style="display:flex;gap:8px;align-items:center;min-width:0"><input class="in mono" value="gpt-5.5" aria-label="${t} model"><span class="lbl t2">Default</span></span>
+  <span class="sel-wrap"><select class="in" aria-label="${t} effort"><option ${e === 'minimal' ? 'selected' : ''}>minimal</option><option ${e === 'medium' ? 'selected' : ''}>medium</option><option ${e === 'high' ? 'selected' : ''}>high</option><option>xhigh</option></select></span></div>`).join('');
+const USAGE = [['claude', '412', '8,104,220', '212,480', '61,402,118', '$0.00', '$38.20'], ['codex', '188', '5,920,310', '301,775', '22,118,904', '$0.00', '$27.65'],
+  ['devin', '26', '1,204,003', '48,120', '0', '$6.12', '$6.12'], ['omp', '14', '902,441', '31,006', '4,880,120', '$0.00', '$3.40'], ['deepseek', '9', '310,552', '12,904', '0', '$0.21', '$0.21']];
+document.getElementById('usageRows').innerHTML = USAGE.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') +
+  `<tr class="total"><td>Total</td><td>649</td><td>16,441,526</td><td>606,285</td><td>88,401,142</td><td>$6.33</td><td>$75.58</td></tr>`;
+
+route();
+</script>
+</body>
+</html>

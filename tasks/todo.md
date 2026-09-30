@@ -68,3 +68,24 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 
 - Final state: develop-2 has every phase and every QA-fix round merged. `bun run validate` is green, `check:schema-upgrades` passes, and the last full e2e run was 158 pass, 0 fail, 4 skip. Visual QA round 15 returned ACCEPT.
 - Background processes: the mockup server on 8791 is stopped. The user's server on 3090 was restarted by this session as a background task, so it stops when the session ends.
+
+# Remove console, restore root routes, 4 redesign directions (2026-09-30)
+
+- [x] Remove `/console` route + TopNav "Try the new console UI" CTA; `/` redirects to `/chat`
+- [x] Classic UI back at root: `/chat`, `/dashboard`, `/workflows`, `/workflows/builder`, `/workflows/runs/:runId`, `/settings` (no `/legacy`)
+- [x] Strip `/legacy` prefix from 24 web files + tests; update `docs-web/adapters/web.md`
+- [x] Verify: web tests 0 fail, type-check, eslint, prettier; browser check of `/`, `/workflows`, nav hrefs
+- [x] Step 1a: logo locked by owner = L4 Pixel (from `logo-color-board-v2.html`)
+- [x] Step 1b (REVERSED by owner, "not wow enough"): style = S11 Grid Mono (owner, 2026-09-30): S4 Grid Brutal structure and fonts (grid paper, 3px ink borders, Archivo Black + Space Mono), no drop shadows, S8 colors (#F2F2EF, #111111, Klein blue #1F2BFF). See `pixel-styles-board.html#S11`
+- [x] Step 1c: wow round built: 8 art-directed styles W1-W8 + showroom `wow/index.html`; each verified in headless Chromium (no JS errors, no overflow, waiting-state screenshots); W5 logo contrast and showroom font/dissolve fixes applied
+- [x] Step 1d: owner found W1-W8 too much ("làm hơi quá", no heavy animation) and asked to go back to the S1-S8 pixel board; board restored to 8 styles (S9-S11 only with #all). W files kept untouched
+- [x] Step 1e: owner picked L4 Pixel + S8 Swiss Pixel with borders, built as S12 Swiss Pixel Border (2px ink borders on frame, nav, panels, node rows; flat, no grid, no shadow); AA verified
+- [x] Step 1f: S12 Swiss Pixel Border locked by owner; spec in `plans/260930-1702-ui-redesign-directions/s12-design-spec.md`
+- [x] Step 2: full-screen S12 mockup built in `s12-screens.html` (6 screens, real API data, verified in headless Chromium: no errors, no overflow); private local paths and another org's repo name replaced with sample values
+- [x] Step 2b: owner rejected S12 screens; switched to ui-ux-pro-max "AI-Native UI + Minimalism" (spec `ai-native-minimal-spec.md`, logo L4 Pixel kept)
+- [x] Step 2c: AI-native minimal mockup `ai-native-screens.html` built; verified light + dark in headless Chromium (no errors, no dashes, no private paths)
+- [x] Step 2d: owner approved the AI-native screens ("code cho tôi phiên bản này")
+- [ ] Step 3: implementation plan `plans/260930-2008-ai-native-ui-implementation/plan.md` (8 phases); waiting for owner approval before coding
+- [ ] Step 3: after owner approves screens, plan the implementation in packages/web (tokens in index.css, brand guide update per AGENTS.md)
+- [ ] Decision for user: delete `packages/web/src/experiments/console/` (308 files) in follow-up; move `install-happy-dom` test helper to `src/test/` first
+- [ ] Decision for user: console-only features now have no UI (provider keys, GitHub connect, model tiers/aliases, per-user AI prefs, cost page); port into classic Settings/Dashboard or into the redesign

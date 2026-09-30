@@ -28,3 +28,13 @@
 
 - Pattern: the mockup's default state (`softInject: true`, "claude · soft-inject") shows a per-item `Send now` while the agent is generating. The readiness report kept it in scope (M008). A provider spike then set `softInjection: false` everywhere. From round 2 on, QA only checked that the button was absent, and the coordinator listed it as accepted drift. The goal was then reported as "all mockup features done", but the user never approved that drift.
 - Rule: when a capability spike removes a behavior that the mockup shows, stop and ask the user before accepting the gap. Report it as a missing feature, never as accepted drift, and never claim "đủ tính năng" while a mockup behavior has no working implementation.
+
+## "Redesign everything" means push the range, not four safe variants (2026-09-30)
+
+- Pattern: the owner asked for a full redesign (colors, fonts, logo). The first logo and palette board offered four restrained, enterprise-safe options (geometric monograms, one muted accent each). The owner rejected it as "not special enough" and asked for a young, dynamic, creative style.
+- Rule: when the owner opens the whole visual identity, the first option set must span a wide range, including at least two bold options (mascot or character mark, multi-color signature, texture, motion). Ask for the vibe words before building if the brief gives none; do not default to the dashboard-safe aesthetic.
+
+## "Wow" for a product UI means a strong identity on a usable screen, not a theatre piece (2026-09-30)
+
+- Pattern: after "not special enough", the owner asked for something that makes them say wow. The next round swung to eight theatrical pages (particle fields, RPG maps, isometric cities, collage) and the owner said it went too far. Two corrections in a row, in opposite directions.
+- Rule: when the owner rejects one extreme, the next round steps one notch, not to the other extreme. For a daily-use tool, keep the creative energy in identity (logo, color, type, one signature texture or motion) and keep the working screens clean and scannable. Show a middle option next to any bold one so the owner can point at the level they want.

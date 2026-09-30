@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archon: logo và màu v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Fredoka:wght@500;700&family=Syne:wght@700;800&family=Silkscreen:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Archivo:ital,wdth,wght@1,100..125,800..900&family=Onest:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --k-bg: #0E0E11; --k-sf: #17171C; --k-line: #2A2A33;
+    --k-tx: #F2F2F5; --k-tx2: #B4B4C2; --k-tx3: #8A8A9C; --k-hi: #F2F2F5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--k-bg); color: var(--k-tx); font: 15px/1.5 "Onest", system-ui, sans-serif; }
+  .wrap { max-width: 1360px; margin: 0 auto; padding: 48px 24px 96px; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .display { font-family: "Unbounded", system-ui, sans-serif; letter-spacing: -0.02em; }
+
+  header.intro { display: grid; grid-template-columns: 1.4fr 1fr; gap: 32px; align-items: end; }
+  @media (max-width: 900px) { header.intro { grid-template-columns: 1fr; } }
+  h1 { font: 900 clamp(40px, 6vw, 76px)/0.98 "Unbounded", sans-serif; letter-spacing: -0.04em; margin: 0; }
+  h1 em { font-style: normal; color: #D4FF3A; }
+  .intro p { color: var(--k-tx2); margin: 0; max-width: 52ch; }
+  h2 { font: 700 26px/1.1 "Unbounded", sans-serif; letter-spacing: -0.02em; margin: 72px 0 8px; }
+  .sub { color: var(--k-tx2); margin: 0 0 22px; max-width: 70ch; }
+
+  /* ---------- Logos: asymmetric grid, 6 cells ---------- */
+  .logos { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+  .logos > .lg:nth-child(-n+2) { grid-column: span 6; }
+  .logos > .lg:nth-child(n+3) { grid-column: span 3; }
+  @media (max-width: 1000px) { .logos { grid-template-columns: repeat(2, 1fr); } .logos > .lg { grid-column: span 1 !important; } }
+  @media (max-width: 600px) { .logos { grid-template-columns: 1fr; } }
+
+  .lg { position: relative; border-radius: 22px; overflow: hidden; cursor: pointer; background: var(--k-sf);
+        border: 1px solid var(--k-line); display: grid; grid-template-rows: auto auto; transition: transform .25s cubic-bezier(.16,1,.3,1), border-color .2s; }
+  .lg:hover { transform: translateY(-3px); }
+  .lg:active { transform: scale(0.985); }
+  .lg[aria-pressed="true"] { border-color: var(--k-hi); box-shadow: 0 0 0 2px var(--k-hi); }
+  .lg .art { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 20px; padding: 26px 26px 20px; min-height: 210px; }
+  .lg .art .big svg { width: 104px; height: 104px; display: block; }
+  .lg:nth-child(n+3) .art { padding: 22px 20px 16px; min-height: 170px; }
+  .lg:nth-child(n+3) .wm, .lg:nth-child(n+3) .meta { padding-left: 20px; padding-right: 20px; }
+  .lg:nth-child(n+3) .wm b { font-size: 21px; }
+  .lg:nth-child(-n+2) .art .big svg { width: 150px; height: 150px; }
+  .lg .smalls { display: grid; gap: 10px; justify-items: end; }
+  .lg .smalls span { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--k-tx3); }
+  .lg .wm { display: flex; align-items: center; gap: 12px; padding: 16px 26px; border-top: 1px solid var(--k-line); }
+  .lg .wm svg { width: 34px; height: 34px; flex: none; }
+  .lg .wm b { font-size: 26px; line-height: 1; }
+  .lg .meta { padding: 0 26px 22px; display: grid; gap: 6px; }
+  .lg .meta .nm { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; }
+  .lg .meta .nm span { color: var(--k-tx3); font-weight: 400; font-size: 12px; }
+  .lg .meta p { margin: 0; color: var(--k-tx2); font-size: 13.5px; }
+
+  /* ---------- Palettes: poster cards ---------- */
+  .pals { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  @media (max-width: 1200px) { .pals { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 760px) { .pals { grid-template-columns: 1fr; } }
+  .pal { border-radius: 22px; overflow: hidden; cursor: pointer; border: 1px solid var(--k-line); background: var(--k-sf);
+         transition: transform .25s cubic-bezier(.16,1,.3,1); display: flex; flex-direction: column; }
+  .pal:hover { transform: translateY(-3px); }
+  .pal[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--k-hi); border-color: var(--k-hi); }
+  .poster { position: relative; aspect-ratio: 4 / 5; padding: 18px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; isolation: isolate; }
+  .poster .pt { font: 900 30px/0.95 "Unbounded", sans-serif; letter-spacing: -0.04em; position: relative; z-index: 2; }
+  .poster .pl { font-size: 12px; position: relative; z-index: 2; display: flex; justify-content: space-between; }
+  .poster .deco { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+  .chips { display: grid; grid-template-columns: repeat(6, 1fr); }
+  .chips i { height: 26px; }
+  .pal .info { padding: 14px 16px 16px; display: grid; gap: 8px; }
+  .pal .info .nm { font-weight: 600; display: flex; justify-content: space-between; }
+  .pal .info .nm span { color: var(--k-tx3); font-weight: 400; font-size: 12px; }
+  .pal .info p { margin: 0; font-size: 13px; color: var(--k-tx2); }
+  .pal .aa { font-size: 11.5px; color: var(--k-tx3); }
+  .pal .aa b { color: #9BE8B0; font-weight: 600; }
+  .pal .aa b.bad { color: #FF8A80; }
+
+  /* ---------- Combiner ---------- */
+  .combo { display: grid; grid-template-columns: 280px 1fr; gap: 18px; }
+  @media (max-width: 980px) { .combo { grid-template-columns: 1fr; } }
+  .ctl { background: var(--k-sf); border: 1px solid var(--k-line); border-radius: 22px; padding: 18px; display: grid; gap: 16px; align-content: start; }
+  .ctl .now { font-size: 13px; color: var(--k-tx2); }
+  .ctl .now b { display: block; color: var(--k-tx); font-size: 16px; font-family: "Unbounded", sans-serif; font-weight: 700; margin-top: 4px; line-height: 1.25; }
+  .ctl button { font: 700 14px "Onest", sans-serif; background: #F2F2F5; color: #0E0E11; border: 0; border-radius: 999px; padding: 12px 18px; cursor: pointer; transition: transform .15s; }
+  .ctl button:active { transform: scale(0.97); }
+  .ctl .out { font-size: 12px; color: var(--k-tx2); min-height: 36px; }
+  .ctl .hint { font-size: 12px; color: var(--k-tx3); margin: 0; }
+
+  /* Preview themed via variables: palette colors plus personality (radius, border, shadow, texture). */
+  .pv { position: relative; border-radius: 22px; overflow: hidden; background: var(--bg); color: var(--tx); font-family: "Onest", sans-serif; isolation: isolate; }
+  .pv .grain { position: absolute; inset: 0; pointer-events: none; z-index: 5; opacity: var(--grain, 0); mix-blend-mode: multiply;
+               background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  .pv .top { display: flex; align-items: center; gap: 16px; height: 64px; padding: 0 18px; border-bottom: var(--bw) solid var(--line); background: var(--sf); }
+  .pv .brand { display: flex; align-items: center; gap: 10px; color: var(--tx); }
+  .pv .brand svg { width: 30px; height: 30px; }
+  .pv .brand b { font-size: 19px; line-height: 1; }
+  .pv nav { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pv nav a { font-size: 13px; font-weight: 600; color: var(--tx2); padding: 7px 12px; border-radius: 999px; }
+  .pv nav a.on { color: var(--onac); background: var(--ac); }
+  .pv .fav { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx3); background: var(--rs); padding: 6px 10px; border-radius: 8px; }
+  .pv .fav svg { width: 16px; height: 16px; }
+  .pv .main { display: grid; grid-template-columns: 1.25fr 1fr; gap: 18px; padding: 20px; }
+  @media (max-width: 760px) { .pv .main { grid-template-columns: 1fr; } }
+  .pv .panel { background: var(--sf); border: var(--bw) solid var(--line); border-radius: var(--r); padding: 18px; display: grid; gap: 14px; align-content: start; box-shadow: var(--shadow); }
+  .pv .hero { display: flex; align-items: center; gap: 16px; }
+  .pv .hero svg { width: 84px; height: 84px; color: var(--tx); }
+  .pv .hero b { font-size: 46px; line-height: 1; }
+  .pv h3 { margin: 0; font-size: 17px; font-weight: 700; }
+  .pv .ids { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--tx3); }
+  .pv .bar { height: 8px; border-radius: 99px; background: var(--rs); overflow: hidden; }
+  .pv .bar i { display: block; height: 100%; width: 32%; border-radius: 99px; background: var(--sig); animation: grow 2.4s cubic-bezier(.16,1,.3,1) infinite alternate; }
+  @keyframes grow { from { width: 22%; } to { width: 34%; } }
+  .pv .nodes { display: grid; gap: 7px; }
+  .pv .node { display: grid; grid-template-columns: 76px 1fr auto; align-items: center; gap: 10px; padding: 9px 12px; border-radius: calc(var(--r) * .6); background: var(--rs); font-size: 13.5px; }
+  .pv .node .k { font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px; justify-self: start; }
+  .pv .node .s { font-size: 12px; font-weight: 700; }
+  .pv .node.wait { outline: 2px solid var(--ac2); outline-offset: -2px; }
+  .pv .ask { border: 2px solid var(--ac2); border-radius: var(--r); padding: 16px; display: grid; gap: 10px; }
+  .pv .ask label { font-size: 13px; font-weight: 600; }
+  .pv input { font: inherit; font-size: 14px; color: var(--tx); background: var(--bg); border: var(--bw) solid var(--line); border-radius: calc(var(--r) * .6); padding: 10px 12px; }
+  .pv input::placeholder { color: var(--tx3); }
+  .pv input:focus { outline: 2px solid var(--ac); outline-offset: 1px; }
+  .pv .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pv .btn { font: 700 14px "Onest", sans-serif; border-radius: 999px; padding: 10px 18px; border: var(--bw) solid transparent; cursor: pointer; transition: transform .15s, box-shadow .15s; }
+  .pv .btn.pri { background: var(--ac); color: var(--onac); border-color: var(--btnline); box-shadow: var(--shadow); }
+  .pv .btn.pri:active { transform: translate(2px, 2px); box-shadow: none; }
+  .pv .btn.sec { background: transparent; color: var(--tx); border-color: var(--line); }
+  .pv .stat { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pv .stat span { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--rs); }
+
+  /* ---------- Logo motion (brand expression, hover only; mascot blink is the one idle loop) ---------- */
+  .eye { transform-box: fill-box; transform-origin: center; animation: blink 4.5s infinite; }
+  @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+  .runner { animation: run 1.8s steps(1) infinite; }
+  @keyframes run { 0% { transform: translateX(0); } 33% { transform: translateX(8px); } 66% { transform: translateX(16px); } }
+  .orbit { transform-origin: 30px 36px; }
+  .lg:hover .orbit, .pv:hover .orbit { animation: spin 1.6s cubic-bezier(.6,0,.4,1) infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .draw { stroke-dasharray: 220; stroke-dashoffset: 0; }
+  .lg:hover .draw, .pv:hover .draw { animation: draw 1.4s cubic-bezier(.16,1,.3,1); }
+  @keyframes draw { from { stroke-dashoffset: 220; } to { stroke-dashoffset: 0; } }
+  .stk { transition: transform .2s cubic-bezier(.16,1,.3,1); }
+  .lg:hover .stk, .pv:hover .stk { transform: translate(3px, 3px); }
+  .rl2 { transition: transform .3s cubic-bezier(.16,1,.3,1); }
+  .lg:hover .rl2, .pv:hover .rl2 { transform: translateY(-5px); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+  footer { margin-top: 56px; color: var(--k-tx3); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="intro">
+    <h1>Archon, <em>bản trẻ</em> hơn.</h1>
+    <p>Bảng v2: 6 logo và 5 bộ màu táo bạo hơn, có chuyển động và chất liệu riêng. Rê chuột lên logo để xem chuyển động. Chọn một logo và một bộ màu, xem ở khu ghép thử, rồi bấm "Chốt".</p>
+  </header>
+
+  <h2>Logo</h2>
+  <p class="sub">Mỗi logo có tính cách riêng. Màu dùng ở đây là màu của bộ đang chọn bên dưới, nên đổi bộ màu thì logo đổi theo.</p>
+  <div class="logos" id="logos"></div>
+
+  <h2>Bộ màu</h2>
+  <p class="sub">Mỗi bộ có 2 màu chủ đạo (một màu chính, một màu tín hiệu cho việc cần bạn), kèm chất liệu riêng: viền đậm và bóng cứng, hạt in risograph, hoặc dải hoàng hôn. Dòng AA là tỉ lệ tương phản thật, tính ngay trong trang.</p>
+  <div class="pals" id="pals"></div>
+
+  <h2>Ghép thử</h2>
+  <p class="sub">Logo, màu và chất liệu trên một màn hình Archon mẫu: run <span class="mono">ak-feature</span> đang chờ bạn trả lời ở node <span class="mono">plan</span>.</p>
+  <div class="combo">
+    <div class="ctl">
+      <div class="now" id="now"></div>
+      <button type="button" id="lock">Chốt lựa chọn này</button>
+      <div class="out mono" id="out" aria-live="polite"></div>
+      <p class="hint">Có thể ghép tự do, hoặc nói tôi chỉnh riêng một logo hay một màu.</p>
+    </div>
+    <div class="pv" id="pv">
+      <div class="grain"></div>
+      <div class="top">
+        <div class="brand"><span class="mk"></span><b class="wmt">Archon</b></div>
+        <nav><a>Chat</a><a>Runs</a><a class="on">Workflows</a><a>Builder</a><a>Settings</a></nav>
+        <div class="fav"><span class="fv"></span>tab 16px</div>
+      </div>
+      <div class="main">
+        <div class="panel">
+          <div class="hero"><span class="mkL"></span><b class="wmt">Archon</b></div>
+          <div><h3>ak-feature</h3><div class="ids">kevinle128/Archon · issue #266</div></div>
+          <div class="bar"><i></i></div>
+          <div class="nodes" id="nodes"></div>
+        </div>
+        <div class="panel">
+          <h3>Node plan đang chờ bạn</h3>
+          <div class="ask">
+            <label for="ans">Plan có bao gồm phần migration dữ liệu không?</label>
+            <input id="ans" placeholder="Nhập câu trả lời">
+            <div class="btns"><button class="btn pri" type="button">Gửi câu trả lời</button><button class="btn sec" type="button">Xem log</button></div>
+          </div>
+          <div class="stat" id="stat"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer>Thời lượng trong khu ghép là số mẫu. Tên workflow, node và issue lấy từ dữ liệu thật của project.</footer>
+</div>
+
+<script>
+/* All marks are drawn on a 64x64 grid. c = main ink, a = primary accent, s = signal accent, k = knockout. */
+const LOGOS = [
+  { id: 'L1', name: 'Archie', font: 'Fredoka', fw: 700, track: '0', upper: false,
+    note: 'Linh vật: một robot hình vòm, chân tạo thành chữ A, mắt chớp, ăng-ten là tín hiệu "cần bạn". Dễ thương, dễ nhớ, làm sticker và emoji được.',
+    svg: (c, a, s, k) => `<svg viewBox="0 0 64 64" aria-hidden="true">
+      <line x1="32" y1="11" x2="32" y2="5" stroke="${c}" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="32" cy="4.5" r="3.8" fill="${s}"/>
+      <path d="M11 58 V33 A21 21 0 0 1 53 33 V58 H39.5 V47 A7.5 7.5 0 0 0 24.5 47 V58 Z" fill="${a}"/>
+      <ellipse class="eye" cx="24.5" cy="31" rx="4.2" ry="5.2" fill="${k}"/>
+      <ellipse class="eye" cx="39.5" cy="31" rx="4.2" ry="5.2" fill="${k}"/></svg>` },
+  { id: 'L2', name: 'Sticker Stack', font: 'Unbounded', fw: 900, track: '-0.03em', upper: false,
+    note: 'Chữ A dày như sticker, viền mực và bóng cứng lệch góc. Rê chuột thì sticker "ấn xuống". Kiểu neo-brutalism, rất năng động.',
+    svg: (c, a, s, k) => { const A = 'M8 56 L25 8 H39 L56 56 H42.5 L39 45 H25 L21.5 56 Z M28.5 34.5 H35.5 L32 23 Z';
+      return `<svg viewBox="0 0 64 64" aria-hidden="true">
+      <path d="${A}" transform="translate(4 4)" fill="${s}" fill-rule="evenodd"/>
+      <g class="stk"><path d="${A}" fill="${a}" stroke="${c}" stroke-width="3" stroke-linejoin="round" fill-rule="evenodd"/></g></svg>`; } },
+  { id: 'L3', name: 'Ribbon', font: 'Syne', fw: 800, track: '-0.02em', upper: false,
+    note: 'Một nét liền vẽ chữ A, vòng xoắn ở chân phải thay cho thanh ngang, như chữ ký. Rê chuột thì nét tự vẽ lại.',
+    svg: (c, a, s, k) => `<svg viewBox="0 0 64 64" aria-hidden="true" fill="none">
+      <path class="draw" d="M8 57 L29 9 Q32 3 35 9 L46 36 C50 46 42 54 35 48 C28 42 37 33 47 40 L58 48" stroke="${a}" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="58" cy="48" r="4" fill="${s}"/></svg>` },
+  { id: 'L4', name: 'Pixel', font: 'Silkscreen', fw: 700, track: '0.04em', upper: true,
+    note: 'Chữ A 8-bit. Một pixel tín hiệu chạy qua thanh ngang như agent đang làm việc. Chất game, hợp dev trẻ.',
+    svg: (c, a, s, k) => { const rows = ['..###..', '.##.##.', '##...##', '#######', '##...##', '##...##', '##...##'];
+      let r = ''; rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === '#') r += `<rect x="${4 + x * 8}" y="${4 + y * 8}" width="8" height="8" fill="${a}"/>`; }));
+      return `<svg viewBox="0 0 64 64" aria-hidden="true" shape-rendering="crispEdges">${r}
+      <rect class="runner" x="20" y="28" width="8" height="8" fill="${s}"/></svg>`; } },
+  { id: 'L5', name: 'Orbit', font: 'Bricolage Grotesque', fw: 800, track: '-0.03em', upper: false,
+    note: 'Chữ "a" thường, béo tròn, có một vệ tinh bay quanh, tượng trưng cho agent. Rê chuột thì vệ tinh quay.',
+    svg: (c, a, s, k) => `<svg viewBox="0 0 64 64" aria-hidden="true" fill="none">
+      <circle cx="30" cy="38" r="14" stroke="${a}" stroke-width="9"/>
+      <path d="M48.5 22 V56" stroke="${a}" stroke-width="9" stroke-linecap="round"/>
+      <g class="orbit"><circle cx="30" cy="9" r="5.5" fill="${s}"/></g></svg>` },
+  { id: 'L6', name: 'Relay', font: 'Archivo', fw: 900, track: '-0.02em', upper: true, italic: true,
+    note: 'Hai mũi tên chồng lên nhau, nghiêng về phía trước, tạo thành chữ A như nút tăng tốc. Mũi dưới bật lên khi rê chuột.',
+    svg: (c, a, s, k) => `<svg viewBox="0 0 64 64" aria-hidden="true" fill="none">
+      <g transform="skewX(-12) translate(7 0)">
+      <path d="M8 50 L32 9 L56 50" stroke="${a}" stroke-width="10" stroke-linejoin="miter"/>
+      <path class="rl2" d="M20 60 L32 40 L44 60" stroke="${s}" stroke-width="9" stroke-linejoin="miter"/></g></svg>` },
+];
+
+const PALS = [
+  { id: 'P1', name: 'Acid Night', mode: 'Tối', note: 'Đen tím than, xanh chanh axit cho hành động, hồng nóng cho "cần bạn". Kiểu club, streetwear.',
+    bg: '#0B0B10', sf: '#15151D', rs: '#20202B', line: '#2E2E3D', tx: '#F3F2F7', tx2: '#B3B1C2', tx3: '#8A889F',
+    ac: '#D4FF3A', onac: '#11140A', ac2: '#FF3EA5', ok: '#4DE3C1', warn: '#FFB23E', err: '#FF5A5F',
+    kinds: { command: '#7FB2FF', prompt: '#FF3EA5', bash: '#FFB23E', loop: '#4DE3C1', approval: '#D4FF3A' },
+    feel: { r: '18px', bw: '1px', shadow: 'none', btnline: 'transparent', grain: 0, sig: '#D4FF3A' },
+    deco: (p) => `<svg viewBox="0 0 100 125" preserveAspectRatio="none" width="100%" height="100%"><circle cx="76" cy="66" r="30" fill="${p.ac}"/><circle cx="22" cy="104" r="18" fill="${p.ac2}"/></svg>` },
+  { id: 'P2', name: 'Pop Brutal', mode: 'Sáng', note: 'Nền trắng xanh, viền mực đậm 2px, bóng cứng lệch góc, xanh điện và cam quýt. Vui, rõ, rất "sticker".',
+    bg: '#EEF1FF', sf: '#FDFDFF', rs: '#E0E6FF', line: '#111114', tx: '#111114', tx2: '#3E4150', tx3: '#5A5E70',
+    ac: '#3D5AFE', onac: '#FDFDFF', ac2: '#FF7A1A', ok: '#0E7A45', warn: '#9A5200', err: '#C8232F',
+    kinds: { command: '#3D5AFE', prompt: '#B0229C', bash: '#9A5200', loop: '#0E7A6B', approval: '#D1470A' },
+    feel: { r: '14px', bw: '2px', shadow: '4px 4px 0 #111114', btnline: '#111114', grain: 0, sig: '#FF7A1A' },
+    deco: (p) => `<svg viewBox="0 0 100 125" preserveAspectRatio="none" width="100%" height="100%"><rect x="50" y="44" width="40" height="40" rx="8" fill="#111114"/><rect x="46" y="40" width="40" height="40" rx="8" fill="${p.ac}" stroke="#111114" stroke-width="2"/><rect x="12" y="80" width="30" height="30" rx="15" fill="${p.ac2}" stroke="#111114" stroke-width="2"/></svg>` },
+  { id: 'P3', name: 'Riso Print', mode: 'Sáng', note: 'Giấy in risograph: hồng huỳnh quang và xanh riso in chồng, có hạt mực. Chất zine, nghệ.',
+    bg: '#F1F1EC', sf: '#F8F8F4', rs: '#E4E4DC', line: '#CACAC0', tx: '#1A1A2E', tx2: '#45455C', tx3: '#606075',
+    ac: '#FF48B0', onac: '#1A1A2E', ac2: '#0078BF', ok: '#007A44', warn: '#8F5B00', err: '#C02420',
+    kinds: { command: '#0078BF', prompt: '#C8157E', bash: '#8F5B00', loop: '#007A44', approval: '#C02420' },
+    feel: { r: '6px', bw: '1px', shadow: 'none', btnline: 'transparent', grain: 0.35, sig: '#0078BF' },
+    deco: (p) => `<svg viewBox="0 0 100 125" preserveAspectRatio="none" width="100%" height="100%" style="mix-blend-mode:multiply"><circle cx="60" cy="64" r="28" fill="${p.ac}" opacity=".9"/><circle cx="44" cy="76" r="28" fill="${p.ac2}" opacity=".75"/></svg>` },
+  { id: 'P4', name: 'Sunset Arcade', mode: 'Tối', note: 'Tím than đêm, cam hoàng hôn và vàng nắng, dải sọc kiểu arcade thập niên 80. Ấm, vui, đầy năng lượng.',
+    bg: '#16112B', sf: '#201A3D', rs: '#2B2452', line: '#3D3470', tx: '#FFF4E8', tx2: '#CDBFDD', tx3: '#A294BD',
+    ac: '#FF6B35', onac: '#2A0E00', ac2: '#FFD23F', ok: '#3DDC97', warn: '#FFD23F', err: '#FF4D6D',
+    kinds: { command: '#7FB2FF', prompt: '#FF8FC7', bash: '#FFD23F', loop: '#3DDC97', approval: '#FF6B35' },
+    feel: { r: '20px', bw: '1px', shadow: 'none', btnline: 'transparent', grain: 0, sig: 'linear-gradient(90deg,#FF6B35,#FFD23F)' },
+    deco: (p) => `<svg viewBox="0 0 100 125" preserveAspectRatio="none" width="100%" height="100%"><circle cx="50" cy="70" r="34" fill="${p.ac2}"/><rect x="0" y="62" width="100" height="5" fill="${p.bg}"/><rect x="0" y="74" width="100" height="6" fill="${p.bg}"/><rect x="0" y="88" width="100" height="40" fill="${p.bg}"/><rect x="0" y="86" width="100" height="2" fill="${p.ac}"/></svg>` },
+  { id: 'P5', name: 'Mint Soda', mode: 'Sáng', note: 'Xanh bạc hà mát, xanh điện đậm và đỏ cherry. Tươi, sạch, hơi Y2K.',
+    bg: '#DDF8EA', sf: '#F2FDF7', rs: '#C8F0DA', line: '#9CD6B8', tx: '#0D2118', tx2: '#2F4A3D', tx3: '#40594C',
+    ac: '#2336FF', onac: '#F2FDF7', ac2: '#FF3B5C', ok: '#0A6E3E', warn: '#8A5000', err: '#B5122E',
+    kinds: { command: '#2336FF', prompt: '#A3129B', bash: '#8A5000', loop: '#0A6E5E', approval: '#C4122F' },
+    feel: { r: '24px', bw: '1px', shadow: '0 10px 30px -12px rgba(13,33,24,.35)', btnline: 'transparent', grain: 0, sig: '#2336FF' },
+    deco: (p) => `<svg viewBox="0 0 100 125" preserveAspectRatio="none" width="100%" height="100%"><rect x="58" y="38" width="28" height="56" rx="14" fill="${p.ac}"/><circle cx="28" cy="96" r="14" fill="${p.ac2}"/><circle cx="72" cy="100" r="7" fill="${p.ac2}"/></svg>` },
+];
+
+function lum(h) { const n = h.replace('#', ''); return [0, 2, 4].map(i => parseInt(n.slice(i, i + 2), 16) / 255)
+  .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0); }
+function cr(a, b) { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+
+const S = { logo: 'L1', pal: 'P1' };
+const $ = (id) => document.getElementById(id);
+const pal = () => PALS.find(p => p.id === S.pal);
+const logo = () => LOGOS.find(l => l.id === S.logo);
+const draw = (l, p) => l.svg(p.tx, p.ac, p.ac2, p.onac);
+const wmStyle = (l) => `font-family:'${l.font}',sans-serif;font-weight:${l.fw};letter-spacing:${l.track};` +
+  `text-transform:${l.upper ? 'uppercase' : 'none'};font-style:${l.italic ? 'italic' : 'normal'};` +
+  (l.font === 'Archivo' ? "font-variation-settings:'wdth' 115;" : '');
+
+function renderLogos() {
+  const p = pal();
+  $('logos').innerHTML = LOGOS.map(l => `
+    <div class="lg" role="button" tabindex="0" data-logo="${l.id}" aria-pressed="${S.logo === l.id}" style="background:${p.bg};border-color:${p.line}">
+      <div class="art">
+        <div class="big">${draw(l, p)}</div>
+        <div class="smalls">
+          <span style="color:${p.tx3}">${draw(l, p).replace('<svg', '<svg width="32" height="32"')}32</span>
+          <span style="color:${p.tx3}">${draw(l, p).replace('<svg', '<svg width="16" height="16"')}16</span>
+        </div>
+      </div>
+      <div class="wm" style="border-color:${p.line};color:${p.tx}">${draw(l, p)}<b style="${wmStyle(l)}">Archon</b></div>
+      <div class="meta" style="color:${p.tx}"><div class="nm">${l.id} ${l.name}<span style="color:${p.tx3}">${l.font}</span></div><p style="color:${p.tx2}">${l.note}</p></div>
+    </div>`).join('');
+}
+
+function renderPals() {
+  $('pals').innerHTML = PALS.map(p => {
+    const worst = Math.min(cr(p.tx2, p.bg), cr(p.tx3, p.bg), cr(p.onac, p.ac), cr(p.ok, p.bg), cr(p.warn, p.bg), cr(p.err, p.bg));
+    return `
+    <div class="pal" role="button" tabindex="0" data-pal="${p.id}" aria-pressed="${S.pal === p.id}">
+      <div class="poster" style="background:${p.bg};color:${p.tx}">
+        <div class="deco">${p.deco(p)}</div>
+        <div class="pt">${p.name.split(' ').join('<br>')}</div>
+        <div class="pl"><span>${p.mode}</span><span class="mono" style="color:${p.tx2}">${p.ac} ${p.ac2}</span></div>
+      </div>
+      <div class="chips">${[p.bg, p.sf, p.tx, p.ac, p.ac2, p.ok].map(c => `<i style="background:${c}"></i>`).join('')}</div>
+      <div class="info">
+        <div class="nm">${p.id} ${p.name}<span>${p.mode}</span></div>
+        <p>${p.note}</p>
+        <div class="aa">Chữ chính <b>${cr(p.tx, p.bg).toFixed(1)}</b> · Tương phản thấp nhất <b class="${worst < 4.5 ? 'bad' : ''}">${worst.toFixed(1)}</b> ${worst < 4.5 ? '(chưa đạt AA)' : '(đạt AA)'}</div>
+      </div>
+    </div>`; }).join('');
+}
+
+function renderPreview() {
+  const p = pal(), l = logo(), pv = $('pv');
+  const vars = { bg: p.bg, sf: p.sf, rs: p.rs, line: p.line, tx: p.tx, tx2: p.tx2, tx3: p.tx3, ac: p.ac, onac: p.onac, ac2: p.ac2,
+    r: p.feel.r, bw: p.feel.bw, shadow: p.feel.shadow, btnline: p.feel.btnline, grain: p.feel.grain, sig: p.feel.sig };
+  Object.entries(vars).forEach(([k, v]) => pv.style.setProperty('--' + k, v));
+  pv.querySelector('.mk').innerHTML = draw(l, p);
+  pv.querySelector('.mkL').innerHTML = draw(l, p);
+  pv.querySelector('.fv').innerHTML = draw(l, p).replace('<svg', '<svg width="16" height="16"');
+  pv.querySelectorAll('.wmt').forEach(el => el.setAttribute('style', wmStyle(l)));
+  const N = [['bash', 'setup', 'Xong 6.7s', p.ok, ''], ['prompt', 'plan', 'Chờ bạn', p.ac2, 'wait'],
+    ['prompt', 'verify-and-fix-plan', 'Chưa chạy', p.tx3, ''], ['loop', 'ralph-loop-run', 'Chưa chạy', p.tx3, ''], ['command', 'create-pull-request', 'Chưa chạy', p.tx3, '']];
+  // "Chờ bạn" text uses the signal color only when it passes AA on the row surface; otherwise the main text color carries it.
+  $('nodes').innerHTML = N.map(([k, n, s, c, cls]) => { const col = cls === 'wait' && cr(c, p.rs) < 4.5 ? p.tx : c;
+    return `<div class="node ${cls}"><span class="k" style="color:${p.kinds[k]};background:${p.bg}">${k}</span><span>${n}</span><span class="s" style="color:${col}">${s}</span></div>`; }).join('');
+  $('stat').innerHTML = [['3 xong', p.ok], ['1 chờ bạn', cr(p.ac2, p.rs) >= 4.5 ? p.ac2 : p.tx], ['1 cảnh báo', p.warn], ['1 lỗi', p.err]]
+    .map(([t, c]) => `<span style="color:${c}">${t}</span>`).join('');
+  $('now').innerHTML = `Đang xem<b>${l.id} ${l.name}<br>+ ${p.id} ${p.name}</b>`;
+  $('out').textContent = '';
+}
+
+function renderAll() { renderLogos(); renderPals(); renderPreview(); }
+function pick(e) {
+  const el = e.target.closest('[data-logo],[data-pal]'); if (!el) return;
+  if (e.type === 'keydown') { if (e.key !== 'Enter' && e.key !== ' ') return; e.preventDefault(); }
+  if (el.dataset.logo) S.logo = el.dataset.logo; else S.pal = el.dataset.pal;
+  renderAll();
+  const again = document.querySelector(`[data-logo="${el.dataset.logo}"],[data-pal="${el.dataset.pal}"]`); if (again && e.type === 'keydown') again.focus();
+}
+['click', 'keydown'].forEach(t => { $('logos').addEventListener(t, pick); $('pals').addEventListener(t, pick); });
+$('lock').addEventListener('click', () => { $('out').textContent = `Chốt: ${logo().id} ${logo().name} + ${pal().id} ${pal().name}`; });
+renderAll();
+</script>
+</body>
+</html>

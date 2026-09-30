@@ -1,0 +1,1491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>W3 Blueprint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=Barlow+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bp: #0B3D91;
+    --bp-deep: #082F72;
+    --bp-ink: #062659;
+    --line: #FFFFFF;
+    --ink: #F4FAFF;
+    --ink-2: #CFE0F7;
+    --ink-3: #A9C0E6;
+    --cyan: #9FE7FF;
+    --signal: #5FD3FF;
+    --orange: #FF9E4F;
+    --orange-hot: #FF7A1A;
+    --hand: "Architects Daughter", "Comic Sans MS", cursive;
+    --label: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100dvh;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    background-color: var(--bp);
+    background-image:
+      radial-gradient(ellipse 60% 55% at 28% 22%, rgba(18, 74, 160, .55), transparent 70%),
+      radial-gradient(ellipse 55% 60% at 85% 95%, rgba(5, 36, 96, .75), transparent 70%),
+      linear-gradient(rgba(255,255,255,.13) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.13) 1px, transparent 1px),
+      linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 80px 80px, 80px 80px, 16px 16px, 16px 16px;
+    background-position: 0 0, 0 0, -1px -1px, -1px -1px, -1px -1px, -1px -1px;
+    overflow-x: hidden;
+  }
+  /* paper grain over everything, decorative only */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: .09;
+    mix-blend-mode: screen;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    z-index: 50;
+  }
+
+  .page {
+    min-height: 100dvh;
+    padding: 10px 16px 14px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---------- drawing sheet tabs (navigation) ---------- */
+  .tabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 0;
+    height: 42px;
+    padding-left: 34px;
+    position: relative;
+    z-index: 2;
+  }
+  .tab {
+    position: relative;
+    appearance: none;
+    background: none;
+    border: 0;
+    color: var(--ink-2);
+    cursor: pointer;
+    height: 36px;
+    padding: 0 22px;
+    margin-right: -6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--label);
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    isolation: isolate;
+  }
+  .tab::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border: 1.5px solid rgba(255,255,255,.7);
+    border-bottom: 0;
+    border-radius: 3px 3px 0 0;
+    background: rgba(6, 38, 89, .72);
+    transform: perspective(60px) rotateX(9deg);
+    transform-origin: bottom;
+    transition: background .2s, border-color .2s;
+  }
+  .tab .sht {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: .04em;
+    color: var(--ink-3);
+  }
+  .tab:hover::before { border-color: var(--cyan); background: rgba(10, 58, 132, .9); }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-current="page"] { color: var(--bp-ink); z-index: 3; height: 40px; }
+  .tab[aria-current="page"]::before { background: #EAF6FF; border-color: #EAF6FF; }
+  .tab[aria-current="page"] .sht { color: #23508F; }
+  .tab:focus-visible { outline: 2px dashed var(--cyan); outline-offset: 3px; }
+  .set-label {
+    margin-left: auto;
+    align-self: center;
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: .06em;
+    padding-right: 6px;
+    white-space: nowrap;
+  }
+  .set-label b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- sheet frame with zone band ---------- */
+  .sheet {
+    position: relative;
+    height: calc(100dvh - 66px);
+    min-height: 660px;
+    border: 1.5px solid rgba(255,255,255,.85);
+    padding: 26px;
+    display: grid;
+    grid-template-columns: minmax(330px, 35%) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 22px;
+  }
+  .sheet::before {
+    content: "";
+    position: absolute;
+    inset: 14px;
+    border: 1px solid rgba(255,255,255,.55);
+    pointer-events: none;
+  }
+  .zones { position: absolute; inset: 0; pointer-events: none; }
+  .zones span {
+    position: absolute;
+    font-family: var(--label);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-3);
+    line-height: 1;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  .zones .zt { top: 7px; }
+  .zones .zb { top: calc(100% - 7px); }
+  .zones .zl { left: 7px; }
+  .zones .zr { left: calc(100% - 7px); }
+  .zones i {
+    position: absolute;
+    background: rgba(255,255,255,.55);
+    pointer-events: none;
+  }
+  .zones .tkb { width: 1px; height: 14px; bottom: 0; }
+  .zones .tkt { width: 1px; height: 14px; top: 0; }
+  .zones .tkl { height: 1px; width: 14px; left: 0; }
+  .zones .tkr { height: 1px; width: 14px; right: 0; }
+
+  /* ---------- hero: the plotted mark ---------- */
+  .hero {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .eyebrow {
+    font-family: var(--label);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .16em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .eyebrow .dwg {
+    font-family: var(--mono);
+    font-weight: 500;
+    letter-spacing: .02em;
+    font-size: 11px;
+    border: 1px solid rgba(255,255,255,.6);
+    padding: 2px 6px;
+    color: var(--ink);
+  }
+  .logo-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 4px;
+  }
+  #logo {
+    width: 100%;
+    height: 100%;
+    max-height: 520px;
+    min-height: 220px;
+    overflow: visible;
+  }
+  .wordmark {
+    position: relative;
+    margin: 2px 0 0;
+    font-family: var(--label);
+    font-weight: 700;
+    font-size: clamp(56px, min(7.4vw, 12.5vh), 118px);
+    line-height: .86;
+    letter-spacing: .06em;
+    color: transparent;
+    -webkit-text-stroke: 1.6px var(--line);
+    background-image: repeating-linear-gradient(135deg, rgba(159,231,255,.55) 0 1.2px, transparent 1.2px 7px);
+    -webkit-background-clip: text;
+    background-clip: text;
+    clip-path: inset(0 100% 0 0);
+    animation: ink-in 1.4s cubic-bezier(.6,.05,.3,1) 1.3s forwards;
+  }
+  .wordmark::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -8px;
+    height: 1px;
+    background: rgba(255,255,255,.6);
+  }
+  @keyframes ink-in { to { clip-path: inset(0 0 0 0); } }
+  .spec {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 22px;
+    font-size: 11.5px;
+    color: var(--ink-3);
+    letter-spacing: .03em;
+  }
+  .spec b { color: var(--ink); font-weight: 500; }
+  .hand-note {
+    margin-top: 10px;
+    font-family: var(--hand);
+    font-size: 17px;
+    color: var(--cyan);
+    line-height: 1.3;
+    transform: rotate(-1.6deg);
+    transform-origin: left center;
+    max-width: 30ch;
+  }
+
+  /* logo SVG strokes */
+  .plot {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: plot var(--dur, .5s) cubic-bezier(.55,.1,.35,1) var(--delay, 0s) forwards;
+  }
+  @keyframes plot { to { stroke-dashoffset: 0; } }
+  .fade {
+    opacity: 0;
+    animation: fadein .45s ease var(--delay, 0s) forwards;
+  }
+  @keyframes fadein { to { opacity: 1; } }
+  .cons { stroke: rgba(159,231,255,.32); stroke-width: .8; fill: none; }
+  .cell { stroke: var(--line); stroke-width: 1.5; fill: none; }
+  .dim { stroke: var(--ink-2); stroke-width: 1; fill: none; }
+  .ext { stroke: var(--ink-2); stroke-width: .8; fill: none; }
+  .leader { stroke: var(--cyan); stroke-width: 1; fill: none; }
+  .arrowhead { fill: var(--ink-2); }
+  .cl { stroke: rgba(159,231,255,.6); stroke-width: .9; stroke-dasharray: 18 5 3 5; fill: none; }
+  .t-dim { font-family: var(--mono); font-size: 12px; font-weight: 500; fill: var(--ink); }
+  .t-call { font-family: var(--label); font-size: 15px; font-weight: 700; letter-spacing: .12em; fill: var(--ink); }
+  .t-sub { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-3); }
+  .runner {
+    fill: var(--cyan);
+    transition: transform .2s cubic-bezier(.5,0,.3,1), fill .3s;
+  }
+  .runner.wait { fill: var(--orange-hot); }
+  .runner.done { fill: var(--line); }
+  .runner-halo { fill: none; stroke: var(--cyan); stroke-width: 1; opacity: .7; transition: transform .2s cubic-bezier(.5,0,.3,1), stroke .3s; }
+  .runner-halo.wait { stroke: var(--orange-hot); }
+
+  /* ---------- run column ---------- */
+  .run {
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+  .run-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: nowrap;
+    border-bottom: 1px solid rgba(255,255,255,.45);
+    padding-bottom: 10px;
+  }
+  .run-head h1 {
+    margin: 2px 0 0;
+    font-family: var(--label);
+    font-weight: 700;
+    font-size: 42px;
+    line-height: .95;
+    letter-spacing: .03em;
+    color: var(--ink);
+  }
+  .run-head h1 small {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: var(--ink-3);
+    margin-left: 10px;
+    vertical-align: middle;
+  }
+  .meta {
+    display: flex;
+    gap: 0;
+    margin: 0;
+    border: 1px solid rgba(255,255,255,.55);
+    background: rgba(6, 38, 89, .85);
+  }
+  .meta div { padding: 5px 12px; border-right: 1px solid rgba(255,255,255,.35); }
+  .meta div:last-child { border-right: 0; }
+  .meta dt {
+    font-family: var(--label);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .14em;
+    color: var(--ink-3);
+  }
+  .meta dd { margin: 1px 0 0; font-size: 12.5px; color: var(--ink); white-space: nowrap; }
+  #state { min-width: 14.5ch; display: inline-flex; align-items: center; gap: 7px; font-weight: 600; letter-spacing: .04em; }
+  #state::before {
+    content: "";
+    width: 8px; height: 8px;
+    background: currentColor;
+  }
+  #state.running { color: var(--cyan); }
+  #state.waiting { color: var(--orange); }
+  #state.waiting::before { animation: blink 1s steps(2) infinite; }
+  #state.complete { color: var(--ink); }
+  @keyframes blink { 50% { opacity: .15; } }
+
+  .schem {
+    position: relative;
+    min-height: 0;
+    display: flex;
+  }
+  #schem {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: visible;
+    animation: sweep 1.3s cubic-bezier(.6,.05,.3,1) .35s both;
+  }
+  @keyframes sweep { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+  /* schematic parts */
+  .wire { fill: none; stroke: var(--ink-3); stroke-width: 1.3; stroke-dasharray: 5 5; opacity: .75; transition: stroke .3s, opacity .3s; }
+  .wire.live { stroke: var(--signal); stroke-dasharray: none; stroke-width: 1.8; opacity: 1; }
+  .wire.done { stroke: var(--line); stroke-dasharray: none; stroke-width: 1.5; opacity: .95; }
+  .ah { fill: var(--ink-3); opacity: .75; transition: fill .3s; }
+  .ah.live { fill: var(--signal); opacity: 1; }
+  .ah.done { fill: var(--line); opacity: 1; }
+  .net { font-family: var(--mono); font-size: 10px; fill: var(--ink-3); }
+  .term { fill: var(--bp-ink); stroke: var(--ink-3); stroke-width: 1.4; transition: fill .3s, stroke .3s; }
+  .term.done { fill: var(--line); stroke: var(--line); }
+  .term-label { font-family: var(--label); font-weight: 700; font-size: 12px; letter-spacing: .14em; fill: var(--ink-2); }
+
+  .node .body { fill: #0A367F; stroke: var(--ink-3); stroke-width: 1.3; stroke-dasharray: 6 4; transition: stroke .3s, fill .3s; }
+  .node .body.cmd { stroke-width: 2.3; }
+  .node .inner { fill: none; stroke: var(--ink-3); stroke-width: .9; opacity: .6; stroke-dasharray: 6 4; }
+  .node .pin { stroke: var(--ink-3); stroke-width: 1.3; }
+  .node .glyph { fill: none; stroke: var(--ink-3); stroke-width: 1.3; }
+  .node .kind { font-family: var(--label); font-weight: 700; font-size: 11px; letter-spacing: .16em; fill: var(--ink-3); }
+  .node .name { font-family: var(--mono); font-weight: 600; font-size: 12.5px; fill: var(--ink-3); }
+  .node .status { font-family: var(--mono); font-weight: 500; font-size: 10px; letter-spacing: .03em; fill: var(--ink-3); }
+  .node .scan { opacity: 0; }
+
+  .node.running .body { stroke: var(--signal); stroke-width: 2; stroke-dasharray: none; fill: #0D469F; }
+  .node.running .inner { stroke: var(--signal); stroke-dasharray: none; opacity: .7; }
+  .node.running .pin, .node.running .glyph { stroke: var(--signal); }
+  .node.running .kind { fill: var(--cyan); }
+  .node.running .name { fill: var(--ink); }
+  .node.running .status { fill: var(--cyan); }
+  .node.running .scan { opacity: 1; animation: scan 1.1s linear infinite; }
+  @keyframes scan { from { transform: translateX(0); } to { transform: translateX(200px); } }
+
+  .node.done .body { stroke: var(--line); stroke-width: 1.6; stroke-dasharray: none; fill: #0A367F; }
+  .node.done .inner { stroke: var(--line); stroke-dasharray: none; opacity: .55; }
+  .node.done .pin, .node.done .glyph { stroke: var(--line); }
+  .node.done .kind { fill: var(--ink-2); }
+  .node.done .name { fill: var(--ink); }
+  .node.done .status { fill: var(--ink); }
+
+  .node.waiting .body { stroke: var(--orange); stroke-width: 2; stroke-dasharray: none; fill: #0B3A86; }
+  .node.waiting .inner { stroke: var(--orange); stroke-dasharray: none; opacity: .6; }
+  .node.waiting .glyph { stroke: var(--orange); }
+  .node.waiting .kind { fill: var(--orange); }
+  .node.waiting .name { fill: var(--ink); }
+  .node.waiting .status { fill: var(--orange); font-weight: 600; }
+  .node.done .body.cmd, .node.running .body.cmd { stroke-width: 2.6; }
+
+  .legend-box { fill: rgba(6, 38, 89, .9); stroke: rgba(255,255,255,.55); stroke-width: 1; }
+  .legend-title { font-family: var(--label); font-weight: 700; font-size: 11px; letter-spacing: .18em; fill: var(--ink-2); }
+  .legend-label { font-family: var(--label); font-weight: 600; font-size: 12px; letter-spacing: .1em; fill: var(--ink); }
+  .legend-sym { fill: none; stroke: var(--line); stroke-width: 1.2; }
+
+  #comet { fill: none; stroke: var(--signal); stroke-width: 3.2; stroke-linecap: round; }
+  #head .core { fill: #FFFFFF; }
+  #head .halo { fill: var(--signal); opacity: .45; }
+  #head.hold .halo { fill: var(--orange-hot); opacity: .6; animation: blink 1s steps(2) infinite; }
+  #head.hold .core { fill: var(--orange); }
+
+  #cloud { fill: none; stroke: var(--orange-hot); stroke-width: 2.1; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 1s cubic-bezier(.55,.1,.35,1), opacity .5s; }
+  #cloud.show { stroke-dashoffset: 0; }
+  #cloud.resolved { opacity: .35; }
+  #rev-mark, #annot { opacity: 0; transition: opacity .4s ease .7s; }
+  #rev-mark.show, #annot.show { opacity: 1; }
+  #annot.resolved { opacity: 0; transition-delay: 0s; }
+  .rev-tri { fill: #0B3A86; stroke: var(--orange); stroke-width: 1.5; }
+  .rev-num { font-family: var(--label); font-weight: 700; font-size: 12px; fill: var(--orange); }
+  .annot-text { font-family: var(--hand); font-size: 17px; fill: var(--orange); }
+  .annot-arrow { fill: none; stroke: var(--orange); stroke-width: 1.5; stroke-linecap: round; }
+  .iter { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-3); }
+  .iter.on { fill: var(--cyan); }
+  #stamp { opacity: 0; transform: rotate(-5deg) scale(1.25); transform-box: fill-box; transform-origin: center; transition: opacity .25s, transform .35s cubic-bezier(.3,1.6,.5,1); }
+  #stamp.show { opacity: 1; transform: rotate(-5deg) scale(1); }
+  .stamp-box { fill: #0A367F; stroke: var(--line); stroke-width: 1.6; }
+  .stamp-inner { fill: none; stroke: var(--line); stroke-width: .8; }
+  .stamp-text { font-family: var(--label); font-weight: 700; font-size: 17px; letter-spacing: .2em; fill: var(--ink); }
+  .stamp-sub { font-family: var(--mono); font-size: 9.5px; fill: var(--ink-2); letter-spacing: .06em; }
+
+  /* ---------- bottom: notes + title block ---------- */
+  .lower {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(370px, 420px);
+    gap: 14px;
+    align-items: stretch;
+    margin-right: -12px;
+    margin-bottom: -12px;
+  }
+  .notes {
+    border: 1px solid rgba(255,255,255,.6);
+    background: rgba(6, 38, 89, .88);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 244px;
+    margin-bottom: 12px;
+  }
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.4);
+    font-family: var(--label);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: .18em;
+    color: var(--ink);
+  }
+  .panel-head span { font-family: var(--mono); font-size: 10.5px; font-weight: 400; letter-spacing: .04em; color: var(--ink-3); }
+  #notes {
+    list-style: none;
+    margin: 0;
+    padding: 8px 12px 4px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    counter-reset: note;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+    font-size: 12.5px;
+    line-height: 1.55;
+    scroll-behavior: auto;
+  }
+  #notes li {
+    counter-increment: note;
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr);
+    color: var(--ink-2);
+    margin-bottom: 3px;
+    animation: note-in .35s ease both;
+  }
+  #notes li::before { content: counter(note) "."; color: var(--ink-3); }
+  #notes li.agent { color: var(--ink); }
+  #notes li.rev { color: var(--orange); }
+  #notes li.ans { color: var(--ink); }
+  #notes li.ans b { color: var(--orange); font-weight: 600; }
+  @keyframes note-in { from { opacity: 0; transform: translateY(4px); } }
+  .tool {
+    display: inline-block;
+    font-family: var(--label);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: .16em;
+    color: var(--bp-ink);
+    background: var(--cyan);
+    padding: 0 5px;
+    margin-right: 6px;
+    line-height: 16px;
+  }
+  .path { color: var(--cyan); }
+  .caret {
+    display: inline-block;
+    width: 7px; height: 13px;
+    background: var(--cyan);
+    vertical-align: -2px;
+    margin-left: 2px;
+    animation: blink .9s steps(2) infinite;
+  }
+  .foot {
+    padding: 3px 12px 6px;
+    font-size: 10px;
+    color: var(--ink-3);
+    border-top: 1px dashed rgba(255,255,255,.3);
+  }
+
+  .titleblock {
+    border-left: 1.5px solid rgba(255,255,255,.85);
+    border-top: 1.5px solid rgba(255,255,255,.85);
+    background: rgba(8, 47, 114, .96);
+    display: grid;
+    grid-template-columns: 1fr 1.12fr .72fr;
+    font-size: 12px;
+  }
+  .tb {
+    border-right: 1px solid rgba(255,255,255,.45);
+    border-bottom: 1px solid rgba(255,255,255,.45);
+    padding: 4px 8px 5px;
+    min-width: 0;
+  }
+  .tb:nth-child(3n) { border-right: 0; }
+  .tb .k {
+    display: block;
+    font-family: var(--label);
+    font-weight: 600;
+    font-size: 10.5px;
+    letter-spacing: .16em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+  }
+  .tb .v { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .tb.brand { display: flex; align-items: center; gap: 8px; }
+  .tb.brand svg { width: 26px; height: 26px; flex: none; }
+  .tb.brand .v { font-family: var(--label); font-weight: 700; font-size: 20px; letter-spacing: .14em; }
+  .rr {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid rgba(255,255,255,.45);
+    padding: 0;
+    transition: background .3s;
+  }
+  .rr-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-bottom: 1px solid rgba(255,255,255,.3);
+    font-family: var(--label);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: .2em;
+    color: var(--ink-2);
+  }
+  .rr-head svg { width: 18px; height: 16px; flex: none; }
+  .rr-head .tri { fill: none; stroke: var(--ink-3); stroke-width: 1.4; }
+  .rr-head .tri-n { font-family: var(--label); font-size: 10px; font-weight: 700; fill: var(--ink-3); }
+  #rr-status {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    color: var(--ink-3);
+    border: 1px solid currentColor;
+    padding: 0 6px;
+  }
+  .rr-body { padding: 7px 8px 9px; }
+  .rr-from { font-size: 11px; color: var(--ink-3); }
+  .rr-from b { color: var(--ink-2); font-weight: 500; }
+  #rr-q {
+    margin: 3px 0 7px;
+    font-family: var(--label);
+    font-weight: 600;
+    font-size: 19px;
+    line-height: 1.12;
+    letter-spacing: .02em;
+    color: var(--ink-2);
+    min-height: 22px;
+  }
+  .rr form { display: flex; gap: 8px; align-items: stretch; }
+  .rr label.sr {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  #answer {
+    flex: 1;
+    min-width: 0;
+    background: rgba(6, 38, 89, .9);
+    border: 0;
+    border-bottom: 1.5px dashed var(--ink-3);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    padding: 6px 8px;
+  }
+  #answer::placeholder { color: var(--ink-3); }
+  #answer:focus-visible { outline: 2px dashed var(--cyan); outline-offset: 2px; }
+  #answer:disabled { opacity: .6; }
+  #send {
+    appearance: none;
+    background: transparent;
+    border: 2px solid var(--ink-3);
+    color: var(--ink-3);
+    font-family: var(--label);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    cursor: pointer;
+    transition: background .2s, color .2s, border-color .2s;
+  }
+  #send:disabled { cursor: default; opacity: .6; }
+  #send:focus-visible { outline: 2px dashed var(--cyan); outline-offset: 3px; }
+  .rr-foot { margin-top: 5px; font-size: 10.5px; color: var(--ink-3); min-height: 14px; }
+
+  .rr.open { background: rgba(255, 122, 26, .07); box-shadow: inset 0 0 0 1.5px var(--orange-hot); }
+  .rr.open .rr-head { color: var(--orange); border-bottom-color: rgba(255,158,79,.5); }
+  .rr.open .rr-head .tri { stroke: var(--orange); }
+  .rr.open .rr-head .tri-n { fill: var(--orange); }
+  .rr.open #rr-status { color: var(--orange); }
+  .rr.open #rr-q { color: var(--ink); }
+  .rr.open #answer { border-bottom-color: var(--orange); }
+  .rr.open #send { border-color: var(--orange); color: var(--orange); }
+  .rr.open #send:hover { background: var(--orange); color: var(--bp-ink); }
+  .rr.open .rr-foot { color: var(--orange); }
+  .rr.resolved #rr-status { color: var(--ink); }
+
+  .caption {
+    position: fixed;
+    left: 18px;
+    bottom: 3px;
+    z-index: 60;
+    font-family: var(--label);
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: .22em;
+    color: var(--ink);
+    background: var(--bp-ink);
+    border: 1px solid rgba(255,255,255,.7);
+    padding: 2px 8px;
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 1260px) {
+    .set-label { display: none; }
+    .sheet { grid-template-columns: minmax(300px, 33%) minmax(0, 1fr); gap: 18px; }
+    .run-head h1 { font-size: 36px; }
+    .meta div { padding: 5px 9px; }
+  }
+  @media (max-width: 1100px) {
+    .sheet { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; min-height: 0; }
+    .run-head { flex-wrap: wrap; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 24px; align-items: center; }
+    .hero .eyebrow { grid-column: 1 / -1; }
+    .logo-wrap { grid-row: 2 / span 3; }
+    #logo { max-height: 420px; }
+    #schem { min-height: 380px; }
+    .tabs { padding-left: 8px; overflow-x: auto; }
+    .tab { padding: 0 16px; font-size: 15px; }
+  }
+  @media (max-width: 760px) {
+    .hero { grid-template-columns: 1fr; }
+    .lower { grid-template-columns: 1fr; margin-right: 0; margin-bottom: 0; }
+    .notes { margin-bottom: 0; }
+    .titleblock { border-right: 1.5px solid rgba(255,255,255,.85); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .plot { animation: none; stroke-dashoffset: 0; }
+    .fade { animation: none; opacity: 1; }
+    .wordmark { animation: none; clip-path: none; }
+    #schem { animation: none; }
+    .runner, .runner-halo { transition: none; }
+    .node.running .scan { animation: none; opacity: 0; }
+    #cloud { transition: none; }
+    #rev-mark, #annot { transition: none; }
+    #stamp { transition: none; }
+    #notes li { animation: none; }
+    .caret, #state.waiting::before, #head.hold .halo { animation: none; }
+    .tab::before { transition: none; }
+    .wire, .ah, .term, .node .body, .node .inner, .rr, #send { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <nav class="tabs" aria-label="Primary">
+    <button class="tab" type="button"><span class="sht">SHT 01</span>Chat</button>
+    <button class="tab" type="button"><span class="sht">SHT 02</span>Runs</button>
+    <button class="tab" type="button" aria-current="page"><span class="sht">SHT 03</span>Workflows</button>
+    <button class="tab" type="button"><span class="sht">SHT 04</span>Builder</button>
+    <button class="tab" type="button"><span class="sht">SHT 05</span>Settings</button>
+    <span class="set-label"><b>ARCHON</b> DRAWING SET / REV C / 2026-09-30 ICT</span>
+  </nav>
+
+  <div class="sheet">
+    <div class="zones" aria-hidden="true" id="zones"></div>
+
+    <section class="hero" aria-label="Archon mark">
+      <div class="eyebrow"><span class="dwg">DWG A-000</span> The mark, 7 x 7 module</div>
+      <div class="logo-wrap">
+        <svg id="logo" viewBox="0 0 520 460" role="img" aria-label="Archon pixel A, drawn as a blueprint with dimensions">
+          <defs>
+            <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line x1="0" y1="0" x2="0" y2="7" stroke="#9FE7FF" stroke-width="1.1" opacity=".55"/>
+            </pattern>
+            <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="5" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <g id="logo-art"></g>
+        </svg>
+      </div>
+      <div class="wordmark" aria-label="ARCHON">ARCHON</div>
+      <div class="spec">
+        <span>MODULE <b>8u</b></span>
+        <span>GRID <b>7 x 7</b></span>
+        <span>FILLED <b>30 cells</b></span>
+        <span>RUNNER <b>cols 2 to 4</b></span>
+      </div>
+      <div class="hand-note">the runner is the agent. it walks the crossbar while work happens.</div>
+    </section>
+
+    <section class="run" aria-label="Live run">
+      <header class="run-head">
+        <div>
+          <div class="eyebrow">Sheet 03 / live run schematic</div>
+          <h1>ak-feature<small>workflow</small></h1>
+        </div>
+        <dl class="meta">
+          <div><dt>INPUT</dt><dd>kevinle128/Archon issue #266</dd></div>
+          <div><dt>NODES</dt><dd id="prog">0 / 6</dd></div>
+          <div><dt>STATE</dt><dd><span id="state">READY</span></dd></div>
+        </dl>
+      </header>
+
+      <div class="schem">
+        <svg id="schem" viewBox="0 0 860 420" role="img" aria-label="Run schematic of ak-feature: setup, plan, verify-and-fix-plan, build-ralph-prd, ralph-loop-run, create-pull-request">
+          <defs>
+            <filter id="sglow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3.5" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <filter id="pencil" x="-5%" y="-10%" width="110%" height="120%">
+              <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="1" seed="4" result="t"/>
+              <feDisplacementMap in="SourceGraphic" in2="t" scale="1.8"/>
+            </filter>
+            <linearGradient id="scanGrad" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0" stop-color="#5FD3FF" stop-opacity="0"/>
+              <stop offset=".85" stop-color="#5FD3FF" stop-opacity=".22"/>
+              <stop offset="1" stop-color="#FFFFFF" stop-opacity=".8"/>
+            </linearGradient>
+          </defs>
+          <g id="legend"></g>
+          <g id="wires"></g>
+          <g id="nodes"></g>
+          <path id="comet" d="M0,0" opacity="0" filter="url(#sglow)"/>
+          <g id="head" opacity="0"><circle class="halo" r="9"/><circle class="core" r="3.6"/></g>
+          <g id="revision"></g>
+          <g id="stamp">
+            <rect class="stamp-box" x="92" y="360" width="190" height="44"/>
+            <rect class="stamp-inner" x="96" y="364" width="182" height="36"/>
+            <text class="stamp-text" x="187" y="385" text-anchor="middle">RUN COMPLETE</text>
+            <text class="stamp-sub" x="187" y="397" text-anchor="middle">CHECKED / 6 OF 6 NODES</text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="lower">
+        <section class="notes" aria-label="General notes, agent transcript">
+          <div class="panel-head">GENERAL NOTES <span>agent transcript, live</span></div>
+          <ol id="notes" aria-live="polite"></ol>
+          <div class="foot">* Durations are sample values.</div>
+        </section>
+
+        <section class="titleblock" aria-label="Title block and revision request">
+          <div class="tb brand"><svg id="tb-logo" viewBox="0 0 7 7" aria-hidden="true"></svg><span class="v">ARCHON</span></div>
+          <div class="tb"><span class="k">Project</span><span class="v">kevinle128/Archon</span></div>
+          <div class="tb"><span class="k">Dwg no.</span><span class="v">AK-266-03</span></div>
+          <div class="tb"><span class="k">Title</span><span class="v">ak-feature #266</span></div>
+          <div class="tb"><span class="k">Sheet</span><span class="v">03 of 05</span></div>
+          <div class="tb"><span class="k">Scale</span><span class="v">1 : 1</span></div>
+
+          <div class="rr" id="rr">
+            <div class="rr-head">
+              <svg viewBox="0 0 18 16" aria-hidden="true"><path class="tri" d="M9 1.5 L16.5 14.5 H1.5 Z"/><text class="tri-n" x="9" y="13" text-anchor="middle">1</text></svg>
+              REVISION REQUEST
+              <span id="rr-status">NONE OPEN</span>
+            </div>
+            <div class="rr-body">
+              <div class="rr-from" id="rr-from">From <b>no node</b>. The drawing is being plotted.</div>
+              <div id="rr-q">No questions on this sheet yet.</div>
+              <form id="rr-form" autocomplete="off">
+                <label class="sr" for="answer">Your answer</label>
+                <input id="answer" name="answer" type="text" placeholder="Write your answer on the line" disabled>
+                <button id="send" type="submit" disabled>Send answer</button>
+              </form>
+              <div class="rr-foot" id="rr-foot">&nbsp;</div>
+            </div>
+          </div>
+
+          <div class="tb"><span class="k">Drawn</span><span class="v">agent</span></div>
+          <div class="tb"><span class="k">Checked</span><span class="v">you</span></div>
+          <div class="tb"><span class="k">Date</span><span class="v">2026-09-30</span></div>
+        </section>
+      </div>
+    </section>
+  </div>
+</div>
+<div class="caption">W3 BLUEPRINT</div>
+
+<script>
+(() => {
+  'use strict';
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const $ = (id) => document.getElementById(id);
+
+  function el(tag, attrs, parent, text) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function plot(tag, attrs, parent, delay, dur) {
+    const e = el(tag, Object.assign({ pathLength: 1 }, attrs), parent);
+    e.classList.add('plot');
+    e.style.setProperty('--delay', delay.toFixed(2) + 's');
+    e.style.setProperty('--dur', (dur || .5).toFixed(2) + 's');
+    return e;
+  }
+  function fade(e, delay) {
+    e.classList.add('fade');
+    e.style.setProperty('--delay', delay.toFixed(2) + 's');
+    return e;
+  }
+  function arrow(parent, x, y, deg, cls, delay) {
+    const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+    const p = (dx, dy) => (x + dx * c - dy * s).toFixed(1) + ',' + (y + dx * s + dy * c).toFixed(1);
+    const e = el('polygon', { points: [p(0, 0), p(-8, -3), p(-8, 3)].join(' '), class: cls }, parent);
+    if (delay != null) fade(e, delay);
+    return e;
+  }
+
+  /* ---------- sheet zone band ---------- */
+  (function zones() {
+    const z = $('zones');
+    const cols = 8, rows = 5, letters = 'ABCDE';
+    let html = '';
+    for (let i = 0; i < cols; i++) {
+      const l = ((i + .5) / cols * 100).toFixed(3) + '%';
+      html += `<span class="zt" style="left:${l}">${i + 1}</span><span class="zb" style="left:${l}">${i + 1}</span>`;
+      if (i > 0) {
+        const t = (i / cols * 100).toFixed(3) + '%';
+        html += `<i class="tkt" style="left:${t}"></i><i class="tkb" style="left:${t}"></i>`;
+      }
+    }
+    for (let j = 0; j < rows; j++) {
+      const tp = ((j + .5) / rows * 100).toFixed(3) + '%';
+      html += `<span class="zl" style="top:${tp}">${letters[j]}</span><span class="zr" style="top:${tp}">${letters[j]}</span>`;
+      if (j > 0) {
+        const t = (j / rows * 100).toFixed(3) + '%';
+        html += `<i class="tkl" style="top:${t}"></i><i class="tkr" style="top:${t}"></i>`;
+      }
+    }
+    z.innerHTML = html;
+  })();
+
+  /* ---------- the mark ---------- */
+  const MARK = ['..###..', '.##.##.', '##...##', '#######', '##...##', '##...##', '##...##'];
+  const C = 40, OX = 120, OY = 80;
+  const logo = $('logo-art');
+  let runnerRect, runnerHalo;
+
+  (function buildLogo() {
+    // construction lines
+    for (let i = 0; i <= 7; i++) {
+      plot('line', { x1: OX + i * C, y1: 26, x2: OX + i * C, y2: 424, class: 'cons' }, logo, .05 + i * .06, .8);
+      plot('line', { x1: 60, y1: OY + i * C, x2: 476, y2: OY + i * C, class: 'cons' }, logo, .1 + i * .06, .8);
+    }
+    // center line
+    fade(el('line', { x1: 260, y1: 18, x2: 260, y2: 438, class: 'cl' }, logo), .7);
+    fade(el('text', { x: 268, y: 448, class: 't-sub' }, logo, 'CL'), .8);
+    // datum
+    plot('circle', { cx: OX, cy: OY, r: 5, class: 'dim' }, logo, .75, .4);
+    fade(el('text', { x: OX - 10, y: OY - 10, 'text-anchor': 'end', class: 't-sub' }, logo, 'DATUM A'), .9);
+
+    // hatch fills first (they sit under strokes), then outlined cells
+    const cells = [];
+    MARK.forEach((row, r) => [...row].forEach((ch, c) => { if (ch === '#') cells.push([r, c]); }));
+    const fills = el('g', {}, logo);
+    cells.forEach(([r, c], k) => {
+      fade(el('rect', { x: OX + c * C + 2, y: OY + r * C + 2, width: C - 4, height: C - 4, fill: 'url(#hatch)' }, fills), 1.2 + k * .045);
+      plot('rect', { x: OX + c * C + 2, y: OY + r * C + 2, width: C - 4, height: C - 4, class: 'cell' }, logo, .85 + k * .045, .38);
+    });
+
+    // dimensions
+    const T0 = 2.15;
+    function dimH(x1, x2, y, label, fromY, t, labelY) {
+      plot('line', { x1: x1, y1: fromY, x2: x1, y2: y + (y < fromY ? -6 : 6), class: 'ext' }, logo, t, .3);
+      plot('line', { x1: x2, y1: fromY, x2: x2, y2: y + (y < fromY ? -6 : 6), class: 'ext' }, logo, t + .05, .3);
+      plot('line', { x1: x1, y1: y, x2: x2, y2: y, class: 'dim' }, logo, t + .2, .35);
+      arrow(logo, x1, y, 180, 'arrowhead', t + .45);
+      arrow(logo, x2, y, 0, 'arrowhead', t + .45);
+      if (label) fade(el('text', { x: (x1 + x2) / 2, y: labelY != null ? labelY : y - 6, 'text-anchor': 'middle', class: 't-dim' }, logo, label), t + .55);
+    }
+    function dimV(y1, y2, x, label, fromX, t, labelSide) {
+      plot('line', { x1: fromX, y1: y1, x2: x + (x < fromX ? -6 : 6), y2: y1, class: 'ext' }, logo, t, .3);
+      plot('line', { x1: fromX, y1: y2, x2: x + (x < fromX ? -6 : 6), y2: y2, class: 'ext' }, logo, t + .05, .3);
+      plot('line', { x1: x, y1: y1, x2: x, y2: y2, class: 'dim' }, logo, t + .2, .35);
+      arrow(logo, x, y1, -90, 'arrowhead', t + .45);
+      arrow(logo, x, y2, 90, 'arrowhead', t + .45);
+      const my = (y1 + y2) / 2;
+      if (labelSide === 'right') {
+        fade(el('text', { x: x + 8, y: my + 4, class: 't-dim' }, logo, label), t + .55);
+      } else {
+        fade(el('text', { x: x - 7, y: my, 'text-anchor': 'middle', transform: `rotate(-90 ${x - 7} ${my})`, class: 't-dim' }, logo, label), t + .55);
+      }
+    }
+    dimH(200, 240, 54, '8u', 78, T0);                      // one cell
+    dimV(OY, OY + 7 * C, 84, '56u', OX - 2, T0 + .15);      // overall height
+    dimH(OX, OX + 7 * C, 398, '56u', 362, T0 + .3, 392);    // overall width
+    dimV(200, 240, 436, '8u', 404, T0 + .45, 'right');      // crossbar row
+    dimH(200, 320, 256, '', 242, T0 + .6);                  // runner travel
+
+    // callouts
+    const T1 = 2.9;
+    // apex
+    plot('circle', { cx: 262, cy: 96, r: 2.6, class: 'leader', fill: '#9FE7FF' }, logo, T1, .2);
+    plot('path', { d: 'M262,96 L330,38 H372', class: 'leader' }, logo, T1 + .05, .4);
+    fade(el('text', { x: 376, y: 36, class: 't-call' }, logo, 'APEX'), T1 + .35);
+    fade(el('text', { x: 376, y: 50, class: 't-sub' }, logo, 'ROW 0'), T1 + .4);
+    // crossbar
+    plot('circle', { cx: 392, cy: 226, r: 2.6, class: 'leader', fill: '#9FE7FF' }, logo, T1 + .2, .2);
+    plot('path', { d: 'M392,226 L418,264 H508', class: 'leader' }, logo, T1 + .25, .4);
+    fade(el('text', { x: 422, y: 258, class: 't-call' }, logo, 'CROSSBAR'), T1 + .55);
+    fade(el('text', { x: 422, y: 279, class: 't-sub' }, logo, 'ROW 3, 56u'), T1 + .6);
+    // runner
+    fade(el('text', { x: 260, y: 284, 'text-anchor': 'middle', class: 't-call' }, logo, 'RUNNER'), T1 + .45);
+    fade(el('text', { x: 260, y: 300, 'text-anchor': 'middle', class: 't-sub' }, logo, 'TRAVEL 24u'), T1 + .5);
+
+    // the runner pixel sits on crossbar column 2 and translates in whole cells
+    const rx = OX + 2 * C + 2, ry = OY + 3 * C + 2;
+    runnerHalo = fade(el('rect', { x: rx - 5, y: ry - 5, width: C + 6, height: C + 6, class: 'runner-halo' }, logo), T1 + .6);
+    runnerRect = fade(el('rect', { x: rx, y: ry, width: C - 4, height: C - 4, class: 'runner', filter: 'url(#glow)' }, logo), T1 + .6);
+  })();
+
+  (function miniLogo() {
+    const s = $('tb-logo');
+    MARK.forEach((row, r) => [...row].forEach((ch, c) => {
+      if (ch === '#') el('rect', { x: c + .08, y: r + .08, width: .84, height: .84, fill: 'none', stroke: '#FFFFFF', 'stroke-width': .16 }, s);
+    }));
+    el('rect', { x: 3.08, y: 3.08, width: .84, height: .84, fill: '#9FE7FF' }, s);
+  })();
+
+  let runnerCol = 1; // offset in cells from column 2 (0..2)
+  function setRunner(col, mode) {
+    runnerCol = col;
+    const tx = `translateX(${col * C}px)`;
+    runnerRect.style.transform = tx;
+    runnerHalo.style.transform = tx;
+    runnerRect.classList.toggle('wait', mode === 'wait');
+    runnerHalo.classList.toggle('wait', mode === 'wait');
+    runnerRect.classList.toggle('done', mode === 'done');
+  }
+  setRunner(1, 'idle');
+
+  /* ---------- schematic ---------- */
+  const NODES = [
+    { id: 'setup',               kind: 'bash',    cx: 150, cy: 110, dur: '6.7s' },
+    { id: 'plan',                kind: 'prompt',  cx: 430, cy: 110, dur: '48.2s' },
+    { id: 'verify-and-fix-plan', kind: 'prompt',  cx: 710, cy: 110, dur: '1m 12s' },
+    { id: 'build-ralph-prd',     kind: 'prompt',  cx: 710, cy: 300, dur: '39.5s' },
+    { id: 'ralph-loop-run',      kind: 'loop',    cx: 430, cy: 300, dur: '4m 03s' },
+    { id: 'create-pull-request', kind: 'command', cx: 150, cy: 300, dur: '11.4s' },
+  ];
+  const WIRES = [
+    { d: 'M26,110 H65', end: [65, 110, 0] },
+    { d: 'M235,110 H345', end: [345, 110, 0], net: ['N1', 290, 101] },
+    { d: 'M515,110 H625', end: [625, 110, 0], net: ['N2', 570, 101] },
+    { d: 'M795,110 H836 V300 H795', end: [795, 300, 180], net: ['N3', 842, 209] },
+    { d: 'M625,300 H515', end: [515, 300, 180], net: ['N4', 570, 291] },
+    { d: 'M345,300 H235', end: [235, 300, 180], net: ['N5', 290, 291] },
+    { d: 'M58,300 H26', end: [26, 300, 180] },
+  ];
+  const FEEDBACK = 'M392,330 V362 H468 V330';
+
+  const wiresG = $('wires'), nodesG = $('nodes');
+  const wireEls = WIRES.map((w) => {
+    const p = el('path', { d: w.d, class: 'wire' }, wiresG);
+    const a = arrow(wiresG, w.end[0], w.end[1], w.end[2], 'ah');
+    if (w.net) el('text', { x: w.net[1], y: w.net[2], class: 'net', 'text-anchor': w.net[0] === 'N3' ? 'start' : 'middle' }, wiresG, w.net[0]);
+    return { p, a, len: p.getTotalLength() };
+  });
+  const fbPath = el('path', { d: FEEDBACK, class: 'wire' }, wiresG);
+  const fbArrow = arrow(wiresG, 468, 330, -90, 'ah');
+  const fbLen = fbPath.getTotalLength();
+  const iterText = el('text', { x: 430, y: 380, 'text-anchor': 'middle', class: 'iter' }, wiresG, 'FEEDBACK, ITER 0 OF 3');
+
+  // terminals
+  const termIn = el('circle', { cx: 20, cy: 110, r: 6, class: 'term' }, wiresG);
+  el('text', { x: 20, y: 92, 'text-anchor': 'middle', class: 'term-label' }, wiresG, 'IN');
+  const termOut = el('circle', { cx: 20, cy: 300, r: 6, class: 'term' }, wiresG);
+  el('text', { x: 20, y: 282, 'text-anchor': 'middle', class: 'term-label' }, wiresG, 'OUT');
+
+  // symbol key
+  (function legend() {
+    const g = $('legend');
+    el('rect', { x: 538, y: 358, width: 300, height: 52, class: 'legend-box' }, g);
+    el('text', { x: 548, y: 372, class: 'legend-title' }, g, 'SYMBOL KEY');
+    const items = [
+      ['BASH', (x, y) => {
+        el('rect', { x: x, y: y - 6, width: 20, height: 12, class: 'legend-sym' }, g);
+        for (let i = 0; i < 3; i++) {
+          el('line', { x1: x + 4 + i * 6, y1: y - 6, x2: x + 4 + i * 6, y2: y - 9, class: 'legend-sym' }, g);
+          el('line', { x1: x + 4 + i * 6, y1: y + 6, x2: x + 4 + i * 6, y2: y + 9, class: 'legend-sym' }, g);
+        }
+      }],
+      ['PROMPT', (x, y) => {
+        el('rect', { x: x, y: y - 7, width: 22, height: 14, rx: 7, class: 'legend-sym' }, g);
+        el('rect', { x: x + 2.5, y: y - 4.5, width: 17, height: 9, rx: 4.5, class: 'legend-sym', opacity: .6 }, g);
+      }],
+      ['LOOP', (x, y) => {
+        el('rect', { x: x, y: y - 7, width: 22, height: 12, rx: 6, class: 'legend-sym' }, g);
+        el('path', { d: `M${x + 5},${y + 5} V${y + 9} H${x + 17} V${y + 5}`, class: 'legend-sym' }, g);
+      }],
+      ['COMMAND', (x, y) => {
+        el('path', { d: `M${x},${y} L${x + 5},${y - 7} H${x + 22} V${y + 7} H${x + 5} Z`, class: 'legend-sym', 'stroke-width': 1.8 }, g);
+      }],
+    ];
+    let x = 548;
+    items.forEach(([label, draw]) => {
+      draw(x, 392);
+      el('text', { x: x + 28, y: 396, class: 'legend-label' }, g, label);
+      x += label.length * 7 + 44;
+    });
+  })();
+
+  // nodes
+  let clipN = 0;
+  function shapeFor(n, g) {
+    const { cx, cy } = n, w = 170, h = 60, x = cx - w / 2, y = cy - h / 2;
+    const defs = el('defs', {}, g);
+    const clip = el('clipPath', { id: 'nclip' + (++clipN) }, defs);
+    let d;
+    if (n.kind === 'bash') {
+      d = `M${x},${y} H${x + w} V${y + h} H${x} Z`;
+    } else if (n.kind === 'command') {
+      d = `M${x - 8},${cy} L${x + 14},${y} H${x + w} V${y + h} H${x + 14} Z`;
+    } else {
+      d = `M${x + 30},${y} H${x + w - 30} A30,30 0 0 1 ${x + w - 30},${y + h} H${x + 30} A30,30 0 0 1 ${x + 30},${y} Z`;
+    }
+    el('path', { d }, clip);
+    el('path', { d, class: n.kind === 'command' ? 'body cmd' : 'body' }, g);
+    if (n.kind === 'bash') {
+      for (let i = -2; i <= 2; i++) {
+        el('line', { x1: cx + i * 30, y1: y, x2: cx + i * 30, y2: y - 6, class: 'pin' }, g);
+        el('line', { x1: cx + i * 30, y1: y + h, x2: cx + i * 30, y2: y + h + 6, class: 'pin' }, g);
+      }
+    }
+    if (n.kind === 'prompt') {
+      const ix = x + 4, iy = y + 4, iw = w - 8, ih = h - 8;
+      el('path', { d: `M${ix + 26},${iy} H${ix + iw - 26} A26,26 0 0 1 ${ix + iw - 26},${iy + ih} H${ix + 26} A26,26 0 0 1 ${ix + 26},${iy} Z`, class: 'inner' }, g);
+    }
+    if (n.kind === 'loop') {
+      // circular return glyph
+      el('path', { d: `M${cx + 66},${cy + 10} a7,7 0 1 1 -3,-9`, class: 'glyph' }, g);
+      el('path', { d: `M${cx + 60},${cy - 3} l3.5,4 l4,-3.5`, class: 'glyph' }, g);
+    }
+    // scanning plotter head, clipped to the body
+    const sg = el('g', { 'clip-path': `url(#nclip${clipN})` }, g);
+    el('rect', { x: x - 40, y: y - 4, width: 40, height: h + 8, fill: 'url(#scanGrad)', class: 'scan' }, sg);
+  }
+  const nodeEls = NODES.map((n) => {
+    const g = el('g', { class: 'node', 'data-kind': n.kind }, nodesG);
+    shapeFor(n, g);
+    const left = n.cx - 70 + (n.kind === 'command' ? 4 : 0);
+    el('text', { x: left, y: n.cy - 8, class: 'kind' }, g, n.kind.toUpperCase());
+    const status = el('text', { x: n.cx + (n.kind === 'loop' ? 54 : 72), y: n.cy - 8, 'text-anchor': 'end', class: 'status' }, g, 'PENDING');
+    el('text', { x: left, y: n.cy + 14, class: 'name' }, g, n.id);
+    return { g, status, n };
+  });
+
+  // revision cloud around plan
+  const revG = $('revision');
+  function cloudPath(x0, y0, x1, y1, step) {
+    const pts = [];
+    const edge = (ax, ay, bx, by) => {
+      const n = Math.max(2, Math.round(Math.hypot(bx - ax, by - ay) / step));
+      for (let i = 1; i <= n; i++) pts.push([ax + (bx - ax) * i / n, ay + (by - ay) * i / n]);
+    };
+    edge(x0, y0, x1, y0); edge(x1, y0, x1, y1); edge(x1, y1, x0, y1); edge(x0, y1, x0, y0);
+    const r = (step * .62).toFixed(1);
+    return `M${x0},${y0}` + pts.map(([x, y]) => ` A${r},${r} 0 0 1 ${x.toFixed(1)},${y.toFixed(1)}`).join('');
+  }
+  const cloud = el('path', { id: 'cloud', d: cloudPath(330, 66, 530, 154, 17), pathLength: 1, filter: 'url(#pencil)' }, revG);
+  const revMark = el('g', { id: 'rev-mark' }, revG);
+  el('path', { d: 'M322,50 L334,70 H310 Z', class: 'rev-tri' }, revMark);
+  el('text', { x: 322, y: 67, 'text-anchor': 'middle', class: 'rev-num' }, revMark, '1');
+  const annot = el('g', { id: 'annot' }, revG);
+  el('text', { x: 556, y: 30, class: 'annot-text', transform: 'rotate(-3 556 30)' }, annot, 'waiting on you!');
+  el('text', { x: 556, y: 52, class: 'annot-text', transform: 'rotate(-3 556 52)' }, annot, 'answer Rev 1 in the title block');
+  el('path', { d: 'M550,36 C536,40 530,50 530,62', class: 'annot-arrow', filter: 'url(#pencil)' }, annot);
+  el('path', { d: 'M524,55 L530,63 L536,56', class: 'annot-arrow' }, annot);
+
+  const stamp = $('stamp');
+  const comet = $('comet');
+  const head = $('head');
+
+  /* ---------- notes ---------- */
+  const notesEl = $('notes');
+  function note(html, cls) {
+    const li = document.createElement('li');
+    if (cls) li.className = cls;
+    const span = document.createElement('span');
+    span.innerHTML = html;
+    li.appendChild(span);
+    notesEl.appendChild(li);
+    notesEl.scrollTop = notesEl.scrollHeight;
+    return span;
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  /* ---------- title block / revision request ---------- */
+  const rr = $('rr'), rrStatus = $('rr-status'), rrFrom = $('rr-from'), rrQ = $('rr-q'), rrFoot = $('rr-foot');
+  const answer = $('answer'), send = $('send'), form = $('rr-form');
+  const QUESTION = 'Should the plan include a data migration?';
+  const AUTO_ANSWER = 'Yes, include a reversible migration.';
+
+  function rrIdle() {
+    rr.classList.remove('open', 'resolved');
+    rrStatus.textContent = 'NONE OPEN';
+    rrFrom.innerHTML = 'From <b>no node</b>. The drawing is being plotted.';
+    rrQ.textContent = 'No questions on this sheet yet.';
+    answer.value = '';
+    answer.disabled = true;
+    send.disabled = true;
+    rrFoot.innerHTML = '&nbsp;';
+  }
+  function rrOpen() {
+    rr.classList.add('open');
+    rrStatus.textContent = 'OPEN';
+    rrFrom.innerHTML = 'From <b>plan</b>, prompt node, asked by the agent';
+    rrQ.textContent = QUESTION;
+    answer.disabled = false;
+    send.disabled = false;
+  }
+  function rrResolved(text) {
+    rr.classList.remove('open');
+    rr.classList.add('resolved');
+    rrStatus.textContent = 'RESOLVED';
+    rrQ.textContent = QUESTION;
+    answer.disabled = true;
+    send.disabled = true;
+    rrFoot.textContent = 'Answer recorded: ' + text;
+  }
+
+  /* ---------- run state ---------- */
+  const stateEl = $('state'), progEl = $('prog');
+  function setState(label, cls) {
+    stateEl.textContent = label;
+    stateEl.className = cls || '';
+  }
+  function setNode(i, st, statusText) {
+    const ne = nodeEls[i];
+    ne.g.classList.remove('running', 'done', 'waiting');
+    if (st !== 'pending') ne.g.classList.add(st);
+    ne.status.textContent = statusText || st.toUpperCase();
+  }
+  function setWire(i, st) {
+    const w = wireEls[i];
+    w.p.classList.remove('live', 'done');
+    w.a.classList.remove('live', 'done');
+    if (st !== 'pending') { w.p.classList.add(st); w.a.classList.add(st); }
+  }
+  function nodeDone(i) {
+    setNode(i, 'done', 'DONE ' + NODES[i].dur + '*');
+    setWire(i, 'done');
+  }
+  function nodeRun(i) {
+    setNode(i, 'running', 'RUNNING');
+    setWire(i, 'live');
+    progEl.textContent = (i + 1) + ' / 6';
+  }
+
+  const MSG = 'Reading issue #266 and the repo layout. Two options for the data model, I need one decision from you.';
+  const TYPE_MS = 26;
+  let typedSpan = null, toolShown = false, loopNote = null, answered = null;
+  let activeWire = null; // { path, len } that carries the pulse
+  let holdPoint = null;
+
+  const PHASES = {
+    boot:     { dur: .6 },
+    setup:    { dur: 1.5 },
+    plan:     { dur: 3.6 },
+    wait:     { dur: 3.8 },
+    planDone: { dur: .6 },
+    verify:   { dur: 1.2 },
+    build:    { dur: 1.2 },
+    loop:     { dur: 2.4 },
+    pr:       { dur: 1.2 },
+    complete: { dur: 1.6 },
+  };
+  const ORDER = ['boot', 'setup', 'plan', 'wait', 'planDone', 'verify', 'build', 'loop', 'pr', 'complete'];
+  let phase = null, pt = 0;
+
+  function useWire(i) { activeWire = { path: wireEls[i].p, len: wireEls[i].len }; holdPoint = null; }
+
+  const enter = {
+    boot() {
+      NODES.forEach((_, i) => setNode(i, 'pending', 'PENDING'));
+      wireEls.forEach((_, i) => setWire(i, 'pending'));
+      fbPath.classList.remove('live', 'done'); fbArrow.classList.remove('live', 'done');
+      termIn.classList.remove('done'); termOut.classList.remove('done');
+      iterText.textContent = 'FEEDBACK, ITER 0 OF 3'; iterText.classList.remove('on');
+      cloud.classList.remove('show', 'resolved');
+      revMark.classList.remove('show'); annot.classList.remove('show', 'resolved');
+      stamp.classList.remove('show');
+      notesEl.innerHTML = '';
+      typedSpan = null; toolShown = false; loopNote = null; answered = null;
+      activeWire = null; holdPoint = null;
+      rrIdle();
+      setState('READY', '');
+      progEl.textContent = '0 / 6';
+      setRunner(1, 'idle');
+    },
+    setup() {
+      termIn.classList.add('done');
+      nodeRun(0); useWire(0);
+      setState('RUNNING', 'running');
+      note('Run started from sheet 03 for <span class="path">kevinle128/Archon issue #266</span>.');
+    },
+    plan() {
+      nodeDone(0);
+      nodeRun(1); useWire(1);
+      note('setup (bash) exited 0 in 6.7s*.');
+      typedSpan = note('<b>plan:</b> <span class="typed"></span><span class="caret"></span>', 'agent');
+    },
+    wait() {
+      finishTyping();
+      setNode(1, 'waiting', 'WAITING');
+      setWire(1, 'live');
+      activeWire = null;
+      holdPoint = [345, 110];
+      cloud.classList.add('show');
+      revMark.classList.add('show'); annot.classList.add('show');
+      setState('WAITING ON YOU', 'waiting');
+      note('Rev 1 opened by plan: ' + QUESTION, 'rev');
+      rrOpen();
+    },
+    planDone() {
+      setNode(1, 'running', 'RUNNING');
+      useWire(1);
+      setState('RUNNING', 'running');
+      cloud.classList.add('resolved');
+      annot.classList.add('resolved');
+    },
+    verify() {
+      nodeDone(1);
+      nodeRun(2); useWire(2);
+      note('plan: plan.md written with your answer applied.');
+    },
+    build() {
+      nodeDone(2);
+      nodeRun(3); useWire(3);
+      note('verify-and-fix-plan: plan checked, 2 fixes applied.');
+    },
+    loop() {
+      nodeDone(3);
+      nodeRun(4); useWire(4);
+      fbPath.classList.add('live'); fbArrow.classList.add('live');
+      iterText.classList.add('on');
+      note('build-ralph-prd: PRD ready for the loop.');
+      loopNote = note('ralph-loop-run: iteration 1 of 3 running.');
+    },
+    pr() {
+      nodeDone(4);
+      fbPath.classList.remove('live'); fbArrow.classList.remove('live');
+      fbPath.classList.add('done'); fbArrow.classList.add('done');
+      iterText.textContent = 'FEEDBACK, ITER 3 OF 3'; iterText.classList.remove('on');
+      if (loopNote) loopNote.textContent = 'ralph-loop-run: 3 of 3 iterations complete.';
+      nodeRun(5); useWire(5);
+    },
+    complete() {
+      nodeDone(5);
+      setWire(6, 'done');
+      termOut.classList.add('done');
+      activeWire = null; holdPoint = null;
+      stamp.classList.add('show');
+      setState('COMPLETE', 'complete');
+      progEl.textContent = '6 / 6';
+      note('create-pull-request: pull request opened for review.');
+      setRunner(1, 'done');
+    },
+  };
+
+  function finishTyping() {
+    if (!typedSpan) return;
+    typedSpan.querySelector('.typed').textContent = MSG;
+    const c = typedSpan.querySelector('.caret');
+    if (c) c.remove();
+    if (!toolShown) showTool();
+  }
+  function showTool() {
+    toolShown = true;
+    note('<span class="tool">TOOL</span>Read <span class="path">packages/web/src/App.tsx</span>');
+  }
+
+  function go(name) {
+    phase = name; pt = 0;
+    enter[name]();
+  }
+  function next() {
+    const i = ORDER.indexOf(phase);
+    go(i === ORDER.length - 1 ? 'boot' : ORDER[i + 1]);
+  }
+
+  function submitAnswer(text) {
+    if (phase !== 'wait') return;
+    const t = (text || '').trim() || AUTO_ANSWER;
+    answered = t;
+    note('<b>Answer, you:</b> ' + escapeHtml(t), 'ans');
+    rrResolved(t);
+    holdPoint = null;
+    go('planDone');
+  }
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitAnswer(answer.value);
+  });
+
+  /* ---------- tabs ---------- */
+  document.querySelectorAll('.tab').forEach((t) => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach((o) => o.removeAttribute('aria-current'));
+      t.setAttribute('aria-current', 'page');
+    });
+  });
+
+  /* ---------- pulse drawing ---------- */
+  const SEG = 34;
+  function drawPulse(path, len, u) {
+    const at = u * len;
+    comet.setAttribute('d', path.getAttribute('d'));
+    comet.setAttribute('stroke-dasharray', SEG + ' ' + (len + SEG));
+    comet.setAttribute('stroke-dashoffset', (SEG - at).toFixed(2));
+    comet.setAttribute('opacity', '1');
+    const p = path.getPointAtLength(at);
+    head.setAttribute('transform', `translate(${p.x.toFixed(1)},${p.y.toFixed(1)})`);
+    head.setAttribute('opacity', '1');
+  }
+  function drawHead(x, y, hold) {
+    comet.setAttribute('opacity', '0');
+    head.setAttribute('transform', `translate(${x},${y})`);
+    head.setAttribute('opacity', '1');
+    head.classList.toggle('hold', !!hold);
+  }
+  function hidePulse() {
+    comet.setAttribute('opacity', '0');
+    head.setAttribute('opacity', '0');
+    head.classList.remove('hold');
+  }
+
+  /* ---------- the single animation loop ---------- */
+  const START_DELAY = reduced ? 0 : 1.9;
+  let started = false, since = 0, last = 0, runnerClock = 0, runnerDir = 1;
+
+  function frame(ts) {
+    requestAnimationFrame(frame);
+    if (document.hidden) { last = 0; return; }
+    const dt = last ? Math.min((ts - last) / 1000, .05) : 0;
+    last = ts;
+
+    if (!started) {
+      since += dt;
+      if (since >= START_DELAY) { started = true; go('boot'); }
+      return;
+    }
+
+    pt += dt;
+    const P = PHASES[phase];
+
+    // phase specific continuous work
+    if (phase === 'plan' && typedSpan) {
+      const n = reduced ? MSG.length : Math.min(MSG.length, Math.floor(pt * 1000 / TYPE_MS));
+      const tEl = typedSpan.querySelector('.typed');
+      if (tEl.textContent.length !== n) tEl.textContent = MSG.slice(0, n);
+      if (n >= MSG.length) {
+        const c = typedSpan.querySelector('.caret');
+        if (c) c.remove();
+        if (!toolShown && pt >= MSG.length * TYPE_MS / 1000 + .25) showTool();
+      }
+      notesEl.scrollTop = notesEl.scrollHeight;
+    }
+    if (phase === 'wait') {
+      if (document.activeElement === answer && answer.value.trim()) {
+        pt = Math.min(pt, P.dur - 1);
+        rrFoot.textContent = 'Countdown held while you write.';
+      } else {
+        const left = Math.max(0, Math.ceil(P.dur - pt));
+        rrFoot.textContent = 'No answer? The agent assumes the default in ' + left + 's.';
+      }
+    }
+    if (phase === 'loop') {
+      const it = Math.min(3, Math.floor(pt / .8) + 1);
+      const txt = 'FEEDBACK, ITER ' + it + ' OF 3';
+      if (iterText.textContent !== txt) {
+        iterText.textContent = txt;
+        if (loopNote) loopNote.textContent = 'ralph-loop-run: iteration ' + it + ' of 3 running.';
+      }
+    }
+
+    // pulse
+    if (phase === 'loop') {
+      if (reduced) drawHead(468, 330, false);
+      else drawPulse(fbPath, fbLen, (pt % .8) / .8);
+    } else if (activeWire) {
+      if (reduced) {
+        const p = activeWire.path.getPointAtLength(activeWire.len);
+        drawHead(p.x.toFixed(1), p.y.toFixed(1), false);
+      } else {
+        drawPulse(activeWire.path, activeWire.len, Math.min(1, (pt % .95) / .8));
+      }
+      head.classList.remove('hold');
+    } else if (holdPoint) {
+      drawHead(holdPoint[0], holdPoint[1], true);
+    } else {
+      hidePulse();
+    }
+
+    // runner pixel: walks while agents work, holds for a human, rests when done
+    const working = ['setup', 'plan', 'planDone', 'verify', 'build', 'loop', 'pr'].includes(phase);
+    if (phase === 'wait') {
+      if (runnerCol !== 2 || !runnerRect.classList.contains('wait')) setRunner(2, 'wait');
+    } else if (working) {
+      if (runnerRect.classList.contains('wait') || runnerRect.classList.contains('done')) setRunner(runnerCol, 'run');
+      if (!reduced) {
+        runnerClock += dt;
+        if (runnerClock >= .42) {
+          runnerClock = 0;
+          let c = runnerCol + runnerDir;
+          if (c > 2 || c < 0) { runnerDir = -runnerDir; c = runnerCol + runnerDir; }
+          setRunner(c, 'run');
+        }
+      }
+    }
+
+    if (P.dur && pt >= P.dur) {
+      if (phase === 'wait') submitAnswer('');
+      else next();
+    }
+  }
+  document.addEventListener('visibilitychange', () => { last = 0; });
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

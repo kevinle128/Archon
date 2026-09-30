@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archon Pixel: showroom 8 style</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Onest:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0A0A0C; color: #F2F2F5; font: 14px/1.4 "Onest", system-ui, sans-serif; overflow: hidden; }
+
+  /* ---------- Stage: one live style page at a time ---------- */
+  .stage { position: fixed; inset: 0; }
+  .stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; visibility: hidden; background: #0A0A0C; }
+  .stage iframe.on { visibility: visible; }
+  canvas.dissolve { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+
+  /* ---------- HUD ---------- */
+  .hud { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 30;
+         display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px;
+         background: rgba(12, 12, 15, 0.86); border: 1px solid rgba(255,255,255,0.14); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+         transition: opacity .25s, transform .25s; }
+  .hud.hidden { opacity: 0; transform: translate(-50%, 16px); pointer-events: none; }
+  .hud button { font: 600 13px "Onest", sans-serif; color: #F2F2F5; background: transparent; border: 0; border-radius: 999px; padding: 9px 14px; cursor: pointer; white-space: nowrap; }
+  .hud button:hover { background: rgba(255,255,255,0.10); }
+  .hud button:active { transform: scale(0.96); }
+  .hud button.lock { background: #F2F2F5; color: #0A0A0C; }
+  .hud .now { display: flex; align-items: center; gap: 10px; padding: 0 10px; min-width: 230px; }
+  .hud .now b { font: 700 13px "Silkscreen", monospace; letter-spacing: 0.04em; }
+  .hud .now span { color: #A9A9B8; font-size: 12px; }
+  .hud .dots { display: flex; gap: 4px; padding: 0 6px; }
+  .hud .dots i { width: 8px; height: 8px; background: rgba(255,255,255,0.25); cursor: pointer; }
+  .hud .dots i.on { background: #F2F2F5; }
+  .keys { position: fixed; right: 16px; top: 14px; z-index: 30; font: 500 12px "Onest", sans-serif; color: #D8D8E0; background: rgba(12,12,15,0.7);
+          padding: 6px 10px; border-radius: 6px; transition: opacity .25s; }
+  .keys.hidden { opacity: 0; }
+
+  /* ---------- Overview: all eight live, scaled ---------- */
+  .overview { position: fixed; inset: 0; z-index: 25; background: #0A0A0C; padding: 28px 28px 96px; overflow: auto; display: none; }
+  .overview.open { display: block; }
+  .overview h1 { font: 700 22px "Onest", sans-serif; margin: 0 0 18px; letter-spacing: -0.01em; }
+  .ov-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  @media (max-width: 1100px) { .ov-grid { grid-template-columns: repeat(2, 1fr); } }
+  .ov { cursor: pointer; display: grid; gap: 8px; }
+  .ov .frame { position: relative; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 10px; border: 1px solid #26262E; background: #111; }
+  .ov .frame iframe { position: absolute; left: 0; top: 0; width: 1440px; height: 900px; border: 0; transform-origin: 0 0; pointer-events: none; }
+  .ov:hover .frame { border-color: #F2F2F5; }
+  .ov .cap { display: flex; justify-content: space-between; font-size: 13px; }
+  .ov .cap b { font: 700 12px "Silkscreen", monospace; }
+  .ov .cap span { color: #A9A9B8; }
+
+  .toast { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); z-index: 40; background: #F2F2F5; color: #0A0A0C; font-weight: 600;
+           padding: 12px 18px; border-radius: 999px; max-width: calc(100vw - 32px); }
+  .missing { position: absolute; inset: 0; display: grid; place-items: center; color: #A9A9B8; font: 400 14px "Silkscreen", monospace; }
+  @media (prefers-reduced-motion: reduce) { .hud, .keys { transition: none; } }
+</style>
+</head>
+<body>
+<div class="stage" id="stage"></div>
+<canvas class="dissolve" id="fx"></canvas>
+
+<div class="keys" id="keys">← → hoặc 1-8 để đổi style · G tổng quan · H ẩn thanh điều khiển</div>
+
+<div class="hud" id="hud" role="toolbar" aria-label="Điều khiển showroom">
+  <button type="button" id="prev" aria-label="Style trước">←</button>
+  <div class="now"><b id="nowName"></b><span id="nowIdx"></span></div>
+  <div class="dots" id="dots"></div>
+  <button type="button" id="next" aria-label="Style sau">→</button>
+  <button type="button" id="ovBtn">Tổng quan</button>
+  <button type="button" class="lock" id="lockBtn">Chốt style này</button>
+</div>
+
+<div class="overview" id="overview" aria-hidden="true">
+  <h1>8 style, cùng lúc</h1>
+  <div class="ov-grid" id="ovGrid"></div>
+</div>
+
+<script>
+/* Each style is its own page; `key` is the colour the pixel dissolve uses when entering that style. */
+const STYLES = [
+  { id: 'W1', name: 'Holo Chrome', vi: 'Chrome ánh kim Y2K', file: 'w1-holo-chrome.html', key: '#B8F3FF' },
+  { id: 'W2', name: 'Pixel Genesis', vi: 'Thế giới pixel sống', file: 'w2-pixel-genesis.html', key: '#FF5B1F' },
+  { id: 'W3', name: 'Blueprint', vi: 'Bản vẽ kỹ thuật', file: 'w3-blueprint.html', key: '#0B3D91' },
+  { id: 'W4', name: 'Quest Mode', vi: 'Game nhập vai', file: 'w4-quest-mode.html', key: '#F2C14E' },
+  { id: 'W5', name: 'Aurora Glass', vi: 'Kính mờ trên cực quang', file: 'w5-aurora-glass.html', key: '#1BB8A6' },
+  { id: 'W6', name: 'Iso Build', vi: 'Thành phố khối isometric', file: 'w6-iso-build.html', key: '#2F5BEA' },
+  { id: 'W7', name: 'Bauhaus Kinetic', vi: 'Poster Bauhaus chuyển động', file: 'w7-bauhaus-kinetic.html', key: '#D7261E' },
+  { id: 'W8', name: 'Zine Collage', vi: 'Tạp chí cắt dán', file: 'w8-zine-collage.html', key: '#FF3D9A' },
+];
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $ = (id) => document.getElementById(id);
+const frames = [];
+let cur = -1, busy = false;
+
+/* Frames are created lazily: the current style plus its neighbours, so eight animated pages never run at once. */
+function frameFor(i) {
+  if (frames[i]) return frames[i];
+  const f = document.createElement('iframe');
+  f.title = STYLES[i].id + ' ' + STYLES[i].name;
+  f.src = STYLES[i].file;
+  f.addEventListener('load', () => bindKeys(f));
+  $('stage').appendChild(f);
+  frames[i] = f;
+  return f;
+}
+function unloadFar(i) {
+  frames.forEach((f, j) => { if (!f) return; const d = Math.min(Math.abs(j - i), STYLES.length - Math.abs(j - i)); if (d > 1) { f.remove(); frames[j] = null; } });
+}
+/* Keyboard keeps working after the viewer clicks into a style (same-origin when served over http). */
+function bindKeys(f) { try { f.contentWindow.addEventListener('keydown', onKey); } catch (e) { /* file:// is cross-origin; HUD buttons still work. */ } }
+
+function show(i) {
+  i = (i + STYLES.length) % STYLES.length;
+  if (i === cur || busy) return;
+  const incoming = frameFor(i);
+  frameFor((i + 1) % STYLES.length); frameFor((i - 1 + STYLES.length) % STYLES.length);
+  const swap = () => {
+    frames.forEach(f => f && f.classList.remove('on'));
+    incoming.classList.add('on');
+    cur = i; renderHud(); unloadFar(i);
+    history.replaceState(null, '', '#' + STYLES[i].id);
+  };
+  if (cur === -1 || reduce) { swap(); return; }
+  dissolve(STYLES[i].key, swap);
+}
+
+/* Pixel dissolve: square cells cover the screen in random order, the page swaps, then cells clear in random order. */
+function dissolve(color, mid) {
+  // requestAnimationFrame does not run in a hidden tab, so swap at once instead of stalling the showroom.
+  if (document.hidden) { mid(); return; }
+  busy = true;
+  let swapped = false;
+  const once = () => { if (!swapped) { swapped = true; mid(); } };
+  // Safety net: if frames stop mid-transition, finish the swap and release the lock.
+  const guard = setTimeout(() => { once(); $('fx').getContext('2d').clearRect(0, 0, innerWidth, innerHeight); busy = false; }, 1500);
+  const c = $('fx'), ctx = c.getContext('2d'), dpr = Math.min(devicePixelRatio || 1, 2);
+  const W = innerWidth, H = innerHeight; c.width = W * dpr; c.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const size = Math.max(28, Math.round(Math.min(W, H) / 18));
+  const cols = Math.ceil(W / size), rows = Math.ceil(H / size), n = cols * rows;
+  const order = Array.from({ length: n }, (_, k) => k).sort(() => Math.random() - 0.5);
+  const T = 340; let t0 = null, phase = 0;
+  function frame(ts) {
+    if (t0 === null) t0 = ts;
+    const p = Math.min(1, (ts - t0) / T), upto = Math.floor(p * n);
+    ctx.clearRect(0, 0, W, H); ctx.fillStyle = color;
+    for (let k = 0; k < n; k++) {
+      const filled = phase === 0 ? k < upto : k >= upto;
+      if (!filled) continue;
+      const idx = order[k]; ctx.fillRect((idx % cols) * size, Math.floor(idx / cols) * size, size + 0.5, size + 0.5);
+    }
+    if (p < 1) return requestAnimationFrame(frame);
+    if (phase === 0) { phase = 1; t0 = null; once(); return requestAnimationFrame(frame); }
+    ctx.clearRect(0, 0, W, H); busy = false; clearTimeout(guard);
+  }
+  requestAnimationFrame(frame);
+}
+
+function renderHud() {
+  const s = STYLES[cur];
+  $('nowName').textContent = s.id + ' ' + s.name;
+  $('nowIdx').textContent = s.vi;
+  $('dots').innerHTML = STYLES.map((x, j) => `<i class="${j === cur ? 'on' : ''}" title="${x.id} ${x.name}" data-i="${j}"></i>`).join('');
+}
+
+function toggleOverview(open) {
+  const ov = $('overview'); open = open ?? !ov.classList.contains('open');
+  ov.classList.toggle('open', open); ov.setAttribute('aria-hidden', String(!open));
+  if (!open) { $('ovGrid').innerHTML = ''; return; }
+  $('ovGrid').innerHTML = STYLES.map((s, j) => `
+    <div class="ov" data-i="${j}" role="button" tabindex="0">
+      <div class="frame"><iframe src="${s.file}" title="${s.id} ${s.name}" loading="lazy" tabindex="-1"></iframe></div>
+      <div class="cap"><b>${s.id} ${s.name}</b><span>${s.vi}</span></div>
+    </div>`).join('');
+  fitOverview();
+}
+function fitOverview() { document.querySelectorAll('.ov .frame').forEach(fr => { fr.querySelector('iframe').style.transform = `scale(${fr.clientWidth / 1440})`; }); }
+
+function lock() {
+  const s = STYLES[cur];
+  let t = document.querySelector('.toast');
+  if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+  t.textContent = `Chốt: L4 Pixel + ${s.id} ${s.name}. Gửi dòng này cho Claude.`;
+}
+
+function onKey(e) {
+  if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+  if (e.key === 'ArrowRight') show(cur + 1);
+  else if (e.key === 'ArrowLeft') show(cur - 1);
+  else if (/^[1-8]$/.test(e.key)) { toggleOverview(false); show(Number(e.key) - 1); }
+  else if (e.key === 'g' || e.key === 'G') toggleOverview();
+  else if (e.key === 'h' || e.key === 'H') { $('hud').classList.toggle('hidden'); $('keys').classList.toggle('hidden'); }
+  else if (e.key === 'Escape') toggleOverview(false);
+}
+addEventListener('keydown', onKey);
+addEventListener('resize', () => { if ($('overview').classList.contains('open')) fitOverview(); });
+$('prev').onclick = () => show(cur - 1);
+$('next').onclick = () => show(cur + 1);
+$('ovBtn').onclick = () => toggleOverview();
+$('lockBtn').onclick = lock;
+$('dots').addEventListener('click', (e) => { const d = e.target.closest('[data-i]'); if (d) show(Number(d.dataset.i)); });
+$('ovGrid').addEventListener('click', (e) => { const d = e.target.closest('[data-i]'); if (d) { toggleOverview(false); show(Number(d.dataset.i)); } });
+$('ovGrid').addEventListener('keydown', (e) => { const d = e.target.closest('[data-i]'); if (d && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleOverview(false); show(Number(d.dataset.i)); } });
+
+const start = STYLES.findIndex(s => '#' + s.id === location.hash);
+show(start >= 0 ? start : 0);
+</script>
+</body>
+</html>
