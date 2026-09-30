@@ -1,0 +1,44 @@
+{
+  "post": 6,
+  "res": { "success": true, "message": "Abandoned workflow: vq14-loop-steer" },
+  "survC": [
+    [
+      -602,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [114, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue|"],
+    [127, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "survCFailedAt": 114,
+  "survCRunning": [],
+  "survL": [
+    [
+      -602,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [144, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue|"],
+    [150, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "survLFailedAt": 144,
+  "survLRunning": [],
+  "freshC": [
+    [
+      -602,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [359, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "freshCFailedAt": 359,
+  "freshCRunning": [],
+  "freshL": [
+    [
+      -602,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [24, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue|"],
+    [32, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "freshLFailedAt": 24,
+  "freshLRunning": [],
+  "status": "cancelled"
+}
