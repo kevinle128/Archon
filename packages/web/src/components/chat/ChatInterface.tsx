@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
-import { Header } from '@/components/layout/Header';
+import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { MessageInput, type MessageInputHandle } from './MessageInput';
 import { LockIndicator } from './LockIndicator';
@@ -743,17 +743,19 @@ export function ChatInterface({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-      <Header
+      <ChatHeader
         title={isNewChat ? 'New Chat' : headerTitle}
-        subtitle={headerSubtitle}
+        path={headerSubtitle}
         projectName={currentCodebase?.name ?? contextCodebase?.name}
+        provider={currentConv?.ai_assistant_type}
+        platform={currentConv?.platform_type}
         connected={isNewChat ? undefined : connected}
         isDocker={isDocker}
         isWsl={isWsl}
         wslDistro={wslDistro}
       />
       {(conversationsError || codebasesError) && (
-        <div className="flex gap-2 px-4 py-1">
+        <div className="flex gap-2 px-8 py-1">
           {conversationsError && (
             <span className="text-xs text-error">Failed to load conversations</span>
           )}
@@ -765,6 +767,7 @@ export function ChatInterface({
         isStreaming={isStreaming}
         isNewChat={isNewChat}
         projectName={currentCodebase?.name ?? contextCodebase?.name}
+        assistantLabel={currentConv?.ai_assistant_type}
         onQuickAction={(action): void => {
           if (action === 'focus') {
             inputRef.current?.focus();
@@ -777,6 +780,7 @@ export function ChatInterface({
       <MessageInput
         ref={inputRef}
         onSend={handleSend}
+        projectName={currentCodebase?.name ?? contextCodebase?.name}
         disabled={
           sending ||
           locked ||
