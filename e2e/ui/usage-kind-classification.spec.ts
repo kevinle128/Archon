@@ -25,11 +25,15 @@ test('[P1] advisor and subagent usage are classified and filterable by kind', as
 
   // Filter to advisor: only the advisor row's cost remains; the primary is gone.
   await setKindFilter(page, 'Advisor');
-  await expect(page.getByText('$0.05').first()).toBeVisible({ timeout: T.medium });
-  await expect(page.getByText('$0.10', { exact: true })).toHaveCount(0);
+  await expect(page.locator('#set-usage').getByText('$0.05').first()).toBeVisible({
+    timeout: T.medium,
+  });
+  await expect(page.locator('#set-usage').getByText('$0.10', { exact: true })).toHaveCount(0);
 
   // Filter to subagent: only the subagent row's cost remains.
   await setKindFilter(page, 'Subagent');
-  await expect(page.getByText('$0.07').first()).toBeVisible({ timeout: T.medium });
-  await expect(page.getByText('$0.05', { exact: true })).toHaveCount(0);
+  await expect(page.locator('#set-usage').getByText('$0.07').first()).toBeVisible({
+    timeout: T.medium,
+  });
+  await expect(page.locator('#set-usage').getByText('$0.05', { exact: true })).toHaveCount(0);
 });

@@ -312,7 +312,7 @@ test('[P1] [V:transcript-display.graph] Legacy runtime graph drops the minimap; 
   await waitForRoom(page, TRANSCRIPT_PLAIN_NODE);
 
   // The Legacy builder canvas keeps its minimap — only the runtime graph lost it.
-  await page.goto('/legacy/workflows/builder?edit=e2e-transcript-display');
+  await page.goto('/workflows/builder?edit=e2e-transcript-display');
   await expect(page.locator('.react-flow')).toBeVisible({ timeout: T.medium });
   await expect(page.locator('.react-flow__minimap')).toBeVisible({ timeout: T.medium });
   await expect(page.locator('.react-flow__controls')).toBeVisible();

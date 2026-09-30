@@ -14,7 +14,7 @@ import { T } from '../lib/playwright/timeouts';
  * end-to-end proof.
  *
  * Same real stack as the cost specs: executor -> usage recorder -> ledger ->
- * run-detail API -> the console UI. The only faked thing is the AI provider
+ * run-detail API -> the web UI. The only faked thing is the AI provider
  * (the env-gated `e2e-fake` provider), which emits exactly the usage below.
  */
 

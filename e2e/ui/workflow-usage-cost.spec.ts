@@ -21,7 +21,7 @@ import { T } from '../lib/playwright/timeouts';
 const E1_REPORTS_COST =
   '<<E2E_USAGE>>[{"provider":"anthropic","model":"claude-sonnet-4","modelSource":"reported","inputTokens":1000,"outputTokens":500,"costUsd":0.42}]<</E2E_USAGE>>';
 
-test('[P0] a workflow run records its reported AI cost and the cost console shows it', async ({
+test('[P0] a workflow run records its reported AI cost and the usage and cost section shows it', async ({
   page,
   archon,
 }) => {
@@ -31,8 +31,10 @@ test('[P0] a workflow run records its reported AI cost and the cost console show
   // Assert: the cost console, scoped to this run, surfaces the recorded cost.
   await openCostForRun(page, runId);
 
-  await expect(page.getByText('$0.42').first()).toBeVisible({ timeout: T.medium });
-  await expect(page.getByText('anthropic').first()).toBeVisible();
+  await expect(page.locator('#set-usage').getByText('$0.42').first()).toBeVisible({
+    timeout: T.medium,
+  });
+  await expect(page.locator('#set-usage').getByText('anthropic').first()).toBeVisible();
   // Ledger coverage proves exactly one real recorded run (not a UI-only render).
-  await expect(page.getByText('1/1 ledgered')).toBeVisible();
+  await expect(page.locator('#set-usage').getByText('1/1 ledgered')).toBeVisible();
 });
