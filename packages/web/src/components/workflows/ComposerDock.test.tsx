@@ -2433,6 +2433,50 @@ describe('ComposerDock', () => {
     ).toBe(false);
   });
 
+  function itemSendNow(messageId: string): HTMLButtonElement | undefined {
+    const item = host.querySelector(`li[data-message-id="${messageId}"]`);
+    return [...(item?.querySelectorAll('button') ?? [])].find(
+      button => (button.textContent ?? '').trim() === 'Send now'
+    );
+  }
+
+  test('focus moves to the next item Send now after a per-item Send now, then to the field', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ subState: 'generating', pollIntervalMs: 60_000, readQueue: ctrl.read });
+    await settleSnapshot(
+      ctrl,
+      okQueue(
+        [
+          { message_id: 'id-a', message: 'alpha' },
+          { message_id: 'id-b', message: 'beta' },
+        ],
+        {
+          capabilities: { soft_injection: true, delivery_ack: false },
+          sub_state: 'generating',
+        }
+      )
+    );
+    const first = itemSendNow('id-a');
+    if (first === undefined) throw new Error('missing per-item Send now control');
+    await act(async () => {
+      first.focus();
+      first.click();
+    });
+    await flush();
+    expect(itemSendNow('id-a')).toBeUndefined();
+    const next = itemSendNow('id-b');
+    expect((win.document.activeElement as unknown) === next).toBe(true);
+
+    // The last remaining item: no sibling left, so focus goes to the message field.
+    await act(async () => {
+      next?.focus();
+      next?.click();
+    });
+    await flush();
+    expect(itemSendNow('id-b')).toBeUndefined();
+    expect((win.document.activeElement as unknown) === field()).toBe(true);
+  });
+
   test('per-item Send now is absent without the capability flag', async () => {
     const ctrl = controllableRead();
     await renderDock({ subState: 'generating', pollIntervalMs: 60_000, readQueue: ctrl.read });

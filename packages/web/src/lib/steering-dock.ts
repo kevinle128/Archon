@@ -90,6 +90,13 @@ export interface LocalSentReceipt {
    * operator-triggered retry). Null until the first failure.
    */
   readonly lastFailureKind: SteeringDispatchFailureKind | null;
+  /**
+   * A soft-injected entry the transport accepted that the model has not read
+   * yet (no operator row exists). When a Stop lands on a provider that
+   * acknowledges deliveries, the server returns it to the queue, so the dock
+   * shows it as queued at once.
+   */
+  readonly unreadSoftInjection?: boolean;
 }
 
 export interface PendingSubmission {
@@ -134,6 +141,8 @@ export interface SteeringDockState {
   readonly autoSend: boolean;
   /** Verified soft-injection capability of the live provider, if known. */
   readonly softInjection: boolean;
+  /** Whether the live provider echoes a delivery acknowledgement, from the last queue snapshot. */
+  readonly deliveryAck: boolean;
   /** A send (Queue or Send now) request is in flight. */
   readonly sendInFlight: boolean;
   /** UI-local Stop press in flight; never projected or persisted. */
@@ -686,6 +695,7 @@ export function createSteeringDockState(subState?: SteeringSubState): SteeringDo
     executionState: null,
     autoSend: false,
     softInjection: false,
+    deliveryAck: false,
     sendInFlight: false,
     interruptInFlight: false,
     inFlightBatch: null,
@@ -755,7 +765,7 @@ export function syncProjectedSubState(
       ? state.sent.map(entry =>
           isQueueItemClaimable(entry.state) ? { ...entry, state: 'dispatching' as const } : entry
         )
-      : state.sent;
+      : foldUnreadSoftInjections(state, next);
   return {
     ...state,
     sent,
@@ -979,6 +989,25 @@ export function resolveSendNowFailure(
   };
 }
 
+/**
+ * A Stop landed on a provider that acknowledges deliveries: every accepted
+ * soft injection the model never read returns to the queue, so show it as
+ * queued now instead of waiting for the next queue read. Returns the same
+ * array when nothing folds.
+ */
+function foldUnreadSoftInjections(
+  state: SteeringDockState,
+  subState: SteeringSubState | null
+): readonly LocalSentReceipt[] {
+  if (subState !== 'idle-after-interrupt' || !state.deliveryAck) return state.sent;
+  if (!state.sent.some(entry => entry.unreadSoftInjection === true)) return state.sent;
+  return state.sent.map(entry =>
+    entry.unreadSoftInjection === true
+      ? { ...entry, state: 'queued' as const, unreadSoftInjection: false }
+      : entry
+  );
+}
+
 /** One Stop press: local interrupting + exactly one polite announcement. */
 export function beginInterrupt(state: SteeringDockState): SteeringDockState {
   return { ...state, interruptInFlight: true, notice: STEERING_AGENT_INTERRUPTING };
@@ -995,6 +1024,7 @@ export function resolveInterruptOutcome(
 ): SteeringDockState {
   return {
     ...state,
+    sent: foldUnreadSoftInjections(state, outcome),
     interruptInFlight: false,
     subState: outcome,
     notice:
@@ -1117,7 +1147,9 @@ export function resolveSendNowItemSuccess(
   return {
     ...state,
     sent: state.sent.map(entry =>
-      entry.messageId === messageId ? { ...entry, state: 'dispatching' } : entry
+      entry.messageId === messageId
+        ? { ...entry, state: 'dispatching', unreadSoftInjection: true }
+        : entry
     ),
     sendingNowMessageId: null,
     refusal: null,
@@ -1158,22 +1190,24 @@ export function sendNowItemAccessibleName(message: string): string {
 }
 
 export type RemovalFocusTarget =
-  | { readonly kind: 'delete'; readonly messageId: string }
+  | { readonly kind: 'delete' | 'send-now'; readonly messageId: string }
   | { readonly kind: 'field' };
 
 /**
- * Where focus goes after a queued row is removed: the next row's delete
- * button in the activation-time order, otherwise the previous row's,
- * otherwise the composer field. An unknown id resolves to the field.
+ * Where focus goes after a queued row is removed or leaves the queue: the
+ * same control (`delete` by default, or the per-item `send-now`) on the next
+ * row in the activation-time order, otherwise on the previous row, otherwise
+ * the composer field. An unknown id resolves to the field.
  */
 export function nextFocusAfterRemoval(
   orderedIds: readonly string[],
-  removedId: string
+  removedId: string,
+  control: 'delete' | 'send-now' = 'delete'
 ): RemovalFocusTarget {
   const index = orderedIds.indexOf(removedId);
   if (index === -1) return { kind: 'field' };
   const sibling = orderedIds[index + 1] ?? orderedIds[index - 1];
-  return sibling === undefined ? { kind: 'field' } : { kind: 'delete', messageId: sibling };
+  return sibling === undefined ? { kind: 'field' } : { kind: control, messageId: sibling };
 }
 
 /** One queued-guidance row exactly as the GET queue route returns it. */
@@ -1211,6 +1245,8 @@ export interface QueueSnapshot {
    */
   readonly node_outcome: SteeringNodeOutcome | null;
 }
+
+const NO_RENDERED_MESSAGE_IDS: ReadonlySet<string> = new Set<string>();
 
 /**
  * Reconcile the rendered queue with the server's authoritative order. A
@@ -1260,25 +1296,27 @@ export interface QueueSnapshot {
 export function applyQueueSnapshot(
   state: SteeringDockState,
   snapshot: QueueSnapshot,
-  generationAtRequest: number
+  generationAtRequest: number,
+  renderedMessageIds: ReadonlySet<string> = NO_RENDERED_MESSAGE_IDS
 ): SteeringDockState {
   if (generationAtRequest !== state.queueGeneration) return state;
-  // Bridges the `dispatching` → `sent`/`delivered` hand-off for exactly one
-  // extra snapshot: a row counts only when the PRIOR local snapshot still
-  // held it open (any state other than `sent`/`delivered`). Once retained
-  // here, a still-open-per-server row falls out of this set on the NEXT
-  // reconcile (its own state above is already `sent`/`delivered`), so the
-  // grace is bounded to one poll interval and can never stick forever.
-  const priorOpenIds = new Set(
-    state.sent
-      .filter(entry => entry.state !== 'sent' && entry.state !== 'delivered')
-      .map(entry => entry.messageId)
+  // Bridges the `dispatching` → `sent`/`delivered` hand-off: a row counts only
+  // when the PRIOR local snapshot already tracked it, and it stays until the
+  // transcript has rendered its operator row (`renderedMessageIds`) — never
+  // for a fixed number of polls, so no frame shows it in neither place. A
+  // finished node ends the hand-off (its rows are read-only records).
+  const trackedIds = new Set(state.sent.map(entry => entry.messageId));
+  const priorUnreadIds = new Set(
+    state.sent.filter(entry => entry.unreadSoftInjection === true).map(entry => entry.messageId)
   );
   const liveSoftInjection =
     snapshot.capabilities.soft_injection && snapshot.sub_state === 'generating';
-  const priorSentIds = new Set(
-    state.sent.filter(entry => entry.state === 'sent').map(entry => entry.messageId)
-  );
+  // A Stop landed on a provider that acknowledges deliveries: a `sent` entry
+  // the model never read is about to return to the queue, so it is shown as
+  // queued now instead of a moment later.
+  const stopReturnsUnread =
+    snapshot.capabilities.delivery_ack && snapshot.sub_state === 'idle-after-interrupt';
+  const handOffOpen = snapshot.execution_state !== 'finished';
   const nextSent: LocalSentReceipt[] = snapshot.queued
     .filter(
       row =>
@@ -1288,19 +1326,25 @@ export function applyQueueSnapshot(
         // for the next tool boundary or echo), so it stays visible until its
         // transcript row replaces it.
         (row.state === 'sent' && liveSoftInjection) ||
-        ((row.state === 'sent' || row.state === 'delivered') && priorOpenIds.has(row.message_id)) ||
-        // The echo just delivered an entry this dock showed as `sent`: keep it one
-        // more poll so it does not vanish before the transcript renders its row.
-        (row.state === 'delivered' && liveSoftInjection && priorSentIds.has(row.message_id))
+        (row.state === 'sent' && stopReturnsUnread && !renderedMessageIds.has(row.message_id)) ||
+        ((row.state === 'sent' || row.state === 'delivered') &&
+          handOffOpen &&
+          trackedIds.has(row.message_id) &&
+          !renderedMessageIds.has(row.message_id))
     )
     .map(row => ({
       messageId: row.message_id,
       message: row.message,
-      state: row.state,
+      state: row.state === 'sent' && stopReturnsUnread ? ('queued' as const) : row.state,
       operatorUserId: row.operator_user_id,
       lastError: row.last_error,
       dispatchFailureCount: row.dispatch_failure_count,
       lastFailureKind: row.last_failure_kind,
+      ...(row.state === 'sent' &&
+      !stopReturnsUnread &&
+      (liveSoftInjection || priorUnreadIds.has(row.message_id))
+        ? { unreadSoftInjection: true }
+        : {}),
     }));
   const nextNeverSent: NeverSentEntry[] = snapshot.queued
     .filter(row => row.state === 'never_sent')
@@ -1349,6 +1393,7 @@ export function applyQueueSnapshot(
     state.executionState === snapshot.execution_state &&
     state.autoSend === snapshot.auto_send &&
     state.softInjection === snapshot.capabilities.soft_injection &&
+    state.deliveryAck === snapshot.capabilities.delivery_ack &&
     state.nodeOutcome === nextNodeOutcome &&
     !state.lastReadFailed;
   if (unchanged) return state;
@@ -1361,6 +1406,7 @@ export function applyQueueSnapshot(
     executionState: snapshot.execution_state,
     autoSend: snapshot.auto_send,
     softInjection: snapshot.capabilities.soft_injection,
+    deliveryAck: snapshot.capabilities.delivery_ack,
     nodeOutcome: nextNodeOutcome,
     lastReadFailed: false,
     ...(subStateUnchanged

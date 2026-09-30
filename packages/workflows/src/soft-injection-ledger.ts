@@ -17,6 +17,10 @@
  * provider carries into its next turn is recorded when that turn starts, and
  * one still unread when the node ends returns to the queue so terminal
  * reconciliation reports it honestly.
+ *
+ * The ledger lives in memory only. After a restart the durable transcript row
+ * is the proof of delivery: the queue read returns every `sent` entry that has
+ * no operator row to `queued` (`restoreUnreadSoftInjections`).
  */
 import { createLogger } from '@archon/paths';
 import type { SoftInjectionDelivery } from './steering-registry';

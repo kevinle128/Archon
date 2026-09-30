@@ -753,6 +753,8 @@ const VISIBLE_STEERING_STATES = new Set([
 ]);
 
 let mockSteeringQueue: MockSteeringQueueEntry[] = [];
+/** Message ids that have an operator row in the mocked durable transcript. */
+const mockOperatorRowIds = new Set<string>();
 let mockSteeringDrafts: MockSteeringDraft[] = [];
 let mockSteeringSettings: MockSteeringNodeSettings[] = [];
 let mockSteeringNextId = 0;
@@ -760,6 +762,7 @@ let mockSteeringNextId = 0;
 /** Test-only reset — call from beforeEach alongside getSteeringRegistry().clearForTests(). */
 function resetSteeringStoreMock(): void {
   mockSteeringQueue = [];
+  mockOperatorRowIds.clear();
   mockSteeringDrafts = [];
   mockSteeringSettings = [];
   mockSteeringNextId = 0;
@@ -992,6 +995,21 @@ mock.module('@archon/core/db/workflow-steering', () => ({
     entry.state = 'sent';
     entry.updated_at = new Date();
     return toClaimedSteeringMessage(entry);
+  },
+  restoreUnreadSoftInjections: async (workflowRunId: string, nodeId: string) => {
+    let count = 0;
+    for (const entry of mockSteeringQueue) {
+      if (
+        entry.workflow_run_id === workflowRunId &&
+        entry.node_id === nodeId &&
+        entry.state === 'sent' &&
+        !mockOperatorRowIds.has(entry.message_id)
+      ) {
+        entry.state = 'queued';
+        count += 1;
+      }
+    }
+    return { count };
   },
   revertSteeringSoftInjectionClaim: async (
     workflowRunId: string,
@@ -10052,6 +10070,42 @@ describe('steering lifecycle classification — a settings row alone is never pr
     };
     expect(queueBody.execution_state).toBe('recovery_required');
     expect(queueBody.capabilities).toEqual({ soft_injection: false, delivery_ack: false });
+  });
+
+  test('a restart returns an accepted soft injection with no operator row to the queue', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    mockSteeringSettings.push({
+      id: 'settings-restarted-sent',
+      workflow_run_id: STEER_RUN_ID,
+      node_id: STEER_NODE_ID,
+      auto_send_enabled: false,
+      updated_by_user_id: null,
+      provider_id: RECOVERY_TEST_PROVIDER_ID,
+      updated_at: new Date(),
+    });
+    for (const id of ['unread', 'read']) {
+      seedSteeringQueueEntry({
+        workflow_run_id: STEER_RUN_ID,
+        node_id: STEER_NODE_ID,
+        message_id: id,
+        message: id,
+        state: 'sent',
+      });
+    }
+    mockOperatorRowIds.add('read');
+    const { app } = makeApp();
+
+    const queueRes = await getNodeQueue(app);
+    const queueBody = (await queueRes.json()) as {
+      execution_state: string;
+      queued: { message_id: string; state: string }[];
+    };
+    expect(queueBody.execution_state).toBe('recovery_required');
+    expect(queueBody.queued.map(q => [q.message_id, q.state])).toEqual([
+      ['unread', 'queued'],
+      ['read', 'sent'],
+    ]);
   });
 
   test('an auto-send toggle on a node that never ran stays not_found, not recovery_required', async () => {

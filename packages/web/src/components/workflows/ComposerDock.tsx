@@ -430,6 +430,11 @@ export function ComposerDock({
   const goButtonRef = useRef<HTMLButtonElement>(null);
   const neverSentAlertRef = useRef<HTMLParagraphElement>(null);
   const deleteButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const sendNowButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+  // Operator rows the transcript has rendered, read by the queue polling so an
+  // in-flight entry leaves the dock only once its row is on screen.
+  const deliveredMessageIdsRef = useRef<ReadonlySet<string>>(deliveredMessageIds);
+  deliveredMessageIdsRef.current = deliveredMessageIds;
   const pendingFocusRef = useRef<RemovalFocusTarget | null>(null);
   const detachedAlertRef = useRef<HTMLParagraphElement>(null);
   const dockRef = useRef<SteeringDockState>(createSteeringDockState(subState));
@@ -739,7 +744,14 @@ export function ComposerDock({
     const controller = new AbortController();
     void readQueue(runId, nodeId, { signal: controller.signal }).then(
       snapshot => {
-        setDock(current => applyQueueSnapshot(current, snapshot, current.queueGeneration));
+        setDock(current =>
+          applyQueueSnapshot(
+            current,
+            snapshot,
+            current.queueGeneration,
+            deliveredMessageIdsRef.current
+          )
+        );
       },
       () => {
         // Read-only hydration; a failure here just leaves less to show.
@@ -802,7 +814,12 @@ export function ComposerDock({
           const previousIds = current.sent
             .filter(receipt => isQueueItemClaimable(receipt.state))
             .map(receipt => receipt.messageId);
-          const next = applyQueueSnapshot(current, snapshot, generationAtRequest);
+          const next = applyQueueSnapshot(
+            current,
+            snapshot,
+            generationAtRequest,
+            deliveredMessageIdsRef.current
+          );
           if (next === current) return current;
           const nextIds = next.sent
             .filter(receipt => isQueueItemClaimable(receipt.state))
@@ -1001,18 +1018,33 @@ export function ComposerDock({
 
   // After a successful withdraw removes its row, move focus to the target
   // captured at activation time (next row → previous row → field). The same
-  // path restores focus after a remote snapshot removes the focused row.
-  useEffect(() => {
+  // path restores focus after a remote snapshot removes the focused row. A
+  // layout effect, so focus moves before the browser paints the removal: no
+  // frame shows focus on `<body>`.
+  useLayoutEffect(() => {
     const target = pendingFocusRef.current;
     // A concurrent send also changes `sent`. Keep the target pending until the
     // withdraw itself settles so an unrelated append cannot move focus early
     // or consume the focus restoration needed if the withdraw later succeeds.
-    if (target === null || dock.withdrawingMessageId !== null) return;
+    if (
+      target === null ||
+      dock.withdrawingMessageId !== null ||
+      dock.sendingNowMessageId !== null
+    ) {
+      return;
+    }
     pendingFocusRef.current = null;
-    const button =
-      target.kind === 'delete' ? deleteButtonsRef.current.get(target.messageId) : undefined;
+    let button: HTMLButtonElement | undefined;
+    if (target.kind === 'delete') {
+      button = deleteButtonsRef.current.get(target.messageId);
+    } else if (target.kind === 'send-now') {
+      // A row that offers no Send now still has its delete control.
+      button =
+        sendNowButtonsRef.current.get(target.messageId) ??
+        deleteButtonsRef.current.get(target.messageId);
+    }
     (button ?? fieldRef.current)?.focus();
-  }, [dock.sent, dock.withdrawingMessageId]);
+  }, [dock.sent, dock.withdrawingMessageId, dock.sendingNowMessageId]);
 
   const blockedReason = steeringBlockedReason({ rowStatus, hasPendingAsk });
   const agentMode = steeringAgentMode(dock);
@@ -1209,6 +1241,15 @@ export function ComposerDock({
   const sendQueuedMessageNow = (item: { messageId: string; message: string }): void => {
     if (dock.sendingNowMessageId !== null) return;
     const attemptGen = attemptGenerationRef.current;
+    // The clicked control unmounts once the item is in flight: hand focus to
+    // the same control on the next queued item, else the message field.
+    pendingFocusRef.current = nextFocusAfterRemoval(
+      dock.sent
+        .filter(receipt => isQueueItemClaimable(receipt.state))
+        .map(receipt => receipt.messageId),
+      item.messageId,
+      'send-now'
+    );
     setDock(current => beginSendNowItem(current, item.messageId));
     void send(runId, nodeId, {
       message: item.message,
@@ -1222,6 +1263,7 @@ export function ComposerDock({
       },
       (error: unknown): void => {
         if (attemptGenerationRef.current !== attemptGen) return;
+        pendingFocusRef.current = null;
         setDock(current =>
           resolveSendNowItemFailure(current, item.messageId, toSteeringRefusal(error))
         );
@@ -1575,6 +1617,13 @@ export function ComposerDock({
                     {claimable && canSendItemNow ? (
                       <button
                         type="button"
+                        ref={(el): void => {
+                          if (el === null) {
+                            sendNowButtonsRef.current.delete(receipt.messageId);
+                          } else {
+                            sendNowButtonsRef.current.set(receipt.messageId, el);
+                          }
+                        }}
                         aria-label={sendNowItemAccessibleName(receipt.message)}
                         aria-disabled={dock.sendingNowMessageId !== null ? true : undefined}
                         onClick={(): void => {

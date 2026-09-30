@@ -1,0 +1,29 @@
+{
+  "cycle": "claude-4",
+  "runId": "6e31ad193a2acd77b1a05969d31ff456",
+  "tag": "Qmuoi7bxd",
+  "killedAt": 1790796848733,
+  "downMs": 6394,
+  "injectStatus": 200,
+  "injectState": "sent",
+  "qBefore": [
+    [" keep queued", "queued"],
+    ["d-TWO inject", "sent"]
+  ],
+  "opRowsBefore": 0,
+  "qAfter": [
+    [" keep queued", "queued"],
+    ["d-TWO inject", "queued"]
+  ],
+  "execAfter": "recovery_required",
+  "bandRestored": "PROMPT · QA16-OPERATOR Run these Bash steps one at a time, each as its own separate Bash call, in order: step N is \"sleep 9; echo sN\" for N = 1..5. Then reply with one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for in your final line. Qmuoi7bxd run THINKING ASSISTANT I'll run these 5 steps sequentially, each with a 9-second sleep followed by echo. ▶ unknown – Bash sleep 9; echo s1 output unknown QUEUED · 2 saved to server ▾ 1 Qmuoi7bxd-ONE keep queued 2 Qmuoi7bxd-TWO inject restored after server restart · Resume the workflow to continue",
+  "abandonStatus": 200,
+  "qEnd": [
+    [" keep queued", "queued"],
+    ["d-TWO inject", "queued"]
+  ],
+  "execEnd": "finished",
+  "bandAbandoned": "PROMPT · QA16-OPERATOR Run these Bash steps one at a time, each as its own separate Bash call, in order: step N is \"sleep 9; echo sN\" for N = 1..5. Then reply with one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for in your final line. Qmuoi7bxd run THINKING ASSISTANT I'll run these 5 steps sequentially, each with a 9-second sleep followed by echo. ▶ unknown – Bash sleep 9; echo s1 output unknown NEVER SENT · 2 ▾ 1 Qmuoi7bxd-ONE keep queued 2 Qmuoi7bxd-TWO inject node finished · none of this was sent",
+  "neverSentShown": true,
+  "twoQueuedShown": true
+}

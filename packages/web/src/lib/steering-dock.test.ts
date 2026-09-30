@@ -709,6 +709,15 @@ describe('withdraw transitions', () => {
     });
     expect(nextFocusAfterRemoval(['a'], 'a')).toEqual({ kind: 'field' });
     expect(nextFocusAfterRemoval(['a', 'b'], 'missing')).toEqual({ kind: 'field' });
+    expect(nextFocusAfterRemoval(['a', 'b'], 'a', 'send-now')).toEqual({
+      kind: 'send-now',
+      messageId: 'b',
+    });
+    expect(nextFocusAfterRemoval(['a', 'b'], 'b', 'send-now')).toEqual({
+      kind: 'send-now',
+      messageId: 'a',
+    });
+    expect(nextFocusAfterRemoval(['a'], 'a', 'send-now')).toEqual({ kind: 'field' });
   });
 });
 
@@ -981,7 +990,7 @@ describe('per-item Send now transitions', () => {
     const begun = beginSendNowItem(stateWith([receipt('a', 'alpha'), receipt('b', 'beta')]), 'a');
     const resolved = resolveSendNowItemSuccess(begun, 'a');
     expect(resolved.sent).toEqual([
-      { ...receipt('a', 'alpha'), state: 'dispatching' },
+      { ...receipt('a', 'alpha'), state: 'dispatching', unreadSoftInjection: true },
       receipt('b', 'beta'),
     ]);
     expect(pendingQueueCount(resolved.sent)).toBe(1);
@@ -989,6 +998,25 @@ describe('per-item Send now transitions', () => {
     expect(resolved.queueGeneration).toBe(1);
     // A mismatched id is a no-op.
     expect(resolveSendNowItemSuccess(begun, 'b')).toBe(begun);
+  });
+
+  test('a Stop that lands returns the accepted entry to the queued count at once, on an acknowledging provider only', () => {
+    const accepted = resolveSendNowItemSuccess(
+      beginSendNowItem(stateWith([receipt('a', 'alpha'), receipt('b', 'beta')]), 'a'),
+      'a'
+    );
+    const acknowledging = { ...accepted, deliveryAck: true, subState: 'generating' as const };
+    const stopped = resolveInterruptOutcome(acknowledging, 'idle-after-interrupt');
+    expect(stopped.sent.map(entry => entry.state)).toEqual(['queued', 'queued']);
+    expect(pendingQueueCount(stopped.sent)).toBe(2);
+    const synced = syncProjectedSubState(acknowledging, 'idle-after-interrupt');
+    expect(synced.sent.map(entry => entry.state)).toEqual(['queued', 'queued']);
+    // No delivery acknowledgement: the entry may still be carried into a later turn.
+    const silent = resolveInterruptOutcome(
+      { ...accepted, deliveryAck: false, subState: 'generating' as const },
+      'idle-after-interrupt'
+    );
+    expect(silent.sent.map(entry => entry.state)).toEqual(['dispatching', 'queued']);
   });
 
   test('failure retains the row and stores the refusal', () => {
@@ -1476,7 +1504,7 @@ describe('applyQueueSnapshot', () => {
     expect(next.deliveryByMessageId.get('unknown-id')).toBeUndefined();
   });
 
-  test('a sent/delivered row retained for one grace poll falls out of sent on the next one', () => {
+  test('a tracked sent/delivered row stays in sent until the transcript has rendered its row', () => {
     const state = stateWith([receipt('a', 'alpha')]);
     const afterFirstPoll = applyQueueSnapshot(
       state,
@@ -1484,20 +1512,40 @@ describe('applyQueueSnapshot', () => {
       0
     );
     expect(afterFirstPoll.sent).toEqual([{ ...receipt('a', 'alpha'), state: 'sent' }]);
-    // Still 'sent' on the next poll, with no other local mutation in between
-    // — the grace window already spent, so it drops out of the band even
-    // though the server still reports it (the transcript is assumed to have
-    // caught up by now; `visiblePendingReceipts` covers the render-time hide
-    // when it has not).
+    // Any number of further polls keep it while the transcript has not rendered it.
     const afterSecondPoll = applyQueueSnapshot(
       afterFirstPoll,
-      mkSnapshot([guidanceRow('a', 'alpha', { state: 'sent' })]),
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'delivered' })]),
       afterFirstPoll.queueGeneration
     );
-    expect(afterSecondPoll.sent).toEqual([]);
+    expect(afterSecondPoll.sent.map(entry => entry.messageId)).toEqual(['a']);
+    const afterThirdPoll = applyQueueSnapshot(
+      afterSecondPoll,
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'delivered' })]),
+      afterSecondPoll.queueGeneration
+    );
+    expect(afterThirdPoll.sent.map(entry => entry.messageId)).toEqual(['a']);
+    // Once the transcript has rendered the operator row, the next poll drops it.
+    const rendered = applyQueueSnapshot(
+      afterThirdPoll,
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'delivered' })]),
+      afterThirdPoll.queueGeneration,
+      new Set(['a'])
+    );
+    expect(rendered.sent).toEqual([]);
   });
 
-  test('a sent row stays in the band across polls while a soft-injection turn is generating, and drops one poll after its echo', () => {
+  test('a finished node ends the hand-off even when no row rendered', () => {
+    const state = stateWith([receipt('a', 'alpha')]);
+    const next = applyQueueSnapshot(
+      state,
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'sent' })], { execution_state: 'finished' }),
+      0
+    );
+    expect(next.sent).toEqual([]);
+  });
+
+  test('a sent row stays in the band across polls while a soft-injection turn is generating, and until its row renders after the echo', () => {
     const live = {
       capabilities: { soft_injection: true, delivery_ack: true },
       sub_state: 'generating' as const,
@@ -1514,20 +1562,50 @@ describe('applyQueueSnapshot', () => {
       first.queueGeneration
     );
     expect(second.sent.map(entry => entry.messageId)).toEqual(['a']);
-    // The echo delivers it: one more poll of grace so it never vanishes before
-    // the transcript renders its operator row, then it drops.
     const delivered = applyQueueSnapshot(
       second,
       mkSnapshot([guidanceRow('a', 'alpha', { state: 'delivered' })], live),
       second.queueGeneration
     );
     expect(delivered.sent.map(entry => entry.messageId)).toEqual(['a']);
-    const settled = applyQueueSnapshot(
+    const stillUnrendered = applyQueueSnapshot(
       delivered,
       mkSnapshot([guidanceRow('a', 'alpha', { state: 'delivered' })], live),
       delivered.queueGeneration
     );
+    expect(stillUnrendered.sent.map(entry => entry.messageId)).toEqual(['a']);
+    const settled = applyQueueSnapshot(
+      stillUnrendered,
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'delivered' })], live),
+      stillUnrendered.queueGeneration,
+      new Set(['a'])
+    );
     expect(settled.sent).toEqual([]);
+  });
+
+  test('when Stop lands, an accepted entry the model never read is shown as queued at once', () => {
+    const live = {
+      capabilities: { soft_injection: true, delivery_ack: true },
+      sub_state: 'generating' as const,
+    };
+    const generating = applyQueueSnapshot(
+      stateWith([]),
+      mkSnapshot([guidanceRow('one', 'one'), guidanceRow('two', 'two', { state: 'sent' })], live),
+      0
+    );
+    const stopped = applyQueueSnapshot(
+      generating,
+      mkSnapshot([guidanceRow('one', 'one'), guidanceRow('two', 'two', { state: 'sent' })], {
+        capabilities: live.capabilities,
+        sub_state: 'idle-after-interrupt',
+      }),
+      generating.queueGeneration
+    );
+    expect(stopped.sent.map(entry => [entry.messageId, entry.state])).toEqual([
+      ['one', 'queued'],
+      ['two', 'queued'],
+    ]);
+    expect(pendingQueueCount(stopped.sent)).toBe(stopped.sent.length);
   });
 
   test('a turn that cannot be interrupted offers no per-item Send now even with the provider capability', () => {
