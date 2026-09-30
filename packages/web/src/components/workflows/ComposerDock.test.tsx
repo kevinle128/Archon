@@ -454,10 +454,10 @@ describe('ComposerDock', () => {
     expect(host.querySelector('textarea')).not.toBeNull();
   });
 
-  // Accepted by design (VQ13-2): a terminal node's never-sent band is a
-  // first paint, not a disappearance — no earlier band existed to keep, so
-  // the VQ12-1 continuity rule (an undelivered item must never vanish once
-  // shown) does not apply here. Anchors the current, unchanged behavior.
+  // Accepted by design: a terminal node's never-sent band is a first paint,
+  // not a disappearance — no earlier band existed to keep, so the rule that
+  // an undelivered item must never vanish once shown does not apply here.
+  // Anchors the current, unchanged behavior.
   test('a terminal node with undelivered items shows no band until this dock’s own first read resolves', async () => {
     const ctrl = controllableRead();
     await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000, nodeTerminal: true });
@@ -1844,8 +1844,8 @@ describe('ComposerDock', () => {
     // Only the FIRST-EVER settle against a given controllable read can be
     // the one that exits `firstReadPending`'s `hidden` gate — that
     // transition always ticks the poller once more immediately (the same
-    // cleanup+restart-on-`mode`-change mechanism VQ12-1's terminal-edge
-    // kick relies on), so one redundant read can already be pending again
+    // cleanup+restart-on-`mode`-change mechanism the terminal-edge kick
+    // relies on), so one redundant read can already be pending again
     // right after. Draining it with the SAME value is a no-op on dock state
     // (nothing changed since), so the caller sees exactly the transition it
     // asked for. Scoped to the first call only: a LATER settle's own extra

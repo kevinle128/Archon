@@ -395,10 +395,10 @@ export function steeringDockMode(input: {
    * would otherwise flash a live composer for the gap. Hides the composer/
    * blocked/detached controls for that gap instead of guessing; nothing here
    * relabels or removes an already-shown band (this only ever applies before
-   * this dock has shown anything), so the VQ12-1 continuity rule — an
-   * undelivered item must never disappear once shown — still holds. Default
-   * false/undefined: no gap to bridge (matches every caller that doesn't
-   * poll a queue at all, e.g. tests exercising the pure state machine).
+   * this dock has shown anything), so an undelivered item still never
+   * disappears once shown. Default false/undefined: no gap to bridge
+   * (matches every caller that doesn't poll a queue at all, e.g. tests
+   * exercising the pure state machine).
    */
   firstReadPending?: boolean;
 }): SteeringDockMode {
