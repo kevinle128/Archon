@@ -1,0 +1,10 @@
+name: vq16-si-grok-steer
+description: "Scratch - Grok ACP soft-injection target."
+mutates_checkout: false
+nodes:
+  - id: grok-node
+    provider: grok
+    prompt: |
+      Run these shell steps one at a time, each as its own separate tool call, in order: step N is "sleep 9; echo sN" for N = 1..5.
+      Then reply with one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for in your final line.
+      $ARGUMENTS

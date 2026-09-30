@@ -1,0 +1,28 @@
+{
+  "web": "http://localhost:5324",
+  "api": "3456",
+  "run": "4398ee3b166c45c06c3333e75a07178e",
+  "existsOnlyOn": "3456",
+  "rendered": "Completed|||||||-1|0|||BODY|0",
+  "hosts": ["localhost:5324", "fonts.googleapis.com", "fonts.gstatic.com"],
+  "es": [
+    [1790792230334, "new", "__dashboard__", "localhost:5324"],
+    [1790792230335, "close", "__dashboard__"],
+    [1790792230335, "new", "__dashboard__", "localhost:5324"],
+    [1790792230345, "open", "__dashboard__", 1]
+  ],
+  "sample": [
+    ["GET", "http://localhost:5324/api/auth/get-session"],
+    ["GET", "http://localhost:5324/api/auth/status"],
+    ["GET", "http://localhost:5324/api/codebases"],
+    ["GET", "http://localhost:5324/api/conversations"],
+    ["GET", "http://localhost:5324/api/workflows/runs"],
+    ["GET", "http://localhost:5324/api/update-check"],
+    ["GET", "http://localhost:5324/api/dashboard/runs"],
+    ["GET", "http://localhost:5324/api/workflows/runs/4398ee3b166c45c06c3333e75a07178e"],
+    ["GET", "http://localhost:5324/api/stream/__dashboard__"],
+    ["GET", "http://localhost:5324/api/codebases/c1212f7f67bcf8844ef279463bf9b9a5"],
+    ["GET", "http://localhost:5324/api/workflows/vq16-fake-si"],
+    ["GET", "http://localhost:5324/api/workflows/runs/by-worker/web-worker-1790791974737-naixfq"]
+  ]
+}

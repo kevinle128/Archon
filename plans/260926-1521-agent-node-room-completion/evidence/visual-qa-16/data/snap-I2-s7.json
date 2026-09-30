@@ -1,0 +1,18 @@
+{
+  "a": {
+    "width": 460,
+    "head": "prompt\ncl-node\nFailed\n✕\nstarted 01:16 · failed after idle timeout · claude · haiku\nShow usage breakdown\n$0.07 · n/a\nPROMPT · VQ16-OPERATOR\nRun these Bash steps one at a time, each as its own separate Bash call, in order: step N is \"for i in",
+    "tail": " one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for.\nI2 idle run\nTHINKING\nASSISTANT\n\nI'll run these 4 steps sequentially, each waiting for the previous to complete.\n\n▶\ninterrupted\n⚠\nBash\nfor i in 1 2 3 4; do sleep 6; done; echo s1\ninterrupted\n·\n8.0s\nNEVER SENT · 2\n▾\n1\nI2 queued item before idle\n2\nk\n\nnode failed · interrupted with no redirect · none of this was sent",
+    "alerts": ["node failed · interrupted with no redirect · none of this was sent"],
+    "fields": 0,
+    "buttons": ["✕", "Show usage breakdown\n$0.07 · n/a", "NEVER SENT · 2\n▾"]
+  },
+  "n": {
+    "width": 752,
+    "head": "prompt\ncl-node\nFailed\n✕\nstarted 01:16 · failed after idle timeout · claude · haiku\nShow usage breakdown\n$0.07 · n/a\nPROMPT · VQ16-OPERATOR\nRun these Bash steps one at a time, each as its own separate Bash call, in order: step N is \"for i in",
+    "tail": " one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for.\nI2 idle run\nTHINKING\nASSISTANT\n\nI'll run these 4 steps sequentially, each waiting for the previous to complete.\n\n▶\ninterrupted\n⚠\nBash\nfor i in 1 2 3 4; do sleep 6; done; echo s1\ninterrupted\n·\n8.0s\nNEVER SENT · 2\n▾\n1\nI2 queued item before idle\n2\nk\n\nnode failed · interrupted with no redirect · none of this was sent",
+    "alerts": ["node failed · interrupted with no redirect · none of this was sent"],
+    "fields": 0,
+    "buttons": ["✕", "Show usage breakdown\n$0.07 · n/a", "NEVER SENT · 2\n▾"]
+  }
+}

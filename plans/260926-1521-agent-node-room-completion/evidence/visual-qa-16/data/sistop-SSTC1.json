@@ -1,0 +1,201 @@
+{
+  "R": "c43b8300edbc81ab7a5f3ac8e662e623",
+  "sender": "c",
+  "clickedAt": 1790794163715,
+  "click": 200,
+  "pre": {
+    "s": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||0|2|||TEXTAREA|2",
+    "o": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||0|2|||BODY|2"
+  },
+  "stop": { "clicked": 1790794165741, "resolved": 1790794167768, "st": 200 },
+  "qMid": [
+    ["SSTC1 ONE ke", "queued", 0, null],
+    ["SSTC1 TWO in", "sent", 0, null]
+  ],
+  "subMid": "generating",
+  "qIdle": [
+    ["SSTC1 ONE ke", "queued", 0, null],
+    ["SSTC1 TWO in", "queued", 0, null]
+  ],
+  "subIdle": "idle-after-interrupt",
+  "kIdle": {
+    "s": "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers||0|2|||BODY|0",
+    "o": "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers||0|2|||DIV[room]|0"
+  },
+  "send": { "clicked": 1790794170419, "sendResolved": 1790794170452, "st": 200 },
+  "status": "completed",
+  "qEnd": [
+    ["SSTC1 ONE ke", "sent", 0, null],
+    ["SSTC1 TWO in", "sent", 0, null]
+  ],
+  "rows": [
+    [1, "status", "", "{\"state\":\"started\"}"],
+    [
+      2,
+      "text",
+      "prompt",
+      "{\"text\":\"Run these Bash steps one at a time, each as its own separate "
+    ],
+    [
+      3,
+      "text",
+      "thinking",
+      "{\"text\":\"The user is asking me to:\\n1. Run 5 separate bash steps seque"
+    ],
+    [4, "text", "", "{\"text\":\"I'll run these steps sequentially for you.\"}"],
+    [
+      5,
+      "tool",
+      "",
+      "{\"name\":\"Bash\",\"id\":\"toolu_01UjcYyANdK94kVc4wjSAnWr\",\"input\":{\"command"
+    ],
+    [
+      6,
+      "tool",
+      "",
+      "{\"name\":\"Bash\",\"id\":\"toolu_01UjcYyANdK94kVc4wjSAnWr\",\"output\":\"The use"
+    ],
+    [7, "status", "", "{\"state\":\"interrupted\"}"],
+    [8, "text", "operator", "{\"text\":\"SSTC1 ONE keep queued\"}"],
+    [9, "text", "operator", "{\"text\":\"SSTC1 TWO inject me\"}"],
+    [
+      10,
+      "text",
+      "thinking",
+      "{\"text\":\"The user is sending operator messages with codes \\\"SSTC1 ONE "
+    ],
+    [
+      11,
+      "tool",
+      "",
+      "{\"name\":\"Bash\",\"id\":\"toolu_0116vwmFMii97Pkgfyv62cda\",\"input\":{\"command"
+    ],
+    [
+      12,
+      "tool",
+      "",
+      "{\"name\":\"Bash\",\"id\":\"toolu_0116vwmFMii97Pkgfyv62cda\",\"output\":\"{\\\"stdo"
+    ],
+    [
+      13,
+      "text",
+      "thinking",
+      "{\"text\":\"Step 2 completed successfully. Now I should continue with ste"
+    ],
+    [
+      14,
+      "tool",
+      "",
+      "{\"name\":\"Bash\",\"id\":\"toolu_01SxeBL8DJ8jNCxZtjsWSbWg\",\"input\":{\"command"
+    ],
+    [
+      15,
+      "tool",
+      "",
+      "{\"name\":\"Bash\",\"id\":\"toolu_01SxeBL8DJ8jNCxZtjsWSbWg\",\"output\":\"{\\\"stdo"
+    ],
+    [16, "text", "thinking", "{\"text\":\"Step 3 completed. Continuing with step 4.\"}"],
+    [
+      17,
+      "tool",
+      "",
+      "{\"name\":\"Bash\",\"id\":\"toolu_01CE6VPN7eqR32BvSenB8toi\",\"input\":{\"command"
+    ],
+    [
+      18,
+      "tool",
+      "",
+      "{\"name\":\"Bash\",\"id\":\"toolu_01CE6VPN7eqR32BvSenB8toi\",\"output\":\"{\\\"stdo"
+    ],
+    [19, "text", "thinking", "{\"text\":\"Step 4 completed. Now step 5.\"}"],
+    [
+      20,
+      "tool",
+      "",
+      "{\"name\":\"Bash\",\"id\":\"toolu_01Q9MjicfwLYuoDBks1mp7qq\",\"input\":{\"command"
+    ],
+    [
+      21,
+      "tool",
+      "",
+      "{\"name\":\"Bash\",\"id\":\"toolu_01Q9MjicfwLYuoDBks1mp7qq\",\"output\":\"{\\\"stdo"
+    ],
+    [
+      22,
+      "text",
+      "thinking",
+      "{\"text\":\"All 5 steps completed. Now I need to reply with one short lin"
+    ],
+    [23, "text", "", "{\"text\":\"Complete: s1(queued) s2-s5 done. SSTC1 ONE keep queued; SSTC1"],
+    [24, "status", "", "{\"state\":\"completed\"}"]
+  ],
+  "si": {
+    "s": [
+      [1790794162452, "Running|Stop,Queue|0|0||||||||BODY"],
+      [1790794162460, "Running|Stop,Queue|0|0||||||||TEXTAREA"],
+      [1790794162477, "Running|Stop,Queue|0|0||||||||BUTTON:Queue · Cmd/Ct"],
+      [1790794162486, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs||||||TEXTAREA"],
+      [1790794162510, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs||||||BUTTON:Queue · Cmd/Ct"],
+      [1790794162519, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||TEXTAREA"],
+      [1790794163735, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||BUTTON:Send now · SST"],
+      [1790794163744, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790794165851, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*|||INTR|||BODY"],
+      [1790794168354, "Running||0|2|WILL SEND · 2|ONEx,TWOx|||INTR|||BODY"],
+      [1790794170451, "Running||0|0|SENDING · 2|ONE*,TWO*|||INTR|||BUTTON:Send now · Cmd"],
+      [1790794170461, "Running|Stop,Queue|0|0|SENDING · 2|ONE*,TWO*|||INTR|||TEXTAREA"],
+      [1790794171886, "Running|Stop,Queue|0|0|||ONE:sent,TWO:sent||INTR||below|TEXTAREA"],
+      [1790794219729, "Completed||0|0|||ONE:sent,TWO:sent||INTR||below|DIV"]
+    ],
+    "o": [
+      [1790794162461, "Running|Stop,Queue|0|0||||||||BODY"],
+      [1790794162846, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||BODY"],
+      [1790794163852, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790794165760, "Running|Stopping…,Queue|0|1|QUEUED · 1|ONEx,TWO*||||||BUTTON"],
+      [1790794165852, "Running|Stopping…,Queue|0|1|QUEUED · 1|ONEx,TWO*|||INTR|||BUTTON"],
+      [1790794167777, "Running||0|1|WILL SEND · 1|ONEx,TWO*|||INTR|||DIV"],
+      [1790794168353, "Running||0|2|WILL SEND · 2|ONEx,TWOx|||INTR|||DIV"],
+      [1790794171361, "Running|Stop,Queue|0|0|SENDING · 2|ONE*,TWO*|||INTR|||DIV"],
+      [1790794171877, "Running|Stop,Queue|0|0|||ONE:sent,TWO:sent||INTR||below|DIV"],
+      [1790794219751, "Completed||0|0|||ONE:sent,TWO:sent||INTR||below|DIV"]
+    ]
+  },
+  "raf": {
+    "s": [
+      [1790794162461, "Running||Stop,Queue|TA||||0|0|||TEXTAREA|0"],
+      [1790794162477, "Running||Stop,Queue|TA||||0|0|||BUTTON|0"],
+      [1790794162486, "Running||Stop,Queue|TA|QUEUED · 1|1 message queued||0|1|||TEXTAREA|1"],
+      [1790794162511, "Running||Stop,Queue|TA|QUEUED · 1|1 message queued||0|1|||BUTTON|1"],
+      [1790794162519, "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||0|2|||TEXTAREA|2"],
+      [1790794163736, "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||0|2|||BUTTON|2"],
+      [1790794163744, "Running||Stop,Queue|TA|QUEUED · 1|2 messages queued||0|1|||BODY|1"],
+      [
+        1790794168354,
+        "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers||0|2|||BODY|0"
+      ],
+      [
+        1790794170451,
+        "Running||Send now|TA|SENDING · 2|agent idle · Send now delivers||0|0|||BUTTON|0"
+      ],
+      [1790794170461, "Running||Stop,Queue|TA|SENDING · 2|agent generating||0|0|||TEXTAREA|0"],
+      [1790794171887, "Running||Stop,Queue|TA||agent generating||0|0|||TEXTAREA|0"],
+      [1790794219729, "Completed|||||||0|0|||DIV[room]|0"]
+    ],
+    "o": [
+      [1790794162461, "Running||Stop,Queue|TA||||0|0|||BODY|0"],
+      [1790794162846, "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||0|2|||BODY|2"],
+      [1790794163853, "Running||Stop,Queue|TA|QUEUED · 1|1 message queued||0|1|||BODY|1"],
+      [1790794165761, "Running||Stopping…,Queue|TA|QUEUED · 1|agent interrupting||0|1|||BUTTON|0"],
+      [
+        1790794167777,
+        "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||0|1|||DIV[room]|0"
+      ],
+      [
+        1790794168353,
+        "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers||0|2|||DIV[room]|0"
+      ],
+      [1790794171361, "Running||Stop,Queue|TA|SENDING · 2|agent generating||0|0|||DIV[room]|0"],
+      [1790794171877, "Running||Stop,Queue|TA||agent generating||0|0|||DIV[room]|0"],
+      [1790794219751, "Completed|||||||0|0|||DIV[room]|0"]
+    ]
+  }
+}

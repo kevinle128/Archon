@@ -1,0 +1,38 @@
+data/O1-outage.json down 13053 ms
+  Ac pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|0 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +7737 firstOkGET +703 REC +756 hintOff +4739 | rec ('', '', 'QUEUED · 1', 'REST')
+  Al pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|0 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9751 firstOkGET +703 REC +756 hintOff +6804 | rec ('', '', 'QUEUED · 1', 'REST')
+  Bc pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9762 firstOkGET +704 REC +771 hintOff +8886 | rec ('', '', 'QUEUED · 1', 'REST')
+  Bl pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 5 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9762 firstOkGET +706 REC +768 hintOff +768 | rec ('', '', 'QUEUED · 1', 'REST')
+  Cc pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|1 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9337 firstOkGET +704 REC +760 hintOff +6368 | rec ('', '', 'QUEUED · 1', 'REST')
+  Cl pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|1 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9752 firstOkGET +701 REC +756 hintOff +8380 | rec ('', '', 'QUEUED · 1', 'REST')
+data/O2-outage.json down 33355 ms
+  Ac pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|0 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +8078 firstOkGET +76 REC +87 hintOff +1795 | rec ('', '', 'QUEUED · 1', 'REST')
+  Al pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +8302 firstOkGET +143 REC +150 hintOff +3868 | rec ('', '', 'QUEUED · 1', 'REST')
+  Bc pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +7242 firstOkGET +238 REC +244 hintOff +5938 | rec ('', '', 'QUEUED · 1', 'REST')
+  Bl pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9440 firstOkGET +121 REC +350 hintOff +8084 | rec ('', '', 'QUEUED · 1', 'REST')
+  Cc pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|1 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +8614 firstOkGET +569 REC +575 hintOff +3385 | rec ('', '', 'QUEUED · 1', 'REST')
+  Cl pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|1 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +7728 firstOkGET +402 REC +701 hintOff +5463 | rec ('', '', 'QUEUED · 1', 'REST')
+data/O3-outage.json down 13739 ms
+  Ac pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|0 | frames 5 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +8109 firstOkGET +372 REC +644 hintOff +644 | rec ('', '', 'QUEUED · 1', 'REST')
+  Al pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +7130 firstOkGET +779 REC +786 hintOff +5415 | rec ('', '', 'QUEUED · 1', 'REST')
+  Bc pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9557 firstOkGET +40 REC +48 hintOff +7632 | rec ('', '', 'QUEUED · 1', 'REST')
+  Bl pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +8787 firstOkGET +447 REC +454 hintOff +10056 | rec ('', '', 'QUEUED · 1', 'REST')
+  Cc pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|1 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +8420 firstOkGET +71 REC +79 hintOff +5723 | rec ('', '', 'QUEUED · 1', 'REST')
+  Cl pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|1 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +7668 firstOkGET +239 REC +246 hintOff +7968 | rec ('', '', 'QUEUED · 1', 'REST')
+data/O4-outage.json down 32994 ms
+  Ac pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|0 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9000 firstOkGET +96 REC +752 hintOff +9066 | rec ('', '', 'QUEUED · 1', 'REST')
+  Al pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +7456 firstOkGET +969 REC +-36 hintOff +1537 | rec ('', '', 'QUEUED · 1', 'REST')
+  Bc pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +7383 firstOkGET +341 REC +347 hintOff +3675 | rec ('', '', 'QUEUED · 1', 'REST')
+  Bl pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9573 firstOkGET +347 REC +353 hintOff +5611 | rec ('', '', 'QUEUED · 1', 'REST')
+  Cc pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|1 | frames 4 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +7383 firstOkGET +456 REC +837 hintOff +2334 | rec ('', '', 'QUEUED · 1', 'REST')
+  Cl pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|1 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +7443 firstOkGET +36 REC +44 hintOff +5705 | rec ('', '', 'QUEUED · 1', 'REST')
+data/B2-outage.json down 31926 ms
+  Fc pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9835 firstOkGET +10 REC +15 hintOff +954 | rec ('', '', 'QUEUED · 1', 'REST')
+  Fl pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +7157 firstOkGET +8 REC +13 hintOff +2297 | rec ('', '', 'QUEUED · 1', 'REST')
+  Lc pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9239 firstOkGET +10 REC +14 hintOff +4374 | rec ('', '', 'QUEUED · 1', 'REST')
+  Ll pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9843 firstOkGET +10 REC +16 hintOff +6463 | rec ('', '', 'QUEUED · 1', 'REST')
+  Oc pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9837 firstOkGET +8 REC +14 hintOff +8449 | rec ('', '', 'QUEUED · 1', 'REST')
+  Ol pre Running||Send now|TA|WILL SEND · 1|1 message queued||-1|1|||BODY|0 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9835 firstOkGET +6 REC +12 hintOff +958 | rec ('', '', 'QUEUED · 1', 'REST')
+  Xc pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|1 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +7375 firstOkGET +6 REC +13 hintOff +2516 | rec ('', '', 'QUEUED · 1', 'REST')
+  Xl pre Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|1 | frames 3 noroom 0 err 0 noband 0 nocomp 0 ctlDiff [] | hint +9336 firstOkGET +5 REC +13 hintOff +4479 | rec ('', '', 'QUEUED · 1', 'REST')
+TOTAL {'tabs': 32, 'noroom': 0, 'err': 0, 'noband': 0, 'nocomp': 0, 'ctl': 0}

@@ -1,0 +1,12 @@
+{
+  "R": "601acc2e0e6b860a6c7624977d76e670",
+  "g1": { "roomW": 752, "roomX": 248, "vw": 1000, "graphHidden": true, "closeLabels": ["Back"] },
+  "k1": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||TEXTAREA|2",
+  "k3": "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers||-1|2|||DIV[room]|0",
+  "overflowX": 0,
+  "k5": "Failed||||NEVER SENT · 2|node finished · none of this was sent|node finished · none of this was sent|-1|0|||DIV[room]|0",
+  "afterBack": {
+    "room": false,
+    "url": "/workflows/runs/601acc2e0e6b860a6c7624977d76e670?node=fake-node"
+  }
+}

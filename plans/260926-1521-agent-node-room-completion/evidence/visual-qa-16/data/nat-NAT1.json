@@ -1,0 +1,12 @@
+{
+  "R": "793a0cbd4eec9ee914a073ac381d2a3e",
+  "nodeCompletedAt": "2026-09-30 18:46:49",
+  "tc": [
+    [-7252, "Running||Stop,Queue|TA|||"],
+    [71, "Completed||||||"]
+  ],
+  "tl": [
+    [-7251, "Running||Stop,Queue|TA|||"],
+    [69, "Completed||||||"]
+  ]
+}

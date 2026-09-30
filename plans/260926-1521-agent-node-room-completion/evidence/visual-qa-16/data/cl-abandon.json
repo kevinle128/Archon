@@ -1,0 +1,147 @@
+{
+  "R": "88c84741a41dd4fc9cb8846dd3878b57",
+  "post": 11,
+  "abandonAt": 1790793669250,
+  "res": { "success": true, "message": "Abandoned workflow: vq16-claude-steer", "__status": 200 },
+  "raf": {
+    "c": [
+      [-28, "Running||Stop,Queue|TA|QUEUED · 1|3 messages queued||1|1|||TEXTAREA|1"],
+      [
+        695,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]|0"
+      ]
+    ],
+    "l": [
+      [-21, "Running||Stop,Queue|TA|QUEUED · 1|agent generating||1|1|||TEXTAREA|1"],
+      [
+        695,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]|0"
+      ]
+    ]
+  },
+  "ns": {
+    "c": [
+      [14, "Running||Stop,Queue|TA|QUEUED · 1|3 messages queued||1|1|||TEXTAREA|1"],
+      [
+        720,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]|0"
+      ]
+    ],
+    "l": [
+      [17, "Running||Stop,Queue|TA|QUEUED · 1|agent generating||1|1|||TEXTAREA|1"],
+      [
+        719,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]|0"
+      ]
+    ]
+  },
+  "gets": [
+    {
+      "t": 677,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 5
+    },
+    {
+      "t": 676,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 5
+    },
+    { "t": 699, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    {
+      "t": 699,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 5
+    },
+    {
+      "t": 719,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 5
+    },
+    { "t": 723, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    {
+      "t": 776,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 5
+    },
+    {
+      "t": 781,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 5
+    },
+    { "t": 1127, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 1143, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 1145, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 1154, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 1910, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 1911, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2622, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2623, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2623, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2623, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2626, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2626, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 4119, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 4120, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 4121, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 4122, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 4124, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 4125, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5639, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5651, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5655, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5668, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5670, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5672, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 7136, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 7146, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 7149, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 7148, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 7149, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 7150, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8628, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8630, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8639, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8643, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8655, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8655, "s": "l", "k": "r", "http": 200, "st": "cancelled" }
+  ],
+  "rows0": {
+    "c": { "assistant": 4, "thinking": 4, "operator": 4 },
+    "l": { "assistant": 4, "thinking": 4, "operator": 4 }
+  },
+  "rows1": {
+    "c": { "assistant": 4, "thinking": 4, "operator": 4 },
+    "l": { "assistant": 4, "thinking": 4, "operator": 4 }
+  },
+  "status": "cancelled"
+}

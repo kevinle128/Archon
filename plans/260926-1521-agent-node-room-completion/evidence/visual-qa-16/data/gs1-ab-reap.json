@@ -1,0 +1,116 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793941747,
+  "end": 1790793953901,
+  "procs": [
+    {
+      "pid": 14408,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790793941747,
+      "last": 1790793953599
+    },
+    {
+      "pid": 24184,
+      "cmd": "grok --single Run exactly this shell command once: sleep 60 ",
+      "first": 1790793941747,
+      "last": 1790793946398
+    },
+    {
+      "pid": 24258,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 24260,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 24263,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 24264,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 24265,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 24269,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 24271,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 27995,
+      "cmd": "zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>n",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 28003,
+      "cmd": "sleep 60",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 24845,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 25454,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 25507,
+      "cmd": "node context7-mcp",
+      "first": 1790793941747,
+      "last": 1790793944882
+    },
+    {
+      "pid": 27321,
+      "cmd": "zsh -c source snapshot-zsh-1790793870590-8q2u1v.sh 2>null ||",
+      "first": 1790793941747,
+      "last": 1790793951209
+    },
+    {
+      "pid": 28061,
+      "cmd": "sleep 6",
+      "first": 1790793941747,
+      "last": 1790793945185
+    },
+    {
+      "pid": 28396,
+      "cmd": "sh -c if [ -n ] && [ -f 'grok-hook.sh' ] && [ -r 'grok-hook.",
+      "first": 1790793945185,
+      "last": 1790793945185
+    },
+    {
+      "pid": 28497,
+      "cmd": "sleep 6",
+      "first": 1790793945488,
+      "last": 1790793951209
+    }
+  ]
+}

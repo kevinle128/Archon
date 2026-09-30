@@ -1,0 +1,12 @@
+name: vq16-codex
+description: "Scratch - Codex steering target."
+mutates_checkout: false
+nodes:
+  - id: codex-node
+    provider: codex
+    model: gpt-5.5
+    effort: low
+    prompt: |
+      Run these shell steps one at a time, each as its own separate command, in order: "sleep 25; echo s1", "sleep 25; echo s2", "sleep 25; echo s3", "sleep 25; echo s4".
+      Then reply with one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for.
+      $ARGUMENTS

@@ -1,0 +1,116 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793749241,
+  "end": 1790793758545,
+  "procs": [
+    {
+      "pid": 91019,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 97629,
+      "cmd": "omp --mode rpc --cwd thread-4e87cc62 --yolo --no-title --no-",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 91319,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 91320,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 91321,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 91322,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 91324,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 91326,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 91329,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 98751,
+      "cmd": "(bash)",
+      "first": 1790793749241,
+      "last": 1790793749241
+    },
+    {
+      "pid": 98752,
+      "cmd": "(bash)",
+      "first": 1790793749241,
+      "last": 1790793749241
+    },
+    {
+      "pid": 98756,
+      "cmd": "(bash)",
+      "first": 1790793749241,
+      "last": 1790793749241
+    },
+    {
+      "pid": 98757,
+      "cmd": "(bash)",
+      "first": 1790793749241,
+      "last": 1790793749241
+    },
+    {
+      "pid": 92747,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 92048,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 92923,
+      "cmd": "node context7-mcp",
+      "first": 1790793749241,
+      "last": 1790793758231
+    },
+    {
+      "pid": 98758,
+      "cmd": "zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>n",
+      "first": 1790793749558,
+      "last": 1790793758231
+    },
+    {
+      "pid": 98844,
+      "cmd": "sleep 9",
+      "first": 1790793750252,
+      "last": 1790793758231
+    }
+  ]
+}

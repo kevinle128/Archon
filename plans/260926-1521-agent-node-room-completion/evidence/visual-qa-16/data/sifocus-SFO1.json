@@ -1,0 +1,15 @@
+{
+  "R": "de93f386eb4cf6b1053383a2467f8ab3",
+  "sendNowEnter": [
+    [3, "BUTTON:Send now · SFO1 B second"],
+    [27, "BODY:"]
+  ],
+  "deleteEnter": [
+    [2, "BUTTON:delete · SFO1 A first"],
+    [19, "BUTTON:delete · SFO1 C third"]
+  ],
+  "sendNowClickLast": [
+    [1790792643480, "BUTTON:Send now · SFO1 C third"],
+    [1790792643488, "BODY:"]
+  ]
+}

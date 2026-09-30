@@ -1,0 +1,320 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793346060,
+  "end": 1790793356369,
+  "procs": [
+    {
+      "pid": 24896,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793346060,
+      "last": 1790793356059
+    },
+    {
+      "pid": 25284,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793346060,
+      "last": 1790793354833
+    },
+    {
+      "pid": 25289,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793346060,
+      "last": 1790793354833
+    },
+    {
+      "pid": 25290,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793346060,
+      "last": 1790793354833
+    },
+    {
+      "pid": 25291,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793346060,
+      "last": 1790793354833
+    },
+    {
+      "pid": 25292,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793346060,
+      "last": 1790793354833
+    },
+    {
+      "pid": 25293,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793346060,
+      "last": 1790793354833
+    },
+    {
+      "pid": 25295,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793346060,
+      "last": 1790793354833
+    },
+    {
+      "pid": 26058,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793346060,
+      "last": 1790793354833
+    },
+    {
+      "pid": 26388,
+      "cmd": "node context7-mcp",
+      "first": 1790793346060,
+      "last": 1790793354833
+    },
+    {
+      "pid": 26469,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793346060,
+      "last": 1790793354833
+    },
+    {
+      "pid": 27616,
+      "cmd": "codex exec --experimental-json --config skills.include_instr",
+      "first": 1790793346996,
+      "last": 1790793356059
+    },
+    {
+      "pid": 27642,
+      "cmd": "git ls-remote https:/codex-warp.git HEAD",
+      "first": 1790793347310,
+      "last": 1790793348261
+    },
+    {
+      "pid": 27646,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790793347310,
+      "last": 1790793348593
+    },
+    {
+      "pid": 27643,
+      "cmd": "git remote-https https:/codex-warp.git https:/codex-warp.git",
+      "first": 1790793347310,
+      "last": 1790793348261
+    },
+    {
+      "pid": 27644,
+      "cmd": "git-remote-https https:/codex-warp.git https:/codex-warp.git",
+      "first": 1790793347310,
+      "last": 1790793348261
+    },
+    {
+      "pid": 27715,
+      "cmd": "bash jenv-init -",
+      "first": 1790793347619,
+      "last": 1790793347619
+    },
+    {
+      "pid": 27826,
+      "cmd": "(bash)",
+      "first": 1790793347619,
+      "last": 1790793347619
+    },
+    {
+      "pid": 27833,
+      "cmd": "(bash)",
+      "first": 1790793347619,
+      "last": 1790793347619
+    },
+    {
+      "pid": 27850,
+      "cmd": "(greadlink)",
+      "first": 1790793347619,
+      "last": 1790793347619
+    },
+    {
+      "pid": 28116,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790793347936,
+      "last": 1790793356059
+    },
+    {
+      "pid": 28117,
+      "cmd": "node_repl",
+      "first": 1790793347936,
+      "last": 1790793356059
+    },
+    {
+      "pid": 28118,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790793347936,
+      "last": 1790793356059
+    },
+    {
+      "pid": 28124,
+      "cmd": "node_repl",
+      "first": 1790793348261,
+      "last": 1790793356059
+    },
+    {
+      "pid": 28136,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790793348261,
+      "last": 1790793348261
+    },
+    {
+      "pid": 28184,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790793348261,
+      "last": 1790793348261
+    },
+    {
+      "pid": 28185,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790793348261,
+      "last": 1790793348261
+    },
+    {
+      "pid": 28187,
+      "cmd": "tail -1",
+      "first": 1790793348261,
+      "last": 1790793348261
+    },
+    {
+      "pid": 28291,
+      "cmd": "(zsh)",
+      "first": 1790793348261,
+      "last": 1790793348261
+    },
+    {
+      "pid": 28292,
+      "cmd": "(zsh)",
+      "first": 1790793348261,
+      "last": 1790793348261
+    },
+    {
+      "pid": 28440,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28483,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28498,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28524,
+      "cmd": "tail -1",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28762,
+      "cmd": "(zsh)",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28768,
+      "cmd": "(zsh)",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28769,
+      "cmd": "(zsh)",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28770,
+      "cmd": "(zsh)",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28771,
+      "cmd": "(head)",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28773,
+      "cmd": "(tail)",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28772,
+      "cmd": "(zsh)",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28774,
+      "cmd": "(zsh)",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 28776,
+      "cmd": "(tr)",
+      "first": 1790793348593,
+      "last": 1790793348593
+    },
+    {
+      "pid": 30769,
+      "cmd": "(bash)",
+      "first": 1790793355448,
+      "last": 1790793355448
+    },
+    {
+      "pid": 30770,
+      "cmd": "node session-init.cjs",
+      "first": 1790793355448,
+      "last": 1790793355752
+    },
+    {
+      "pid": 30771,
+      "cmd": "(node)",
+      "first": 1790793355448,
+      "last": 1790793355448
+    },
+    {
+      "pid": 30785,
+      "cmd": "(curl)",
+      "first": 1790793355448,
+      "last": 1790793355448
+    },
+    {
+      "pid": 30767,
+      "cmd": "<defunct>",
+      "first": 1790793355448,
+      "last": 1790793355448
+    },
+    {
+      "pid": 30888,
+      "cmd": "<defunct>",
+      "first": 1790793355752,
+      "last": 1790793356059
+    },
+    {
+      "pid": 30902,
+      "cmd": "node dev-rules-reminder.cjs",
+      "first": 1790793356059,
+      "last": 1790793356059
+    },
+    {
+      "pid": 30903,
+      "cmd": "(node)",
+      "first": 1790793356059,
+      "last": 1790793356059
+    },
+    {
+      "pid": 30905,
+      "cmd": "(node)",
+      "first": 1790793356059,
+      "last": 1790793356059
+    }
+  ]
+}

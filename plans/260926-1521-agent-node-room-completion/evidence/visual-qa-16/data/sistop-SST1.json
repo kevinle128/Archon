@@ -1,0 +1,122 @@
+{
+  "R": "72d050fc8e842419fdfa82187dce6162",
+  "sender": "c",
+  "clickedAt": 1790792562480,
+  "click": 200,
+  "pre": {
+    "s": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||TEXTAREA|2",
+    "o": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||BODY|2"
+  },
+  "stop": { "clicked": 1790792564516, "resolved": 1790792564578, "st": 200 },
+  "qMid": [
+    ["SST1 ONE kee", "queued", 0, null],
+    ["SST1 TWO inj", "sent", 0, null]
+  ],
+  "subMid": "generating",
+  "qIdle": [
+    ["SST1 ONE kee", "queued", 0, null],
+    ["SST1 TWO inj", "queued", 0, null]
+  ],
+  "subIdle": "idle-after-interrupt",
+  "kIdle": {
+    "s": "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers||-1|2|||BODY|0",
+    "o": "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers||-1|2|||DIV[room]|0"
+  },
+  "send": { "clicked": 1790792567145, "sendResolved": 1790792567169, "st": 200 },
+  "status": "completed",
+  "qEnd": [
+    ["SST1 ONE kee", "sent", 0, null],
+    ["SST1 TWO inj", "sent", 0, null]
+  ],
+  "rows": [
+    [1, "status", "", "{\"state\":\"started\"}"],
+    [
+      2,
+      "text",
+      "prompt",
+      "{\"text\":\"<<E2E_SCENARIO>>{\\\"interruptible\\\":true,\\\"emitTool\\\":true,\\\"d"
+    ],
+    [3, "text", "", "{\"text\":\"[e2e-fake] tool pass\"}"],
+    [
+      4,
+      "tool",
+      "",
+      "{\"name\":\"Read\",\"id\":\"e2e-fake-tool-e2e-fake-ef409163-e0ef-4934-bced-dc"
+    ],
+    [
+      5,
+      "tool",
+      "",
+      "{\"name\":\"Read\",\"id\":\"e2e-fake-tool-e2e-fake-ef409163-e0ef-4934-bced-dc"
+    ],
+    [6, "status", "", "{\"state\":\"interrupted\"}"],
+    [7, "text", "operator", "{\"text\":\"SST1 ONE keep queued\"}"],
+    [8, "text", "operator", "{\"text\":\"SST1 TWO inject me\"}"],
+    [9, "text", "", "{\"text\":\"[e2e-fake] deterministic response\"}"],
+    [10, "status", "", "{\"state\":\"completed\"}"]
+  ],
+  "si": {
+    "s": [
+      [1790792561160, "Running|Stop,Queue|0|0|||||||"],
+      [1790792561254, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs|||||"],
+      [1790792561286, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs|||||"],
+      [1790792562510, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*|||||"],
+      [1790792565212, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*|||INTR||"],
+      [1790792565544, "Running||0|2|WILL SEND · 2|ONEx,TWOx|||INTR||"],
+      [1790792567168, "Running||0|0|SENDING · 2|ONE*,TWO*|||INTR||"],
+      [1790792567178, "Running|Stop,Queue|0|0|SENDING · 2|ONE*,TWO*|||INTR||"],
+      [1790792567214, "Completed||0|0|SENDING · 2|ONE*,TWO*|||INTR||"],
+      [1790792567225, "Completed||0|0|||ONE:sent,TWO:sent||INTR||"]
+    ],
+    "o": [
+      [1790792561160, "Running|Stop,Queue|0|0|||||||"],
+      [1790792561536, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs|||||"],
+      [1790792562537, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*|||||"],
+      [1790792564575, "Running|Stopping…,Queue|0|1|QUEUED · 1|ONEx,TWO*|||||"],
+      [1790792564584, "Running||0|1|WILL SEND · 1|ONEx,TWO*|||||"],
+      [1790792565409, "Running||0|1|WILL SEND · 1|ONEx,TWO*|||INTR||"],
+      [1790792565543, "Running||0|2|WILL SEND · 2|ONEx,TWOx|||INTR||"],
+      [1790792567215, "Completed||0|0|QUEUED · 2|ONE,TWO|||INTR||"],
+      [1790792567225, "Completed||0|0|||ONE:sent,TWO:sent||INTR||"]
+    ]
+  },
+  "raf": {
+    "s": [
+      [1790792561160, "Running||Stop,Queue|TA||||-1|0|||BODY|0"],
+      [1790792561168, "Running||Stop,Queue|TA||||-1|0|||TEXTAREA|0"],
+      [1790792561218, "Running||Stop,Queue|TA||||-1|0|||BUTTON|0"],
+      [1790792561255, "Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||TEXTAREA|1"],
+      [1790792561277, "Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BUTTON|1"],
+      [1790792561286, "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||TEXTAREA|2"],
+      [1790792562502, "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||BUTTON|2"],
+      [1790792562510, "Running||Stop,Queue|TA|QUEUED · 1|2 messages queued||-1|1|||BODY|1"],
+      [
+        1790792565544,
+        "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers||-1|2|||BODY|0"
+      ],
+      [
+        1790792567168,
+        "Running||Send now|TA|SENDING · 2|agent idle · Send now delivers||-1|0|||BUTTON|0"
+      ],
+      [1790792567179, "Running||Stop,Queue|TA|SENDING · 2|agent generating||-1|0|||TEXTAREA|0"],
+      [1790792567214, "Completed||||SENDING · 2|||-1|0|||DIV[room]|0"],
+      [1790792567225, "Completed|||||||-1|0|||DIV[room]|0"]
+    ],
+    "o": [
+      [1790792561160, "Running||Stop,Queue|TA||||-1|0|||BODY|0"],
+      [1790792561536, "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||BODY|2"],
+      [1790792562537, "Running||Stop,Queue|TA|QUEUED · 1|1 message queued||-1|1|||BODY|1"],
+      [1790792564575, "Running||Stopping…,Queue|TA|QUEUED · 1|agent interrupting||-1|1|||BUTTON|0"],
+      [
+        1790792564585,
+        "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||-1|1|||DIV[room]|0"
+      ],
+      [
+        1790792565543,
+        "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers||-1|2|||DIV[room]|0"
+      ],
+      [1790792567215, "Completed||||QUEUED · 2|||-1|0|||DIV[room]|0"],
+      [1790792567225, "Completed|||||||-1|0|||DIV[room]|0"]
+    ]
+  }
+}

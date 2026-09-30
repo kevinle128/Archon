@@ -1,0 +1,104 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793977668,
+  "end": 1790793985851,
+  "procs": [
+    {
+      "pid": 14408,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790793977668,
+      "last": 1790793985545
+    },
+    {
+      "pid": 30647,
+      "cmd": "codex exec --experimental-json --config skills.include_instr",
+      "first": 1790793977668,
+      "last": 1790793978877
+    },
+    {
+      "pid": 31990,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790793977668,
+      "last": 1790793978877
+    },
+    {
+      "pid": 31991,
+      "cmd": "node_repl",
+      "first": 1790793977668,
+      "last": 1790793978877
+    },
+    {
+      "pid": 31992,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790793977668,
+      "last": 1790793978877
+    },
+    {
+      "pid": 33325,
+      "cmd": "zsh -c sleep 90; echo long",
+      "first": 1790793977668,
+      "last": 1790793978877
+    },
+    {
+      "pid": 33326,
+      "cmd": "sleep 90",
+      "first": 1790793977668,
+      "last": 1790793978877
+    },
+    {
+      "pid": 32013,
+      "cmd": "node_repl",
+      "first": 1790793977668,
+      "last": 1790793978877
+    },
+    {
+      "pid": 29348,
+      "cmd": "zsh -c source snapshot-zsh-1790793870590-8q2u1v.sh 2>null ||",
+      "first": 1790793977668,
+      "last": 1790793978570
+    },
+    {
+      "pid": 33260,
+      "cmd": "sleep 6",
+      "first": 1790793977668,
+      "last": 1790793978570
+    },
+    {
+      "pid": 33649,
+      "cmd": "(node)",
+      "first": 1790793980086,
+      "last": 1790793980086
+    },
+    {
+      "pid": 33651,
+      "cmd": "(bash)",
+      "first": 1790793980086,
+      "last": 1790793980086
+    },
+    {
+      "pid": 33652,
+      "cmd": "(bash)",
+      "first": 1790793980086,
+      "last": 1790793980086
+    },
+    {
+      "pid": 33660,
+      "cmd": "(curl)",
+      "first": 1790793980086,
+      "last": 1790793980086
+    },
+    {
+      "pid": 33761,
+      "cmd": "zsh -c source snapshot-zsh-1790793870590-8q2u1v.sh 2>null ||",
+      "first": 1790793981913,
+      "last": 1790793985545
+    },
+    {
+      "pid": 33763,
+      "cmd": "sleep 6",
+      "first": 1790793981913,
+      "last": 1790793985545
+    }
+  ]
+}

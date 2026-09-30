@@ -1,0 +1,54 @@
+data/FAB1-abandon.json post 5 firstTermGET {'l': 320, 'c': 320}
+  c lagGET->nonRunning 10 runAfterTermGET(>50ms) [] firstTermFrame 330 firstNS 330 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 11 runAfterTermGET(>50ms) [] firstTermFrame 331 firstNS 331 termNoItem [] runAfterTerm [] recFrames 0
+data/FAB2-abandon.json post 4 firstTermGET {'l': 110, 'c': 118}
+  c lagGET->nonRunning 30 runAfterTermGET(>50ms) [] firstTermFrame 148 firstNS 158 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 25 runAfterTermGET(>50ms) [] firstTermFrame 135 firstNS 145 termNoItem [] runAfterTerm [] recFrames 0
+data/FAB3-abandon.json post 6 firstTermGET {'l': 242, 'c': 241}
+  c lagGET->nonRunning 45 runAfterTermGET(>50ms) [] firstTermFrame 286 firstNS 304 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 44 runAfterTermGET(>50ms) [] firstTermFrame 286 firstNS 303 termNoItem [] runAfterTerm [] recFrames 0
+data/FAB4-abandon.json post 3 firstTermGET {'c': 480, 'l': 482}
+  c lagGET->nonRunning 7 runAfterTermGET(>50ms) [] firstTermFrame 487 firstNS 487 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 5 runAfterTermGET(>50ms) [] firstTermFrame 487 firstNS 487 termNoItem [] runAfterTerm [] recFrames 0
+data/FAB5-abandon.json post 4 firstTermGET {'l': 581, 'c': 581}
+  c lagGET->nonRunning 7 runAfterTermGET(>50ms) [] firstTermFrame 588 firstNS 588 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 6 runAfterTermGET(>50ms) [] firstTermFrame 587 firstNS 587 termNoItem [] runAfterTerm [] recFrames 0
+data/FAB6-abandon.json post 3 firstTermGET {'c': 661, 'l': 661}
+  c lagGET->nonRunning 6 runAfterTermGET(>50ms) [] firstTermFrame 667 firstNS 667 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 26 runAfterTermGET(>50ms) [] firstTermFrame 687 firstNS 687 termNoItem [] runAfterTerm [] recFrames 0
+data/FABL1-abandon.json post 2 firstTermGET {'c': 826, 'l': 826}
+  c lagGET->nonRunning 27 runAfterTermGET(>50ms) [] firstTermFrame 853 firstNS 853 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 26 runAfterTermGET(>50ms) [] firstTermFrame 852 firstNS 852 termNoItem [] runAfterTerm [] recFrames 0
+data/FABL2-abandon.json post 2 firstTermGET {'c': 827, 'l': 827}
+  c lagGET->nonRunning 7 runAfterTermGET(>50ms) [] firstTermFrame 834 firstNS 834 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 7 runAfterTermGET(>50ms) [] firstTermFrame 834 firstNS 834 termNoItem [] runAfterTerm [] recFrames 0
+data/FABL3-abandon.json post 3 firstTermGET {'l': 926, 'c': 927}
+  c lagGET->nonRunning 26 runAfterTermGET(>50ms) [] firstTermFrame 953 firstNS 953 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 27 runAfterTermGET(>50ms) [] firstTermFrame 953 firstNS 953 termNoItem [] runAfterTerm [] recFrames 0
+data/FABL4-abandon.json post 5 firstTermGET {'c': 145, 'l': 146}
+  c lagGET->nonRunning 25 runAfterTermGET(>50ms) [] firstTermFrame 170 firstNS 180 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 24 runAfterTermGET(>50ms) [] firstTermFrame 170 firstNS 180 termNoItem [] runAfterTerm [] recFrames 0
+data/cx-abandon.json post 12 firstTermGET {'c': 874, 'l': 874}
+  c lagGET->nonRunning 12 runAfterTermGET(>50ms) [] firstTermFrame 886 firstNS 886 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 12 runAfterTermGET(>50ms) [] firstTermFrame 886 firstNS 886 termNoItem [] runAfterTerm [] recFrames 0
+data/omp-abandon.json post 27 firstTermGET {'l': 348, 'c': 347}
+  c lagGET->nonRunning 31 runAfterTermGET(>50ms) [] firstTermFrame 378 firstNS 410 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 34 runAfterTermGET(>50ms) [] firstTermFrame 382 firstNS 412 termNoItem [] runAfterTerm [] recFrames 0
+data/ds-abandon.json post 3 firstTermGET {'l': 289, 'c': 306}
+  c lagGET->nonRunning 16 runAfterTermGET(>50ms) [] firstTermFrame 322 firstNS 322 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 16 runAfterTermGET(>50ms) [] firstTermFrame 305 firstNS 305 termNoItem [] runAfterTerm [] recFrames 0
+data/gk-abandon.json post 6 firstTermGET {'c': 336, 'l': 342}
+  c lagGET->nonRunning 25 runAfterTermGET(>50ms) [] firstTermFrame 361 firstNS 361 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 20 runAfterTermGET(>50ms) [] firstTermFrame 362 firstNS 362 termNoItem [] runAfterTerm [] recFrames 0
+data/cl-abandon.json post 11 firstTermGET {'l': 677, 'c': 676}
+  c lagGET->nonRunning 19 runAfterTermGET(>50ms) [] firstTermFrame 695 firstNS 695 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning 18 runAfterTermGET(>50ms) [] firstTermFrame 695 firstNS 695 termNoItem [] runAfterTerm [] recFrames 0
+data/cxl-abandon.json post 5 firstTermGET {}
+  c lagGET->nonRunning None runAfterTermGET(>50ms) [] firstTermFrame 482 firstNS 482 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning None runAfterTermGET(>50ms) [] firstTermFrame 481 firstNS 481 termNoItem [] runAfterTerm [] recFrames 0
+data/gs-abandon.json post 3 firstTermGET {}
+  c lagGET->nonRunning None runAfterTermGET(>50ms) [] firstTermFrame 46 firstNS 56 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning None runAfterTermGET(>50ms) [] firstTermFrame 45 firstNS 58 termNoItem [] runAfterTerm [] recFrames 0
+data/gs1-abandon.json post 4 firstTermGET {}
+  c lagGET->nonRunning None runAfterTermGET(>50ms) [] firstTermFrame 430 firstNS 430 termNoItem [] runAfterTerm [] recFrames 0
+  l lagGET->nonRunning None runAfterTermGET(>50ms) [] firstTermFrame 448 firstNS 459 termNoItem [] runAfterTerm [] recFrames 0

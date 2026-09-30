@@ -1,0 +1,20 @@
+name: vq16-retry
+description: "Scratch - an edit node, then a loop that fails once through a state marker."
+mutates_checkout: true
+nodes:
+  - id: edit-a
+    provider: claude
+    model: haiku
+    prompt: |
+      Append the line "// edited by edit-a" to app.ts using your Edit or Write tool. Reply "done".
+  - id: flaky-loop
+    depends_on: [edit-a]
+    provider: claude
+    model: haiku
+    loop:
+      prompt: |
+        Append the line "edited by flaky-loop" to notes.md with your Edit tool. Reply "done".
+      until_bash: |
+        if [ -f "$STATE_DIR/vq16-flaky-ok" ]; then exit 0; fi
+        mkdir -p "$STATE_DIR"; touch "$STATE_DIR/vq16-flaky-ok"; exit 1
+      max_iterations: 1

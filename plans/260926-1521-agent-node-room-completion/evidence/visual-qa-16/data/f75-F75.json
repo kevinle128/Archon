@@ -1,0 +1,110 @@
+{
+  "R": "6b97d0a0b349432b4d44513c4ecff9e9",
+  "autoSend": {
+    "success": true,
+    "enabled": true,
+    "__status": 200
+  },
+  "q0": [
+    {
+      "m": "F75-Q1 bad <<E",
+      "state": "queued",
+      "fails": 0,
+      "kind": null,
+      "err": ""
+    },
+    {
+      "m": "F75-Q2 good it",
+      "state": "queued",
+      "fails": 0,
+      "kind": null,
+      "err": ""
+    }
+  ],
+  "q1": [
+    {
+      "m": "F75-Q1 bad <<E",
+      "state": "queued",
+      "fails": 1,
+      "kind": "automatic",
+      "err": "e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE"
+    },
+    {
+      "m": "F75-Q2 good it",
+      "state": "queued",
+      "fails": 0,
+      "kind": null,
+      "err": ""
+    }
+  ],
+  "sub1": "idle-after-interrupt",
+  "k1": {
+    "c": "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers|automatic dispatch failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>>|-1|2|||TEXTAREA|0",
+    "l": "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers|automatic dispatch failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>>|-1|2|||TEXTAREA|0"
+  },
+  "alerts1": {
+    "c": 1,
+    "l": 1
+  },
+  "sendNow": {
+    "clicked": 1790793109161,
+    "sendResolved": 1790793109185,
+    "st": 200
+  },
+  "q2": [
+    {
+      "m": "F75-Q1 bad <<E",
+      "state": "queued",
+      "fails": 2,
+      "kind": "send_now",
+      "err": "e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE"
+    },
+    {
+      "m": "F75-Q2 good it",
+      "state": "queued",
+      "fails": 1,
+      "kind": "send_now",
+      "err": "e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE"
+    }
+  ],
+  "k2": {
+    "c": "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers|Send now failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>> in the us|-1|2|||TEXTAREA|0",
+    "l": "Running||Send now|TA|WILL SEND · 2|agent idle · Send now delivers|Send now failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>> in the us|-1|2|||TEXTAREA|0"
+  },
+  "alerts2": {
+    "c": 1,
+    "l": 1
+  },
+  "q3parked": [
+    {
+      "m": "F75-Q1 bad <<E",
+      "state": "queued",
+      "fails": 2,
+      "kind": "send_now",
+      "err": "e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE"
+    },
+    {
+      "m": "F75-Q2 good it",
+      "state": "queued",
+      "fails": 1,
+      "kind": "send_now",
+      "err": "e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE"
+    }
+  ],
+  "sub3": "idle-after-interrupt",
+  "withdraw": 200,
+  "send": {
+    "clicked": 1790793124440,
+    "sendResolved": 1790793124469,
+    "st": 200
+  },
+  "qEnd": [
+    ["F75-Q2 good it", "sent"],
+    ["F75 typed reco", "sent"]
+  ],
+  "runStatus": "completed",
+  "kEnd": {
+    "c": "Completed|||||||-1|0|||DIV[room]|0",
+    "l": "Completed|||||||-1|0|||DIV[room]|0"
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "tag": "SIC01",
+  "sender": "c",
+  "observer": "l",
+  "R": "3fc1765c927841cdd73335d167fcf98b",
+  "node": "cl-node",
+  "shotBefore": "/private/tmp/claude-501/-Users-dale-orca-workspaces-Archon-develop-2/c3af2ea9-daf2-4dac-a244-7679f5cdbb02/scratchpad/vq16-1790791870/tk/shots/app-a-SIC01-before.png",
+  "pre": {
+    "c": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||TEXTAREA|2",
+    "l": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||BODY|2"
+  },
+  "click": { "status": 200, "resolvedMs": 24 },
+  "coldOpenedAt": 1790792293725,
+  "shotSent": "/private/tmp/claude-501/-Users-dale-orca-workspaces-Archon-develop-2/c3af2ea9-daf2-4dac-a244-7679f5cdbb02/scratchpad/vq16-1790791870/tk/shots/app-a-SIC01-sent.png",
+  "status": "completed",
+  "frames": {
+    "c": [
+      [1790792290847, "Running|Stop,Queue|0|0|||||||"],
+      [1790792290880, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs|||||"],
+      [1790792290915, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs|||||"],
+      [1790792292189, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*|||||"],
+      [1790792301289, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs|TWO:delivered||||below"],
+      [1790792345809, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered||||below"],
+      [1790792346350, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent||||below"],
+      [1790792348644, "Completed||0|0|||TWO:delivered,ONE:sent||||below"],
+      [1790792348662, "Completed||0|0|||TWO:delivered,ONE:delivered||||below"]
+    ],
+    "l": [
+      [1790792290847, "Running|Stop,Queue|0|0|||||||"],
+      [1790792291774, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs|||||"],
+      [1790792292257, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*|||||"],
+      [1790792301289, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs|TWO:delivered||||below"],
+      [1790792345809, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered||||below"],
+      [1790792346336, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent||||below"],
+      [1790792348645, "Completed||0|0|||TWO:delivered,ONE:sent||||below"],
+      [1790792348674, "Completed||0|0|||TWO:delivered,ONE:delivered||||below"]
+    ],
+    "x": [
+      [1790792293992, "NOROOM"],
+      [1790792294183, "Running||0|0|||||||"],
+      [1790792294240, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*|||||"],
+      [1790792301289, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs|TWO:delivered||||below"],
+      [1790792345809, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered||||below"],
+      [1790792346334, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent||||below"],
+      [1790792348643, "Completed||0|0|||TWO:delivered,ONE:sent||||below"],
+      [1790792348662, "Completed||0|0|||TWO:delivered,ONE:delivered||||below"]
+    ]
+  },
+  "shotEnd": "/private/tmp/claude-501/-Users-dale-orca-workspaces-Archon-develop-2/c3af2ea9-daf2-4dac-a244-7679f5cdbb02/scratchpad/vq16-1790791870/tk/shots/app-a-SIC01-end.png",
+  "clickedAt": 1790792292158,
+  "roomWidth": { "c": 460, "l": 460 },
+  "queue": [
+    ["SIC01 ONE ke", "delivered"],
+    ["SIC01 TWO: e", "delivered"]
+  ],
+  "rowCount": 25,
+  "attempts": ["f7f59af5-3f8f-4061-b5d3-18f0a421e28a"],
+  "promptRows": 1,
+  "operatorRows": [
+    [7, "SIC01 TWO: end"],
+    [22, "SIC01 ONE keep"]
+  ],
+  "ackInAgentText": 3,
+  "toolRowsAfterInjection": 8
+}

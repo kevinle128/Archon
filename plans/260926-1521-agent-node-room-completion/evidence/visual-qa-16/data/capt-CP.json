@@ -1,0 +1,24 @@
+{
+  "R": "c4be287d73e94f05e402318cacd0047e",
+  "gapBeforeQueue": {
+    "c": 0,
+    "l": 0,
+    "hc": 501,
+    "hl": 501
+  },
+  "gapAfterQueue": {
+    "c": 0,
+    "l": 0,
+    "hc": 411,
+    "hl": 411
+  },
+  "stoppingFrameMs": [23, "Stopping…,Queue"],
+  "axe": {
+    "c": [],
+    "l": []
+  },
+  "k5": {
+    "c": "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|-1|0|||DIV[room]|0",
+    "l": "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|-1|0|||DIV[room]|0"
+  }
+}

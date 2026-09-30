@@ -1,0 +1,13 @@
+name: vq16-fake-loop-short
+description: "Scratch - steerable fake loop, 12 s iterations, for the auto-send checks."
+mutates_checkout: false
+nodes:
+  - id: fake-loop
+    provider: e2e-fake
+    model: e2e-fake-model
+    loop:
+      prompt: |
+        <<E2E_SCENARIO>>{"interruptible":true,"emitTool":true,"delayMs":12000}<</E2E_SCENARIO>>
+        iteration
+      until: E2E_LOOP_DONE
+      max_iterations: 3

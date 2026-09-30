@@ -1,0 +1,92 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793438795,
+  "end": 1790793451084,
+  "procs": [
+    {
+      "pid": 31435,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793438795,
+      "last": 1790793450782
+    },
+    {
+      "pid": 38562,
+      "cmd": "omp --mode rpc --cwd thread-051a207f --yolo --no-title --no-",
+      "first": 1790793438795,
+      "last": 1790793439729
+    },
+    {
+      "pid": 31872,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793438795,
+      "last": 1790793450782
+    },
+    {
+      "pid": 31875,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793438795,
+      "last": 1790793450782
+    },
+    {
+      "pid": 31876,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793438795,
+      "last": 1790793450782
+    },
+    {
+      "pid": 31880,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793438795,
+      "last": 1790793450782
+    },
+    {
+      "pid": 31882,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793438795,
+      "last": 1790793450782
+    },
+    {
+      "pid": 31883,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793438795,
+      "last": 1790793450782
+    },
+    {
+      "pid": 31884,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793438795,
+      "last": 1790793450782
+    },
+    {
+      "pid": 32767,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793438795,
+      "last": 1790793450782
+    },
+    {
+      "pid": 33681,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793438795,
+      "last": 1790793450782
+    },
+    {
+      "pid": 33682,
+      "cmd": "node context7-mcp",
+      "first": 1790793438795,
+      "last": 1790793450782
+    },
+    {
+      "pid": 40947,
+      "cmd": "zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>n",
+      "first": 1790793440339,
+      "last": 1790793449552
+    },
+    {
+      "pid": 40974,
+      "cmd": "sleep 9",
+      "first": 1790793440947,
+      "last": 1790793449552
+    }
+  ]
+}

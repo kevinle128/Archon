@@ -1,0 +1,278 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793894007,
+  "end": 1790793903277,
+  "procs": [
+    {
+      "pid": 14408,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790793894007,
+      "last": 1790793902946
+    },
+    {
+      "pid": 18909,
+      "cmd": "codex exec --experimental-json --model gpt-5.5 --sandbox dan",
+      "first": 1790793894007,
+      "last": 1790793897012
+    },
+    {
+      "pid": 19010,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790793894007,
+      "last": 1790793895391
+    },
+    {
+      "pid": 20448,
+      "cmd": "zsh -c -l SNAPSHOT_FILE=snapshot-zsh-1790793890979-58hw6t.sh",
+      "first": 1790793894007,
+      "last": 1790793894364
+    },
+    {
+      "pid": 21330,
+      "cmd": "zsh -c -l SNAPSHOT_FILE=snapshot-zsh-1790793890979-58hw6t.sh",
+      "first": 1790793894007,
+      "last": 1790793894007
+    },
+    {
+      "pid": 21351,
+      "cmd": "zsh -c -l SNAPSHOT_FILE=snapshot-zsh-1790793890979-58hw6t.sh",
+      "first": 1790793894007,
+      "last": 1790793894007
+    },
+    {
+      "pid": 21352,
+      "cmd": "zsh -c -l SNAPSHOT_FILE=snapshot-zsh-1790793890979-58hw6t.sh",
+      "first": 1790793894007,
+      "last": 1790793894007
+    },
+    {
+      "pid": 21354,
+      "cmd": "tail -1",
+      "first": 1790793894007,
+      "last": 1790793894007
+    },
+    {
+      "pid": 21364,
+      "cmd": "(zsh)",
+      "first": 1790793894007,
+      "last": 1790793894007
+    },
+    {
+      "pid": 21365,
+      "cmd": "(zsh)",
+      "first": 1790793894007,
+      "last": 1790793894007
+    },
+    {
+      "pid": 21367,
+      "cmd": "(zsh)",
+      "first": 1790793894007,
+      "last": 1790793894007
+    },
+    {
+      "pid": 21368,
+      "cmd": "(zsh)",
+      "first": 1790793894007,
+      "last": 1790793894007
+    },
+    {
+      "pid": 21370,
+      "cmd": "(head)",
+      "first": 1790793894007,
+      "last": 1790793894007
+    },
+    {
+      "pid": 21373,
+      "cmd": "(tail)",
+      "first": 1790793894007,
+      "last": 1790793894007
+    },
+    {
+      "pid": 21378,
+      "cmd": "(zsh)",
+      "first": 1790793894007,
+      "last": 1790793894007
+    },
+    {
+      "pid": 19498,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790793894007,
+      "last": 1790793897012
+    },
+    {
+      "pid": 19499,
+      "cmd": "node_repl",
+      "first": 1790793894007,
+      "last": 1790793897012
+    },
+    {
+      "pid": 19500,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790793894007,
+      "last": 1790793897012
+    },
+    {
+      "pid": 19504,
+      "cmd": "node_repl",
+      "first": 1790793894007,
+      "last": 1790793897012
+    },
+    {
+      "pid": 18093,
+      "cmd": "zsh -c source snapshot-zsh-1790793870590-8q2u1v.sh 2>null ||",
+      "first": 1790793894007,
+      "last": 1790793896044
+    },
+    {
+      "pid": 20415,
+      "cmd": "sleep 6",
+      "first": 1790793894007,
+      "last": 1790793896044
+    },
+    {
+      "pid": 21509,
+      "cmd": "zsh -c source snapshot-zsh-1790793890979-58hw6t.sh 2>null ||",
+      "first": 1790793894697,
+      "last": 1790793895391
+    },
+    {
+      "pid": 21511,
+      "cmd": "sleep 6",
+      "first": 1790793894697,
+      "last": 1790793895391
+    },
+    {
+      "pid": 21533,
+      "cmd": "(bash)",
+      "first": 1790793895036,
+      "last": 1790793895036
+    },
+    {
+      "pid": 21535,
+      "cmd": "node session-init.cjs",
+      "first": 1790793895036,
+      "last": 1790793895391
+    },
+    {
+      "pid": 21536,
+      "cmd": "(node)",
+      "first": 1790793895036,
+      "last": 1790793895036
+    },
+    {
+      "pid": 21537,
+      "cmd": "(bash)",
+      "first": 1790793895036,
+      "last": 1790793895036
+    },
+    {
+      "pid": 21643,
+      "cmd": "node dev-rules-reminder.cjs",
+      "first": 1790793895722,
+      "last": 1790793895722
+    },
+    {
+      "pid": 21644,
+      "cmd": "node",
+      "first": 1790793895722,
+      "last": 1790793895722
+    },
+    {
+      "pid": 21646,
+      "cmd": "node usage-quota-cache-refresh.cjs",
+      "first": 1790793895722,
+      "last": 1790793895722
+    },
+    {
+      "pid": 21873,
+      "cmd": "(node)",
+      "first": 1790793897645,
+      "last": 1790793897645
+    },
+    {
+      "pid": 21874,
+      "cmd": "(cc-status)",
+      "first": 1790793897645,
+      "last": 1790793897645
+    },
+    {
+      "pid": 21875,
+      "cmd": "(bash)",
+      "first": 1790793897645,
+      "last": 1790793897645
+    },
+    {
+      "pid": 21879,
+      "cmd": "(bash)",
+      "first": 1790793897645,
+      "last": 1790793897645
+    },
+    {
+      "pid": 21907,
+      "cmd": "(bash)",
+      "first": 1790793897982,
+      "last": 1790793897982
+    },
+    {
+      "pid": 21908,
+      "cmd": "(bash)",
+      "first": 1790793897982,
+      "last": 1790793897982
+    },
+    {
+      "pid": 21909,
+      "cmd": "(sh)",
+      "first": 1790793897982,
+      "last": 1790793897982
+    },
+    {
+      "pid": 22159,
+      "cmd": "(node)",
+      "first": 1790793899765,
+      "last": 1790793899765
+    },
+    {
+      "pid": 22161,
+      "cmd": "(bash)",
+      "first": 1790793899765,
+      "last": 1790793899765
+    },
+    {
+      "pid": 22163,
+      "cmd": "(node)",
+      "first": 1790793899765,
+      "last": 1790793899765
+    },
+    {
+      "pid": 22164,
+      "cmd": "(bash)",
+      "first": 1790793899765,
+      "last": 1790793899765
+    },
+    {
+      "pid": 22165,
+      "cmd": "(bash)",
+      "first": 1790793899765,
+      "last": 1790793899765
+    },
+    {
+      "pid": 22166,
+      "cmd": "(cat)",
+      "first": 1790793899765,
+      "last": 1790793899765
+    },
+    {
+      "pid": 22175,
+      "cmd": "zsh -c source snapshot-zsh-1790793870590-8q2u1v.sh 2>null ||",
+      "first": 1790793900164,
+      "last": 1790793902946
+    },
+    {
+      "pid": 22177,
+      "cmd": "sleep 6",
+      "first": 1790793900164,
+      "last": 1790793902946
+    }
+  ]
+}
