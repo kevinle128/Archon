@@ -19,11 +19,14 @@ function parse(raw: string): DashboardRunEvent | null {
  * server — never to populate the Zustand workflow store (that store's own
  * `useDashboardSSE` is the intentional owner of that job; mixing the two
  * would wake dormant SSE-merge logic this fix does not need). `__dashboard__`
- * is its own stream slot in the server's `SSETransport` (keyed apart from any
- * per-conversation stream), so this never contends with a run's own
- * message/steering stream — see the per-conversation eviction note on
- * `LegacyNodeRoom.tsx`'s `onRunSettleHint` doc comment, which this
- * deliberately avoids by using a different stream entirely.
+ * is a broadcast id in the server's `SSETransport`: every subscriber fans
+ * out independently, so this hook never evicts, or is evicted by, another
+ * `__dashboard__` subscriber (a second run page, the Console runs list, the
+ * Legacy dashboard page). It also never contends with a run's own
+ * message/steering stream, since that is a separate, single-writer id — see
+ * the per-conversation eviction note on `LegacyNodeRoom.tsx`'s
+ * `onRunSettleHint` doc comment, which this deliberately avoids by using a
+ * different stream entirely.
  */
 export function useRunTerminalEdge(runId: string, onRunEvent: () => void): void {
   const onRunEventRef = useRef(onRunEvent);

@@ -518,6 +518,83 @@ describe('ConsoleComposerDock', () => {
     expect(host.querySelector('textarea')).toBeNull();
   });
 
+  // The restart-survivor race: a host page's own, separately-cadenced run
+  // read can recover from an outage before this dock's own queue read does,
+  // and re-render with a freshly projected `subState` this dock has not
+  // itself confirmed. Extends the never-show-controls-this-dock-has-not-read
+  // rule from cold mount to this mid-life read-failure gap.
+  test('a failed read freezes the projected subState until this dock’s own next read reports recovery_required', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      subState: 'idle-after-interrupt',
+      pollIntervalMs: 1,
+      readQueue: ctrl.read,
+    });
+    // Pre-outage baseline this dock's own read is driving: a Stopped node
+    // shows "Send now", not live Stop/Queue controls.
+    await settleSnapshot(ctrl, okQueue([], { sub_state: 'idle-after-interrupt' }));
+    expect(host.textContent).not.toContain('Stop');
+    expect(sendNowButton()).not.toBeNull();
+
+    // This dock's own next scheduled read fails — the server just went down.
+    await settleRejection(ctrl, new SteeringRequestError(0, null, 'network'));
+
+    // The host page's run read recovers first and re-renders with a fresh
+    // projection this dock has not itself confirmed.
+    await renderDock({
+      subState: 'generating',
+      pollIntervalMs: 1,
+      readQueue: ctrl.read,
+    });
+    // Still the last-confirmed state — no live "Queue"-only flip.
+    expect(host.textContent).not.toContain('Stop');
+    expect(sendNowButton()).not.toBeNull();
+
+    // This dock's own next read succeeds and reports the true state.
+    await settleSnapshot(
+      ctrl,
+      okQueue([], { execution_state: 'recovery_required', sub_state: 'generating' })
+    );
+    expect(host.textContent).toContain('restored after server restart');
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.querySelectorAll('button')).toHaveLength(0);
+  });
+
+  // The other half of the same race, on a live (never-Stopped) node: the run
+  // read can lose confidence in the sub-state entirely (an undefined
+  // projection, not just a different one) and would otherwise drop Stop
+  // while keeping Queue — a live composer degrading into a queue-only one
+  // the operator never asked for, still ahead of this dock's own read.
+  test('a failed read freezes an undefined projection too, keeping Stop up until recovery_required lands', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      subState: 'generating',
+      pollIntervalMs: 1,
+      readQueue: ctrl.read,
+    });
+    await settleSnapshot(ctrl, okQueue([], { sub_state: 'generating' }));
+    expect(stopButton()).not.toBeNull();
+
+    await settleRejection(ctrl, new SteeringRequestError(0, null, 'network'));
+
+    // The host page's run read recovers first but can no longer say what
+    // the agent's sub-state is — an undefined projection, not a defined one.
+    await renderDock({
+      subState: undefined,
+      pollIntervalMs: 1,
+      readQueue: ctrl.read,
+    });
+    // Still the last-confirmed state — Stop has not been dropped.
+    expect(stopButton()).not.toBeNull();
+
+    await settleSnapshot(
+      ctrl,
+      okQueue([], { execution_state: 'recovery_required', sub_state: null })
+    );
+    expect(host.textContent).toContain('restored after server restart');
+    expect(host.querySelectorAll('button')).toHaveLength(0);
+  });
+
   test('reports every observed execution state to the parent, including the initial null', async () => {
     const ctrl = controllableRead();
     const observed: (string | null)[] = [];

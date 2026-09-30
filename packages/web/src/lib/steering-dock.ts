@@ -189,6 +189,16 @@ export interface SteeringDockState {
    * proves the node stopped, not how).
    */
   readonly nodeOutcome: SteeringNodeOutcome | null;
+  /**
+   * True while this dock's own queue read could not reach the server (a
+   * transport or 5xx failure — see `markQueueReadFailed`). `syncProjectedSubState`
+   * checks this before applying a fresh projection: a host page's own,
+   * separately-cadenced run read can recover first and report an optimistic
+   * sub-state (e.g. a restart-recovered node briefly read back as still
+   * generating) before this dock's own next read has had a chance to learn
+   * the true one. `applyQueueSnapshot` clears it the moment a read succeeds.
+   */
+  readonly lastReadFailed: boolean;
 }
 
 export type SteeringDockMode =
@@ -687,7 +697,21 @@ export function createSteeringDockState(subState?: SteeringSubState): SteeringDo
     queueGeneration: 0,
     deliveryByMessageId: new Map(),
     nodeOutcome: null,
+    lastReadFailed: false,
   };
+}
+
+/**
+ * Marks this dock's own queue read as unable to reach the server just now.
+ * `syncProjectedSubState` checks `state.lastReadFailed` before applying a
+ * fresh projection — see that field's own doc comment. `applyQueueSnapshot`
+ * clears the flag the instant a read succeeds again; nothing else does, so
+ * a persistent outage keeps every later projection frozen for as long as
+ * this dock's own reads keep failing. Idempotent: repeated failures collapse
+ * to one flag, so callers never need to check before calling.
+ */
+export function markQueueReadFailed(state: SteeringDockState): SteeringDockState {
+  return state.lastReadFailed ? state : { ...state, lastReadFailed: true };
 }
 
 /**
@@ -710,11 +734,20 @@ export function createSteeringDockState(subState?: SteeringSubState): SteeringDo
  * for the sending tab itself, applied to every row this tab already knew
  * about. The next queue snapshot still replaces `sent` wholesale, so this
  * never diverges from server truth for longer than one poll.
+ *
+ * A read failure freezes this entirely (see `SteeringDockState.lastReadFailed`'s
+ * own doc comment): a host page's own, separately-cadenced run read can
+ * recover from an outage before this dock's own next queue read does, and
+ * projecting its optimistic sub-state in that gap would show live controls
+ * this dock has not itself confirmed. `applyQueueSnapshot` is the only path
+ * that lifts the freeze, by reconciling `subState` directly from a read this
+ * dock actually made.
  */
 export function syncProjectedSubState(
   state: SteeringDockState,
   projected: SteeringSubState | undefined
 ): SteeringDockState {
+  if (state.lastReadFailed) return state;
   const next = projected ?? null;
   if (state.subState === next) return state;
   const sent =
@@ -1212,6 +1245,9 @@ export interface QueueSnapshot {
  *
  * `sendInFlight`, `pendingRetry`, `refusal`, `withdrawingMessageId`,
  * `sendingNowMessageId`, and `queueGeneration` are preserved exactly.
+ * `lastReadFailed` always clears to `false` — reaching this function at all
+ * means this dock's own read just succeeded, even when every other field
+ * happens to be unchanged from before the failure.
  * Identical content returns the identical state object so React skips a
  * render. The draft and a stored refusal are never touched — the server has
  * no opinion on either.
@@ -1295,7 +1331,8 @@ export function applyQueueSnapshot(
     state.executionState === snapshot.execution_state &&
     state.autoSend === snapshot.auto_send &&
     state.softInjection === snapshot.capabilities.soft_injection &&
-    state.nodeOutcome === nextNodeOutcome;
+    state.nodeOutcome === nextNodeOutcome &&
+    !state.lastReadFailed;
   if (unchanged) return state;
 
   return {
@@ -1307,6 +1344,7 @@ export function applyQueueSnapshot(
     autoSend: snapshot.auto_send,
     softInjection: snapshot.capabilities.soft_injection,
     nodeOutcome: nextNodeOutcome,
+    lastReadFailed: false,
     ...(subStateUnchanged
       ? null
       : {
