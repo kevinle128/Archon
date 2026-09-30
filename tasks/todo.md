@@ -54,6 +54,8 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA round 14: REJECT (1 minor: single-slot dashboard stream evicts subscribers; 1 cosmetic); all VQ13 fixes hold; provider matrix pass
 - [x] QA14 fixes (dashboard stream fan-out, survivor-tab dock gate) — merged; e2e 158/0/4
 - [x] QA round 15: **ACCEPT** (0 major, 0 minor, 1 cosmetic accepted); provider matrix pass on all six providers
+- [ ] Per-item `Send now` while generating (mockup default state). Missing because the Claude spike used `maxTurns: 1`; the corrected spike is verified 3/3. Owner: agent soft-inject
+- [ ] QA round 16 on per-item Send now + regression (Verdict: ACCEPT required)
 
 ## Background processes started by this session
 
