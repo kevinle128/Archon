@@ -85,7 +85,7 @@ export function QuickAddPicker({
       <div
         ref={containerRef}
         style={{ position: 'absolute', left: position.x, top: position.y, zIndex: 50 }}
-        className="w-64 bg-surface-elevated border border-border rounded-lg shadow-lg overflow-hidden"
+        className="w-64 bg-surface-elevated border border-border rounded-xl overflow-hidden"
       >
         <div className="px-3 py-2 border-b border-border flex items-center gap-2">
           <button
@@ -115,7 +115,7 @@ export function QuickAddPicker({
             }}
             onKeyDown={handleInputKeyDown}
             placeholder={isSkill ? 'remotion-best-practices' : '.archon/mcp/ntfy.json'}
-            className="w-full bg-surface border border-border rounded px-2 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary font-mono focus:outline-none focus:border-primary"
+            className="w-full bg-surface border border-border rounded px-2 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary font-mono focus:outline-none focus:border-accent"
           />
           <button
             type="button"
@@ -124,7 +124,7 @@ export function QuickAddPicker({
             className={cn(
               'mt-2 w-full rounded px-3 py-1.5 text-xs font-medium transition-colors',
               inputValue.trim()
-                ? 'bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer'
+                ? 'bg-accent text-accent-foreground hover:bg-accent-hover cursor-pointer'
                 : 'bg-surface border border-border text-text-tertiary cursor-not-allowed'
             )}
           >
@@ -140,7 +140,7 @@ export function QuickAddPicker({
     <div
       ref={containerRef}
       style={{ position: 'absolute', left: position.x, top: position.y, zIndex: 50 }}
-      className="w-56 bg-surface-elevated border border-border rounded-lg shadow-lg overflow-hidden"
+      className="w-56 bg-surface-elevated border border-border rounded-xl overflow-hidden"
     >
       <div className="px-3 py-2 border-b border-border">
         <span className="text-xs font-medium text-text-secondary">Add Node</span>
