@@ -788,12 +788,9 @@ for (const surface of ['console', 'legacy'] as const) {
       await captureEvidence(roomB, `converge-${surface}-460-one-row-starterB.png`, testInfo);
       await captureEvidence(roomT, `converge-${surface}-460-one-row-teammate.png`, testInfo);
 
-      if (surface === 'console') {
-        await starterB.setViewportSize(WIDE);
-        await assertQueueVisualContract(roomB, 1, 'console@1440 one-row');
-        await captureEvidence(roomB, 'converge-console-1440-one-row-starterB.png', testInfo);
-        await starterB.setViewportSize(NARROW);
-      }
+      // The 1440px one-row contract is asserted on starterA's scope check below:
+      // resizing starterB here would cross the room's responsive breakpoint,
+      // remount its dock, and lose the unsent draft this scenario still needs.
 
       measurements.oneRow = {
         orderedIds: oneRow,

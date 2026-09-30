@@ -22,6 +22,9 @@ import { T } from '../lib/playwright/timeouts';
  * imports product sources, so a provider-side drift fails here loudly.
  */
 
+// `console` is the deep-link (`?node=`) way into the run detail; `legacy` is the
+// click-through way. Both land in the same room, so they share one design
+// contract. The key stays `console` so scenario ids stay stable.
 type Surface = 'console' | 'legacy';
 
 const ROW = 'details[data-tool-id]';
@@ -31,10 +34,10 @@ const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
 const NARROW_VIEWPORT = { width: 390, height: 844 } as const;
 const ROOM_TOLERANCE_PX = 2;
 
-/** Design reference widths: Legacy room authored at 460px, Console at 520px. */
-const REFERENCE_WIDTH: Record<Surface, number> = { console: 520, legacy: 460 };
+/** Design reference width: the room is authored at 460px. */
+const REFERENCE_WIDTH: Record<Surface, number> = { console: 460, legacy: 460 };
 const ROOM_PANEL_ID: Record<Surface, string> = {
-  console: 'console-run-room',
+  console: 'legacy-run-room',
   legacy: 'legacy-run-room',
 };
 // Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
@@ -99,6 +102,9 @@ async function openTaskRoom(
 
 /** Moves an already-open room to another node through the log-row button. */
 async function switchRoom(page: Page, nodeId: string): Promise<Locator> {
+  // A deep-linked run opens on the graph; the node buttons live on the Logs tab.
+  const logsTab = page.getByRole('tab', { name: 'Logs' });
+  if ((await logsTab.count()) > 0) await logsTab.click();
   await page
     .getByRole('button', { name: new RegExp(nodeId) })
     .first()
@@ -676,7 +682,7 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(focus.focusVisible, 'keyboard activation carries :focus-visible').toBe(true);
     expect(focus.style).toBe('solid');
     expect(focus.width).toBe('2px');
-    expect(focus.offset).toBe(surface === 'console' ? '2px' : '-2px');
+    expect(focus.offset).toBe('-2px');
     const accent = await resolveColorIn(room, 'var(--accent-bright)');
     expect(focus.color, 'card focus outline resolves --accent-bright').toBe(accent.resolved);
 

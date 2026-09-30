@@ -44,19 +44,6 @@ async function waitForRunTitle(page: Page): Promise<void> {
   });
 }
 
-function executionSection(page: Page, nodeText: string): Locator {
-  return page
-    .locator('section[data-execution-row-id]')
-    .filter({ has: page.getByRole('button', { name: new RegExp(nodeText) }) })
-    .first();
-}
-
-async function openConsoleLogRow(page: Page, nodeText: string): Promise<void> {
-  const buttons = page.getByRole('button', { name: new RegExp(nodeText) });
-  await expect(buttons.first()).toBeVisible({ timeout: T.medium });
-  await buttons.first().click();
-}
-
 async function openLegacyLogRow(page: Page, nodeText: string): Promise<void> {
   const logsTab = page.getByRole('tab', { name: 'Logs' });
   if ((await logsTab.count()) > 0) {
@@ -186,7 +173,7 @@ function expectStoredRowsSerialized(archon: ArchonRuntime, runId: string): void 
   }
 }
 
-test('[P1] [V:transcript-display.structured] Structured reports render in all three mounts; ineligible and stored rows stay serialized', async ({
+test('[P1] [V:transcript-display.structured] Structured reports render in the deep-linked and opened room; ineligible and stored rows stay serialized', async ({
   page,
   archon,
 }) => {
@@ -194,41 +181,23 @@ test('[P1] [V:transcript-display.structured] Structured reports render in all th
   await expectApiRowsSerialized(page, started.runId);
   expectStoredRowsSerialized(archon, started.runId);
 
-  await openRunDetail(page, started.runId);
+  // Deep-linked entry: the run opens with the node room already selected, and
+  // the room applies the same unwrapping as the click-through entry below.
+  await openRunDetail(page, started.runId, TRANSCRIPT_STRUCTURED_NODE);
   await waitForRunTitle(page);
-
-  // Inline execution history mounts under every divider without a selection.
-  const inlineSection = executionSection(page, TRANSCRIPT_STRUCTURED_NODE);
-  await expectUnwrapped(inlineSection, 'Console inline execution history');
-  await expectIneligibleRows(inlineSection, 'Console inline execution history');
-  await expectStructuredFields(executionSection(page, TRANSCRIPT_MULTI_NODE));
-
-  // Selecting the row suspends its inline body and opens the node room — the
-  // second mount must apply the same unwrapping.
-  await openConsoleLogRow(page, TRANSCRIPT_STRUCTURED_NODE);
   const structuredRoom = await waitForRoom(page, TRANSCRIPT_STRUCTURED_NODE);
-  await expectUnwrapped(structuredRoom, 'Console selected node room');
-  await expectIneligibleRows(structuredRoom, 'Console selected node room');
-  await openConsoleLogRow(page, TRANSCRIPT_MULTI_NODE);
+  await expectUnwrapped(structuredRoom, 'Deep-linked node room');
+  await expectIneligibleRows(structuredRoom, 'Deep-linked node room');
+  await openLegacyLogRow(page, TRANSCRIPT_MULTI_NODE);
   await expectStructuredFields(await waitForRoom(page, TRANSCRIPT_MULTI_NODE));
 
   // `plain` resolves a definition node with no output_format; `ghost` resolves
   // no definition node at all. Both must render the serialized bytes.
-  await expectRawEnvelope(
-    executionSection(page, TRANSCRIPT_PLAIN_NODE),
-    PLAIN_ENVELOPE,
-    'Console inline history (no output_format)'
-  );
-  await openConsoleLogRow(page, TRANSCRIPT_PLAIN_NODE);
+  await openLegacyLogRow(page, TRANSCRIPT_PLAIN_NODE);
   await expectRawEnvelope(
     await waitForRoom(page, TRANSCRIPT_PLAIN_NODE),
     PLAIN_ENVELOPE,
-    'Console room (no output_format)'
-  );
-  await expectRawEnvelope(
-    executionSection(page, TRANSCRIPT_GHOST_NODE),
-    GHOST_ENVELOPE,
-    'Console inline history (deleted definition)'
+    'Deep-linked room (no output_format)'
   );
 
   await openLegacyRunDetail(page, started.runId);

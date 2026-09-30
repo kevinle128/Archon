@@ -83,15 +83,11 @@
     },
     {
       "path": "packages/docs-web/src/content/docs/brand/index.md",
-      "sha256": "4b0827fcef879c33fc3622fcc99a683877c5f10b24e3aa745f80abe0b881d631"
+      "sha256": "16537cfa117c513592c28cd4d8836d14335945d1ac0dcf6428d65b99faff827e"
     },
     {
       "path": "packages/web/src/index.css",
-      "sha256": "b087578368b7f37379da7fd90e870b622d75c21efd3bcc8bb92cc4599c54d01e"
-    },
-    {
-      "path": "packages/web/src/experiments/console/theme.css",
-      "sha256": "543f29044c5c3fb455c19013a3a226fa03c15808e1c660e66ff463d4f8036bdf"
+      "sha256": "66f67d3ac1a68bc8689655033d84dad2f337c13518564dd8f3ab3259fad930fc"
     }
   ],
   "criteria": [
@@ -156,7 +152,6 @@
     }
   ],
   "surfaces": [
-    "console",
     "legacy"
   ],
   "states": [
