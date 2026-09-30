@@ -840,7 +840,7 @@ describe('createWorkflowStore', () => {
           nodeId: 'review',
           message: 'Review the plan.',
           userPrompt: 'Build the approved bridge.',
-          reviewUrl: 'https://archon.example.ts.net/console/p/cb-1/r/run-1',
+          reviewUrl: 'https://archon.example.ts.net/workflows/runs/run-1',
         },
       },
     });
@@ -908,7 +908,7 @@ describe('createWorkflowStore', () => {
     expect(JSON.parse(insert.event_body as string)).toMatchObject({
       payload: {
         approval: {
-          reviewUrl: 'https://archon.example.ts.net/console/p/cb%2F1%3Fx%23y/r/run%2F1%3Fx%23y',
+          reviewUrl: 'https://archon.example.ts.net/workflows/runs/run%2F1%3Fx%23y',
         },
       },
     });
