@@ -10,13 +10,14 @@ export interface NodeRunListProps {
   onSelect: (row: LogRow) => void;
 }
 
+// Quiet list: status is a text label, tinted only when it needs attention.
 const STATUS_COLORS: Record<LogRow['status'], string> = {
-  pending: 'bg-accent/20 text-accent',
-  running: 'bg-accent/20 text-accent',
-  awaiting: 'bg-warning/20 text-warning',
-  completed: 'bg-success/20 text-success',
-  failed: 'bg-error/20 text-error',
-  skipped: 'bg-surface text-text-secondary',
+  pending: 'text-text-tertiary',
+  running: 'text-accent',
+  awaiting: 'text-accent',
+  completed: 'text-success',
+  failed: 'text-error',
+  skipped: 'text-text-tertiary',
 };
 
 export function NodeRunList({
@@ -25,7 +26,10 @@ export function NodeRunList({
   onSelect,
 }: NodeRunListProps): React.ReactElement {
   return (
-    <nav aria-label="Node runs" className="flex min-h-0 w-56 shrink-0 flex-col overflow-y-auto">
+    <nav
+      aria-label="Node runs"
+      className="flex min-h-0 w-56 shrink-0 flex-col gap-1 overflow-y-auto p-2"
+    >
       {rows.map(row => {
         const selected = row.id === selectedRowId;
         return (
@@ -36,20 +40,15 @@ export function NodeRunList({
             type="button"
             aria-current={selected ? 'true' : undefined}
             className={cn(
-              'flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm',
-              selected ? 'bg-accent/10' : 'hover:bg-surface-hover'
+              'flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 rounded-[10px] px-3 py-2 text-left text-sm transition-colors duration-150 motion-reduce:transition-none',
+              selected ? 'bg-accent-muted' : 'hover:bg-surface'
             )}
             onClick={(): void => {
               onSelect(row);
             }}
           >
             <span className="truncate text-text-primary">{row.label}</span>
-            <span
-              className={cn(
-                'shrink-0 rounded-full px-2 py-0.5 text-xs font-medium',
-                STATUS_COLORS[row.status]
-              )}
-            >
+            <span className={cn('shrink-0 text-xs font-medium', STATUS_COLORS[row.status])}>
               {nodeStatusLabel(row.status)}
             </span>
           </button>

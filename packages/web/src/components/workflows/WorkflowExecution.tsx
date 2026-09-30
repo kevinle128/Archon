@@ -24,6 +24,7 @@ import { TerminalTab } from './terminal/terminal-tab';
 import { useWorkflowStore } from '@/stores/workflow-store';
 import { useRunTerminalEdge } from '@/hooks/useRunTerminalEdge';
 import {
+  abandonWorkflowRun,
   answerAskHuman,
   approveWorkflowRun,
   getConversation,
@@ -34,6 +35,7 @@ import {
   getWorkflow,
   getWorkflowNodeMessages,
   rejectWorkflowRun,
+  resumeWorkflowRun,
   sendMessage,
   type NodeExecution,
   type PendingInteraction,
@@ -64,7 +66,8 @@ import {
 } from '@/lib/execution-room-model';
 import { nodeMessageScopeKey, type NodeMessageSelection } from '@/lib/node-message-pages';
 import type { AskDraft, AskDraftByRequest } from './parse-ask-envelope';
-import { ensureUtc, formatDurationMs } from '@/lib/format';
+import { ensureUtc, formatDurationMs, formatStarted } from '@/lib/format';
+import { ChevronRight, FileText } from 'lucide-react';
 import { readRoomRatio, writeRoomRatio } from '@/lib/room-split-layout';
 import { settleRunningDagNodesForTerminalStatus } from '@/lib/workflow-utils';
 import type {
@@ -350,20 +353,24 @@ interface WorkflowExecutionProps {
 
 function StatusBadge({ status }: { status: string }): React.ReactElement {
   const colors: Record<string, string> = {
-    pending: 'bg-accent/20 text-accent',
-    running: 'bg-accent/20 text-accent',
-    completed: 'bg-success/20 text-success',
-    failed: 'bg-error/20 text-error',
-    cancelled: 'bg-surface text-text-secondary',
+    pending: 'border-accent text-accent',
+    running: 'border-accent text-accent',
+    completed: 'border-success text-success',
+    failed: 'border-error text-error',
+    cancelled: 'border-border text-text-secondary',
+    paused: 'border-warning text-warning',
   };
   return (
     <span
-      className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] ?? 'bg-surface text-text-secondary'}`}
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${colors[status] ?? 'border-border text-text-secondary'}`}
     >
       {status}
     </span>
   );
 }
+
+const HEADER_BUTTON_CLASS =
+  'inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-border bg-background px-4 text-sm font-medium text-text-primary transition-colors duration-150 hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none';
 
 function nodeMessageSelectionFromRow(row: {
   id: string;
@@ -395,6 +402,8 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   const [codebaseCwd, setCodebaseCwd] = useState<string | null>(null);
   const [workerRunId, setWorkerRunId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<WorkflowRunView>('graph');
+  const [showArtifacts, setShowArtifacts] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   // Increments on every user-initiated node click to trigger scroll in WorkflowLogs
   const [nodeScrollTrigger, setNodeScrollTrigger] = useState(0);
   // Track which codebaseId we've already fetched to avoid stale re-fetches during runId transitions
@@ -941,6 +950,26 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     void queryClient.invalidateQueries({ queryKey: ['workflow-runs-status'] });
   }, [queryClient, runId]);
 
+  const handleRunAction = useCallback(
+    async (action: 'resume' | 'abandon'): Promise<void> => {
+      setActionError(null);
+      try {
+        if (action === 'resume') await resumeWorkflowRun(runId);
+        else await abandonWorkflowRun(runId);
+        await queryClient.invalidateQueries({ queryKey: ['workflowRun', runId] });
+        void queryClient.invalidateQueries({ queryKey: ['workflowRuns'] });
+      } catch (err) {
+        console.error('[WorkflowExecution] Run action failed', {
+          runId,
+          action,
+          error: err instanceof Error ? err.message : err,
+        });
+        setActionError(err instanceof Error ? err.message : `Failed to ${action} the run`);
+      }
+    },
+    [queryClient, runId]
+  );
+
   const handleGateApprove = useCallback(async (): Promise<void> => {
     await approveWorkflowRun(runId);
     await queryClient.invalidateQueries({ queryKey: ['workflowRun', runId] });
@@ -1174,86 +1203,159 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   return (
     <div className="legacy-run-view flex flex-col h-full min-h-0 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-        <button
-          onClick={(): void => {
-            if (window.history.length > 1) {
-              navigate(-1);
-            } else {
-              navigate('/workflows');
-            }
-          }}
-          className="text-text-secondary hover:text-text-primary transition-colors text-sm"
-          title="Back"
+      <div className="grid gap-2 border-b border-border px-8 pt-4">
+        <nav
+          aria-label="Breadcrumb"
+          className="flex flex-wrap items-center gap-1 text-sm text-text-secondary"
         >
-          &larr;
-        </button>
-        <div className="flex items-center gap-2 min-w-0">
-          <h2 className="font-semibold text-text-primary truncate">{workflow.workflowName}</h2>
-          <StatusBadge status={workflow.status} />
-          <WorkflowAskChrome
-            status={workflow.status}
-            pendingInteractions={queryData?.pendingInteractions ?? []}
-            nodeStates={queryData?.nodeStates ?? []}
-            runError={queryData?.runError ?? null}
-            onSelectAwaitingNode={(nodeId, interaction): void => {
-              const row = chooseExecutionForInteraction(executionRows, interaction);
-              if (row === null) return;
-              handleOpenRoom(row.id, nodeId, null, false);
-              const requestId = interaction.tool_use_id;
-              let attempts = 0;
-              const focusAsk = (): void => {
-                const card = document.getElementById(askCardId(requestId, 'room'));
-                if (card === null) {
-                  if (attempts < 30) {
-                    attempts += 1;
-                    requestAnimationFrame(focusAsk);
-                  }
-                  return;
-                }
-                card.focus();
-                const control = card.querySelector(
-                  'input:not([disabled]), textarea:not([disabled]), button:not([disabled])'
-                );
-                if (control instanceof HTMLElement) control.focus();
-              };
-              requestAnimationFrame(focusAsk);
+          <button
+            type="button"
+            onClick={(): void => {
+              navigate('/dashboard');
             }}
-            onRequestGraphView={(): void => undefined}
-          />
-        </div>
-        <div className="flex items-center gap-2 ml-auto shrink-0">
-          {codebaseName && <span className="text-xs text-text-secondary">{codebaseName}</span>}
-          {workerRunId && (
-            <button
-              onClick={(): void => {
-                navigate(`/workflows/runs/${workerRunId}`);
+            className="-ml-2 inline-flex min-h-11 cursor-pointer items-center rounded-[10px] px-2 transition-colors duration-150 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
+          >
+            Dashboard
+          </button>
+          <ChevronRight aria-hidden="true" strokeWidth={2} className="h-4 w-4 text-text-tertiary" />
+          <span>{workflow.workflowName}</span>
+          <ChevronRight aria-hidden="true" strokeWidth={2} className="h-4 w-4 text-text-tertiary" />
+          <span className="font-mono">{runId.slice(0, 8)}</span>
+        </nav>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-4">
+            <h1 className="min-w-0 truncate font-mono text-xl font-medium text-text-primary">
+              {workflow.workflowName}
+            </h1>
+            <StatusBadge status={workflow.status} />
+            <WorkflowAskChrome
+              status={workflow.status}
+              pendingInteractions={queryData?.pendingInteractions ?? []}
+              nodeStates={queryData?.nodeStates ?? []}
+              runError={queryData?.runError ?? null}
+              onSelectAwaitingNode={(nodeId, interaction): void => {
+                const row = chooseExecutionForInteraction(executionRows, interaction);
+                if (row === null) return;
+                handleOpenRoom(row.id, nodeId, null, false);
+                const requestId = interaction.tool_use_id;
+                let attempts = 0;
+                const focusAsk = (): void => {
+                  const card = document.getElementById(askCardId(requestId, 'room'));
+                  if (card === null) {
+                    if (attempts < 30) {
+                      attempts += 1;
+                      requestAnimationFrame(focusAsk);
+                    }
+                    return;
+                  }
+                  card.focus();
+                  const control = card.querySelector(
+                    'input:not([disabled]), textarea:not([disabled]), button:not([disabled])'
+                  );
+                  if (control instanceof HTMLElement) control.focus();
+                };
+                requestAnimationFrame(focusAsk);
               }}
-              className="flex items-center gap-1 text-xs text-primary hover:text-accent-bright transition-colors"
-              title="View workflow run details"
+              onRequestGraphView={(): void => undefined}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {workerRunId && (
+              <button
+                type="button"
+                onClick={(): void => {
+                  navigate(`/workflows/runs/${workerRunId}`);
+                }}
+                className={HEADER_BUTTON_CLASS}
+                title="View workflow run details"
+              >
+                Run Details
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={workflow.status !== 'failed' && workflow.status !== 'paused'}
+              title={
+                workflow.status === 'failed' || workflow.status === 'paused'
+                  ? 'Resume from the last completed node'
+                  : 'Only a failed or paused run can resume'
+              }
+              onClick={(): void => {
+                void handleRunAction('resume');
+              }}
+              className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-accent px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-background disabled:text-text-tertiary motion-reduce:transition-none"
             >
-              <span>Run Details</span>
+              Resume
             </button>
-          )}
-          <span className="text-xs text-text-secondary">{formatDurationMs(elapsed)}</span>
+            <button
+              type="button"
+              disabled={workflow.artifacts.length === 0}
+              aria-pressed={showArtifacts}
+              onClick={(): void => {
+                setShowArtifacts(value => !value);
+              }}
+              className={HEADER_BUTTON_CLASS}
+            >
+              <FileText aria-hidden="true" strokeWidth={2} className="h-4 w-4" />
+              Artifacts
+            </button>
+            <button
+              type="button"
+              disabled={isTerminal(workflow.status)}
+              onClick={(): void => {
+                if (window.confirm('Abandon this run? It will be marked cancelled.')) {
+                  void handleRunAction('abandon');
+                }
+              }}
+              className={`${HEADER_BUTTON_CLASS} text-error`}
+            >
+              Abandon
+            </button>
+          </div>
         </div>
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-text-tertiary">
+          <span>
+            run <b className="font-mono font-normal text-text-primary">{runId}</b>
+          </span>
+          {codebaseName && (
+            <span>
+              project <b className="font-mono font-normal text-text-primary">{codebaseName}</b>
+            </span>
+          )}
+          {startedAt > 0 && (
+            <span>
+              started{' '}
+              <b className="font-mono font-normal text-text-primary">
+                {formatStarted(new Date(startedAt).toISOString())}
+              </b>
+            </span>
+          )}
+          <span>
+            active{' '}
+            <b className="font-mono font-normal text-text-primary">{formatDurationMs(elapsed)}</b>
+          </span>
+        </div>
+        {actionError !== null ? (
+          <p role="alert" className="text-xs text-error">
+            {actionError}
+          </p>
+        ) : null}
+        {isDag && (
+          <div className="-mx-3">
+            <DagRunTabs
+              activeView={activeView}
+              parentPlatformId={parentPlatformId}
+              onValueChange={setActiveView}
+            />
+          </div>
+        )}
       </div>
 
-      {error ? <p className="px-4 py-1 text-xs text-error">Failed to load — retrying</p> : null}
+      {error ? <p className="px-8 py-1 text-xs text-error">Failed to load — retrying</p> : null}
 
-      {/* View tabs — only for DAG workflows */}
-      {isDag && (
-        <div className="flex items-center px-4 py-1.5 border-b border-border">
-          <DagRunTabs
-            activeView={activeView}
-            parentPlatformId={parentPlatformId}
-            onValueChange={setActiveView}
-          />
-        </div>
-      )}
       <div data-testid="legacy-run-shell-chrome">
         {retryActionPanel}
-        {!isRunning && workflow.artifacts.length > 0 ? (
+        {(showArtifacts || !isRunning) && workflow.artifacts.length > 0 ? (
           <div className="border-t border-border p-3">
             <ArtifactSummary artifacts={workflow.artifacts} runId={runId} />
           </div>

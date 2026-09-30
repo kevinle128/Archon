@@ -52,32 +52,6 @@ export interface NodeRoomHeaderProps {
   terminalOutcome?: SteeringNodeOutcome | null;
 }
 
-// Tailwind's build scans source for literal class names, so a chip/pill tone
-// resolves through this fixed table instead of `text-${tone}` interpolation
-// — the same convention ConsoleAgentHistoryList.tsx uses for tool-row colors.
-const KIND_CHIP_STYLE: Readonly<Record<string, { className: string; style: CSSProperties }>> = {
-  'node-command': {
-    className: 'text-node-command',
-    style: { borderColor: 'color-mix(in oklch, var(--node-command) 40%, transparent)' },
-  },
-  'node-prompt': {
-    className: 'text-node-prompt',
-    style: { borderColor: 'color-mix(in oklch, var(--node-prompt) 40%, transparent)' },
-  },
-  'node-bash': {
-    className: 'text-node-bash',
-    style: { borderColor: 'color-mix(in oklch, var(--node-bash) 40%, transparent)' },
-  },
-  'node-loop': {
-    className: 'text-node-loop',
-    style: { borderColor: 'color-mix(in oklch, var(--node-loop) 40%, transparent)' },
-  },
-  'node-approval': {
-    className: 'text-node-approval',
-    style: { borderColor: 'color-mix(in oklch, var(--node-approval) 40%, transparent)' },
-  },
-};
-
 interface StatusPillStyle {
   className: string;
   style: CSSProperties;
@@ -137,7 +111,6 @@ export function NodeRoomHeader({
   const effectiveStatus = effectiveNodeRoomStatus(model.status, terminalOutcome);
   const pill = statusPill(effectiveStatus, recoveryRequired);
   const pillStyle = pill.tone === null ? NEUTRAL_PILL_STYLE : STATUS_PILL_STYLE[pill.tone];
-  const chipStyle = kindChip === null ? null : (KIND_CHIP_STYLE[kindChip.tone] ?? null);
   const metaLine = headerMetaLine({
     startedAt: model.startedAt,
     status: effectiveStatus,
@@ -153,21 +126,15 @@ export function NodeRoomHeader({
   });
 
   return (
-    <header className="sticky top-0 z-10 min-w-0 overflow-hidden border-b border-border bg-surface">
-      <div className="flex min-w-0 flex-col gap-1.5 px-4 py-2.5">
+    <header className="sticky top-0 z-10 min-w-0 overflow-hidden border-b border-border bg-background">
+      <div className="flex min-w-0 flex-col gap-2 px-8 py-4">
         <div className="flex min-w-0 items-center gap-2">
-          {kindChip !== null && chipStyle !== null ? (
-            <span
-              className={cn(
-                'shrink-0 rounded border px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide',
-                chipStyle.className
-              )}
-              style={chipStyle.style}
-            >
+          {kindChip !== null ? (
+            <span className="shrink-0 font-mono text-xs font-normal text-text-tertiary">
               {kindChip.label}
             </span>
           ) : null}
-          <div className="min-w-0 truncate font-mono text-[13px] font-bold text-text-primary">
+          <div className="min-w-0 truncate text-xl font-medium text-text-primary">
             {model.nodeLabel}
           </div>
           <span
@@ -182,14 +149,14 @@ export function NodeRoomHeader({
           <button
             type="button"
             aria-label={closeLabel}
-            className="ml-auto shrink-0 rounded px-1.5 py-1 text-[13px] text-text-tertiary hover:text-text-primary"
+            className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center rounded-[10px] text-[13px] text-text-tertiary transition-colors duration-150 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
             onClick={onClose}
           >
             ✕
           </button>
         </div>
         {metaLine !== null ? (
-          <div className="truncate text-[11px] text-text-tertiary">{metaLine}</div>
+          <div className="truncate text-xs text-text-tertiary">{metaLine}</div>
         ) : null}
         {options.length > 1 || model.isLoopIteration ? (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">

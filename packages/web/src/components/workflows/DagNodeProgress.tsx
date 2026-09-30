@@ -89,8 +89,8 @@ function DagNodeItem({
   return (
     <div>
       <div
-        className={`w-full text-left px-2 py-1.5 rounded transition-colors cursor-pointer ${
-          isActive ? 'bg-accent/10 border-l-2 border-accent' : 'hover:bg-surface-hover'
+        className={`w-full text-left px-3 py-2 rounded-[10px] transition-colors duration-150 cursor-pointer motion-reduce:transition-none ${
+          isActive ? 'bg-accent-muted' : 'hover:bg-surface'
         }`}
         onClick={(): void => {
           onNodeClick(node.nodeId);
