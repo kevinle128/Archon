@@ -60,10 +60,11 @@ export const GROK_CAPABILITIES: ProviderCapabilities = {
   // spike judged the method a queued follow-up because it required the
   // interject to cancel an already-dispatched second tool call; a message is
   // read at the model's next step, so that bar tested preemption, not
-  // same-turn delivery. Only the ACP transport has the method: a turn that
-  // falls back to `--single` (see `selectGrokTransport()`) registers no
-  // handler, so a per-item Send now on such a turn is refused and the entry
-  // stays queued.
+  // same-turn delivery. Only the ACP transport has the method. A turn that
+  // falls back to `--single` (see `selectGrokTransport()`) reports
+  // `turn_not_interruptible`, which projects no steering sub-state for that
+  // turn, so the dock offers no per-item Send now and the send route answers
+  // 409 if one arrives anyway; the entry stays queued.
   softInjection: true,
   // Verified false against the real binary: nothing resembling Claude's
   // `--replay-user-messages` echo-back exists on either transport (an

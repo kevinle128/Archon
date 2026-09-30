@@ -14,22 +14,24 @@ import { E2E_FAKE_SOFT_INJECT_PROVIDER_ID, E2eFakeProvider } from './provider';
  */
 export function registerE2eFakeProvider(): void {
   if (!process.env.ARCHON_E2E_FAKE_PROVIDER) return;
-  if (isRegisteredProvider('e2e-fake')) return;
-  registerProvider({
-    id: 'e2e-fake',
-    displayName: 'E2E Fake',
-    factory: () => new E2eFakeProvider(),
-    capabilities: E2E_FAKE_CAPABILITIES,
-    builtIn: false,
-    credentials: { kind: 'static', specs: [] },
-  });
-  if (isRegisteredProvider(E2E_FAKE_SOFT_INJECT_PROVIDER_ID)) return;
-  registerProvider({
-    id: E2E_FAKE_SOFT_INJECT_PROVIDER_ID,
-    displayName: 'E2E Fake (soft injection)',
-    factory: () => new E2eFakeProvider({ softInjectable: true }),
-    capabilities: E2E_FAKE_SOFT_INJECT_CAPABILITIES,
-    builtIn: false,
-    credentials: { kind: 'static', specs: [] },
-  });
+  if (!isRegisteredProvider('e2e-fake')) {
+    registerProvider({
+      id: 'e2e-fake',
+      displayName: 'E2E Fake',
+      factory: () => new E2eFakeProvider(),
+      capabilities: E2E_FAKE_CAPABILITIES,
+      builtIn: false,
+      credentials: { kind: 'static', specs: [] },
+    });
+  }
+  if (!isRegisteredProvider(E2E_FAKE_SOFT_INJECT_PROVIDER_ID)) {
+    registerProvider({
+      id: E2E_FAKE_SOFT_INJECT_PROVIDER_ID,
+      displayName: 'E2E Fake (soft injection)',
+      factory: () => new E2eFakeProvider({ softInjectable: true }),
+      capabilities: E2E_FAKE_SOFT_INJECT_CAPABILITIES,
+      builtIn: false,
+      credentials: { kind: 'static', specs: [] },
+    });
+  }
 }

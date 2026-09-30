@@ -43,7 +43,8 @@ export const E2E_FAKE_CAPABILITIES: ProviderCapabilities = {
  * acknowledgement, registered under its own provider id so the default
  * `e2e-fake` provider keeps its queue-only behavior. It models the accepted
  * transport contract: a message handed to the live turn is echoed back by id
- * (`operator_delivery_ack`) only once the turn reaches its next boundary.
+ * (`operator_delivery_ack`) only once the turn reaches its next boundary. The
+ * ack covers soft-injected messages only, not the turn's own prompt id.
  */
 export const E2E_FAKE_SOFT_INJECT_CAPABILITIES: ProviderCapabilities = {
   ...E2E_FAKE_CAPABILITIES,
