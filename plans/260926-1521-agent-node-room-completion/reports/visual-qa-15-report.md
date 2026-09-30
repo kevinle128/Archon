@@ -245,3 +245,10 @@ Status: DONE
 Summary: VQ14-1 and VQ14-2 are fixed in their original triggers in both shells. There are 0 dashboard disconnects across all three pairings over 65 s, 0 late `Stop` / `Queue` in 22 terminal-edge cycles with every companion subscriber open, every status change is rendered on the Console runs list, and 32 survivor tabs over 7 outages show 0 unconfirmed controls before `Recovery required`. Every earlier finding stays fixed over at least 10 cycles per race. Story 7.5, the 30-min idle timeout with its keystroke re-arm, the mockup walk and the six-provider matrix all pass. There are 0 major and 0 minor findings. One cosmetic item (VQ15-1, a pre-existing one-frame pill/band mismatch at the terminal edge) does not block acceptance.
 
 Verdict: ACCEPT
+
+## Decisions (2026-09-30)
+
+1. **VQ15-1:** accepted as is. The frame lasts 9–21 ms, it existed before this round, and it breaks no rule or mockup state. No change.
+2. **Blank Send now after a withdraw:** this is not part of the mockups or the spec. The current behaviour is kept: the band is empty and the dock stays idle. A notice would be new copy, so it needs its own product decision.
+
+Round 15 is the acceptance round: 0 major and 0 minor findings.

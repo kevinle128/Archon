@@ -53,7 +53,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA13 fixes (keep room through outage, first-load dock settling, Legacy terminal-edge dock refresh) — merged; e2e 158/0/4
 - [x] QA round 14: REJECT (1 minor: single-slot dashboard stream evicts subscribers; 1 cosmetic); all VQ13 fixes hold; provider matrix pass
 - [x] QA14 fixes (dashboard stream fan-out, survivor-tab dock gate) — merged; e2e 158/0/4
-- [ ] QA round 15 (final acceptance, Verdict: ACCEPT required)
+- [x] QA round 15: **ACCEPT** (0 major, 0 minor, 1 cosmetic accepted); provider matrix pass on all six providers
 
 ## Background processes started by this session
 
@@ -63,3 +63,6 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - web dev server: PID 84922 port 5187 (PORT=3317 VITE_API_PORT=3317)
 
 ## Review
+
+- Final state: develop-2 has every phase and every QA-fix round merged. `bun run validate` is green, `check:schema-upgrades` passes, and the last full e2e run was 158 pass, 0 fail, 4 skip. Visual QA round 15 returned ACCEPT.
+- Background processes: the mockup server on 8791 is stopped. The user's server on 3090 was restarted by this session as a background task, so it stops when the session ends.
