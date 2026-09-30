@@ -51,16 +51,15 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA12 fixes (abandon band gap, stale Running pill, loop-boundary focus, Legacy post-Send-now dock) — merged; e2e 158/0/4
 - [x] QA round 13: REJECT (1 minor: room replaced by run error page during outage; 2 cosmetic); all VQ12 fixes hold; provider matrix pass
 - [x] QA13 fixes (keep room through outage, first-load dock settling, Legacy terminal-edge dock refresh) — merged; e2e 158/0/4
+- [x] QA round 14: REJECT (1 minor: single-slot dashboard stream evicts subscribers; 1 cosmetic); all VQ13 fixes hold; provider matrix pass
+- [ ] QA14 fixes (dashboard stream fan-out, survivor-tab dock gate) — agent qa14-fixes
+- [ ] QA round 15 (final acceptance, Verdict: ACCEPT required)
 
 ## Background processes started by this session
 
 - mockup static server: PID 48474 port 8791
 - isolated API server: PID 68792 port 3317 (ARCHON_HOME=scratchpad/archon-home)
 - docker postgres: container archon-schema-check-c3af on 127.0.0.1:55432 (run check with PATH=/opt/homebrew/opt/libpq/bin:$PATH PGHOST=127.0.0.1 PGPORT=55432 PGUSER=pgcheck PGPASSWORD=pgcheck)
-- web dev server: PID 63192 port 5187
+- web dev server: PID 84922 port 5187 (PORT=3317 VITE_API_PORT=3317)
 
 ## Review
-
-- [x] QA round 14: REJECT (1 minor: single-slot dashboard stream evicts subscribers; 1 cosmetic); all VQ13 fixes hold; provider matrix pass
-- [ ] QA14 fixes (dashboard stream fan-out, survivor-tab dock gate) — agent qa14-fixes
-- [ ] QA round 15 (final acceptance, Verdict: ACCEPT required)
