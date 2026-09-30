@@ -23,3 +23,8 @@
 
 - Pattern: briefs started Vite with `PORT=<api>` only. Vite's proxy used it, but Console opens its live streams directly on `VITE_API_PORT`, whose default is 3090, the user's server. Round 14 found Console streams reaching 3090 for about 15 minutes.
 - Rule: every isolated web server is started with `PORT=<api> VITE_API_PORT=<api>`. Before measuring anything, confirm in the browser network log that Console's streams go to that API port.
+
+## A feature the mockup shows by default must never be dropped silently as "accepted drift" (2026-09-30)
+
+- Pattern: the mockup's default state (`softInject: true`, "claude · soft-inject") shows a per-item `Send now` while the agent is generating. The readiness report kept it in scope (M008). A provider spike then set `softInjection: false` everywhere. From round 2 on, QA only checked that the button was absent, and the coordinator listed it as accepted drift. The goal was then reported as "all mockup features done", but the user never approved that drift.
+- Rule: when a capability spike removes a behavior that the mockup shows, stop and ask the user before accepting the gap. Report it as a missing feature, never as accepted drift, and never claim "đủ tính năng" while a mockup behavior has no working implementation.
