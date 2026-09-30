@@ -1,0 +1,11 @@
+name: vq15-omp
+description: "Scratch - OMP steering target."
+mutates_checkout: false
+nodes:
+  - id: omp-node
+    provider: omp
+    model: xai-oauth/grok-4.5
+    prompt: |
+      Run these bash steps one at a time, each as its own separate tool call, in order: "sleep 25; echo s1", "sleep 25; echo s2", "sleep 25; echo s3", "sleep 25; echo s4".
+      Then reply with one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for.
+      $ARGUMENTS

@@ -1,0 +1,11 @@
+name: vq15-claude-steer
+description: "Scratch - Claude haiku steering target."
+mutates_checkout: false
+nodes:
+  - id: cl-node
+    provider: claude
+    model: haiku
+    prompt: |
+      Run these Bash steps one at a time, each as its own separate Bash call, in order: step N is "for i in 1 2 3 4; do sleep 6; done; echo sN" for N = 1..4.
+      Then reply with one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for.
+      $ARGUMENTS

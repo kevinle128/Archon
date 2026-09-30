@@ -1,0 +1,130 @@
+{
+  "R": "c8f2759ffe1bec8da665402432d2b680",
+  "post": 4,
+  "abandonAt": 1790747507810,
+  "res": { "success": true, "message": "Abandoned workflow: vq15-deepseek", "__status": 200 },
+  "raf": {
+    "c": [
+      [2, "Running||Stop,Queue|TA|QUEUED · 1|2 messages queued||1|1|||TEXTAREA"],
+      [
+        799,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ],
+    "l": [
+      [2, "Running||Stop,Queue|TA|QUEUED · 1|agent generating||1|1|||TEXTAREA"],
+      [
+        638,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ]
+  },
+  "ns": {
+    "c": [
+      [37, "Running||Stop,Queue|TA|QUEUED · 1|2 messages queued||1|1|||TEXTAREA"],
+      [
+        808,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ],
+    "l": [
+      [38, "Running||Stop,Queue|TA|QUEUED · 1|agent generating||1|1|||TEXTAREA"],
+      [
+        650,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ]
+  },
+  "gets": [
+    {
+      "t": 621,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    { "t": 639, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    {
+      "t": 639,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    {
+      "t": 680,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    {
+      "t": 786,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    {
+      "t": 800,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    { "t": 800, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    {
+      "t": 833,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    { "t": 1088, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 1088, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 1763, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 1867, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2592, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2592, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2592, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 4093, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 4094, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 4094, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5595, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5595, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5595, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 7111, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 7112, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 7112, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8600, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8601, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8601, "s": "l", "k": "r", "http": 200, "st": "cancelled" }
+  ],
+  "rows0": {
+    "c": { "assistant": 4, "thinking": 4, "operator": 3 },
+    "l": { "assistant": 4, "thinking": 4, "operator": 3 }
+  },
+  "rows1": {
+    "c": { "assistant": 4, "thinking": 4, "operator": 3 },
+    "l": { "assistant": 4, "thinking": 4, "operator": 3 }
+  },
+  "status": "cancelled"
+}

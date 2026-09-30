@@ -1,0 +1,186 @@
+[
+  { "seq": 1, "kind": "status", "payload": { "state": "started" }, "meta": {} },
+  {
+    "seq": 2,
+    "kind": "text",
+    "payload": {
+      "text": "Run these shell steps one at a time, each as its own separate tool call, in order: \"sleep 25; echo s1\", \"sleep 25; echo "
+    },
+    "meta": {
+      "origin": "prompt",
+      "actor_user_id": "28e30db068a1108434da21177b61a520",
+      "prompt_source": "node_prompt"
+    }
+  },
+  {
+    "seq": 3,
+    "kind": "text",
+    "payload": {
+      "text": "The user wants me to run shell steps one at a time, each as its own separate tool call, in order. Let me do that. The in"
+    },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "deepseek-3a388111-33f5-45b3-8945-d93004d1444f-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 4,
+    "kind": "text",
+    "payload": { "text": "I'll run each step as its own separate tool call, in order." },
+    "meta": {
+      "block_id": "deepseek-3a388111-33f5-45b3-8945-d93004d1444f-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 5,
+    "kind": "tool",
+    "payload": { "name": "bash", "id": "call_919243d3380b492fa006878d", "has_output": false },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 6,
+    "kind": "tool",
+    "payload": { "name": "bash", "id": "call_919243d3380b492fa006878d", "has_output": true },
+    "meta": { "tool_phase": "result", "outcome": "interrupted" }
+  },
+  { "seq": 7, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 8,
+    "kind": "text",
+    "payload": {
+      "text": "OP ds-c1: reply with the token ds-c1ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "f208a926-96d2-4a96-83f7-dda806c9faee",
+      "origin": "operator",
+      "operator_user_id": "28e30db068a1108434da21177b61a520"
+    }
+  },
+  {
+    "seq": 9,
+    "kind": "text",
+    "payload": {
+      "text": "Operator message arrived: reply with the token ds-c1ACK, then continue with the remaining steps. So I should include the"
+    },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "deepseek-fb906acb-c5c1-4d97-b741-d687527065fb-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 10,
+    "kind": "text",
+    "payload": { "text": "ACK: ds-c1ACK\n\nContinuing with the steps." },
+    "meta": {
+      "block_id": "deepseek-fb906acb-c5c1-4d97-b741-d687527065fb-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 11,
+    "kind": "tool",
+    "payload": { "name": "bash", "id": "call_cf5431a0e4bf4f2d94395270", "has_output": false },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 12,
+    "kind": "tool",
+    "payload": { "name": "bash", "id": "call_cf5431a0e4bf4f2d94395270", "has_output": true },
+    "meta": { "tool_phase": "result", "outcome": "interrupted" }
+  },
+  { "seq": 13, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 14,
+    "kind": "text",
+    "payload": {
+      "text": "OP ds-c2: reply with the token ds-c2ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "591e6b63-bd0d-48c4-8287-e3fdf6c1f67f",
+      "origin": "operator",
+      "operator_user_id": "28e30db068a1108434da21177b61a520"
+    }
+  },
+  {
+    "seq": 15,
+    "kind": "text",
+    "payload": {
+      "text": "Another operator message. I reply with ds-c2ACK and continue. Let me try s1 again. If aborted again... Let me continue. "
+    },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "deepseek-21f40abb-8d9e-43c6-90fd-2c0ff9ff60cb-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 16,
+    "kind": "text",
+    "payload": { "text": "ACK: ds-c2ACK\n\nContinuing with the remaining steps." },
+    "meta": {
+      "block_id": "deepseek-21f40abb-8d9e-43c6-90fd-2c0ff9ff60cb-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 17,
+    "kind": "tool",
+    "payload": { "name": "bash", "id": "call_e8c071037f7f4e13b9451e6d", "has_output": false },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 18,
+    "kind": "tool",
+    "payload": { "name": "bash", "id": "call_e8c071037f7f4e13b9451e6d", "has_output": true },
+    "meta": { "tool_phase": "result", "outcome": "interrupted" }
+  },
+  { "seq": 19, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 20,
+    "kind": "text",
+    "payload": {
+      "text": "OP ds-c3: reply with the token ds-c3ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "2494dc15-64aa-45ae-8a9d-01c2af0f809a",
+      "origin": "operator",
+      "operator_user_id": "28e30db068a1108434da21177b61a520"
+    }
+  },
+  {
+    "seq": 21,
+    "kind": "text",
+    "payload": {
+      "text": "Again aborted. Operator says continue. Let me keep going. This may be a test of persistence. Continue with s1."
+    },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "deepseek-93fe14c1-bad7-424b-8bcb-184fc03eca7b-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 22,
+    "kind": "text",
+    "payload": { "text": "ACK: ds-c3ACK\n\nContinuing." },
+    "meta": {
+      "block_id": "deepseek-93fe14c1-bad7-424b-8bcb-184fc03eca7b-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 23,
+    "kind": "tool",
+    "payload": { "name": "bash", "id": "call_5f90bba852ce4702ac32229e", "has_output": false },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 24,
+    "kind": "status",
+    "payload": { "state": "failed", "detail": "Cancelled by user" },
+    "meta": {}
+  }
+]

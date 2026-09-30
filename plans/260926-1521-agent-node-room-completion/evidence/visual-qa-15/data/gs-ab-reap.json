@@ -1,0 +1,80 @@
+{
+  "root": 38371,
+  "mark": null,
+  "start": 1790752162440,
+  "end": 1790752174607,
+  "procs": [
+    {
+      "pid": 41362,
+      "cmd": "grok --single Run exactly this shell command once: sleep 60 ",
+      "first": 1790752162440,
+      "last": 1790752166775
+    },
+    {
+      "pid": 41475,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790752162440,
+      "last": 1790752164946
+    },
+    {
+      "pid": 41476,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790752162440,
+      "last": 1790752164946
+    },
+    {
+      "pid": 41477,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790752162440,
+      "last": 1790752164946
+    },
+    {
+      "pid": 41479,
+      "cmd": "node gitnexus mcp",
+      "first": 1790752162440,
+      "last": 1790752164946
+    },
+    {
+      "pid": 41480,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790752162440,
+      "last": 1790752164946
+    },
+    {
+      "pid": 41481,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790752162440,
+      "last": 1790752164946
+    },
+    {
+      "pid": 44811,
+      "cmd": "zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>n",
+      "first": 1790752162440,
+      "last": 1790752164946
+    },
+    {
+      "pid": 44816,
+      "cmd": "sleep 60",
+      "first": 1790752162440,
+      "last": 1790752164946
+    },
+    {
+      "pid": 43846,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790752162440,
+      "last": 1790752164946
+    },
+    {
+      "pid": 42398,
+      "cmd": "node context7-mcp",
+      "first": 1790752162440,
+      "last": 1790752164946
+    },
+    {
+      "pid": 45180,
+      "cmd": "(node)",
+      "first": 1790752165241,
+      "last": 1790752165241
+    }
+  ]
+}

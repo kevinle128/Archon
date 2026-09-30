@@ -1,0 +1,10 @@
+name: vq15-fake
+description: "Scratch - one steerable prompt node on the fake provider."
+mutates_checkout: false
+nodes:
+  - id: fake-node
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"interruptible":true,"emitTool":true,"delayMs":90000}<</E2E_SCENARIO>>
+      $ARGUMENTS

@@ -1,0 +1,32 @@
+{
+  "root": 38371,
+  "mark": null,
+  "start": 1790752208394,
+  "end": 1790752218653,
+  "procs": [
+    {
+      "pid": 48120,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790752208394,
+      "last": 1790752213648
+    },
+    {
+      "pid": 49140,
+      "cmd": "zsh -c source snapshot-zsh-1790752205534-6a895u.sh 2>null ||",
+      "first": 1790752208394,
+      "last": 1790752212745
+    },
+    {
+      "pid": 49142,
+      "cmd": "sleep 6",
+      "first": 1790752208394,
+      "last": 1790752212422
+    },
+    {
+      "pid": 49340,
+      "cmd": "sleep 6",
+      "first": 1790752212745,
+      "last": 1790752212745
+    }
+  ]
+}

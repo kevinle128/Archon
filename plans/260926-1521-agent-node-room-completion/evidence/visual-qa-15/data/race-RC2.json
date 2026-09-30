@@ -1,0 +1,22 @@
+{
+  "R": "d0a048b19568dea81c62ca90ab9d97fa",
+  "delay": -3,
+  "send": { "clicked": 1790747329561, "sendResolved": 1790747329587, "st": 200 },
+  "delClick": -2,
+  "del": {
+    "http": 200,
+    "body": "{\"success\":true,\"message_id\":\"b91f9297-f7ed-440d-b89b-7db695db9206\"}"
+  },
+  "q": { "sub": "idle-after-interrupt", "items": [] },
+  "tc": [
+    [0, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||BODY"],
+    [25, "Running||Send now|TA|SENDING · 1|agent idle · Send now delivers||1|0|||BUTTON"],
+    [34, "Running||Send now|TA||agent idle · Send now delivers||0|0|||TEXTAREA"]
+  ],
+  "tl": [
+    [0, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||DIV[room]"],
+    [24, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||BUTTON"],
+    [34, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||TEXTAREA"],
+    [42, "Running||Send now|TA||agent idle · Send now delivers||0|0|||TEXTAREA"]
+  ]
+}

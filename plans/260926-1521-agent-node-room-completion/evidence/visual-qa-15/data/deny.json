@@ -1,0 +1,17 @@
+{
+  "R": "f07fda99c6819aec5d6b651e24bd968b",
+  "o": {
+    "c": {
+      "open": 1,
+      "x": 2,
+      "running": 0,
+      "text": "PROMPT\ndeny-node\nCompleted\n✕\nstarted 12:57 · 5s · claude · haiku\nPROMPT · VQ15-OPERATOR\nRun exactly this Bash command once: sleep 40 && echo guarded\nIf it is blocked, reply \"blocked\" and stop. Do not retry.\nTHINKING\n▶\nfailed\n✕\nBash\nsleep 40 && echo guarded\n3ms\nshell\n3ms\nRaw\n$ sleep 40 && echo guarded\n<tool_use_error>Blocked: sleep 40 followed by: echo guarded. To wait for a condition, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.</tool_use_error>\nFAI"
+    },
+    "l": {
+      "open": 1,
+      "x": 2,
+      "running": 0,
+      "text": "PROMPT\ndeny-node\nCompleted\n✕\nstarted 12:57 · 5s · claude · haiku\nPROMPT · VQ15-OPERATOR\nRun exactly this Bash command once: sleep 40 && echo guarded\nIf it is blocked, reply \"blocked\" and stop. Do not retry.\nTHINKING\n▶\nfailed\n✕\nBash\nsleep 40 && echo guarded\n3ms\nshell\n3ms\nRaw\n$ sleep 40 && echo guarded\n<tool_use_error>Blocked: sleep 40 followed by: echo guarded. To wait for a condition, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.</tool_use_error>\nFAI"
+    }
+  }
+}

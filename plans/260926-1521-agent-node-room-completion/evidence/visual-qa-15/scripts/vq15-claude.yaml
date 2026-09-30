@@ -1,0 +1,15 @@
+name: vq15-claude
+description: "Scratch - Claude sonnet with thinking, advisor, a todo list and five Bash steps."
+mutates_checkout: false
+nodes:
+  - id: claude-node
+    provider: claude
+    model: sonnet
+    thinking: adaptive
+    prompt: |
+      First ask your advisor tool (once) for a one-line tip about running shell steps.
+      Then create a todo list with exactly five items "Run step 1" .. "Run step 5".
+      Then run five Bash steps one after another, one Bash call per step, marking each todo done after it:
+      step N is: for i in 1 2 3 4; do sleep 6; done; echo step-N
+      Finish with one short sentence. If an operator message arrives, follow it and include any ACK token it asks for.
+      $ARGUMENTS

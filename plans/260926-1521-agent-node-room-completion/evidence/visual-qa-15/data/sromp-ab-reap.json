@@ -1,0 +1,14 @@
+{
+  "root": 38371,
+  "mark": null,
+  "start": 1790752244541,
+  "end": 1790752254746,
+  "procs": [
+    {
+      "pid": 49681,
+      "cmd": "omp --mode rpc --cwd thread-4e3a5527 --yolo --no-title --no-",
+      "first": 1790752244541,
+      "last": 1790752245754
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+name: vq15-grok-single
+description: "Scratch - Grok with output_format, so the --single transport."
+mutates_checkout: false
+nodes:
+  - id: grok-single
+    provider: grok
+    prompt: |
+      Run exactly this shell command once: sleep 60 && echo b
+      Then return a JSON summary.
+    output_format:
+      type: object
+      properties:
+        summary: { type: string }
+        done: { type: boolean }
+      required: [summary, done]

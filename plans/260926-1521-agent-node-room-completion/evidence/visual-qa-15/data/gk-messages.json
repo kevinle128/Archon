@@ -1,0 +1,950 @@
+[
+  { "seq": 1, "kind": "status", "payload": { "state": "started" }, "meta": {} },
+  {
+    "seq": 2,
+    "kind": "text",
+    "payload": {
+      "text": "Run these shell steps one at a time, each as its own separate tool call, in order: \"sleep 25; echo s1\", \"sleep 25; echo "
+    },
+    "meta": {
+      "origin": "prompt",
+      "actor_user_id": "28e30db068a1108434da21177b61a520",
+      "prompt_source": "node_prompt"
+    }
+  },
+  {
+    "seq": 3,
+    "kind": "text",
+    "payload": { "text": "I will run the four " },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 4,
+    "kind": "text",
+    "payload": { "text": "shell commands sequentially" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 5,
+    "kind": "text",
+    "payload": { "text": " as separate tool calls." },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 6,
+    "kind": "text",
+    "payload": { "text": "\n\nI will set a longer" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 7,
+    "kind": "text",
+    "payload": { "text": " timeout to prevent " },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 8,
+    "kind": "text",
+    "payload": { "text": "the 25-second sleeps" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 9,
+    "kind": "text",
+    "payload": { "text": " from being interrupted." },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 10,
+    "kind": "text",
+    "payload": { "text": " I am starting with " },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 11,
+    "kind": "text",
+    "payload": { "text": "the first command." },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 12,
+    "kind": "text",
+    "payload": { "text": "I'll" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 13,
+    "kind": "text",
+    "payload": { "text": " run" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 14,
+    "kind": "text",
+    "payload": { "text": " the" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 15,
+    "kind": "text",
+    "payload": { "text": " four" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 16,
+    "kind": "text",
+    "payload": { "text": " commands" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 17,
+    "kind": "text",
+    "payload": { "text": " one" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 18,
+    "kind": "text",
+    "payload": { "text": " at" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 19,
+    "kind": "text",
+    "payload": { "text": " a" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 20,
+    "kind": "text",
+    "payload": { "text": " time" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 21,
+    "kind": "text",
+    "payload": { "text": "," },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 22,
+    "kind": "text",
+    "payload": { "text": " in" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 23,
+    "kind": "text",
+    "payload": { "text": " order" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 24,
+    "kind": "text",
+    "payload": { "text": "." },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 25,
+    "kind": "text",
+    "payload": { "text": " Starting" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 26,
+    "kind": "text",
+    "payload": { "text": " the" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 27,
+    "kind": "text",
+    "payload": { "text": " first" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 28,
+    "kind": "text",
+    "payload": { "text": " now" },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 29,
+    "kind": "text",
+    "payload": { "text": "." },
+    "meta": {
+      "block_id": "grok-acp-ffad9589-27fc-403f-a753-e033e4f8d1e5-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 30,
+    "kind": "tool",
+    "payload": {
+      "name": "run_terminal_command",
+      "id": "call-9b825745-24d8-41c2-b39f-1bdf26bdac7e-0",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 31,
+    "kind": "tool",
+    "payload": {
+      "name": "run_terminal_command",
+      "id": "call-9b825745-24d8-41c2-b39f-1bdf26bdac7e-0",
+      "has_output": true
+    },
+    "meta": { "tool_phase": "result", "output_state": "unknown", "outcome": "unknown" }
+  },
+  { "seq": 32, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 33,
+    "kind": "text",
+    "payload": {
+      "text": "OP gk-c1: reply with the token gk-c1ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "805c87df-5527-41ba-b2cd-90d6d4cb676c",
+      "origin": "operator",
+      "operator_user_id": "28e30db068a1108434da21177b61a520"
+    }
+  },
+  {
+    "seq": 34,
+    "kind": "text",
+    "payload": { "text": "I will reply with the" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 35,
+    "kind": "text",
+    "payload": { "text": " token gk-c1ACK and " },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 36,
+    "kind": "text",
+    "payload": { "text": "continue with the remaining" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 37,
+    "kind": "text",
+    "payload": { "text": " steps." },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 38,
+    "kind": "text",
+    "payload": { "text": "\n\nThe first shell step" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 39,
+    "kind": "text",
+    "payload": { "text": " was cancelled. I will" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 40,
+    "kind": "text",
+    "payload": { "text": " execute the remaining" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 41,
+    "kind": "text",
+    "payload": { "text": " three steps in order." },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 42,
+    "kind": "text",
+    "payload": { "text": "\n\nAll four shell steps" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 43,
+    "kind": "text",
+    "payload": { "text": " remain. The first command" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 44,
+    "kind": "text",
+    "payload": { "text": " was never executed," },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 45,
+    "kind": "text",
+    "payload": { "text": " so s1 must also be " },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 46,
+    "kind": "text",
+    "payload": { "text": "run." },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 47,
+    "kind": "text",
+    "payload": { "text": "gk" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 48,
+    "kind": "text",
+    "payload": { "text": "-" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 49,
+    "kind": "text",
+    "payload": { "text": "c" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 50,
+    "kind": "text",
+    "payload": { "text": "1" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 51,
+    "kind": "text",
+    "payload": { "text": "ACK" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 52,
+    "kind": "text",
+    "payload": { "text": "\n\n" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 53,
+    "kind": "text",
+    "payload": { "text": "Continu" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 54,
+    "kind": "text",
+    "payload": { "text": "ing" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 55,
+    "kind": "text",
+    "payload": { "text": " with" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 56,
+    "kind": "text",
+    "payload": { "text": " the" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 57,
+    "kind": "text",
+    "payload": { "text": " first" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 58,
+    "kind": "text",
+    "payload": { "text": " remaining" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 59,
+    "kind": "text",
+    "payload": { "text": " step" },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 60,
+    "kind": "text",
+    "payload": { "text": "." },
+    "meta": {
+      "block_id": "grok-acp-8e69602a-1e52-4d61-bb94-d5bbc7c57c51-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 61,
+    "kind": "tool",
+    "payload": {
+      "name": "run_terminal_command",
+      "id": "call-4b1573bd-4222-4766-88d8-47c9b6313e72-1",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 62,
+    "kind": "tool",
+    "payload": {
+      "name": "run_terminal_command",
+      "id": "call-4b1573bd-4222-4766-88d8-47c9b6313e72-1",
+      "has_output": true
+    },
+    "meta": { "tool_phase": "result", "output_state": "unknown", "outcome": "unknown" }
+  },
+  { "seq": 63, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 64,
+    "kind": "text",
+    "payload": {
+      "text": "OP gk-c2: reply with the token gk-c2ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "0d15ff23-cd7f-40a5-af37-b53554cfe0d5",
+      "origin": "operator",
+      "operator_user_id": "28e30db068a1108434da21177b61a520"
+    }
+  },
+  {
+    "seq": 65,
+    "kind": "text",
+    "payload": { "text": "Replying with the token" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 66,
+    "kind": "text",
+    "payload": { "text": " gk-c2ACK and proceeding" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 67,
+    "kind": "text",
+    "payload": { "text": " to the remaining steps." },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 68,
+    "kind": "text",
+    "payload": { "text": "\n\nAll four shell steps" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 69,
+    "kind": "text",
+    "payload": { "text": " remain pending. I will" },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 70,
+    "kind": "text",
+    "payload": { "text": " start with s1." },
+    "meta": {
+      "origin": "thinking",
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-thinking-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 71,
+    "kind": "text",
+    "payload": { "text": "gk" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 72,
+    "kind": "text",
+    "payload": { "text": "-" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 73,
+    "kind": "text",
+    "payload": { "text": "c" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 74,
+    "kind": "text",
+    "payload": { "text": "2" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 75,
+    "kind": "text",
+    "payload": { "text": "ACK" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 76,
+    "kind": "text",
+    "payload": { "text": "\n\n" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 77,
+    "kind": "text",
+    "payload": { "text": "Continu" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 78,
+    "kind": "text",
+    "payload": { "text": "ing" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 79,
+    "kind": "text",
+    "payload": { "text": " with" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 80,
+    "kind": "text",
+    "payload": { "text": " the" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 81,
+    "kind": "text",
+    "payload": { "text": " first" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 82,
+    "kind": "text",
+    "payload": { "text": " remaining" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 83,
+    "kind": "text",
+    "payload": { "text": " step" },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 84,
+    "kind": "text",
+    "payload": { "text": "." },
+    "meta": {
+      "block_id": "grok-acp-cc44412a-0df4-48f9-a967-d44ae667bc03-assistant-2",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 85,
+    "kind": "tool",
+    "payload": {
+      "name": "run_terminal_command",
+      "id": "call-6a93e375-8590-4c1b-8f58-f22a1c8b5481-2",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 86,
+    "kind": "tool",
+    "payload": {
+      "name": "run_terminal_command",
+      "id": "call-6a93e375-8590-4c1b-8f58-f22a1c8b5481-2",
+      "has_output": true
+    },
+    "meta": { "tool_phase": "result", "output_state": "unknown", "outcome": "unknown" }
+  },
+  { "seq": 87, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 88,
+    "kind": "text",
+    "payload": {
+      "text": "OP gk-c3: reply with the token gk-c3ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "fa497f20-3676-4e00-8533-a56cfa5572dd",
+      "origin": "operator",
+      "operator_user_id": "28e30db068a1108434da21177b61a520"
+    }
+  },
+  {
+    "seq": 89,
+    "kind": "text",
+    "payload": { "text": "gk" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 90,
+    "kind": "text",
+    "payload": { "text": "-" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 91,
+    "kind": "text",
+    "payload": { "text": "c" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 92,
+    "kind": "text",
+    "payload": { "text": "3" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 93,
+    "kind": "text",
+    "payload": { "text": "ACK" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 94,
+    "kind": "text",
+    "payload": { "text": "\n\n" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 95,
+    "kind": "text",
+    "payload": { "text": "Continu" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 96,
+    "kind": "text",
+    "payload": { "text": "ing" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 97,
+    "kind": "text",
+    "payload": { "text": " with" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 98,
+    "kind": "text",
+    "payload": { "text": " the" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 99,
+    "kind": "text",
+    "payload": { "text": " first" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 100,
+    "kind": "text",
+    "payload": { "text": " remaining" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 101,
+    "kind": "text",
+    "payload": { "text": " step" },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 102,
+    "kind": "text",
+    "payload": { "text": "." },
+    "meta": {
+      "block_id": "grok-acp-74041002-67fd-44d2-a9d2-1896d8e76d9a-assistant-1",
+      "text_mode": "delta"
+    }
+  },
+  {
+    "seq": 103,
+    "kind": "tool",
+    "payload": {
+      "name": "run_terminal_command",
+      "id": "call-00ed3f22-52cc-4e82-9a38-a67d7a82ef58-3",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 104,
+    "kind": "status",
+    "payload": { "state": "failed", "detail": "Cancelled by user" },
+    "meta": {}
+  }
+]

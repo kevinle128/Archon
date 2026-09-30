@@ -1,0 +1,102 @@
+{
+  "root": 53226,
+  "mark": null,
+  "procs": [
+    {
+      "pid": 18170,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790747459990,
+      "last": 1790747464830
+    },
+    {
+      "pid": 18276,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790747459990,
+      "last": 1790747461508
+    },
+    {
+      "pid": 18277,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790747459990,
+      "last": 1790747461508
+    },
+    {
+      "pid": 18278,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790747459990,
+      "last": 1790747461508
+    },
+    {
+      "pid": 18279,
+      "cmd": "node gitnexus mcp",
+      "first": 1790747459990,
+      "last": 1790747461508
+    },
+    {
+      "pid": 18280,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790747459990,
+      "last": 1790747461508
+    },
+    {
+      "pid": 18283,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790747459990,
+      "last": 1790747461508
+    },
+    {
+      "pid": 21821,
+      "cmd": "zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>n",
+      "first": 1790747459990,
+      "last": 1790747461508
+    },
+    {
+      "pid": 21860,
+      "cmd": "sleep 25",
+      "first": 1790747459990,
+      "last": 1790747461508
+    },
+    {
+      "pid": 19797,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790747459990,
+      "last": 1790747461508
+    },
+    {
+      "pid": 18922,
+      "cmd": "node context7-mcp",
+      "first": 1790747459990,
+      "last": 1790747461508
+    },
+    {
+      "pid": 22035,
+      "cmd": "<defunct>",
+      "first": 1790747461811,
+      "last": 1790747462111
+    },
+    {
+      "pid": 22075,
+      "cmd": "<defunct>",
+      "first": 1790747462411,
+      "last": 1790747462710
+    },
+    {
+      "pid": 22229,
+      "cmd": "<defunct>",
+      "first": 1790747463014,
+      "last": 1790747463014
+    },
+    {
+      "pid": 22235,
+      "cmd": "<defunct>",
+      "first": 1790747463312,
+      "last": 1790747463620
+    },
+    {
+      "pid": 22250,
+      "cmd": "<defunct>",
+      "first": 1790747463928,
+      "last": 1790747464228
+    }
+  ]
+}

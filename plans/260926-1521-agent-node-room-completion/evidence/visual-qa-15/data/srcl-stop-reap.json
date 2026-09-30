@@ -1,0 +1,80 @@
+{
+  "root": 38371,
+  "mark": null,
+  "start": 1790752191711,
+  "end": 1790752200917,
+  "procs": [
+    {
+      "pid": 45842,
+      "cmd": "codex exec --experimental-json --model gpt-5.5 --sandbox dan",
+      "first": 1790752191711,
+      "last": 1790752195645
+    },
+    {
+      "pid": 45889,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790752191711,
+      "last": 1790752192945
+    },
+    {
+      "pid": 47607,
+      "cmd": "zsh -c source snapshot-zsh-1790752189055-43kjdv.sh 2>null ||",
+      "first": 1790752191711,
+      "last": 1790752192945
+    },
+    {
+      "pid": 47609,
+      "cmd": "sleep 6",
+      "first": 1790752191711,
+      "last": 1790752192945
+    },
+    {
+      "pid": 46247,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790752191711,
+      "last": 1790752195645
+    },
+    {
+      "pid": 46248,
+      "cmd": "node_repl",
+      "first": 1790752191711,
+      "last": 1790752195645
+    },
+    {
+      "pid": 46257,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790752191711,
+      "last": 1790752195645
+    },
+    {
+      "pid": 46279,
+      "cmd": "node_repl",
+      "first": 1790752191711,
+      "last": 1790752195645
+    },
+    {
+      "pid": 47716,
+      "cmd": "node session-init.cjs",
+      "first": 1790752193545,
+      "last": 1790752193545
+    },
+    {
+      "pid": 47818,
+      "cmd": "node dev-rules-reminder.cjs",
+      "first": 1790752193833,
+      "last": 1790752193833
+    },
+    {
+      "pid": 47819,
+      "cmd": "node",
+      "first": 1790752193833,
+      "last": 1790752193833
+    },
+    {
+      "pid": 47821,
+      "cmd": "node usage-quota-cache-refresh.cjs",
+      "first": 1790752193833,
+      "last": 1790752193833
+    }
+  ]
+}

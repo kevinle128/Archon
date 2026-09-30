@@ -1,0 +1,210 @@
+{
+  "root": 53226,
+  "mark": null,
+  "procs": [
+    {
+      "pid": 59789,
+      "cmd": "codex exec --experimental-json --model gpt-5.5 --sandbox dan",
+      "first": 1790746908848,
+      "last": 1790746915904
+    },
+    {
+      "pid": 59851,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790746908848,
+      "last": 1790746908848
+    },
+    {
+      "pid": 60362,
+      "cmd": "node_repl",
+      "first": 1790746908848,
+      "last": 1790746915904
+    },
+    {
+      "pid": 60364,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790746908848,
+      "last": 1790746915904
+    },
+    {
+      "pid": 60365,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790746908848,
+      "last": 1790746915904
+    },
+    {
+      "pid": 60395,
+      "cmd": "node_repl",
+      "first": 1790746908848,
+      "last": 1790746915904
+    },
+    {
+      "pid": 61782,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790746910362,
+      "last": 1790746918662
+    },
+    {
+      "pid": 61815,
+      "cmd": "(git)",
+      "first": 1790746910362,
+      "last": 1790746910362
+    },
+    {
+      "pid": 61831,
+      "cmd": "(bash)",
+      "first": 1790746910671,
+      "last": 1790746910671
+    },
+    {
+      "pid": 61832,
+      "cmd": "(ps)",
+      "first": 1790746910671,
+      "last": 1790746910671
+    },
+    {
+      "pid": 61833,
+      "cmd": "(grep)",
+      "first": 1790746910671,
+      "last": 1790746910671
+    },
+    {
+      "pid": 61834,
+      "cmd": "(grep)",
+      "first": 1790746910671,
+      "last": 1790746910671
+    },
+    {
+      "pid": 62116,
+      "cmd": "node session-init.cjs",
+      "first": 1790746913205,
+      "last": 1790746913205
+    },
+    {
+      "pid": 62198,
+      "cmd": "node dev-rules-reminder.cjs",
+      "first": 1790746913502,
+      "last": 1790746913502
+    },
+    {
+      "pid": 62199,
+      "cmd": "node",
+      "first": 1790746913502,
+      "last": 1790746913502
+    },
+    {
+      "pid": 62201,
+      "cmd": "node usage-quota-cache-refresh.cjs",
+      "first": 1790746913502,
+      "last": 1790746913502
+    },
+    {
+      "pid": 62236,
+      "cmd": "(node)",
+      "first": 1790746913502,
+      "last": 1790746913502
+    },
+    {
+      "pid": 62271,
+      "cmd": "zsh -c -l SNAPSHOT_FILE=snapshot-zsh-1790746914030-4qsypl.sh",
+      "first": 1790746914115,
+      "last": 1790746915011
+    },
+    {
+      "pid": 62286,
+      "cmd": "Python thefuck --alias",
+      "first": 1790746914115,
+      "last": 1790746914115
+    },
+    {
+      "pid": 62475,
+      "cmd": "(bash)",
+      "first": 1790746914413,
+      "last": 1790746914413
+    },
+    {
+      "pid": 62499,
+      "cmd": "(bash)",
+      "first": 1790746914413,
+      "last": 1790746914413
+    },
+    {
+      "pid": 62501,
+      "cmd": "(bash)",
+      "first": 1790746914413,
+      "last": 1790746914413
+    },
+    {
+      "pid": 62502,
+      "cmd": "(bash)",
+      "first": 1790746914413,
+      "last": 1790746914413
+    },
+    {
+      "pid": 62528,
+      "cmd": "zsh -c -l SNAPSHOT_FILE=snapshot-zsh-1790746914030-4qsypl.sh",
+      "first": 1790746914711,
+      "last": 1790746914711
+    },
+    {
+      "pid": 62586,
+      "cmd": "zsh -c -l SNAPSHOT_FILE=snapshot-zsh-1790746914030-4qsypl.sh",
+      "first": 1790746914711,
+      "last": 1790746914711
+    },
+    {
+      "pid": 62587,
+      "cmd": "(zsh)",
+      "first": 1790746914711,
+      "last": 1790746914711
+    },
+    {
+      "pid": 62588,
+      "cmd": "(tail)",
+      "first": 1790746914711,
+      "last": 1790746914711
+    },
+    {
+      "pid": 62698,
+      "cmd": "(zsh)",
+      "first": 1790746914711,
+      "last": 1790746914711
+    },
+    {
+      "pid": 62699,
+      "cmd": "(ls)",
+      "first": 1790746914711,
+      "last": 1790746914711
+    },
+    {
+      "pid": 62700,
+      "cmd": "(grep)",
+      "first": 1790746914711,
+      "last": 1790746914711
+    },
+    {
+      "pid": 62976,
+      "cmd": "(zsh)",
+      "first": 1790746915011,
+      "last": 1790746915011
+    },
+    {
+      "pid": 62979,
+      "cmd": "(printf)",
+      "first": 1790746915011,
+      "last": 1790746915011
+    },
+    {
+      "pid": 62996,
+      "cmd": "zsh -c source snapshot-zsh-1790746914030-4qsypl.sh 2>null ||",
+      "first": 1790746915307,
+      "last": 1790746918662
+    },
+    {
+      "pid": 62998,
+      "cmd": "sleep 6",
+      "first": 1790746915307,
+      "last": 1790746918662
+    }
+  ]
+}

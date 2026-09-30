@@ -1,0 +1,25 @@
+{
+  "R": "4c88c00d931d5404b75e0f46dc8eb9e6",
+  "delay": 0,
+  "send": { "clicked": 1790747304875, "sendResolved": 1790747304901, "st": 200 },
+  "delClick": 0,
+  "del": {
+    "http": 200,
+    "body": "{\"success\":true,\"message_id\":\"295b326b-e058-4bef-a45a-64a9ff7f210e\"}"
+  },
+  "q": { "sub": null, "items": [["RC1-Q1 queued ", "sent"]] },
+  "tc": [
+    [8, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||BODY"],
+    [24, "Running||Send now|TA|SENDING · 1|agent idle · Send now delivers||1|0|||BUTTON"],
+    [33, "Running||Stop,Queue|TA|SENDING · 1|agent generating||1|0|||TEXTAREA"],
+    [41, "Completed|||||||0|0|||DIV[room]"],
+    [59, "Completed|||||||1|0|||DIV[room]"]
+  ],
+  "tl": [
+    [8, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||DIV[room]"],
+    [24, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||BUTTON"],
+    [32, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||TEXTAREA"],
+    [73, "Completed||||QUEUED · 1|||1|0|||DIV[room]"],
+    [85, "Completed|||||||1|0|||DIV[room]"]
+  ]
+}

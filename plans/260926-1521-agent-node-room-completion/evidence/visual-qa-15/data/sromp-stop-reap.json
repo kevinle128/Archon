@@ -1,0 +1,44 @@
+{
+  "root": 38371,
+  "mark": null,
+  "start": 1790752228956,
+  "end": 1790752237973,
+  "procs": [
+    {
+      "pid": 49643,
+      "cmd": "codex exec --experimental-json --model gpt-5.5 --sandbox dan",
+      "first": 1790752228956,
+      "last": 1790752230163
+    },
+    {
+      "pid": 49681,
+      "cmd": "omp --mode rpc --cwd thread-4e3a5527 --yolo --no-title --no-",
+      "first": 1790752228956,
+      "last": 1790752237658
+    },
+    {
+      "pid": 49884,
+      "cmd": "node_repl",
+      "first": 1790752228956,
+      "last": 1790752230163
+    },
+    {
+      "pid": 49885,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790752228956,
+      "last": 1790752230163
+    },
+    {
+      "pid": 49893,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790752228956,
+      "last": 1790752230163
+    },
+    {
+      "pid": 49912,
+      "cmd": "node_repl",
+      "first": 1790752228956,
+      "last": 1790752230163
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "R": "4fc364dd6ac07ecee6f1536cb7082fd5",
+  "gapBeforeQueue": {
+    "c": 0,
+    "l": 0,
+    "hc": 496,
+    "hl": 567
+  },
+  "gapAfterQueue": {
+    "c": 0,
+    "l": 0,
+    "hc": 406,
+    "hl": 477
+  },
+  "stoppingFrameMs": [26, "Stopping…,Queue"],
+  "axe": {
+    "c": [
+      {
+        "id": "color-contrast",
+        "n": 3,
+        "ex": [
+          "Fix any of the following:\n  Element has insufficient color contrast of 4.11 (foreground color: #7d5ee0, background color: #0f1014, font size: 7.1pt (9.5px), fon",
+          "Fix any of the following:\n  Element has insufficient color contrast of 4.11 (foreground color: #70757f, background color: #0f1014, font size: 8.3pt (11px), font",
+          "Fix any of the following:\n  Element has insufficient color contrast of 4.11 (foreground color: #70757f, background color: #0f1014, font size: 8.3pt (11px), font"
+        ]
+      }
+    ],
+    "l": [
+      {
+        "id": "color-contrast",
+        "n": 3,
+        "ex": [
+          "Fix any of the following:\n  Element has insufficient color contrast of 4.06 (foreground color: #7d5ee0, background color: #101215, font size: 7.1pt (9.5px), fon",
+          "Fix any of the following:\n  Element has insufficient color contrast of 2.5 (foreground color: #52555b, background color: #101215, font size: 8.3pt (11px), font ",
+          "Fix any of the following:\n  Element has insufficient color contrast of 2.66 (foreground color: #52555b, background color: #08090b, font size: 8.3pt (11px), font"
+        ]
+      }
+    ]
+  },
+  "k5": {
+    "c": "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|0|0|||DIV[room]",
+    "l": "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|0|0|||DIV[room]"
+  }
+}

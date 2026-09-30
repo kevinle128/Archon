@@ -1,0 +1,84 @@
+{
+  "root": 53226,
+  "mark": null,
+  "procs": [
+    {
+      "pid": 23507,
+      "cmd": "codex exec --experimental-json --model gpt-5.5 --sandbox dan",
+      "first": 1790747479081,
+      "last": 1790747486036
+    },
+    {
+      "pid": 23599,
+      "cmd": "node bin.js --profile acp",
+      "first": 1790747479081,
+      "last": 1790747480279
+    },
+    {
+      "pid": 23809,
+      "cmd": "node_repl",
+      "first": 1790747479081,
+      "last": 1790747486036
+    },
+    {
+      "pid": 23810,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790747479081,
+      "last": 1790747486036
+    },
+    {
+      "pid": 23812,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790747479081,
+      "last": 1790747486036
+    },
+    {
+      "pid": 23813,
+      "cmd": "node_repl",
+      "first": 1790747479081,
+      "last": 1790747486036
+    },
+    {
+      "pid": 25038,
+      "cmd": "node bin.js --profile acp",
+      "first": 1790747481494,
+      "last": 1790747488937
+    },
+    {
+      "pid": 25079,
+      "cmd": "node session-init.cjs",
+      "first": 1790747483311,
+      "last": 1790747483311
+    },
+    {
+      "pid": 25185,
+      "cmd": "node dev-rules-reminder.cjs",
+      "first": 1790747483612,
+      "last": 1790747483612
+    },
+    {
+      "pid": 25186,
+      "cmd": "node",
+      "first": 1790747483612,
+      "last": 1790747483612
+    },
+    {
+      "pid": 25188,
+      "cmd": "node usage-quota-cache-refresh.cjs",
+      "first": 1790747483612,
+      "last": 1790747483612
+    },
+    {
+      "pid": 25311,
+      "cmd": "bash -c sleep 25; echo s1",
+      "first": 1790747485435,
+      "last": 1790747488937
+    },
+    {
+      "pid": 25312,
+      "cmd": "sleep 25",
+      "first": 1790747485435,
+      "last": 1790747488937
+    }
+  ]
+}

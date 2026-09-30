@@ -1,0 +1,16 @@
+{
+  "R": "c8f2759ffe1bec8da665402432d2b680",
+  "toolWaitMs": 3052,
+  "stop": { "clicked": 1790747479051, "post": 1261, "sendNowSeen": 1263, "http": 200 },
+  "stopFrames": [
+    [2, "Running||Stop,Queue|TA|QUEUED · 1|1 message queued||0|1|||TEXTAREA"],
+    [19, "Running||Stopping…,Queue|TA|QUEUED · 1|agent interrupting||0|1|||BUTTON"],
+    [1269, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||0|1|||DIV[room]"]
+  ],
+  "send": { "clicked": 1790747481224, "sendResolved": 1790747481246, "st": 200 },
+  "sendFrames": [
+    [4, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||0|1|||BODY"],
+    [21, "Running||Send now|TA|SENDING · 1|agent idle · Send now delivers||0|0|||BUTTON"],
+    [30, "Running||Stop,Queue|TA|SENDING · 1|agent generating||0|0|||TEXTAREA"]
+  ]
+}
