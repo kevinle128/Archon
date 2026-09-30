@@ -65,3 +65,21 @@ The earlier Grok verdict rested on a discriminator that required the interject t
 ## Files
 
 Evidence: `plans/260926-1521-agent-node-room-completion/evidence/soft-inject/` (`data/`, `shots/`, `scripts/`).
+
+## Follow-up: coordinator decisions (late injection, row order, Grok `--single`)
+
+**1. Late injection (fixed).** A `SoftInjectionLedger` (`packages/workflows/src/soft-injection-ledger.ts`) now holds every accepted message until the model receives it.
+
+- Claude (delivery ack): the operator row and `delivered` come from the replay echo. A message with no echo when the turn ends returns to the front of the queue as `queued` (`revertSteeringSoftInjectionClaim`: FIFO position untouched, no failure count, no last error, so no never-sent and no alert). The normal drain then delivers it.
+- Grok (no ack): the row is recorded at the next tool completion (the next boundary). A message still unread at turn end is carried and recorded when the next turn starts. One that no turn carried returns to the queue when the node ends, so terminal reconciliation reports it honestly. An unacknowledged entry stays `sent`, now backed by its operator row: `delivered` still means only "the provider echoed the id".
+- Live catch: the drained late message hung the second Claude turn for 5+ minutes. The redelivery stamped the same SDK uuid the session already held, and the CLI treated it as a duplicate. The executor now omits `operatorMessageId` for an id the transport once accepted.
+- Tests: ledger unit tests (echo, turn end, boundary, carry, node end), two executor tests (row at the echo after the tool; no echo returns to the queue, drains as its own turn, no uuid reuse), e2e `soft-inject-late` in both shells with a fake provider flag that drops the message.
+- Live on real Claude: 4 of 4 attempts hit the window (click 8.0-8.9 s after the tool finished, while the model wrote its final message). After the uuid fix, 2 of 2 completed (`late5`, `late6`, one per sender shell): the server logged the return to the queue, the message drained as its own turn, one operator row, no never-sent, no alert frame, 0 frames with the item shown nowhere, Stop present throughout. The two attempts before the fix are the hang above.
+
+**2. Operator row order (fixed).** The row is written at the echo (Claude) or the next boundary (Grok), after the tool card that was running, never above it. Until then the item stays in the dock as `sending…`. To keep observer shells from losing it, the dock now retains a `sent` entry on a live soft-injection turn and keeps a just-`delivered` one for one more poll (`applyQueueSnapshot`). Tests in both shells (`ComposerDock`, `ConsoleComposerDock`) plus dock state tests. Live: 4 Claude and 2 Grok cycles in `data/cycle-table-ordering.txt` and `data/orderseq.txt`: 0 frames with the row above the first tool card, 0 frames with the item shown nowhere, row after every row of the first tool in 8 of 8 cycles (`orderseq.txt`). The first pass of this check showed 3 short gaps (515, 518, 53 ms) before the one-poll `delivered` retention; none after it.
+
+**3. Replay flag:** kept as is.
+
+**4. Grok `--single`:** a unit test in `steering-dock.test.ts` shows a snapshot with the provider capability but no projected sub-state gives `queue-only` mode, so the dock offers no per-item `Send now`.
+
+Earlier reading that a soft-injected Claude entry is `delivered` at the echo still holds. Only a message redelivered after a drop stays `sent` (its drain turn carries no uuid, so no echo), with its operator row shown.

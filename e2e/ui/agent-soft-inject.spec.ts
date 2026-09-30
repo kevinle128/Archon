@@ -6,6 +6,7 @@ import { type Locator, type Page } from '@playwright/test';
 
 import { test, expect } from '../lib/playwright/suite';
 import {
+  E2E_SOFT_INJECT_LATE_WORKFLOW_NAME,
   E2E_SOFT_INJECT_WORKFLOW_NAME,
   E2E_STARTER_WEB_USER,
   SOFT_INJECT_NODE,
@@ -126,25 +127,25 @@ for (const surface of ['console', 'legacy'] as const) {
 
       // The other item stays queued and claimable; the agent is never stopped.
       await expect(room.getByText('queued · 1')).toBeVisible();
-      await expect(items).toHaveCount(1);
-      await expect(items.first()).toContainText(stayText);
+      await expect(items.filter({ hasText: stayText })).toHaveCount(1);
       await expect(room.getByRole('button', { name: `Send now · ${stayText}` })).toBeVisible();
       await expect(room.getByRole('button', { name: 'Stop' })).toBeVisible();
       await expect(room.getByText(/interrupted/i)).toHaveCount(0);
 
-      // The injected message shows as an operator row, `sent` until echoed.
-      const operatorRow = room.locator('[data-operator-row]', { hasText: injectText });
-      await expect(operatorRow).toHaveCount(1, { timeout: T.medium });
-      await expect(operatorRow.locator('[data-operator-delivery]')).toHaveText('sent');
+      // The model has not read it yet: it stays in the dock as in flight and
+      // has no transcript row, so it can never sit above the running tool.
+      const injectedItem = items.filter({ hasText: injectText });
+      await expect(injectedItem).toHaveCount(1);
+      await expect(injectedItem).toContainText('sending…');
+      await expect(room.locator('[data-operator-row]', { hasText: injectText })).toHaveCount(0);
     });
 
     await test.step('the echo delivers it; the node completes with no second turn for the injection', async () => {
       mkdirSync(dirname(releasePath), { recursive: true });
       writeFileSync(releasePath, '');
       const operatorRow = room.locator('[data-operator-row]', { hasText: injectText });
-      await expect(operatorRow.locator('[data-operator-delivery]')).toHaveText('delivered', {
-        timeout: T.long,
-      });
+      await expect(operatorRow).toHaveCount(1, { timeout: T.long });
+      await expect(operatorRow.locator('[data-operator-delivery]')).toHaveText('delivered');
       await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
 
       const messages = await listNodeMessages(page, run.runId, SOFT_INJECT_NODE);
@@ -165,6 +166,11 @@ for (const surface of ['console', 'legacy'] as const) {
       );
       expect(replyRow, 'the running turn answered the injected message').toBeTruthy();
       expect(replyRow!.seq).toBeLessThan(stayRow!.seq);
+      // The operator row sits after the tool that was running, never above it.
+      const lastToolSeq = Math.max(
+        ...messages.filter(message => message.kind === 'tool').map(message => message.seq)
+      );
+      expect(injectedRow!.seq).toBeGreaterThan(lastToolSeq);
       expect(replyRow!.metadata?.execution?.attempt_id).toBe(
         injectedRow!.metadata?.execution?.attempt_id
       );
@@ -179,5 +185,43 @@ for (const surface of ['console', 'legacy'] as const) {
       // Nothing the operator sent is reported as never sent.
       await expect(room.getByText(/never sent|none of this was sent/i)).toHaveCount(0);
     });
+  });
+}
+
+for (const surface of ['console', 'legacy'] as const) {
+  test(`[P1] [V:steer.soft-inject-late-${surface}] a message the transport dropped returns to the queue and drains on ${surface}`, async ({
+    page,
+    archon,
+  }) => {
+    test.setTimeout(T.xlong * 2);
+    await page.setExtraHTTPHeaders({ 'X-Archon-User': E2E_STARTER_WEB_USER });
+    const tag = randomUUID().replace(/-/g, '').slice(0, 10);
+    const lateText = `LATE-${tag} sent after the last step`;
+    const releasePath = softInjectReleasePath(archon.home);
+    rmSync(releasePath, { force: true });
+
+    const run = await archon.startWorkflowViaWeb(E2E_SOFT_INJECT_LATE_WORKFLOW_NAME, 'e2e late');
+    const room = await openRoom(page, surface, run.runId, SOFT_INJECT_NODE);
+    await waitForNodeStarted(page, run.runId, SOFT_INJECT_NODE);
+    await queueMessage(room, lateText);
+    await expect(room.getByText('queued · 1')).toBeVisible();
+    await room.getByRole('button', { name: `Send now · ${lateText}` }).click();
+    await expect(room.getByText('queued · 0')).toBeHidden();
+
+    // The turn ends without the transport ever echoing the message.
+    mkdirSync(dirname(releasePath), { recursive: true });
+    writeFileSync(releasePath, '');
+    await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
+
+    const messages = await listNodeMessages(page, run.runId, SOFT_INJECT_NODE);
+    const rows = messages.filter(
+      message =>
+        message.kind === 'text' &&
+        message.metadata?.origin === 'operator' &&
+        message.payload.text === lateText
+    );
+    expect(rows, 'delivered once, by the normal drain').toHaveLength(1);
+    await expect(room.getByText(/never sent|none of this was sent/i)).toHaveCount(0);
+    await expect(room.locator('[role="alert"]')).toHaveCount(0);
   });
 }

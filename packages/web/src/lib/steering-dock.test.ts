@@ -1497,6 +1497,55 @@ describe('applyQueueSnapshot', () => {
     expect(afterSecondPoll.sent).toEqual([]);
   });
 
+  test('a sent row stays in the band across polls while a soft-injection turn is generating, and drops one poll after its echo', () => {
+    const live = {
+      capabilities: { soft_injection: true, delivery_ack: true },
+      sub_state: 'generating' as const,
+    };
+    const first = applyQueueSnapshot(
+      stateWith([]),
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'sent' })], live),
+      0
+    );
+    expect(first.sent.map(entry => entry.messageId)).toEqual(['a']);
+    const second = applyQueueSnapshot(
+      first,
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'sent' })], live),
+      first.queueGeneration
+    );
+    expect(second.sent.map(entry => entry.messageId)).toEqual(['a']);
+    // The echo delivers it: one more poll of grace so it never vanishes before
+    // the transcript renders its operator row, then it drops.
+    const delivered = applyQueueSnapshot(
+      second,
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'delivered' })], live),
+      second.queueGeneration
+    );
+    expect(delivered.sent.map(entry => entry.messageId)).toEqual(['a']);
+    const settled = applyQueueSnapshot(
+      delivered,
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'delivered' })], live),
+      delivered.queueGeneration
+    );
+    expect(settled.sent).toEqual([]);
+  });
+
+  test('a turn that cannot be interrupted offers no per-item Send now even with the provider capability', () => {
+    // A Grok node that falls back to `--single` reports `turn_not_interruptible`:
+    // the server projects no sub-state for that turn.
+    const next = applyQueueSnapshot(
+      stateWith([]),
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'queued' })], {
+        capabilities: { soft_injection: true, delivery_ack: false },
+        sub_state: null,
+      }),
+      0
+    );
+    expect(next.softInjection).toBe(true);
+    expect(next.subState).toBeNull();
+    expect(steeringAgentMode(next)).toBe('queue-only');
+  });
+
   test('a sent/delivered row never locally tracked is never resurrected into sent', () => {
     const state = stateWith([]);
     const next = applyQueueSnapshot(

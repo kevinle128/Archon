@@ -1274,11 +1274,24 @@ export function applyQueueSnapshot(
       .filter(entry => entry.state !== 'sent' && entry.state !== 'delivered')
       .map(entry => entry.messageId)
   );
+  const liveSoftInjection =
+    snapshot.capabilities.soft_injection && snapshot.sub_state === 'generating';
+  const priorSentIds = new Set(
+    state.sent.filter(entry => entry.state === 'sent').map(entry => entry.messageId)
+  );
   const nextSent: LocalSentReceipt[] = snapshot.queued
     .filter(
       row =>
         STEERING_QUEUE_PENDING_STATES.includes(row.state) ||
-        ((row.state === 'sent' || row.state === 'delivered') && priorOpenIds.has(row.message_id))
+        // On a live turn of a soft-injection provider a `sent` entry is
+        // accepted by the transport but not yet read by the model (it waits
+        // for the next tool boundary or echo), so it stays visible until its
+        // transcript row replaces it.
+        (row.state === 'sent' && liveSoftInjection) ||
+        ((row.state === 'sent' || row.state === 'delivered') && priorOpenIds.has(row.message_id)) ||
+        // The echo just delivered an entry this dock showed as `sent`: keep it one
+        // more poll so it does not vanish before the transcript renders its row.
+        (row.state === 'delivered' && liveSoftInjection && priorSentIds.has(row.message_id))
     )
     .map(row => ({
       messageId: row.message_id,

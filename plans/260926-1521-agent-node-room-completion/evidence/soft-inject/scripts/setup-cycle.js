@@ -37,7 +37,21 @@ G.siKey = ([sel, tagOne, tagTwo]) => {
   const never = /NEVER SENT/.test(it) ? 'NEVER' : '';
   const intr = /[Ii]nterrupted/.test(it) ? 'INTR' : '';
   const alert = e.querySelector('[role="alert"]') ? 'ALERT' : '';
-  return [pill, btns, sn, del, header, band, rows, never, intr, alert].join('|');
+  const rowEl = [...e.querySelectorAll('[data-operator-row]')].find(r =>
+    (r.textContent || '').includes(tagTwo)
+  );
+  const bashEls = [...e.querySelectorAll('*')].filter(
+    n => n.children.length === 0 && (n.textContent || '').trim() === 'Bash'
+  );
+  const lastBash = bashEls[0];
+  // 'above' = the operator row precedes a tool card in document order (it must follow the tool that was running at the click, the first tool card).
+  const ord =
+    rowEl && lastBash
+      ? rowEl.compareDocumentPosition(lastBash) & Node.DOCUMENT_POSITION_FOLLOWING
+        ? 'above'
+        : 'below'
+      : '';
+  return [pill, btns, sn, del, header, band, rows, never, intr, alert, ord].join('|');
 };
 G.siSample = ([sel, tagOne, tagTwo, ms, name, keySrc]) => {
   const keyFn = eval(keySrc);

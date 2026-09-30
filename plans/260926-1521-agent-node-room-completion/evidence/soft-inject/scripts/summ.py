@@ -15,7 +15,7 @@ for path in sys.argv[1:]:
         rows.append(json.loads(out))
     except Exception:
         print('unparsable', path)
-hdr = ['tag', 'st', 'click', 'attempts', 'prompt', 'ack', 'toolsAfter', 'q(TWO)', 'shell', 'row', 'sent', 'deliv', 'gaps', 'ovl', 'stopMiss', 'intr', 'never', 'regr']
+hdr = ['tag', 'st', 'click', 'attempts', 'prompt', 'ack', 'toolsAfter', 'q(TWO)', 'shell', 'row', 'sent', 'deliv', 'gaps', 'ovl', 'stopMiss', 'intr', 'never', 'regr', 'above', 'sentRow']
 print('\t'.join(hdr))
 bad = 0
 for r in rows:
@@ -24,9 +24,9 @@ for r in rows:
         x = r[sh]
         line = [r['tag'], r['status'], str(r['click']['status']), str(len(r['attempts'])), str(r['promptRows']), str(r['ackInAgentText']), str(r['toolRowsAfterInjection']),
                 ','.join(qtwo), sh[:3], str(x['firstRowAnyMs']), str(x['firstSentMs']), str(x['firstDeliveredMs']), str(x['nowhereGapsMs']), str(x['overlapFrames']),
-                str(x['stopMissingFrames']), str(x['interruptedFrames']), str(x['neverBeforeTerminal']), str(x['twoRowRegressions'])]
+                str(x['stopMissingFrames']), str(x['interruptedFrames']), str(x['neverBeforeTerminal']), str(x['twoRowRegressions']), str(x['rowAboveToolFrames']), str(x['rowBeforeEchoFrames'])]
         print('\t'.join(line))
-        if x['stopMissingFrames'] or x['interruptedFrames'] or x['neverBeforeTerminal'] or x['overlapFrames'] or x['twoRowRegressions'] or x['nowhereGapsMs']:
+        if x['stopMissingFrames'] or x['interruptedFrames'] or x['neverBeforeTerminal'] or x['overlapFrames'] or x['twoRowRegressions'] or x['nowhereGapsMs'] or x['rowAboveToolFrames']:
             bad += 1
     if len(r['attempts']) != 1 or r['promptRows'] != 1 or r['ackInAgentText'] < 1 or qtwo != ['delivered']:
         bad += 1

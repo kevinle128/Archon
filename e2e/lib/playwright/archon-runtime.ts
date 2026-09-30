@@ -81,6 +81,14 @@ const SOFT_INJECT_WORKFLOW_FIXTURE = join(
   'workflows',
   'e2e-soft-inject.yaml'
 );
+const SOFT_INJECT_LATE_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-soft-inject-late.yaml'
+);
 const TRANSCRIPT_DISPLAY_WORKFLOW_FIXTURE = join(
   HERE,
   '..',
@@ -139,6 +147,7 @@ export function queueGuidanceDrainReleasePath(home: string): string {
   return join(home, 'e2e-fake-release', 'queue-guidance-drain');
 }
 export const E2E_SOFT_INJECT_WORKFLOW_NAME = 'e2e-soft-inject';
+export const E2E_SOFT_INJECT_LATE_WORKFLOW_NAME = 'e2e-soft-inject-late';
 export const SOFT_INJECT_NODE = 'inject-me';
 /**
  * Marker the `e2e-soft-inject` fixture's node watches for; writing it ends the
@@ -560,6 +569,11 @@ async function startArchonRuntime(
   writeFileSync(
     join(home, 'workflows', `${E2E_SOFT_INJECT_WORKFLOW_NAME}.yaml`),
     readFileSync(SOFT_INJECT_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
+    join(home, 'workflows', `${E2E_SOFT_INJECT_LATE_WORKFLOW_NAME}.yaml`),
+    readFileSync(SOFT_INJECT_LATE_WORKFLOW_FIXTURE)
   );
 
   writeFileSync(

@@ -817,6 +817,42 @@ describe('ConsoleComposerDock', () => {
     expect(host.textContent).not.toContain('sending · 1');
   });
 
+  test('a soft-injected row stays as sending until the transcript shows it, then leaves without a gap', async () => {
+    const injected = okQueue([{ message_id: 'id-a', message: 'alpha', state: 'sent' }], {
+      capabilities: { soft_injection: true, delivery_ack: true },
+      sub_state: 'generating',
+    });
+    const ctrl = controllableRead();
+    await renderDock({
+      subState: 'generating',
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl, injected);
+    // Accepted by the transport but not yet read by the model: no transcript row yet.
+    const row = host.querySelector('li[data-message-id="id-a"]');
+    expect(row?.textContent).toContain('sending…');
+    expect(row?.textContent).not.toContain('Send now');
+  });
+
+  test('a soft-injected row leaves the band once the transcript shows its operator row', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      subState: 'generating',
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+      deliveredMessageIds: new Set(['id-a']),
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha', state: 'sent' }], {
+        capabilities: { soft_injection: true, delivery_ack: true },
+        sub_state: 'generating',
+      })
+    );
+    expect(host.querySelector('li[data-message-id="id-a"]')).toBeNull();
+  });
+
   test('a sent row this tab never tracked as open is not resurrected into the band', async () => {
     // A cold-loaded or unrelated `sent` row (e.g. a different live
     // iteration's message) must never appear as a phantom "sending…" row.

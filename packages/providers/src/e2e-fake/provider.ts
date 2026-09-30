@@ -198,6 +198,8 @@ const scenarioSchema = z
      * scenario keeps waiting out its fixed `delayMs` unchanged.
      */
     releaseSignal: z.string().min(1).optional(),
+    /** Soft-injectable fake only: accept messages but never echo them, like a transport that dropped them at turn end. */
+    dropSoftInjected: z.boolean().optional(),
     doneWhenPromptIncludes: z.string().min(1).optional(),
     repeatTool: z.number().int().min(1).max(200).optional(),
     largeLastToolOutput: z.boolean().optional(),
@@ -692,12 +694,6 @@ export class E2eFakeProvider implements IAgentProvider {
           unregisterSoftInjection?.();
         }
         if (boundary === 'aborted') throw new Error('Query aborted');
-        if (boundary !== 'interrupted') {
-          for (const message of injected) {
-            yield { type: 'operator_delivery_ack', messageId: message.messageId };
-            yield { type: 'assistant', content: `${E2E_FAKE_SOFT_INJECT_REPLY} ${message.text}` };
-          }
-        }
         for (const [index, toolCallId] of pendingToolCallIds.entries()) {
           yield {
             type: 'tool_result',
@@ -707,6 +703,14 @@ export class E2eFakeProvider implements IAgentProvider {
             toolCallId,
             toolOutcome: boundary === 'interrupted' ? 'interrupted' : 'success',
           };
+        }
+        // The model reads accepted messages once the running tool returns: the
+        // echo and the answer follow the tool result.
+        if (boundary !== 'interrupted' && scenario.dropSoftInjected !== true) {
+          for (const message of injected) {
+            yield { type: 'operator_delivery_ack', messageId: message.messageId };
+            yield { type: 'assistant', content: `${E2E_FAKE_SOFT_INJECT_REPLY} ${message.text}` };
+          }
         }
         if (boundary === 'interrupted') {
           log.info({ sessionId }, 'e2e-fake.query_interrupted_tools');

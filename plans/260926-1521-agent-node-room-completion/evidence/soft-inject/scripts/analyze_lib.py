@@ -65,14 +65,3 @@ def analyze_shell(frames, click):
     return res
 
 
-def main():
-    d = json.load(open(sys.argv[1]))
-    out = {k: d[k] for k in ('tag', 'sender', 'observer', 'status', 'click', 'queue', 'rowCount', 'attempts', 'promptRows',
-                             'operatorRows', 'ackInAgentText', 'toolRowsAfterInjection') if k in d}
-    for shell in ('sender', 'observer'):
-        s = d[shell]
-        out[shell + 'Shell'] = analyze_shell(d['frames'][s], d['clickedAt'])
-    print(json.dumps(out, indent=1))
-
-
-main()
