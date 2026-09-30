@@ -127,6 +127,8 @@ export interface LegacyGraphLogsPaneProps {
    * cache to invalidate (e.g. a standalone render in tests).
    */
   onRunSettleHint?: () => void;
+  /** Forwarded to the composer dock; see its own doc comment. Default 0. */
+  terminalEdgeKick?: number;
 }
 
 export function runChatMessagesRefetchInterval(status: WorkflowRunStatus): 3000 | false {
@@ -254,6 +256,7 @@ export function LegacyGraphLogsPane({
   askDrafts,
   onAskDraftChange,
   onRunSettleHint,
+  terminalEdgeKick = 0,
 }: LegacyGraphLogsPaneProps): React.ReactElement {
   const stacked = useStackedViewport();
   const paneRef = useRef<HTMLDivElement>(null);
@@ -576,6 +579,7 @@ export function LegacyGraphLogsPane({
         askDrafts={askDrafts}
         onAskDraftChange={onAskDraftChange}
         onRunSettleHint={onRunSettleHint}
+        terminalEdgeKick={terminalEdgeKick}
       />
       {roomFooter}
     </div>

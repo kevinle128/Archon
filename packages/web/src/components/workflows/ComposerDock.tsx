@@ -258,6 +258,18 @@ export interface ComposerDockProps {
    * mutates dock state. Default empty (no filtering).
    */
   deliveredMessageIds?: ReadonlySet<string>;
+  /**
+   * Monotonically increasing counter, bumped by the host the instant a
+   * faster-than-this-dock's-own-poll signal (the `__dashboard__` SSE stream,
+   * near-instant) reports THIS run's node/status changed on the server.
+   * Forces the dock's own queue read to fire now, on that exact edge,
+   * instead of waiting out its regular poll interval — the terminal-edge
+   * half of the Send-now-resolve kick already covers. A change is required;
+   * the initial value (whatever it is) never itself triggers a kick, so a
+   * fresh mount never issues a redundant extra read. Default 0 (never
+   * kicks).
+   */
+  terminalEdgeKick?: number;
 }
 
 const FIELD_CLASSES = cn(
@@ -406,6 +418,7 @@ export function ComposerDock({
   nodeExecutionKey = null,
   idleAwaitExpired = false,
   deliveredMessageIds = EMPTY_DELIVERED_MESSAGE_IDS,
+  terminalEdgeKick = 0,
 }: ComposerDockProps): React.ReactElement | null {
   const scopeKey = steeringScopeKey(runId, nodeId);
   const fieldId = useId();
@@ -602,6 +615,18 @@ export function ComposerDock({
   // took over, or there is genuinely nothing left to show).
   const pendingSettlement = dock.executionState !== 'finished' && visibleSent.length > 0;
 
+  // True until this dock's own first queue read has resolved. See
+  // `steeringDockMode`'s own doc comment on its `firstReadPending` param.
+  const firstReadPending = dock.executionState === null;
+  // Mirrors `steeringDockMode`'s own precondition for reaching the
+  // composer/blocked/detached branch, minus the `firstReadPending` gate
+  // itself — exactly the set of rows that must still poll (once) to learn
+  // whether they are ordinary live rows or actually need restart recovery.
+  // Used below to keep polling enabled through that gap even though `mode`
+  // itself reads `hidden` for it.
+  const rowLooksSteerable =
+    !nodeIsTerminal && live && (rowStatus === 'running' || rowStatus === 'awaiting');
+
   const mode = steeringDockMode({
     rowStatus,
     live,
@@ -612,6 +637,7 @@ export function ComposerDock({
     nodeTerminal: nodeIsTerminal,
     recoveryRequired: dock.executionState === 'recovery_required',
     pendingSettlement,
+    firstReadPending,
   });
 
   // One-shot fetch on the terminal transition (never gated on any local
@@ -745,7 +771,11 @@ export function ComposerDock({
     mode === 'blocked' ||
     mode === 'finished-iteration' ||
     mode === 'recovery-required' ||
-    mode === 'settling';
+    mode === 'settling' ||
+    // `mode` reads `hidden` for the exact gap `firstReadPending` bridges —
+    // poll anyway (once) so that read can land and the mode can resolve to
+    // whatever it should actually be, instead of hiding forever.
+    (mode === 'hidden' && firstReadPending && rowLooksSteerable);
 
   useEffect(() => {
     if (!pollingEnabled) return;
@@ -829,6 +859,21 @@ export function ComposerDock({
     if (forceKickTick === 0) return;
     pollingHandleRef.current?.kick();
   }, [forceKickTick]);
+
+  // External signal from the host's own faster channel (the `__dashboard__`
+  // SSE stream, near-instant): a change means this run's node/status just
+  // moved server-side. Kicks this dock's own read immediately rather than
+  // waiting out its regular poll tick — the terminal-edge half of the
+  // Send-now-resolve kick above. Compared against the PREVIOUS value, not a
+  // fixed baseline: the counter is host-owned and can already be non-zero
+  // when this dock mounts (e.g. a scope change while other edges already
+  // fired), so an initial value here must never itself trigger a kick.
+  const lastTerminalEdgeKickRef = useRef(terminalEdgeKick);
+  useEffect(() => {
+    if (terminalEdgeKick === lastTerminalEdgeKickRef.current) return;
+    lastTerminalEdgeKickRef.current = terminalEdgeKick;
+    pollingHandleRef.current?.kick();
+  }, [terminalEdgeKick]);
 
   // When the dock's controls leave the DOM — terminal state hides the dock,
   // a 422 swaps it for the detached disclosure — focus must move to the

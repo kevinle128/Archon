@@ -1235,6 +1235,77 @@ describe('RunDetailPage inspect selection', () => {
     setIntervalSpy.mockRestore();
   });
 
+  test('a refetch failure after the run has loaded keeps the room open and hints, then recovers', async () => {
+    stubPageFetch({
+      status: 'running',
+      nodeExecutions: [{ node_id: 'build', status: 'running' }],
+    });
+    await act(async () => {
+      renderPage('?node=review');
+    });
+    await flushUntil('review room', () => (host.textContent ?? '').includes(REVIEW_TEXT));
+    expect(host.querySelector('[data-testid="console-inspect-room"]')).not.toBeNull();
+
+    // Simulate an outage: the next run-detail read fails after data has
+    // already loaded once.
+    stubPageFetch({ runError: true });
+    invalidate('run');
+    await flushUntil('hint shown', () =>
+      (host.textContent ?? '').includes('Failed to load — retrying')
+    );
+
+    // The error page must not replace the room while the last-good detail
+    // is still in the cache — only the non-blocking hint may appear.
+    expect(host.textContent).not.toContain('Could not load run.');
+    expect(host.textContent).toContain(REVIEW_TEXT);
+    expect(host.querySelector('[data-testid="console-inspect-room"]')).not.toBeNull();
+
+    // The server comes back: the page recovers without a remount.
+    stubPageFetch({
+      status: 'running',
+      nodeExecutions: [{ node_id: 'build', status: 'running' }],
+    });
+    invalidate('run');
+    await flushUntil(
+      'hint cleared',
+      () => !(host.textContent ?? '').includes('Failed to load — retrying')
+    );
+    expect(host.textContent).toContain(REVIEW_TEXT);
+  });
+
+  test('the safety-net refetch retries at 3s, not 30s, while the last read failed', async () => {
+    const intervalDelays: number[] = [];
+    const realSetInterval = globalThis.setInterval.bind(globalThis);
+    const setIntervalSpy = spyOn(globalThis, 'setInterval').mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+      ...args: unknown[]
+    ) => {
+      if (typeof timeout === 'number') intervalDelays.push(timeout);
+      return realSetInterval(handler, timeout, ...(args as []));
+    }) as typeof setInterval);
+
+    stubPageFetch({
+      status: 'running',
+      nodeExecutions: [{ node_id: 'build', status: 'running' }],
+    });
+    await act(async () => {
+      renderPage();
+    });
+    await flushUntil('live title', () => (host.textContent ?? '').includes(workflow));
+    expect(intervalDelays.filter(delay => delay === 30000).length).toBeGreaterThanOrEqual(1);
+
+    stubPageFetch({ runError: true });
+    invalidate('run');
+    await flushUntil('hint shown', () =>
+      (host.textContent ?? '').includes('Failed to load — retrying')
+    );
+
+    expect(intervalDelays.filter(delay => delay === 3000).length).toBeGreaterThanOrEqual(1);
+
+    setIntervalSpy.mockRestore();
+  });
+
   test('T3.16 RunDetailPage passes raw nodeExecutions into the inspect pane chain', async () => {
     function findPropsWithKey(start: Element, key: string): Record<string, unknown> | null {
       const fiberKey = Object.keys(start).find(candidate => candidate.startsWith('__reactFiber$'));

@@ -85,6 +85,9 @@ const TOGGLE_KEYS = {
   node: 'archon.console.runNodeFilter',
 } as const;
 
+/** Retry cadence for the run-detail safety net while the last read failed. */
+const RUN_DETAIL_RETRY_INTERVAL_MS = 3000;
+
 function focusAskCard(requestId: string): void {
   let attempts = 0;
   const focusAsk = (): void => {
@@ -233,21 +236,26 @@ export function RunDetailPage(): ReactElement {
   // sleep/wake, mobile transitions) the EventSource will reconnect but we
   // may have missed terminal events in the meantime. A 30s heartbeat refetch
   // while status is non-terminal catches that without being polling proper —
-  // it stops the moment the run hits a terminal state.
+  // it stops the moment the run hits a terminal state. While the LAST read
+  // failed (a server outage, not a missed event), the same effect switches to
+  // a much shorter cadence so this page notices the server come back within
+  // about one short poll instead of waiting out the full 30s heartbeat — the
+  // interval choice is a read cadence, never an inferred state change.
   const status = detail?.run.status;
   useEffect(() => {
     if (runId === undefined) return;
     if (status !== 'running' && status !== 'paused') return;
+    const intervalMs = detailError !== undefined ? RUN_DETAIL_RETRY_INTERVAL_MS : 30000;
     const id = setInterval(() => {
       invalidate(K.run(runId));
       if (conversationPlatformId !== null) {
         invalidate(K.messages(conversationPlatformId));
       }
-    }, 30000);
+    }, intervalMs);
     return (): void => {
       clearInterval(id);
     };
-  }, [runId, status, conversationPlatformId]);
+  }, [runId, status, conversationPlatformId, detailError]);
 
   // Terminal catch-up: after cancel/complete/fail the run can settle before the
   // executor writes node_failed (or the read projection closes a purged Ask).
@@ -620,7 +628,12 @@ export function RunDetailPage(): ReactElement {
     );
   }
 
-  if (detailError !== undefined) {
+  // A failed re-read keeps the last loaded run and room on screen (the cache
+  // retains the stale `detail` value — see store/cache.ts) rather than
+  // swapping in this error page; the error page is only for a first load
+  // that never succeeded. See the non-blocking hint rendered alongside the
+  // header below for the "last read failed" case.
+  if (detailError !== undefined && (detail === undefined || detail === null)) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
         <p className="text-sm text-text-primary">Could not load run.</p>
@@ -738,6 +751,9 @@ export function RunDetailPage(): ReactElement {
             focusAskCard(interaction.tool_use_id);
           }}
         />
+        {detailError !== undefined ? (
+          <p className="px-6 py-1 font-mono text-[11px] text-error">Failed to load — retrying</p>
+        ) : null}
         <ConsoleAskChrome
           status={run.status}
           pendingInteractions={detail.pendingInteractions}

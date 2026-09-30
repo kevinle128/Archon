@@ -22,6 +22,7 @@ import { SourceControlTab } from './source-control/source-control-tab';
 import { FilesChangedTab } from './source-control/files-changed-tab';
 import { TerminalTab } from './terminal/terminal-tab';
 import { useWorkflowStore } from '@/stores/workflow-store';
+import { useRunTerminalEdge } from '@/hooks/useRunTerminalEdge';
 import {
   answerAskHuman,
   approveWorkflowRun,
@@ -438,6 +439,21 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   const handleRunSettleHint = useCallback((): void => {
     void queryClient.invalidateQueries({ queryKey: ['workflowRun', runId] });
   }, [queryClient, runId]);
+
+  // The opposite edge from `handleRunSettleHint` above: a near-instant
+  // `__dashboard__` SSE signal (not this page's own 3s run-detail poll)
+  // reports the run's node/status changed on the server, before the dock's
+  // own ~1s queue poll has had a chance to notice on its own. Refresh the
+  // run entity AND kick the dock's own read on that exact edge, instead of
+  // leaving Stop/Queue visible until the dock's next regular tick.
+  // Deliberately does not touch `useWorkflowStore` — this is a targeted
+  // refresh trigger, not a live-data feed.
+  const [terminalEdgeKick, setTerminalEdgeKick] = useState(0);
+  const handleTerminalEdge = useCallback((): void => {
+    void queryClient.invalidateQueries({ queryKey: ['workflowRun', runId] });
+    setTerminalEdgeKick(tick => tick + 1);
+  }, [queryClient, runId]);
+  useRunTerminalEdge(runId, handleTerminalEdge);
 
   const askController = useMemo(
     () =>
@@ -938,7 +954,13 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     [queryClient, runId]
   );
 
-  if (error) {
+  // react-query keeps the last successful `data` on a background refetch
+  // failure (it never clears it just because `error` is now set), so a
+  // failed re-read after the run has already loaded once must not swap the
+  // whole room for this error page — only a first load that never succeeded
+  // does. The non-blocking "Failed to load — retrying" hint below the header
+  // covers the "last read failed" case instead.
+  if (error && !workflow) {
     return (
       <div className="flex items-center justify-center h-full text-error">
         <p>Failed to load workflow run: {error}</p>
@@ -1122,6 +1144,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           askDrafts={askDrafts}
           onAskDraftChange={updateAskDraft}
           onRunSettleHint={handleRunSettleHint}
+          terminalEdgeKick={terminalEdgeKick}
         />
       );
     }
@@ -1215,6 +1238,8 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           <span className="text-xs text-text-secondary">{formatDurationMs(elapsed)}</span>
         </div>
       </div>
+
+      {error ? <p className="px-4 py-1 text-xs text-error">Failed to load — retrying</p> : null}
 
       {/* View tabs — only for DAG workflows */}
       {isDag && (

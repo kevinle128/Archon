@@ -60,6 +60,38 @@ describe('SSETransport', () => {
       expect(transport.hasActiveStream('conv-1')).toBe(true);
     });
 
+    test('a dashboard-stream subscriber and a per-conversation subscriber on the same run never evict each other', () => {
+      // The Legacy terminal-edge kick (`useRunTerminalEdge`) subscribes to
+      // `__dashboard__`; Console's own room subscribes to the run's actual
+      // conversation id via `useRunStreamSSE`. Both can be live at once for
+      // the same run (the visual QA harness's two-shell setup) — they must
+      // land in distinct map slots, never contend for one.
+      const transport = new SSETransport();
+      const dashboardStream = createMockStream();
+      const conversationStream = createMockStream();
+
+      transport.registerStream('__dashboard__', dashboardStream);
+      transport.registerStream('run-conv-1', conversationStream);
+
+      expect(transport.hasActiveStream('__dashboard__')).toBe(true);
+      expect(transport.hasActiveStream('run-conv-1')).toBe(true);
+      expect(dashboardStream.close).not.toHaveBeenCalled();
+      expect(conversationStream.close).not.toHaveBeenCalled();
+
+      // Order independence: registering the conversation stream first, then
+      // the dashboard stream, must not evict either either.
+      const transport2 = new SSETransport();
+      const conversationStream2 = createMockStream();
+      const dashboardStream2 = createMockStream();
+      transport2.registerStream('run-conv-2', conversationStream2);
+      transport2.registerStream('__dashboard__', dashboardStream2);
+
+      expect(transport2.hasActiveStream('run-conv-2')).toBe(true);
+      expect(transport2.hasActiveStream('__dashboard__')).toBe(true);
+      expect(conversationStream2.close).not.toHaveBeenCalled();
+      expect(dashboardStream2.close).not.toHaveBeenCalled();
+    });
+
     test('does not close existing stream if already closed', () => {
       const transport = new SSETransport();
       const oldStream = createMockStream({ closed: true });

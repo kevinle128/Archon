@@ -408,6 +408,27 @@ function requestPath(input: RequestInfo | URL): string {
   return new URL(raw, 'https://localhost').pathname;
 }
 
+/**
+ * Minimal EventSource stand-in for `useRunTerminalEdge`'s `__dashboard__`
+ * subscription; happy-dom implements no EventSource at all.
+ */
+class MockEventSource {
+  static instances: MockEventSource[] = [];
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onerror: (() => void) | null = null;
+  readonly url: string;
+  constructor(url: string) {
+    this.url = url;
+    MockEventSource.instances.push(this);
+  }
+  close(): void {
+    /* no-op */
+  }
+  emit(data: unknown): void {
+    this.onmessage?.({ data: JSON.stringify(data) } as MessageEvent<string>);
+  }
+}
+
 const CREATED_AT = '2026-09-06T00:00:00.000Z';
 
 function visitRunDetail(runId: string): Awaited<ReturnType<typeof getWorkflowRun>> {
@@ -508,6 +529,7 @@ describe('WorkflowExecution room visit', () => {
   let root: Root;
   let queryClient: QueryClient;
   let fetchSpy: { mockRestore: () => void };
+  let originalEventSource: typeof EventSource;
 
   beforeEach(() => {
     notifyManager.setScheduler((cb: () => void): void => {
@@ -516,6 +538,13 @@ describe('WorkflowExecution room visit', () => {
     notifyManager.setNotifyFunction((cb: () => void): void => {
       act(cb);
     });
+    // happy-dom implements no EventSource; every mount of WorkflowExecution
+    // now opens one (`useRunTerminalEdge`'s `__dashboard__` subscription), so
+    // every test in this suite needs a working stand-in, not just the ones
+    // that exercise it directly.
+    MockEventSource.instances = [];
+    originalEventSource = globalThis.EventSource;
+    globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
     win = installHappyDom();
     const el = win.document.createElement('div');
     win.document.body.appendChild(el);
@@ -556,6 +585,7 @@ describe('WorkflowExecution room visit', () => {
     });
     queryClient.clear();
     fetchSpy.mockRestore();
+    globalThis.EventSource = originalEventSource;
     win.close();
     restoreGlobals();
     notifyManager.setScheduler((cb: () => void): void => {
@@ -727,6 +757,124 @@ describe('WorkflowExecution room visit', () => {
       'true'
     );
     expect(host.querySelector('[data-testid="legacy-node-room"]')?.textContent).toContain('Review');
+  });
+
+  function mockRunDetailOutage(failing: boolean): void {
+    fetchSpy.mockRestore();
+    fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((input: RequestInfo | URL) => {
+      const path = requestPath(input);
+      if (path === '/api/workflows/runs/run-1' || path === '/api/workflows/runs/run-2') {
+        if (failing) return Promise.resolve(jsonResponse({ error: 'server down' }, 500));
+        const runId = path.endsWith('run-2') ? 'run-2' : 'run-1';
+        return Promise.resolve(jsonResponse(visitRunDetail(runId)));
+      }
+      if (path === '/api/workflows/demo') {
+        return Promise.resolve(jsonResponse(visitWorkflowDefinition()));
+      }
+      if (path.includes('/nodes/') && path.endsWith('/messages')) {
+        return Promise.resolve(
+          jsonResponse({ messages: [], hasMore: false, highWatermark: 0 } satisfies {
+            messages: never[];
+            hasMore: boolean;
+            highWatermark: number;
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({ error: `unmocked ${path}` }, 404));
+    }) as typeof fetch);
+  }
+
+  test('a refetch failure after the run has loaded keeps the room open and hints, then recovers', async () => {
+    await renderVisit();
+    await clickTab('Logs');
+    await flushUntil('log rows', () => (host.textContent ?? '').includes('Review'));
+    await clickNamed('Review');
+    await flushUntil(
+      'opened review',
+      () => host.querySelector('[data-testid="legacy-node-room"]') !== null
+    );
+
+    // Simulate an outage: the next run-detail read fails after data has
+    // already loaded once.
+    mockRunDetailOutage(true);
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workflowRun', 'run-1'] });
+    });
+    await flushUntil('hint shown', () =>
+      (host.textContent ?? '').includes('Failed to load — retrying')
+    );
+
+    // react-query keeps the last-good data, so the error page must not
+    // replace the room — only the non-blocking hint may appear.
+    expect(host.textContent).not.toContain('Failed to load workflow run:');
+    expect(host.querySelector('[data-testid="legacy-node-room"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="legacy-node-room"]')?.textContent).toContain('Review');
+
+    // The server comes back: the page recovers without a remount.
+    mockRunDetailOutage(false);
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workflowRun', 'run-1'] });
+    });
+    await flushUntil(
+      'hint cleared',
+      () => !(host.textContent ?? '').includes('Failed to load — retrying')
+    );
+    expect(host.querySelector('[data-testid="legacy-node-room"]')).not.toBeNull();
+  });
+
+  test('a dag_node event for this run on the dashboard stream kicks a run refetch without waiting the 3s poll', async () => {
+    let runDetailFetches = 0;
+    fetchSpy.mockRestore();
+    fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((input: RequestInfo | URL) => {
+      const path = requestPath(input);
+      if (path === '/api/workflows/runs/run-1') {
+        runDetailFetches += 1;
+        return Promise.resolve(jsonResponse(visitRunDetail('run-1')));
+      }
+      if (path === '/api/workflows/demo') {
+        return Promise.resolve(jsonResponse(visitWorkflowDefinition()));
+      }
+      if (path.includes('/nodes/') && path.endsWith('/messages')) {
+        return Promise.resolve(
+          jsonResponse({ messages: [], hasMore: false, highWatermark: 0 } satisfies {
+            messages: never[];
+            hasMore: boolean;
+            highWatermark: number;
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({ error: `unmocked ${path}` }, 404));
+    }) as typeof fetch);
+
+    await renderVisit();
+    const fetchesAtMount = runDetailFetches;
+
+    const dashboardStream = MockEventSource.instances.find(es => es.url.includes('__dashboard__'));
+    if (dashboardStream === undefined) throw new Error('dashboard stream not connected');
+
+    // A different run's event must not trigger a refetch of this run.
+    await act(async () => {
+      dashboardStream.emit({
+        type: 'dag_node',
+        runId: 'run-other',
+        nodeId: 'review',
+        status: 'completed',
+      });
+    });
+    await flush();
+    expect(runDetailFetches).toBe(fetchesAtMount);
+
+    // This run's own dag_node event kicks an immediate refetch — the
+    // page's own 3s poll never has to fire for the recovery to start.
+    await act(async () => {
+      dashboardStream.emit({
+        type: 'dag_node',
+        runId: 'run-1',
+        nodeId: 'review',
+        status: 'completed',
+      });
+    });
+    await flushUntil('refetch fired', () => runDetailFetches > fetchesAtMount);
   });
 
   test('closing the room restores focus to the log opener', async () => {
@@ -1067,6 +1215,7 @@ describe('WorkflowExecution terminal catch-up (T3.10–T3.11, T3.14)', () => {
   let root: Root;
   let queryClient: QueryClient;
   let fetchSpy: { mockRestore: () => void };
+  let originalEventSource: typeof EventSource;
 
   function baseDetail(
     status: Awaited<ReturnType<typeof getWorkflowRun>>['run']['status'],
@@ -1118,6 +1267,11 @@ describe('WorkflowExecution terminal catch-up (T3.10–T3.11, T3.14)', () => {
     notifyManager.setNotifyFunction((cb: () => void): void => {
       act(cb);
     });
+    // happy-dom implements no EventSource; every mount of WorkflowExecution
+    // now opens one (`useRunTerminalEdge`'s `__dashboard__` subscription).
+    MockEventSource.instances = [];
+    originalEventSource = globalThis.EventSource;
+    globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
     win = installHappyDom();
     const el = win.document.createElement('div');
     win.document.body.appendChild(el);
@@ -1138,6 +1292,7 @@ describe('WorkflowExecution terminal catch-up (T3.10–T3.11, T3.14)', () => {
     });
     queryClient.clear();
     fetchSpy?.mockRestore();
+    globalThis.EventSource = originalEventSource;
     win.close();
     restoreGlobals();
     notifyManager.setScheduler((cb: () => void): void => {
