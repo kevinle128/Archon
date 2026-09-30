@@ -79,11 +79,11 @@ export function ProjectDetail({
   }, [runs]);
 
   const handleNewChat = (): void => {
-    navigate('/legacy/chat');
+    navigate('/chat');
   };
 
   const handleRunClick = (run: WorkflowRunResponse): void => {
-    navigate(`/legacy/workflows/runs/${run.id}`);
+    navigate(`/workflows/runs/${run.id}`);
   };
 
   // Filter conversations by search

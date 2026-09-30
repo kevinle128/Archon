@@ -225,7 +225,7 @@ function WorkflowResultCard({
           )}
           <button
             onClick={(): void => {
-              navigate(`/legacy/workflows/runs/${runId}`);
+              navigate(`/workflows/runs/${runId}`);
             }}
             className="text-[10px] text-primary hover:text-accent-bright transition-colors shrink-0"
           >
@@ -342,7 +342,7 @@ function MessageListRaw({
                 variant="outline"
                 size="sm"
                 onClick={(): void => {
-                  navigate('/legacy/workflows');
+                  navigate('/workflows');
                 }}
                 className="flex items-center gap-1.5"
               >

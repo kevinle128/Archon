@@ -408,7 +408,7 @@ function WorkflowBuilderInner(): React.ReactElement {
       const result = await createConversation(selectedProjectId ?? undefined);
       const conversationId = result.conversationId;
       await runWorkflow(workflowName.trim(), conversationId, '');
-      navigate(`/legacy/chat/${conversationId}`);
+      navigate(`/chat/${conversationId}`);
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error');
       console.error('[workflow-builder] workflow.run_failed', { workflowName, error });

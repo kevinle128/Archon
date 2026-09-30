@@ -72,7 +72,7 @@ The center of the screen is the chat interface -- this is where you interact wit
 
 ### Command Center (Dashboard)
 
-Accessible via the `/legacy/dashboard` route, the Command Center shows all workflow runs across your projects. It includes:
+Accessible via the `/dashboard` route, the Command Center shows all workflow runs across your projects. It includes:
 
 - **Status summary bar** -- Counts of running, completed, failed, and paused workflows
 - **Workflow run cards** -- Each run shows its status, workflow name, elapsed time, and node progress
@@ -81,7 +81,7 @@ Accessible via the `/legacy/dashboard` route, the Command Center shows all workf
 
 ### Settings
 
-The `/legacy/settings` page lets you configure assistant defaults (model, provider) without editing YAML files. It also includes a **Projects** section for registering and managing codebases.
+The `/settings` page lets you configure assistant defaults (model, provider) without editing YAML files. It also includes a **Projects** section for registering and managing codebases.
 
 ## Chat Interface
 
@@ -156,7 +156,7 @@ Click the arrow button in the result card header to open the full execution deta
 
 ### Execution Detail Page
 
-Click on a workflow run (from the dashboard or progress card) to open the execution detail page. The legacy run view is at `/legacy/workflows/runs/:runId`; the console run view is at `/console/p/:projectId/r/:runId`. Both show:
+Click on a workflow run (from the dashboard or progress card) to open the execution detail page. The run view is at `/workflows/runs/:runId`. It shows:
 
 - The full DAG graph with per-node status
 - A **node transcript pane** -- click any graph node or Logs row to open that node's room. A running agent node streams its transcript live; a completed node replays the same pane as a static transcript.
@@ -180,7 +180,7 @@ It has the Archon service account's operating-system permissions and can change 
 
 ## Workflow Builder
 
-The Workflow Builder at `/legacy/workflows/builder` provides a visual editor for creating and modifying workflow YAML files. Features include:
+The Workflow Builder at `/workflows/builder` provides a visual editor for creating and modifying workflow YAML files. Features include:
 
 - **DAG canvas** -- Drag-and-drop nodes to build your workflow graph visually
 - **Node palette** -- Drag command, prompt, bash, and route-loop nodes from a sidebar library. Additional node types (`script`, `loop`, `approval`, `cancel`) are editable via the Code / Split view
@@ -193,13 +193,7 @@ The Workflow Builder at `/legacy/workflows/builder` provides a visual editor for
 - **Delete node** -- Remove a selected node with `Delete` or `Backspace`, the Delete button in the inspector header, or the right-click context menu on any node
 - **Save** -- Saves the workflow YAML to your project's `.archon/workflows/` directory
 
-You can also browse existing workflows on the `/legacy/workflows` page and open any of them in the builder to edit.
-
-### Archon Studio builder (beta)
-
-A rebuilt visual builder is available in the new console at `/console/builder` (reachable from the console sidebar). It is a controlled React Flow canvas with a node palette, per-node inspector, live YAML preview, inline validation panel, smart-guide snapping, marquee selection, and a right-click context menu (add node, cut/copy/duplicate/delete, paste, select all, auto-arrange, fit view). All seven node types (`prompt`, `command`, `bash`, `script`, `loop`, `approval`, `cancel`) are editable directly in the inspector.
-
-This builder is **beta and fixture-backed**: it loads a local example workflow and reports edits in-memory — load/save to `.archon/workflows/` and a live `/console/builder/:name` route land in a later milestone. For saving workflows today, use the `/legacy/workflows/builder` editor above.
+You can also browse existing workflows on the `/workflows` page and open any of them in the builder to edit.
 
 ## SSE Streaming
 

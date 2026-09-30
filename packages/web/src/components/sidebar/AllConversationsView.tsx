@@ -52,7 +52,7 @@ export function AllConversationsView({
   }
 
   const handleNewChat = (): void => {
-    navigate('/legacy/chat');
+    navigate('/chat');
   };
 
   const filtered = conversations?.filter(conv => {

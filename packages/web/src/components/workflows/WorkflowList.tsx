@@ -58,7 +58,7 @@ export function WorkflowList(): React.ReactElement {
       workflowStarted = true;
       setRunMessage('');
       setSelectedWorkflow(null);
-      navigate(`/legacy/chat/${conversationId}`);
+      navigate(`/chat/${conversationId}`);
     } catch (error) {
       console.error('[Workflows] Failed to run workflow', { error });
       setRunError(

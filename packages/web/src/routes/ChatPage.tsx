@@ -136,7 +136,7 @@ export function ChatPage(): React.ReactElement {
   );
 
   const handleNewChat = useCallback((): void => {
-    navigate('/legacy/chat');
+    navigate('/chat');
   }, [navigate]);
 
   const handleAddSubmit = useCallback((): void => {

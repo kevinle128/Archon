@@ -6,10 +6,10 @@ import { useSession, signOut } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
 
 const tabs = [
-  { to: '/legacy/chat', end: false, icon: MessageSquare, label: 'Chat' },
-  { to: '/legacy/dashboard', end: true, icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/legacy/workflows', end: false, icon: Workflow, label: 'Workflows' },
-  { to: '/legacy/settings', end: false, icon: Settings, label: 'Settings' },
+  { to: '/chat', end: false, icon: MessageSquare, label: 'Chat' },
+  { to: '/dashboard', end: true, icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/workflows', end: false, icon: Workflow, label: 'Workflows' },
+  { to: '/settings', end: false, icon: Settings, label: 'Settings' },
 ] as const;
 
 export function TopNav(): React.ReactElement {
@@ -49,10 +49,7 @@ export function TopNav(): React.ReactElement {
   return (
     <nav className="flex min-w-0 max-w-full flex-none items-center gap-1 overflow-x-auto border-b border-border bg-surface px-4">
       {/* Brand logo */}
-      <Link
-        to="/legacy/chat"
-        className="flex items-center gap-2 mr-4 hover:opacity-80 transition-opacity"
-      >
+      <Link to="/chat" className="flex items-center gap-2 mr-4 hover:opacity-80 transition-opacity">
         <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
           <span className="text-sm font-semibold text-primary-foreground">A</span>
         </div>
@@ -75,7 +72,7 @@ export function TopNav(): React.ReactElement {
         >
           <Icon className="h-4 w-4" />
           {label}
-          {to === '/legacy/dashboard' && runningCount > 0 && (
+          {to === '/dashboard' && runningCount > 0 && (
             <span
               className="ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground"
               aria-label={`${runningCount} workflows running`}
@@ -86,27 +83,6 @@ export function TopNav(): React.ReactElement {
         </NavLink>
       ))}
       <div className="ml-auto flex items-center gap-3">
-        {/* CTA to the experimental console. Uses the brand magenta→teal
-            gradient via inline style because the old UI's tokens don't
-            include the brand-gradient variables. Sized to read as a
-            primary CTA without dominating the nav. */}
-        <Link
-          to="/console"
-          title="Try the redesigned console UI (early access)"
-          className="group inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:brightness-110 active:brightness-95"
-          style={{
-            background:
-              'linear-gradient(135deg, oklch(0.640 0.295 330) 0%, oklch(0.560 0.215 305) 50%, oklch(0.755 0.165 168) 100%)',
-          }}
-        >
-          <span>Try the new console UI</span>
-          <span
-            aria-hidden
-            className="inline-block transition-transform group-hover:translate-x-0.5"
-          >
-            →
-          </span>
-        </Link>
         <span className="text-xs text-text-secondary">
           v{import.meta.env.VITE_APP_VERSION as string}
           {updateCheck?.updateAvailable && updateCheck.releaseUrl && (

@@ -657,9 +657,7 @@ describe('WorkflowExecution room visit', () => {
     return createElement(
       MemoryRouter,
       {
-        initialEntries: [
-          `/legacy/workflows/runs/${props.initialRunId}${props.initialSearch ?? ''}`,
-        ],
+        initialEntries: [`/workflows/runs/${props.initialRunId}${props.initialSearch ?? ''}`],
       },
       createElement(
         QueryClientProvider,
@@ -1347,7 +1345,7 @@ describe('WorkflowExecution terminal catch-up (T3.10–T3.11, T3.14)', () => {
       root.render(
         createElement(
           MemoryRouter,
-          { initialEntries: ['/legacy/workflows/runs/run-catchup'] },
+          { initialEntries: ['/workflows/runs/run-catchup'] },
           createElement(
             QueryClientProvider,
             { client: queryClient },

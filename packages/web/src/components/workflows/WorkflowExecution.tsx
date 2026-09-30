@@ -1180,7 +1180,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
             if (window.history.length > 1) {
               navigate(-1);
             } else {
-              navigate('/legacy/workflows');
+              navigate('/workflows');
             }
           }}
           className="text-text-secondary hover:text-text-primary transition-colors text-sm"
@@ -1227,7 +1227,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           {workerRunId && (
             <button
               onClick={(): void => {
-                navigate(`/legacy/workflows/runs/${workerRunId}`);
+                navigate(`/workflows/runs/${workerRunId}`);
               }}
               className="flex items-center gap-1 text-xs text-primary hover:text-accent-bright transition-colors"
               title="View workflow run details"

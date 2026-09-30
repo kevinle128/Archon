@@ -103,9 +103,9 @@ export function WorkflowProgressCard({
 
   const handleViewFullScreen = (): void => {
     if (runId) {
-      navigate(`/legacy/workflows/runs/${runId}`);
+      navigate(`/workflows/runs/${runId}`);
     } else {
-      navigate(`/legacy/chat/${encodeURIComponent(workerConversationId)}`);
+      navigate(`/chat/${encodeURIComponent(workerConversationId)}`);
     }
   };
 

@@ -1002,7 +1002,7 @@ describe('LegacyGraphLogsPane', () => {
       (host.textContent ?? '').includes('Open child run')
     );
 
-    expect(host.querySelector('a[href="/legacy/workflows/runs/child-run-1"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/workflows/runs/child-run-1"]')).not.toBeNull();
     expect(calls).toEqual([]);
     expect(host.querySelector('[aria-label="child room"]')).not.toBeNull();
     expect(host.textContent).not.toContain('AskHuman');
@@ -1047,7 +1047,7 @@ describe('LegacyGraphLogsPane', () => {
     await flushUntil(host, 'child run link', () =>
       (host.textContent ?? '').includes('Open child run')
     );
-    expect(host.querySelector('a[href="/legacy/workflows/runs/child-1"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/workflows/runs/child-1"]')).not.toBeNull();
     expect(calls).toEqual([]);
     expect(host.querySelector('[aria-label="child room"]')).not.toBeNull();
     expectNoAskHumanChrome(host);

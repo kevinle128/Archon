@@ -513,7 +513,7 @@ describe('LegacyNodeRoom static rooms', () => {
       ],
     });
     expect(markup).toContain('Open child run');
-    expect(markup).toContain('href="/legacy/workflows/runs/child-1"');
+    expect(markup).toContain('href="/workflows/runs/child-1"');
     expect(markup).not.toContain('child-old');
     expect(markup).toContain('Workflow');
     expect(markup.match(/role="region"/g)?.length).toBe(1);
