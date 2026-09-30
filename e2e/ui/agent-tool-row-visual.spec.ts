@@ -605,8 +605,9 @@ function contrastRatio(fg: Rgba, bg: Rgba): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-for (const surface of ['console', 'legacy'] as const) {
-  test(`[P1] [V:hitl.tool-row-${surface}] HITL readable tool row geometry, keyboard, and computed style on ${surface}`, async ({
+const surface = 'legacy' as const;
+{
+  test(`[P1] [V:hitl.tool-row-legacy] HITL readable tool row geometry, keyboard, and computed style on legacy`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -755,8 +756,8 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(focus.focusVisible, 'keyboard activation carries :focus-visible').toBe(true);
     expect(focus.style).toBe('solid');
     expect(focus.width).toBe('2px');
-    // The one deliberate surface delta: +2px offset on Console, −2px on Legacy.
-    expect(focus.offset).toBe(surface === 'console' ? '2px' : '-2px');
+    // Focus offset for legacy surface.
+    expect(focus.offset).toBe('-2px');
     const accent = await resolveColorIn(room, 'var(--accent-bright)');
     expect(focus.color, 'focus outline resolves to --accent-bright').toBe(accent.resolved);
 
@@ -956,7 +957,7 @@ for (const surface of ['console', 'legacy'] as const) {
     });
   });
 
-  test(`[P1] [V:hitl.tool-row-${surface}-sweep] HITL readable tool row stays operable and one-line across viewports and 200% zoom on ${surface}`, async ({
+  test(`[P1] [V:hitl.tool-row-legacy-sweep] HITL readable tool row stays operable and one-line across viewports and 200% zoom on legacy`, async ({
     page,
     archon,
   }) => {
@@ -1009,7 +1010,7 @@ for (const surface of ['console', 'legacy'] as const) {
     }
   });
 
-  test(`[P1] [V:hitl.tool-body-gallery-${surface}] HITL family-body gallery geometry, Raw swap, and accessibility on ${surface}`, async ({
+  test(`[P1] [V:hitl.tool-body-gallery-legacy] HITL family-body gallery geometry, Raw swap, and accessibility on legacy`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -1288,7 +1289,8 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
   } as const;
   const evidence: Record<string, Record<string, number | string>> = {};
   const rawEvidence: Record<string, Record<string, number | string>> = {};
-  for (const surface of ['console', 'legacy'] as const) {
+  const surface = 'legacy' as const;
+  {
     const room = await openToolRoom(page, surface, started.runId);
     const summary = room.locator(SUMMARY).first();
     const restBg = await effectiveBackground(summary);

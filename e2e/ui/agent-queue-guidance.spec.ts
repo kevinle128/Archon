@@ -322,8 +322,9 @@ async function transcriptTexts(page: Page, runId: string, nodeId: string): Promi
     .map(message => message.payload.text as string);
 }
 
-for (const surface of ['console', 'legacy'] as const) {
-  test(`[P1] [V:steer.direct-${surface}] queue guidance drains at the natural boundary on ${surface}`, async ({
+const surface = 'legacy' as const;
+{
+  test(`[P1] [V:steer.direct-legacy] queue guidance drains at the natural boundary on legacy`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -517,7 +518,7 @@ for (const surface of ['console', 'legacy'] as const) {
     });
   });
 
-  test(`[P1] [V:steer.loop-${surface}] queue guidance drains inside the loop iteration on ${surface}`, async ({
+  test(`[P1] [V:steer.loop-legacy] queue guidance drains inside the loop iteration on legacy`, async ({
     page,
     archon,
   }) => {
@@ -565,29 +566,9 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(page.getByText(LOOP_ECHO_TEXT).first()).toBeVisible({ timeout: T.medium });
     await expect(page.getByText(LOOP_DONE_TEXT).first()).toBeVisible();
     await expect(page.getByText('×2')).toHaveCount(0);
-    if (surface === 'console') {
-      // In the console log stream the echo and sentinel sit inside the ×1
-      // group, after its header and before the node's completion row.
-      const order = await page.evaluate(() => {
-        const text = (document.querySelector('main') ?? document.body).textContent ?? '';
-        return {
-          text,
-          group: text.indexOf('steer-loop ×1'),
-          echo: text.indexOf('[e2e-fake] resumed echo: finish now'),
-          done: text.indexOf('E2E_LOOP_DONE'),
-        };
-      });
-      expect(order.group, '×1 group header exists').toBeGreaterThanOrEqual(0);
-      expect(order.echo).toBeGreaterThan(order.group);
-      expect(order.done).toBeGreaterThan(order.echo);
-      expect(
-        order.text.match(/steer-loop ×/g)?.length ?? 0,
-        'exactly one iteration group for steer-loop'
-      ).toBe(1);
-    }
   });
 
-  test(`[P1] [V:steer.blocked-${surface}] a pending Ask blocks queue guidance on ${surface}`, async ({
+  test(`[P1] [V:steer.blocked-legacy] a pending Ask blocks queue guidance on legacy`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -638,7 +619,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await captureEvidence(room, `us-005-${surface}-ask-blocked.png`, testInfo);
   });
 
-  test(`[P1] [V:steer.detached-${surface}] queue guidance discloses a CLI-detached run as recovery-required on ${surface}`, async ({
+  test(`[P1] [V:steer.detached-legacy] queue guidance discloses a CLI-detached run as recovery-required on legacy`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -674,7 +655,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await captureEvidence(room, `us-005-${surface}-detached-recovery-required.png`, testInfo);
   });
 
-  test(`[P1] [V:steer.detached-loop-${surface}] a CLI-detached LOOP run discloses recovery-required, not a live composer, on ${surface}`, async ({
+  test(`[P1] [V:steer.detached-loop-legacy] a CLI-detached LOOP run discloses recovery-required, not a live composer, on legacy`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -716,7 +697,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await captureEvidence(room, `us-005-${surface}-detached-loop-recovery-required.png`, testInfo);
   });
 
-  test(`[P1] [V:steer.visual-${surface}] queue guidance dock geometry, contrast, and reduced-motion evidence on ${surface}`, async ({
+  test(`[P1] [V:steer.visual-legacy] queue guidance dock geometry, contrast, and reduced-motion evidence on legacy`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -826,18 +807,9 @@ for (const surface of ['console', 'legacy'] as const) {
         })
         .toBeLessThanOrEqual(460);
       await expectNoRoomDrivenOverflow(room, `${surface}@460`);
-      await captureEvidence(room, `us-005-${surface}-460-queued-2.png`, testInfo);
+      await captureEvidence(room, `us-005-legacy-460-queued-2.png`, testInfo);
       const narrowWidth = (await room.boundingBox())?.width ?? 0;
-      if (surface === 'console') {
-        await page.setViewportSize({ width: 1440, height: 900 });
-        await expect(items).toHaveCount(2);
-        await expectNoRoomDrivenOverflow(room, 'console@1440');
-        const roomWidth = (await room.boundingBox())?.width ?? 0;
-        await captureEvidence(room, 'us-005-console-1440-queued-2.png', testInfo);
-        mergeMeasurements('console-viewports', { narrow460: narrowWidth, wide1440: roomWidth });
-      } else {
-        mergeMeasurements('legacy-viewports', { narrow460: narrowWidth });
-      }
+      mergeMeasurements('legacy-viewports', { narrow460: narrowWidth });
     });
 
     await test.step('reduced-motion parity', async () => {

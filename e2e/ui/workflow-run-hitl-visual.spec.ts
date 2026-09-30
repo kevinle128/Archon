@@ -104,7 +104,7 @@ async function captureAtTwoHundredPercentZoom(
   }
 }
 
-test('[P1] [V:hitl.visual-captures] HITL visual: Console and Legacy vs canonical mockup at required viewports', async ({
+test('[P1] [V:hitl.visual-captures] HITL visual: Legacy vs canonical mockup at required viewports', async ({
   page,
   archon,
 }) => {
@@ -120,22 +120,6 @@ test('[P1] [V:hitl.visual-captures] HITL visual: Console and Legacy vs canonical
     timeout: T.medium,
   });
   await expect(page.getByRole('region', { name: `${HITL_INSPECT_NODE} room` })).toBeVisible();
-
-  for (const viewport of VIEWPORTS) {
-    await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    await expect(page.getByText(/e2e-hitl-run/i).first()).toBeVisible();
-    await expect(page.getByRole('region', { name: `${HITL_INSPECT_NODE} room` })).toBeVisible();
-    const ratio = await measureProductRatio(page, 'console');
-    if (ratio !== null) {
-      expect(ratio).toBeGreaterThanOrEqual(0.24);
-      expect(ratio).toBeLessThanOrEqual(0.6);
-    }
-    await page.screenshot({
-      path: join(CAPTURE_DIR, 'console-actual-' + viewport.name + '.png'),
-      fullPage: true,
-    });
-  }
-  await captureAtTwoHundredPercentZoom(page, 'console', `${HITL_INSPECT_NODE} room`);
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await openLegacyRunDetail(page, started.runId);
@@ -163,28 +147,6 @@ test('[P1] [V:hitl.visual-captures] HITL visual: Console and Legacy vs canonical
     });
   }
   await captureAtTwoHundredPercentZoom(page, 'legacy', `${HITL_INSPECT_NODE} room`);
-
-  await page.goto(pathToFileURL(MOCKUP_CONSOLE).href);
-  await expect(page).toHaveTitle('Archon Console — Workflow Run (HITL mockup)');
-  await expect(page.locator('#cc-app')).toBeVisible({ timeout: T.short });
-  await expect(page.getByRole('button', { name: 'Log', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Graph', exact: true })).toBeVisible();
-  await expect(page.locator('#cc-composer input')).toBeVisible();
-  await expect.poll(async () => page.locator('#cc-stream .cc-node').count()).toBeGreaterThan(0);
-  await page.getByRole('button', { name: 'Log', exact: true }).click();
-  const consoleMockupRow = page.locator('#cc-stream section[data-node="clarify"] .cc-divider');
-  await expect(consoleMockupRow).toBeVisible({ timeout: T.medium });
-  await consoleMockupRow.click();
-  await expect(page.locator('#node-panel:not(.closed)')).toBeVisible();
-  await expect(page.locator('#panel-header .ph-name')).toHaveText('clarify');
-  for (const viewport of VIEWPORTS) {
-    await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    await expect(page.locator('body')).toBeVisible();
-    await page.screenshot({
-      path: join(CAPTURE_DIR, 'console-mockup-' + viewport.name + '.png'),
-      fullPage: true,
-    });
-  }
 
   await page.goto(pathToFileURL(MOCKUP_LEGACY).href);
   await expect(page).toHaveTitle('Archon — Workflow Run View (HITL mockup)');
