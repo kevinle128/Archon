@@ -386,6 +386,16 @@ export interface IWorkflowSteeringStore {
     messageId: string
   ): Promise<ClaimedSteeringMessage | null>;
   /**
+   * Returns a soft-injected entry to `queued` when the live turn ended before
+   * the model received it. Its FIFO position is untouched, so it is claimed
+   * first, and no failure is recorded. No-op unless the entry is still `sent`.
+   */
+  revertSteeringSoftInjectionClaim(
+    workflowRunId: string,
+    nodeId: string,
+    messageId: string
+  ): Promise<void>;
+  /**
    * Terminal reconciliation: every entry still in `queued`, `awaiting_send_now`,
    * or `dispatching` becomes `never_sent`. Idempotent — a second call finds
    * nothing left to convert.

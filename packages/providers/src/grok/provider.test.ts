@@ -780,6 +780,25 @@ describe('GrokProvider ACP transport (default)', () => {
     });
   });
 
+  test('hands the soft-injection channel to the ACP process input', async () => {
+    const captured: { input?: GrokAcpProcessInput } = {};
+    const provider = new GrokProvider({
+      resolveBinary: async () => '/bin/grok',
+      runAcpTurn: fakeAcpRunner(
+        [{ type: 'result', sessionId: 'sess-1', stopReason: 'end_turn' }],
+        captured
+      ),
+    });
+    const channel = { ready: (): (() => void) => (): void => undefined };
+    await collect(provider, [
+      'hello',
+      '/repo',
+      undefined,
+      { interruptSignal: new AbortController().signal, softInjection: channel },
+    ]);
+    expect(captured.input?.softInjection).toBe(channel);
+  });
+
   test('a node config needing the fallback transport never reaches runAcpTurn', async () => {
     const captured: { input?: GrokAcpProcessInput } = {};
     let singleSpawned = false;

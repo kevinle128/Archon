@@ -73,6 +73,22 @@ const QUEUE_GUIDANCE_LOOP_WORKFLOW_FIXTURE = join(
   'workflows',
   'e2e-queue-guidance-loop.yaml'
 );
+const SOFT_INJECT_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-soft-inject.yaml'
+);
+const SOFT_INJECT_LATE_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-soft-inject-late.yaml'
+);
 const TRANSCRIPT_DISPLAY_WORKFLOW_FIXTURE = join(
   HERE,
   '..',
@@ -129,6 +145,17 @@ export const QUEUE_GUIDANCE_NODE = 'steer-me';
  */
 export function queueGuidanceDrainReleasePath(home: string): string {
   return join(home, 'e2e-fake-release', 'queue-guidance-drain');
+}
+export const E2E_SOFT_INJECT_WORKFLOW_NAME = 'e2e-soft-inject';
+export const E2E_SOFT_INJECT_LATE_WORKFLOW_NAME = 'e2e-soft-inject-late';
+export const SOFT_INJECT_NODE = 'inject-me';
+/**
+ * Marker the `e2e-soft-inject` fixture's node watches for; writing it ends the
+ * node's bounded wait so the fake reads the messages it accepted. Mirrors
+ * `e2eFakeReleaseSignalPath` for the same reason as `queueGuidanceDrainReleasePath`.
+ */
+export function softInjectReleasePath(home: string): string {
+  return join(home, 'e2e-fake-release', 'soft-inject-release');
 }
 export const QUEUE_GUIDANCE_LOOP_NODE = 'steer-loop';
 export const E2E_QUEUE_GUIDANCE_PAIR_WORKFLOW_NAME = 'e2e-queue-guidance-pair';
@@ -537,6 +564,16 @@ async function startArchonRuntime(
   writeFileSync(
     join(home, 'workflows', `${E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME}.yaml`),
     readFileSync(QUEUE_GUIDANCE_LOOP_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
+    join(home, 'workflows', `${E2E_SOFT_INJECT_WORKFLOW_NAME}.yaml`),
+    readFileSync(SOFT_INJECT_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
+    join(home, 'workflows', `${E2E_SOFT_INJECT_LATE_WORKFLOW_NAME}.yaml`),
+    readFileSync(SOFT_INJECT_LATE_WORKFLOW_FIXTURE)
   );
 
   writeFileSync(

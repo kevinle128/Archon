@@ -1,0 +1,11 @@
+name: si-claude-steer
+description: "Scratch - Claude haiku soft-injection target."
+mutates_checkout: false
+nodes:
+  - id: cl-node
+    provider: claude
+    model: haiku
+    prompt: |
+      Run these Bash steps one at a time, each as its own separate Bash call, in order: step N is "sleep 9; echo sN" for N = 1..5.
+      Then reply with one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for in your final line.
+      $ARGUMENTS

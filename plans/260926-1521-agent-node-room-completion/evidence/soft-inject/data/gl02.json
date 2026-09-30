@@ -1,0 +1,44 @@
+{
+  "tag": "gl02",
+  "sender": "l",
+  "observer": "c",
+  "R": "9c07a670bbfb1d77eb980e1138a69a7a",
+  "node": "grok-node",
+  "click": { "status": 200, "resolvedMs": 24 },
+  "status": "completed",
+  "frames": {
+    "l": [
+      [1790766904751, "Running|Stop,Queue|0|0||||||"],
+      [1790766904785, "Running|Stop,Queue|1|1|QUEUED · 1|ONE||||"],
+      [1790766904819, "Running|Stop,Queue|2|2|QUEUED · 2|ONE,TWO||||"],
+      [1790766906043, "Running|Stop,Queue|1|1|QUEUED · 1|ONE,TWO*||||"],
+      [1790766906520, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:sent|||"],
+      [1790766991185, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:sent|||"],
+      [1790766995722, "Running|Stop,Queue|0|0|||TWO:sent,ONE:sent|||"],
+      [1790767006836, "Completed||0|0|||TWO:sent,ONE:sent|||"]
+    ],
+    "c": [
+      [1790766904751, "Running|Stop,Queue|0|0||||||"],
+      [1790766905511, "Running|Stop,Queue|2|2|QUEUED · 2|ONE,TWO||||"],
+      [1790766906519, "Running|Stop,Queue|1|1|QUEUED · 1|ONE,TWO*||||"],
+      [1790766906586, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:sent|||"],
+      [1790766990879, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:sent|||"],
+      [1790766995499, "Running|Stop,Queue|0|0|||TWO:sent,ONE:sent|||"],
+      [1790767006906, "Completed||0|0|||TWO:sent,ONE:sent|||"]
+    ]
+  },
+  "clickedAt": 1790766906012,
+  "queue": [
+    ["gl02 ONE kee", "sent"],
+    ["gl02 TWO: en", "sent"]
+  ],
+  "rowCount": 127,
+  "attempts": ["33046cfa-dfd5-4a43-9c13-7e9b5d1cafa7"],
+  "promptRows": 1,
+  "operatorRows": [
+    [2, "gl02 TWO: end "],
+    [104, "gl02 ONE keep "]
+  ],
+  "ackInAgentText": 4,
+  "toolRowsAfterInjection": 10
+}

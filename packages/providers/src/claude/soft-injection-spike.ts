@@ -211,7 +211,11 @@ async function runSoftInjectionSpike(
     settingSources: [],
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
-    maxTurns: 1,
+    // The prompt needs three sequential tool calls, and every tool round trip
+    // is one turn. A one-turn cap cuts the run off after the first call, so the
+    // injected message then starts a fresh run and looks like a second `result`
+    // - a false negative that says nothing about the same-turn behavior.
+    maxTurns: 20,
     maxBudgetUsd: 0.5,
     // Required so injection happens while the model is still emitting the
     // current message's tokens — waiting for a full `assistant` SDKMessage

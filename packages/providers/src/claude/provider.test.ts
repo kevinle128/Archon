@@ -3661,6 +3661,189 @@ describe('turn interrupt (native seam)', () => {
     expect(capturedExtraArgs).toBeUndefined();
   });
 
+  describe('soft injection', () => {
+    type Handler = (request: { messageId: string; text: string }) => Promise<boolean>;
+
+    /** Minimal read-only channel that records registration like the executor's. */
+    function makeChannel(): {
+      channel: { ready(handler: Handler): () => void };
+      current: () => Handler | undefined;
+      registrations: () => number;
+    } {
+      let handler: Handler | undefined;
+      let registrations = 0;
+      return {
+        channel: {
+          ready(next): () => void {
+            handler = next;
+            registrations += 1;
+            return (): void => {
+              if (handler === next) handler = undefined;
+            };
+          },
+        },
+        current: () => handler,
+        registrations: () => registrations,
+      };
+    }
+
+    test('registers a handler once the query exists and requests --replay-user-messages', async () => {
+      const interruptController = new AbortController();
+      const { channel, current } = makeChannel();
+      let capturedExtraArgs: Record<string, string | null> | undefined;
+      const fake = new FakeQuery();
+      let registeredAtQueryTime = false;
+      mockQuery.mockImplementation((args: { options: { extraArgs?: unknown } }) => {
+        capturedExtraArgs = args.options.extraArgs as Record<string, string | null> | undefined;
+        registeredAtQueryTime = current() !== undefined;
+        return fake;
+      });
+
+      const drain = (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+          interruptSignal: interruptController.signal,
+          softInjection: channel,
+        })) {
+          // consume
+        }
+      })();
+      await flushMicrotasks();
+
+      expect(registeredAtQueryTime).toBe(false);
+      expect(current()).toBeDefined();
+      expect(capturedExtraArgs).toEqual({ 'replay-user-messages': null });
+
+      fake.push({ done: true, value: undefined });
+      await drain;
+    });
+
+    test('an accepted injection pushes one user message stamped with the request id and does not end the turn', async () => {
+      const interruptController = new AbortController();
+      const { channel, current } = makeChannel();
+      const fake = new FakeQuery();
+      let inputIterator: AsyncIterator<unknown> | undefined;
+      mockQuery.mockImplementation((args: { prompt: unknown }) => {
+        inputIterator = (args.prompt as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+        return fake;
+      });
+
+      const chunks: unknown[] = [];
+      const drain = (async (): Promise<void> => {
+        for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+          interruptSignal: interruptController.signal,
+          softInjection: channel,
+        })) {
+          chunks.push(chunk);
+        }
+      })();
+      await flushMicrotasks();
+
+      await inputIterator!.next(); // the SDK consumes the prompt message
+      const accepted = await current()!({ messageId: 'msg-inject-1', text: 'also do X' });
+      const injected = await inputIterator!.next();
+
+      expect(accepted).toBe(true);
+      expect(injected.value).toEqual({
+        type: 'user',
+        message: { role: 'user', content: 'also do X' },
+        parent_tool_use_id: null,
+        uuid: 'msg-inject-1',
+      });
+      expect(interruptController.signal.aborted).toBe(false);
+      expect(fake.interrupt).not.toHaveBeenCalled();
+      expect(fake.close).not.toHaveBeenCalled();
+      // No steering-owned event is produced by the push itself.
+      expect(chunks).toEqual([]);
+
+      fake.push({
+        done: false,
+        value: { type: 'user', isReplay: true, uuid: 'msg-inject-1', session_id: 'sid-1' },
+      });
+      fake.push({ done: true, value: undefined });
+      await drain;
+      // The echo of the injected id is the delivery acknowledgement.
+      expect(chunks).toEqual([{ type: 'operator_delivery_ack', messageId: 'msg-inject-1' }]);
+    });
+
+    test('unregisters and rejects injections once the turn produced its result', async () => {
+      const interruptController = new AbortController();
+      const { channel, current } = makeChannel();
+      const fake = new FakeQuery();
+      mockQuery.mockImplementation(() => fake);
+
+      const drain = (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+          interruptSignal: interruptController.signal,
+          softInjection: channel,
+        })) {
+          // consume
+        }
+      })();
+      await flushMicrotasks();
+      const handler = current()!;
+
+      fake.push({
+        done: false,
+        value: { type: 'result', subtype: 'success', session_id: 'sid-1' },
+      });
+      fake.push({ done: true, value: undefined });
+      await drain;
+
+      expect(current()).toBeUndefined();
+      expect(await handler({ messageId: 'late', text: 'too late' })).toBe(false);
+    });
+
+    test('unregisters when the stream fails', async () => {
+      const interruptController = new AbortController();
+      const { channel, current } = makeChannel();
+      const fake = new FakeQuery();
+      mockQuery.mockImplementation(() => fake);
+
+      const drain = (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+          interruptSignal: interruptController.signal,
+          softInjection: channel,
+        })) {
+          // consume
+        }
+      })();
+      const settled = drain.then(
+        () => 'resolved',
+        () => 'rejected'
+      );
+      await flushMicrotasks();
+      expect(current()).toBeDefined();
+
+      fake.pushError(new Error('invalid api key'));
+      expect(await settled).toBe('rejected');
+      expect(current()).toBeUndefined();
+    });
+
+    test('refuses an injection after the turn is interrupted', async () => {
+      const interruptController = new AbortController();
+      const { channel, current } = makeChannel();
+      const fake = new FakeQuery();
+      mockQuery.mockImplementation(() => fake);
+
+      const drain = (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+          interruptSignal: interruptController.signal,
+          softInjection: channel,
+        })) {
+          // consume
+        }
+      })();
+      await flushMicrotasks();
+      const handler = current()!;
+
+      interruptController.abort();
+      expect(await handler({ messageId: 'after-stop', text: 'x' })).toBe(false);
+
+      fake.push({ done: true, value: undefined });
+      await drain;
+    });
+  });
+
   test('a replayed user message carrying the injected uuid yields operator_delivery_ack; a non-replay user message does not', async () => {
     const interruptController = new AbortController();
     mockQuery.mockImplementation(() => {

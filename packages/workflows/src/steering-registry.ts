@@ -193,7 +193,16 @@ interface PendingInterrupt {
 export interface SoftInjectionController {
   readonly channel: SoftInjectionChannel;
   /** Resolves `true` only when a currently-registered handler accepted the request. */
-  push(request: SoftInjectionRequest): Promise<boolean>;
+  push(request: SoftInjectionDelivery): Promise<boolean>;
+}
+
+/**
+ * One operator message offered to a live turn. The provider handler only ever
+ * sees `messageId` and `text`; `operatorUserId` stays executor-side so the
+ * accepted message can be recorded as an attributed operator transcript row.
+ */
+export interface SoftInjectionDelivery extends SoftInjectionRequest {
+  readonly operatorUserId?: string | null;
 }
 
 /**
@@ -202,7 +211,9 @@ export interface SoftInjectionController {
  * `AbortController` it accompanies — an adapter's `ready()` registration from
  * a settled turn must never receive a request meant for its successor.
  */
-export function createSoftInjectionController(): SoftInjectionController {
+export function createSoftInjectionController(
+  onAccepted?: (request: SoftInjectionDelivery) => Promise<void>
+): SoftInjectionController {
   let handler: ((request: SoftInjectionRequest) => Promise<boolean>) | undefined;
   return {
     channel: {
@@ -213,8 +224,13 @@ export function createSoftInjectionController(): SoftInjectionController {
         };
       },
     },
-    push(request): Promise<boolean> {
-      return handler === undefined ? Promise.resolve(false) : handler(request);
+    async push(request): Promise<boolean> {
+      if (handler === undefined) return false;
+      const accepted = await handler({ messageId: request.messageId, text: request.text });
+      // Runs before the caller learns of the acceptance, so the operator row
+      // exists by the time the client re-reads the transcript.
+      if (accepted && onAccepted !== undefined) await onAccepted(request);
+      return accepted;
     },
   };
 }
@@ -362,7 +378,7 @@ export class NodeSteeringHandle {
    * exactly like `interrupt()` resolving a truthful projection instead of
    * failing.
    */
-  softInject(request: SoftInjectionRequest): Promise<SoftInjectionOutcome> {
+  softInject(request: SoftInjectionDelivery): Promise<SoftInjectionOutcome> {
     if (!this.interruptible || this.phase !== 'live') {
       return Promise.resolve('no_active_turn');
     }

@@ -39,12 +39,15 @@ export const OMP_CAPABILITIES: ProviderCapabilities = {
   // The aborted turn reports no per-tool interrupted status, so a tool still
   // open at Stop settles 'unknown' instead of a guessed 'interrupted'.
   interruptedToolStatus: false,
-  // Verified false on the RPC transport too: `steer` sent in the documented
-  // "between tool calls" gap did not change the model's already-planned
-  // next tool call — the second call still ran unchanged, and the steer
-  // content was appended as a queued follow-up turn after the original plan
-  // finished (`followUp` semantics, not mid-turn injection). Independently
-  // gated behind `interrupt` regardless.
+  // Verified false on the RPC transport too, and re-checked with a marker the
+  // model had to write BEFORE its next tool call: `steer` sent while the
+  // first of three sequential tool calls was in flight reached the model only
+  // after the last planned call, exactly like `follow_up` (2 default-mode runs,
+  // 1 run under `set_interrupt_mode immediate`, 1 `follow_up` run: the marker
+  // came after the final tool call in all four). Both stay inside one `agent_end`,
+  // so a single agent run does not prove a boundary delivery; the position of
+  // the marker relative to the tool calls does. Compare Claude and Grok ACP,
+  // where the marker precedes the second call.
   softInjection: false,
   // Verified false: no built or spiked transport surfaces a provider
   // acknowledgement correlated to a caller-stamped message id. The abort

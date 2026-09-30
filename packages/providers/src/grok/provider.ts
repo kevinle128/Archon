@@ -438,6 +438,7 @@ export class GrokProvider implements IAgentProvider {
       ...(effort ? { effort } : {}),
       abortSignal: requestOptions?.abortSignal,
       interruptSignal: requestOptions?.interruptSignal,
+      softInjection: requestOptions?.softInjection,
     };
     getLog().info(
       { cwd, model, effort, resumed: resumeSessionId !== undefined },

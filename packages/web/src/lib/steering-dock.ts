@@ -1102,8 +1102,11 @@ export function beginSendNowItem(state: SteeringDockState, messageId: string): S
 }
 
 /**
- * A per-item Send now 200 removes the row from the pending band — it is now
- * `sent` and will appear as a transcript row, not a queue entry. Stop is
+ * A per-item Send now 200 moves the row from waiting to in flight: the server
+ * already claimed it and the live turn accepted it, so it stays visible as
+ * `sending…` until the transcript renders its operator row (the same handoff
+ * a typed Send now uses), and it no longer counts as queued. Dropping it here
+ * would show the message nowhere until the transcript's next read. Stop is
  * never invoked and no interrupt/idle transition happens on this path.
  */
 export function resolveSendNowItemSuccess(
@@ -1113,7 +1116,9 @@ export function resolveSendNowItemSuccess(
   if (state.sendingNowMessageId !== messageId) return state;
   return {
     ...state,
-    sent: state.sent.filter(entry => entry.messageId !== messageId),
+    sent: state.sent.map(entry =>
+      entry.messageId === messageId ? { ...entry, state: 'dispatching' } : entry
+    ),
     sendingNowMessageId: null,
     refusal: null,
     queueGeneration: state.queueGeneration + 1,
@@ -1269,11 +1274,24 @@ export function applyQueueSnapshot(
       .filter(entry => entry.state !== 'sent' && entry.state !== 'delivered')
       .map(entry => entry.messageId)
   );
+  const liveSoftInjection =
+    snapshot.capabilities.soft_injection && snapshot.sub_state === 'generating';
+  const priorSentIds = new Set(
+    state.sent.filter(entry => entry.state === 'sent').map(entry => entry.messageId)
+  );
   const nextSent: LocalSentReceipt[] = snapshot.queued
     .filter(
       row =>
         STEERING_QUEUE_PENDING_STATES.includes(row.state) ||
-        ((row.state === 'sent' || row.state === 'delivered') && priorOpenIds.has(row.message_id))
+        // On a live turn of a soft-injection provider a `sent` entry is
+        // accepted by the transport but not yet read by the model (it waits
+        // for the next tool boundary or echo), so it stays visible until its
+        // transcript row replaces it.
+        (row.state === 'sent' && liveSoftInjection) ||
+        ((row.state === 'sent' || row.state === 'delivered') && priorOpenIds.has(row.message_id)) ||
+        // The echo just delivered an entry this dock showed as `sent`: keep it one
+        // more poll so it does not vanish before the transcript renders its row.
+        (row.state === 'delivered' && liveSoftInjection && priorSentIds.has(row.message_id))
     )
     .map(row => ({
       messageId: row.message_id,

@@ -1,0 +1,22 @@
+tag	st	click	attempts	prompt	ack	toolsAfter	q(TWO)	shell	row	sent	deliv	gaps	ovl	stopMiss	intr	never	regr	above	sentRow
+c21	completed	200	1	1	3	8	delivered	sen	8272	8272	8597	[]	0	0	0	0	0	0	1
+c21	completed	200	1	1	3	8	delivered	obs	8748	None	8748	[]	0	0	0	0	0	0	0
+c22	completed	200	1	1	4	8	delivered	sen	8264	8264	8647	[]	0	0	0	0	0	0	1
+c22	completed	200	1	1	4	8	delivered	obs	8747	None	8747	[]	0	0	0	0	0	0	0
+l21	completed	200	1	1	3	8	delivered	sen	8749	None	8749	[]	0	0	0	0	0	0	0
+l21	completed	200	1	1	3	8	delivered	obs	8522	8522	8539	[]	0	0	0	0	0	0	1
+l22	completed	200	1	1	3	8	delivered	sen	7736	7736	8205	[]	0	0	0	0	0	0	1
+l22	completed	200	1	1	3	8	delivered	obs	7757	7757	8535	[]	0	0	0	0	0	0	1
+gc21	completed	200	1	1	4	8	delivered	sen	14707	None	14707	[]	0	0	0	0	0	0	0
+gc21	completed	200	1	1	4	8	delivered	obs	14705	None	14705	[]	0	0	0	0	0	0	0
+gl21	completed	200	1	1	1	8	delivered	sen	15665	None	15665	[]	0	0	0	0	0	0	0
+gl21	completed	200	1	1	1	8	delivered	obs	14999	14999	15523	[]	0	0	0	0	0	0	1
+c31	completed	200	1	1	3	8	delivered	sen	8816	8816	9599	[]	0	0	0	0	0	0	1
+c31	completed	200	1	1	3	8	delivered	obs	9060	None	9060	[]	0	0	0	0	0	0	0
+l31	completed	200	1	1	3	8	delivered	sen	9131	None	9131	[]	0	0	0	0	0	0	0
+l31	completed	200	1	1	3	8	delivered	obs	8281	8281	8524	[]	0	0	0	0	0	0	1
+gc31	completed	200	1	1	2	8	sent	sen	14449	14449	None	[]	0	0	0	0	0	0	4
+gc31	completed	200	1	1	2	8	sent	obs	15032	15032	None	[]	0	0	0	0	0	0	4
+gl31	completed	200	1	1	1	8	sent	sen	13511	13511	None	[]	0	0	0	0	0	0	4
+gl31	completed	200	1	1	1	8	sent	obs	13475	13475	None	[]	0	0	0	0	0	0	4
+cycles 10 flagged 2

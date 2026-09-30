@@ -109,10 +109,12 @@ import { getWorkflowEventEmitter, type LoopProgress } from './event-emitter';
 import {
   getSteeringRegistry,
   createSoftInjectionController,
+  type SoftInjectionController,
   type NodeSteeringHandle,
   type SteeringIdleWake,
 } from './steering-registry';
 import type { ClaimedSteeringMessage, SteeringDispatchFailureKind } from './schemas/steering';
+import { SoftInjectionLedger } from './soft-injection-ledger';
 import { evaluateCondition } from './condition-evaluator';
 import {
   declaredFieldsFromSchema,
@@ -654,6 +656,19 @@ async function markSteeringMessageDelivered(
       'dag.steering_mark_delivered_failed'
     );
   }
+}
+
+/**
+ * Soft-injection controller for one provider pass. A message the live turn
+ * accepts is held by the node's ledger until the model receives it; the ledger
+ * then records the operator row (or returns the entry to the queue if the turn
+ * ends first).
+ */
+function createLedgerSoftInjection(ledger: SoftInjectionLedger): SoftInjectionController {
+  return createSoftInjectionController(request => {
+    ledger.accept(request);
+    return Promise.resolve();
+  });
 }
 
 /**
@@ -2657,7 +2672,10 @@ async function executeNodeInternal(
     // operator message — a combined multi-message prompt has no honest
     // single id to attribute a provider echo to. Reask passes carry no
     // `operatorReceipt` of their own, so this is naturally pass-zero-only.
-    if (operatorReceipt?.messages.length === 1) {
+    if (
+      operatorReceipt?.messages.length === 1 &&
+      !softInjectionLedger.wasOffered(operatorReceipt.messages[0].message_id)
+    ) {
       passOptions.operatorMessageId = operatorReceipt.messages[0].message_id;
     }
     // Fresh interrupt controller per provider pass (#183) — never reused across
@@ -2666,7 +2684,8 @@ async function executeNodeInternal(
     if (interruptibleHandle !== undefined && passTurn !== undefined) {
       const controller = new AbortController();
       passTurn.controller = controller;
-      const softInjection = createSoftInjectionController();
+      await softInjectionLedger.onTurnStart();
+      const softInjection = createLedgerSoftInjection(softInjectionLedger);
       passTurn.token = interruptibleHandle.beginTurn(controller, softInjection);
       passOptions.interruptSignal = controller.signal;
       passOptions.softInjection = softInjection.channel;
@@ -2982,6 +3001,7 @@ async function executeNodeInternal(
               ...(msg.exitCode !== undefined ? { exit_code: msg.exitCode } : {}),
             }),
           });
+          await softInjectionLedger.onToolBoundary();
           if (completedTool) {
             const [completedToolCallId, tool] = completedTool;
             getWorkflowEventEmitter().emit({
@@ -3415,7 +3435,9 @@ async function executeNodeInternal(
               );
             });
         } else if (msg.type === 'operator_delivery_ack') {
-          await markSteeringMessageDelivered(deps, workflowRun.id, stepName, msg.messageId);
+          if (!(await softInjectionLedger.onEcho(msg.messageId))) {
+            await markSteeringMessageDelivered(deps, workflowRun.id, stepName, msg.messageId);
+          }
         }
         // rate_limit chunks: already log.warn'd in claude.ts; not surfaced to SSE per design
       }
@@ -3494,6 +3516,7 @@ async function executeNodeInternal(
       if (passTurn?.token !== undefined) {
         interruptibleHandle?.endTurnStream(passTurn.token);
       }
+      await softInjectionLedger.onTurnEnd();
       // Never mask the original node result/exception. The recorder itself must
       // not throw; the try/catch is belt-and-suspenders for a misbehaving deps mock.
       if (passUsageBreakdown !== undefined) {
@@ -3568,6 +3591,13 @@ async function executeNodeInternal(
   // provider capability supports per-turn interrupt. Queue-only providers
   // keep #181 behaviour verbatim — no token, no interruptSignal.
   const interruptibleHandle = providerInterruptible ? steeringHandle : undefined;
+  const softInjectionLedger = new SoftInjectionLedger(
+    deps.store,
+    workflowRun.id,
+    stepName,
+    () => executionScope,
+    getProviderCapabilities(provider).deliveryAck
+  );
   // A still-open tool at turn end can only settle 'interrupted' when the
   // provider's own event stream ties an interrupt marker to that specific
   // tool call. A provider that ends a turn by killing its whole stream or
@@ -4416,6 +4446,7 @@ async function executeNodeInternal(
       if (!steeringPauseCommitted) {
         steeringHandle.close();
         getSteeringRegistry().unregister(workflowRun.id, stepName);
+        await softInjectionLedger.onNodeEnd();
         await reconcileNeverSentSteering(deps, workflowRun.id, node.id, stepName);
       }
     }
@@ -6136,6 +6167,7 @@ export function applyLoopPrevToBodyNode(
  */
 interface LoopSteeringLifecycle {
   steeringHandle?: NodeSteeringHandle;
+  softInjectionLedger?: SoftInjectionLedger;
   steeringPauseCommitted?: boolean;
 }
 
@@ -6211,6 +6243,7 @@ async function executeLoopNode(
     if (steeringHandle !== undefined && steering.steeringPauseCommitted !== true) {
       steeringHandle.close();
       getSteeringRegistry().unregister(workflowRun.id, stepNamePrefix + node.id);
+      await steering.softInjectionLedger?.onNodeEnd();
       await reconcileNeverSentSteering(deps, workflowRun.id, node.id, stepNamePrefix + node.id);
     }
   }
@@ -6525,6 +6558,14 @@ async function executeLoopNodeInner(
   // provider capability supports per-turn interrupt. Queue-only providers
   // keep #181 behaviour verbatim — no token, no interruptSignal.
   const interruptibleHandle = providerInterruptible ? steering.steeringHandle : undefined;
+  const softInjectionLedger = new SoftInjectionLedger(
+    deps.store,
+    workflowRun.id,
+    stepNamePrefix + node.id,
+    () => iterationExecutionScope,
+    getProviderCapabilities(workflowProvider).deliveryAck
+  );
+  steering.softInjectionLedger = softInjectionLedger;
   // A still-open tool at turn end can only settle 'interrupted' when the
   // provider's own event stream ties an interrupt marker to that specific
   // tool call. A provider that ends a turn by killing its whole stream or
@@ -6912,7 +6953,11 @@ async function executeLoopNodeInner(
           // Delivery ack (CAP-13): only when this pass's prompt is a SINGLE
           // durable operator message and it is the guidance turn's first
           // (non-reask) pass — mirrors runStreamPass in executeNodeInternal.
-          if (passReaskAttempt === 0 && pendingOperatorReceipt?.messages.length === 1) {
+          if (
+            passReaskAttempt === 0 &&
+            pendingOperatorReceipt?.messages.length === 1 &&
+            !softInjectionLedger.wasOffered(pendingOperatorReceipt.messages[0].message_id)
+          ) {
             iterationOptions.operatorMessageId = pendingOperatorReceipt.messages[0].message_id;
           }
 
@@ -6921,7 +6966,8 @@ async function executeLoopNodeInner(
           // sendQuery so interrupt() can only ever abort a live query.
           if (interruptibleHandle !== undefined) {
             turnInterruptController = new AbortController();
-            const softInjection = createSoftInjectionController();
+            await softInjectionLedger.onTurnStart();
+            const softInjection = createLedgerSoftInjection(softInjectionLedger);
             turnToken = interruptibleHandle.beginTurn(turnInterruptController, softInjection);
             iterationOptions.interruptSignal = turnInterruptController.signal;
             iterationOptions.softInjection = softInjection.channel;
@@ -7403,6 +7449,7 @@ async function executeLoopNodeInner(
                   ...(msg.exitCode !== undefined ? { exit_code: msg.exitCode } : {}),
                 }),
               });
+              await softInjectionLedger.onToolBoundary();
               if (completedTool) {
                 const [completedToolCallId, tool] = completedTool;
                 getWorkflowEventEmitter().emit({
@@ -7440,7 +7487,9 @@ async function executeLoopNodeInner(
                 await platform.sendStructuredEvent(conversationId, msg);
               }
             } else if (msg.type === 'operator_delivery_ack') {
-              await markSteeringMessageDelivered(deps, workflowRun.id, stepName, msg.messageId);
+              if (!(await softInjectionLedger.onEcho(msg.messageId))) {
+                await markSteeringMessageDelivered(deps, workflowRun.id, stepName, msg.messageId);
+              }
             }
             // rate_limit chunks: already log.warn'd in claude.ts; not surfaced to SSE per design
           }
@@ -7729,6 +7778,7 @@ async function executeLoopNodeInner(
           if (turnToken !== undefined) {
             interruptibleHandle?.endTurnStream(turnToken);
           }
+          await softInjectionLedger.onTurnEnd();
           // Record before reask decisions / failure returns escape this attempt.
           // Never masks the original iteration outcome.
           if (passUsageBreakdown !== undefined) {

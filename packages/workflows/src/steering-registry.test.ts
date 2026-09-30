@@ -487,6 +487,29 @@ describe('softInject', () => {
     expect(received).toEqual([{ messageId: 'msg-1', text: 'keep going' }]);
   });
 
+  test('runs the acceptance hook only after a handler accepts, and hides the operator from the handler', async () => {
+    const accepted: string[] = [];
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const channel = createSoftInjectionController(async request => {
+      accepted.push(`${request.messageId}:${String(request.operatorUserId)}`);
+    });
+    handle.beginTurn(new AbortController(), channel);
+    const received: SoftInjectionRequest[] = [];
+    let accept = false;
+    channel.channel.ready(async request => {
+      received.push(request);
+      return accept;
+    });
+
+    await handle.softInject({ messageId: 'msg-1', text: 'x', operatorUserId: 'op-1' });
+    expect(accepted).toEqual([]);
+    accept = true;
+    await handle.softInject({ messageId: 'msg-2', text: 'y', operatorUserId: 'op-1' });
+    expect(accepted).toEqual(['msg-2:op-1']);
+    expect(received[1]).toEqual({ messageId: 'msg-2', text: 'y' });
+  });
+
   test('resolves not_ready when the handler itself declines', async () => {
     const registry = createSteeringRegistry();
     const handle = registry.register('run-1', 'node-1', { interruptible: true });

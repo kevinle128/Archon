@@ -52,29 +52,23 @@ export const GROK_CAPABILITIES: ProviderCapabilities = {
   // `'unknown'` (`closeOutstandingGrokAcpTools`) rather than a guessed
   // `'interrupted'` — there is no per-tool marker to remap from.
   interruptedToolStatus: false,
-  // Verified false: gated behind `interrupt !== false` regardless. Also
-  // independently disproven on its own terms — see deliveryAck below.
-  softInjection: false,
-  // Verified false against the real binary. `interject-param-spike.ts`
-  // resolved the param shape a prior scout left open: `_x.ai/interject`
-  // (underscored; the unprefixed `x.ai/interject` is still -32601 Method
-  // not found) takes `{sessionId, text: string}` — a flat string field, not
-  // the `ContentBlock[]` shape `session/prompt` uses. Six guesses nesting
-  // the message under `content`/`prompt` all failed identically with
-  // `-32602 invalid params: missing field \`text\`` (captured via the
-  // JSON-RPC error's own `data`, not just its code) until the flat shape
-  // was tried, which returned a genuine result. But a successful ack alone
-  // is not soft injection: `interject-mechanism-spike.ts` ran the same
-  // discriminator the OMP RPC `steer` finding used — two sequential shell
-  // tool calls, interject sent in the gap between the first call's result
-  // and the second call's dispatch, instructing the model to skip the
-  // second one — and the second call ran anyway
-  // (`secondCallRanAnyway: true`). The interject content is not consulted
-  // before the model's already-planned next tool call, matching OMP's
-  // `followUp` semantics (CAP-8 Queue) rather than CAP-12 mid-turn
-  // injection. `deliveryAck` is unrelated: nothing resembling Claude's
-  // `--replay-user-messages` echo-back was found for Grok on either
-  // transport, so there is no acknowledgement channel to wire regardless
-  // of `interrupt`/`softInjection`.
+  // Verified TRUE against the real binary on the ACP transport: `_x.ai/interject`
+  // (`{sessionId, text}`, acked `{result: {status: 'queued'}}`) sent while a shell tool
+  // call is in flight is consumed by the model inside the SAME
+  // `session/prompt` turn - one prompt response, `end_turn`, and the final
+  // answer carried the operator's requested token, in every run. An earlier
+  // spike judged the method a queued follow-up because it required the
+  // interject to cancel an already-dispatched second tool call; a message is
+  // read at the model's next step, so that bar tested preemption, not
+  // same-turn delivery. Only the ACP transport has the method. A turn that
+  // falls back to `--single` (see `selectGrokTransport()`) reports
+  // `turn_not_interruptible`, which projects no steering sub-state for that
+  // turn, so the dock offers no per-item Send now and the send route answers
+  // 409 if one arrives anyway; the entry stays queued.
+  softInjection: true,
+  // Verified false against the real binary: nothing resembling Claude's
+  // `--replay-user-messages` echo-back exists on either transport (an
+  // interject is acked `queued` with no later echo of the message), so an
+  // injected entry stays `sent` and is never advanced to `delivered`.
   deliveryAck: false,
 };

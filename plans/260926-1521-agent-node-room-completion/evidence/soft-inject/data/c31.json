@@ -1,0 +1,48 @@
+{
+  "tag": "c31",
+  "sender": "c",
+  "observer": "l",
+  "R": "f3451242a5ebe95a820baf3614249cbd",
+  "node": "cl-node",
+  "click": { "status": 200, "resolvedMs": 25 },
+  "status": "completed",
+  "frames": {
+    "c": [
+      [1790773514603, "Running|Stop,Queue|0|0|||||||"],
+      [1790773514636, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|||||"],
+      [1790773514662, "Running|Stop,Queue|2|2|QUEUED · 2|ONE,TWO|||||"],
+      [1790773515886, "Running|Stop,Queue|1|1|QUEUED · 1|ONE,TWO*|||||"],
+      [1790773524670, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:sent||||below"],
+      [1790773525453, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:delivered||||below"],
+      [1790773569645, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered||||below"],
+      [1790773570162, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent||||below"],
+      [1790773572662, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:delivered||||below"],
+      [1790773572897, "Completed||0|0|||TWO:delivered,ONE:delivered||||below"]
+    ],
+    "l": [
+      [1790773514612, "Running|Stop,Queue|0|0|||||||"],
+      [1790773515378, "Running|Stop,Queue|2|2|QUEUED · 2|ONE,TWO|||||"],
+      [1790773516904, "Running|Stop,Queue|1|1|QUEUED · 1|ONE,TWO*|||||"],
+      [1790773524914, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:delivered||||below"],
+      [1790773569453, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered||||below"],
+      [1790773570954, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent||||below"],
+      [1790773572465, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:delivered||||below"],
+      [1790773572835, "Completed||0|0|||TWO:delivered,ONE:delivered||||below"]
+    ]
+  },
+  "clickedAt": 1790773515854,
+  "roomWidth": { "c": 520, "l": 460 },
+  "queue": [
+    ["c31 ONE keep", "delivered"],
+    ["c31 TWO: end", "delivered"]
+  ],
+  "rowCount": 25,
+  "attempts": ["83c4a75b-8cf9-420c-b53d-1658213bcc86"],
+  "promptRows": 1,
+  "operatorRows": [
+    [7, "c31 TWO: end y"],
+    [22, "c31 ONE keep t"]
+  ],
+  "ackInAgentText": 3,
+  "toolRowsAfterInjection": 8
+}

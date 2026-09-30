@@ -92,22 +92,28 @@ function closeQuery(queryToClose: ClosableQuery | undefined, reason: string): vo
 }
 
 /**
- * One user message on the interrupt-capable streaming input. The iterable
- * stays open after yielding until `holdOpen` settles — the SDK keeps the
- * query's control channel (interrupt, setPermissionMode, …) alive only while
- * input is streaming, so the provider resolves the gate in every result,
- * error, Cancel, and finally path.
+ * The interrupt-capable streaming input for one query attempt. It yields the
+ * prompt message first and then stays open, accepting further user messages
+ * through `push()` until `close()` - the SDK keeps the query's control channel
+ * (interrupt, setPermissionMode, ...) alive only while input is streaming, so
+ * the provider closes it in every result, error, Cancel, and finally path.
  *
- * `uuid`, when provided, stamps the durable operator message id this prompt
- * delivers (CAP-13 delivery ack) — the CLI echoes it back on the output
- * stream (`isReplay: true`) only when started with `--replay-user-messages`.
+ * `push()` returns `false` once the input is closed, so a caller never
+ * believes a message reached a dead turn.
  */
-async function* singleTurnInput(
-  text: string,
-  holdOpen: Promise<void>,
-  uuid?: string
-): AsyncGenerator<SDKUserMessage, void, undefined> {
-  yield {
+interface LiveTurnInput {
+  readonly iterable: AsyncGenerator<SDKUserMessage, void, undefined>;
+  push(message: SDKUserMessage): boolean;
+  close(): void;
+}
+
+/**
+ * Builds one user message. `uuid`, when provided, stamps the durable operator
+ * message id (delivery ack) - the CLI echoes it back on the output stream
+ * (`isReplay: true`) only when started with `--replay-user-messages`.
+ */
+function buildUserMessage(text: string, uuid?: string): SDKUserMessage {
+  return {
     type: 'user',
     message: { role: 'user', content: text },
     parent_tool_use_id: null,
@@ -117,7 +123,40 @@ async function* singleTurnInput(
     // not by this SDK type.
     ...(uuid !== undefined ? { uuid: uuid as SDKUserMessage['uuid'] } : {}),
   };
-  await holdOpen;
+}
+
+function createLiveTurnInput(first: SDKUserMessage): LiveTurnInput {
+  const queue: SDKUserMessage[] = [first];
+  let wake: (() => void) | undefined;
+  let closed = false;
+  const iterable = (async function* (): AsyncGenerator<SDKUserMessage, void, undefined> {
+    for (;;) {
+      const next = queue.shift();
+      if (next !== undefined) {
+        yield next;
+        continue;
+      }
+      if (closed) return;
+      await new Promise<void>(resolve => {
+        wake = resolve;
+      });
+    }
+  })();
+  return {
+    iterable,
+    push(message): boolean {
+      if (closed) return false;
+      queue.push(message);
+      wake?.();
+      wake = undefined;
+      return true;
+    },
+    close(): void {
+      closed = true;
+      wake?.();
+      wake = undefined;
+    },
+  };
 }
 
 /**
@@ -2006,9 +2045,16 @@ export class ClaudeProvider implements IAgentProvider {
         const controller = new AbortController();
         currentController = controller;
         const askBridge: ClaudeAskBridge = {};
-        // Provider-owned gate that keeps the one-message streaming input open
-        // for the whole query lifetime; resolved in this attempt's finally.
-        let releaseInput: (() => void) | undefined;
+        // Streaming input held open for the whole query lifetime, plus the
+        // soft-injection registration that feeds it; both end together in
+        // `endLiveInput` (every result, error, Cancel, and finally path).
+        let liveInput: LiveTurnInput | undefined;
+        let unregisterSoftInjection: (() => void) | undefined;
+        const endLiveInput = (): void => {
+          unregisterSoftInjection?.();
+          unregisterSoftInjection = undefined;
+          liveInput?.close();
+        };
 
         // 1. Build SDK options (env and cliPath pre-computed above)
         const options = buildBaseClaudeOptions(
@@ -2070,15 +2116,18 @@ export class ClaudeProvider implements IAgentProvider {
           // a provider-owned deferred — control methods (interrupt) require it.
           let promptInput: string | AsyncIterable<SDKUserMessage> = queryPrompt;
           if (interruptSignal) {
-            const holdOpen = new Promise<void>(resolve => {
-              releaseInput = resolve;
-            });
-            promptInput = singleTurnInput(queryPrompt, holdOpen, requestOptions?.operatorMessageId);
-            if (requestOptions?.operatorMessageId !== undefined) {
+            liveInput = createLiveTurnInput(
+              buildUserMessage(queryPrompt, requestOptions?.operatorMessageId)
+            );
+            promptInput = liveInput.iterable;
+            if (
+              requestOptions?.operatorMessageId !== undefined ||
+              requestOptions?.softInjection !== undefined
+            ) {
               // `--replay-user-messages` requires the streaming-input path
-              // singleTurnInput already establishes above; CAP-13 delivery
-              // ack is otherwise inert. See the `event.type === 'user'`
-              // branch in streamClaudeMessages for the echo it produces.
+              // established above. It makes the CLI echo every stamped user
+              // message (the turn's own prompt and any soft-injected one), the
+              // signal streamClaudeMessages turns into a delivery ack.
               options.extraArgs = { ...options.extraArgs, 'replay-user-messages': null };
             }
           }
@@ -2094,6 +2143,18 @@ export class ClaudeProvider implements IAgentProvider {
             // The signal may have aborted during per-attempt setup, before the
             // query existed — deliver the pending interrupt to the live query.
             if (interruptRequested) onInterrupt();
+            const input = liveInput;
+            if (input !== undefined && requestOptions?.softInjection !== undefined) {
+              // The handler resolves true only when the still-open streaming
+              // input took the message; an ended or interrupted turn refuses.
+              unregisterSoftInjection = requestOptions.softInjection.ready(
+                (request): Promise<boolean> =>
+                  Promise.resolve(
+                    !interruptSignal.aborted &&
+                      input.push(buildUserMessage(request.text, request.messageId))
+                  )
+              );
+            }
           }
           const timeoutMs = getFirstEventTimeoutMs();
           const diagnostics = buildFirstEventHangDiagnostics(
@@ -2133,7 +2194,7 @@ export class ClaudeProvider implements IAgentProvider {
             // A terminal result while input is still streaming: signal input
             // EOF so the subprocess exits — the SDK otherwise keeps the query
             // open awaiting the next streamed message and the stream never ends.
-            if (sanitized.type === 'result') releaseInput?.();
+            if (sanitized.type === 'result') endLiveInput();
             if (sanitized.type === 'result' && accumulatedUsage) {
               const usageBreakdown = mergeUsageBreakdowns(
                 accumulatedUsage,
@@ -2232,7 +2293,7 @@ export class ClaudeProvider implements IAgentProvider {
           await new Promise(resolve => setTimeout(resolve, delayMs));
           lastError = enrichedError;
         } finally {
-          releaseInput?.();
+          endLiveInput();
           currentQuery = undefined;
           currentInterrupt = undefined;
         }

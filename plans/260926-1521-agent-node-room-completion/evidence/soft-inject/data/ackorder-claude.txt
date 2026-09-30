@@ -1,0 +1,13 @@
+c01 TWOrow 6 firstAckAgentText 8 ONErow 22 ackBeforeFollowUpTurn True
+c02 TWOrow 6 firstAckAgentText 8 ONErow 22 ackBeforeFollowUpTurn True
+c03 TWOrow 6 firstAckAgentText 8 ONErow 22 ackBeforeFollowUpTurn True
+c04 TWOrow 6 firstAckAgentText 8 ONErow 22 ackBeforeFollowUpTurn True
+c05 TWOrow 5 firstAckAgentText 7 ONErow 21 ackBeforeFollowUpTurn True
+c06 TWOrow 5 firstAckAgentText 7 ONErow 21 ackBeforeFollowUpTurn True
+l01 TWOrow 5 firstAckAgentText 7 ONErow 21 ackBeforeFollowUpTurn True
+l02 TWOrow 6 firstAckAgentText 8 ONErow 22 ackBeforeFollowUpTurn True
+l03 TWOrow 6 firstAckAgentText 8 ONErow 22 ackBeforeFollowUpTurn True
+l04 TWOrow 5 firstAckAgentText 7 ONErow 21 ackBeforeFollowUpTurn True
+l05 TWOrow 6 firstAckAgentText 8 ONErow 22 ackBeforeFollowUpTurn True
+l06 TWOrow 6 firstAckAgentText 8 ONErow 22 ackBeforeFollowUpTurn True
+l07 TWOrow 5 firstAckAgentText 8 ONErow 22 ackBeforeFollowUpTurn True
