@@ -88,7 +88,9 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] Step 3: plan approved by owner (all 8 phases)
 - [x] Phase 1-2 foundation + sidebar shell committed (ca44f10e); route cleanup (307768b0); plans (f21d1daf)
 - [x] Phases 3-7 committed: builder 57d55bd7, dashboard+workflows 52d9433c, chat 90a83b88, run detail 4555d1b6, settings+console port 29ce10b8; web tests all green
-- [ ] Phase 8 (running): delete experiments/console, run-view tokens, tool label dup + duration format fixes, brand guide + web.md + AGENTS.md + CHANGELOG, bun run validate, e2e
+- [x] Phase 8 committed (6d6dc184 core reviewUrl fix, 904546c5 console removal + polish, e27bd941 docs, cdd79711 e2e routes); bun run validate EXIT 0
+- [ ] Gap: console-only features not yet in the new UI: workflow ENV overlay manager + picker, run cost strip + per-node usage breakdown; 21 HITL e2e specs still target console markup (owner decision pending)
+- [ ] Docs-site binaries still show the old shield logo (packages/docs-web/src/assets/logo.png, public/favicon.png)
 - [ ] Step 3: after owner approves screens, plan the implementation in packages/web (tokens in index.css, brand guide update per AGENTS.md)
 - [ ] Decision for user: delete `packages/web/src/experiments/console/` (308 files) in follow-up; move `install-happy-dom` test helper to `src/test/` first
 - [ ] Decision for user: console-only features now have no UI (provider keys, GitHub connect, model tiers/aliases, per-user AI prefs, cost page); port into classic Settings/Dashboard or into the redesign

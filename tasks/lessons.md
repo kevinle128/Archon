@@ -38,3 +38,8 @@
 
 - Pattern: after "not special enough", the owner asked for something that makes them say wow. The next round swung to eight theatrical pages (particle fields, RPG maps, isometric cities, collage) and the owner said it went too far. Two corrections in a row, in opposite directions.
 - Rule: when the owner rejects one extreme, the next round steps one notch, not to the other extreme. For a daily-use tool, keep the creative energy in identity (logo, color, type, one signature texture or motion) and keep the working screens clean and scannable. Show a middle option next to any bold one so the owner can point at the level they want.
+
+## Inventory every feature of code you propose to delete, from the code, before asking for approval (2026-09-30)
+
+- Pattern: before asking the owner to approve deleting the console UI, I listed its "console-only features" from a grep for settings-style endpoints (provider keys, GitHub, tiers, aliases, cost). The cleanup phase later found more console-only features: the workflow ENV overlay manager and picker, the run cost strip and per-node usage breakdown, and the console-scoped HITL e2e specs. The owner approved the deletion on an incomplete list.
+- Rule: before proposing to remove a UI surface, inventory it from its routes and components (every route, every panel, every API call it makes), compare against the replacement, and list each gap in the approval question. Grepping for the features you already expect is not an inventory.
