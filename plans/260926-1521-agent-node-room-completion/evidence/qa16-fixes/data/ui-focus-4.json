@@ -1,0 +1,205 @@
+{
+  "mode": "focus",
+  "n": "4",
+  "runId": "8fe847fb0fce975c0b20f2a67c8f0e78",
+  "tag": "Umuoidfm4",
+  "events": [
+    {
+      "name": "after-click-first",
+      "t": 2404.100000143051,
+      "last": {
+        "t": 2401.7999999523163,
+        "focus": "BUTTON:Send now · Umuoidfm4-TWO",
+        "header": "queued · 2",
+        "rows": [
+          "1 Umuoidfm4-ONE sending…",
+          "2 Umuoidfm4-TWO Send now ✕",
+          "3 Umuoidfm4-THREE Send now ✕"
+        ],
+        "ops": []
+      }
+    },
+    {
+      "name": "after-enter-second",
+      "t": 3014.600000143051,
+      "last": {
+        "t": 3012.2000000476837,
+        "focus": "BUTTON:Send now · Umuoidfm4-THREE",
+        "header": "queued · 1",
+        "rows": [
+          "1 Umuoidfm4-ONE sending…",
+          "2 Umuoidfm4-TWO sending…",
+          "3 Umuoidfm4-THREE Send now ✕"
+        ],
+        "ops": []
+      }
+    },
+    {
+      "name": "after-enter-last",
+      "t": 3627.5,
+      "last": {
+        "t": 3620.4000000953674,
+        "focus": "TEXTAREA:_r_52_",
+        "header": "sending · 3",
+        "rows": [
+          "1 Umuoidfm4-ONE sending…",
+          "2 Umuoidfm4-TWO sending…",
+          "3 Umuoidfm4-THREE sending…"
+        ],
+        "ops": []
+      }
+    }
+  ],
+  "analysis": {
+    "frames": 942,
+    "bodyFrames": 5,
+    "neitherFrames": {
+      "Umuoidfm4-ONE": {
+        "gap": 0,
+        "seenOp": true
+      },
+      "Umuoidfm4-TWO": {
+        "gap": 0,
+        "seenOp": true
+      },
+      "Umuoidfm4-THREE": {
+        "gap": 0,
+        "seenOp": true
+      }
+    },
+    "bothFrames": [0, 0, 0]
+  },
+  "timeline": [
+    {
+      "t": 0,
+      "focus": "BODY",
+      "header": null,
+      "rows": [],
+      "ops": []
+    },
+    {
+      "t": 36,
+      "focus": "TEXTAREA:_r_52_",
+      "header": null,
+      "rows": [],
+      "ops": []
+    },
+    {
+      "t": 61,
+      "focus": "BUTTON:Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "header": null,
+      "rows": [],
+      "ops": []
+    },
+    {
+      "t": 87,
+      "focus": "TEXTAREA:_r_52_",
+      "header": "queued · 1",
+      "rows": ["1 Umuoidfm4-ONE Send now ✕"],
+      "ops": []
+    },
+    {
+      "t": 486,
+      "focus": "BUTTON:Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "header": "queued · 1",
+      "rows": ["1 Umuoidfm4-ONE Send now ✕"],
+      "ops": []
+    },
+    {
+      "t": 495,
+      "focus": "TEXTAREA:_r_52_",
+      "header": "queued · 2",
+      "rows": ["1 Umuoidfm4-ONE Send now ✕", "2 Umuoidfm4-TWO Send now ✕"],
+      "ops": []
+    },
+    {
+      "t": 910,
+      "focus": "BUTTON:Queue · Cmd/Ctrl+Enter to send · 2 messages queued",
+      "header": "queued · 2",
+      "rows": ["1 Umuoidfm4-ONE Send now ✕", "2 Umuoidfm4-TWO Send now ✕"],
+      "ops": []
+    },
+    {
+      "t": 936,
+      "focus": "TEXTAREA:_r_52_",
+      "header": "queued · 3",
+      "rows": [
+        "1 Umuoidfm4-ONE Send now ✕",
+        "2 Umuoidfm4-TWO Send now ✕",
+        "3 Umuoidfm4-THREE Send now ✕"
+      ],
+      "ops": []
+    },
+    {
+      "t": 1320,
+      "focus": "BUTTON:Send now · Umuoidfm4-ONE",
+      "header": "queued · 3",
+      "rows": [
+        "1 Umuoidfm4-ONE Send now ✕",
+        "2 Umuoidfm4-TWO Send now ✕",
+        "3 Umuoidfm4-THREE Send now ✕"
+      ],
+      "ops": []
+    },
+    {
+      "t": 1345,
+      "focus": "BUTTON:Send now · Umuoidfm4-TWO",
+      "header": "queued · 2",
+      "rows": [
+        "1 Umuoidfm4-ONE sending…",
+        "2 Umuoidfm4-TWO Send now ✕",
+        "3 Umuoidfm4-THREE Send now ✕"
+      ],
+      "ops": []
+    },
+    {
+      "t": 1953,
+      "focus": "BUTTON:Send now · Umuoidfm4-THREE",
+      "header": "queued · 1",
+      "rows": [
+        "1 Umuoidfm4-ONE sending…",
+        "2 Umuoidfm4-TWO sending…",
+        "3 Umuoidfm4-THREE Send now ✕"
+      ],
+      "ops": []
+    },
+    {
+      "t": 2570,
+      "focus": "TEXTAREA:_r_52_",
+      "header": "sending · 3",
+      "rows": [
+        "1 Umuoidfm4-ONE sending…",
+        "2 Umuoidfm4-TWO sending…",
+        "3 Umuoidfm4-THREE sending…"
+      ],
+      "ops": []
+    },
+    {
+      "t": 4511,
+      "focus": "DIV:",
+      "header": "sending · 3",
+      "rows": [
+        "1 Umuoidfm4-ONE sending…",
+        "2 Umuoidfm4-TWO sending…",
+        "3 Umuoidfm4-THREE sending…"
+      ],
+      "ops": []
+    },
+    {
+      "t": 4525,
+      "focus": "DIV:",
+      "header": null,
+      "rows": [],
+      "ops": [
+        "OPERATOR · QA16-OPERATOR delivered Umuoidfm4-ONE",
+        "OPERATOR · QA16-OPERATOR delivered Umuoidfm4-TWO",
+        "OPERATOR · QA16-OPERATOR delivered Umuoidfm4-THREE"
+      ]
+    }
+  ],
+  "focusAfter": [
+    ["after-click-first", "BUTTON:Send now · Umuoidfm4-TWO"],
+    ["after-enter-second", "BUTTON:Send now · Umuoidfm4-THREE"],
+    ["after-enter-last", "TEXTAREA:_r_52_"]
+  ]
+}
