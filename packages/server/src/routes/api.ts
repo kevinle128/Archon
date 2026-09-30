@@ -5718,6 +5718,7 @@ export function registerApiRoutes(
           const outcome = await handle.softInject({
             messageId: claimed.message_id,
             text: claimed.message,
+            operatorUserId: claimed.operator_user_id,
           });
           if (outcome !== 'delivered') {
             await workflowSteeringDb.revertSteeringSoftInjectionClaim(

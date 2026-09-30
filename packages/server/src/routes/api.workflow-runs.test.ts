@@ -10159,9 +10159,10 @@ describe('steering lifecycle classification — a settings row alone is never pr
 });
 
 // Registered once, real (not mocked): the soft-injection tests below need a
-// provider whose capability actually declares `softInjection: true`, which no
-// built-in provider does yet. Guarded because module-scope registration code
-// in a Bun test file can run more than once in the same process.
+// provider whose capability declares `softInjection: true`. A synthetic
+// provider keeps them independent of any built-in provider's declared
+// capabilities. Guarded because module-scope registration code in a Bun test
+// file can run more than once in the same process.
 const SOFT_INJECT_TEST_PROVIDER_ID = 'test-steering-soft-inject-provider';
 if (!isRegisteredProvider(SOFT_INJECT_TEST_PROVIDER_ID)) {
   registerProvider({

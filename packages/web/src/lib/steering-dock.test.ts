@@ -977,10 +977,14 @@ describe('per-item Send now transitions', () => {
     expect(beginSendNowItem(state, 'missing')).toBe(state);
   });
 
-  test('success removes the row — it is now a transcript receipt, not a queue entry', () => {
+  test('success moves the row to in flight so it never vanishes before the transcript shows it', () => {
     const begun = beginSendNowItem(stateWith([receipt('a', 'alpha'), receipt('b', 'beta')]), 'a');
     const resolved = resolveSendNowItemSuccess(begun, 'a');
-    expect(resolved.sent).toEqual([receipt('b', 'beta')]);
+    expect(resolved.sent).toEqual([
+      { ...receipt('a', 'alpha'), state: 'dispatching' },
+      receipt('b', 'beta'),
+    ]);
+    expect(pendingQueueCount(resolved.sent)).toBe(1);
     expect(resolved.sendingNowMessageId).toBeNull();
     expect(resolved.queueGeneration).toBe(1);
     // A mismatched id is a no-op.

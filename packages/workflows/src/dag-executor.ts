@@ -109,6 +109,7 @@ import { getWorkflowEventEmitter, type LoopProgress } from './event-emitter';
 import {
   getSteeringRegistry,
   createSoftInjectionController,
+  type SoftInjectionController,
   type NodeSteeringHandle,
   type SteeringIdleWake,
 } from './steering-registry';
@@ -654,6 +655,35 @@ async function markSteeringMessageDelivered(
       'dag.steering_mark_delivered_failed'
     );
   }
+}
+
+/**
+ * Soft-injection controller for one provider pass. A message the live turn
+ * accepted is recorded at once as an operator transcript row under the turn's
+ * current transcript attempt, so the room shows it as `sent` until the
+ * provider echoes its id and the durable entry becomes `delivered`. `getScope`
+ * is read at acceptance time because a reask mints a fresh attempt.
+ */
+function createTranscriptSoftInjection(
+  deps: WorkflowDeps,
+  workflowRunId: string,
+  stepName: string,
+  getScope: () => TranscriptExecutionScope
+): SoftInjectionController {
+  return createSoftInjectionController(async request => {
+    await appendOperatorTranscript(deps.store, {
+      workflow_run_id: workflowRunId,
+      node_id: stepName,
+      scope: getScope(),
+      messages: [
+        {
+          message_id: request.messageId,
+          message: request.text,
+          operator_user_id: request.operatorUserId ?? null,
+        },
+      ],
+    });
+  });
 }
 
 /**
@@ -2666,7 +2696,12 @@ async function executeNodeInternal(
     if (interruptibleHandle !== undefined && passTurn !== undefined) {
       const controller = new AbortController();
       passTurn.controller = controller;
-      const softInjection = createSoftInjectionController();
+      const softInjection = createTranscriptSoftInjection(
+        deps,
+        workflowRun.id,
+        stepName,
+        () => executionScope
+      );
       passTurn.token = interruptibleHandle.beginTurn(controller, softInjection);
       passOptions.interruptSignal = controller.signal;
       passOptions.softInjection = softInjection.channel;
@@ -6921,7 +6956,12 @@ async function executeLoopNodeInner(
           // sendQuery so interrupt() can only ever abort a live query.
           if (interruptibleHandle !== undefined) {
             turnInterruptController = new AbortController();
-            const softInjection = createSoftInjectionController();
+            const softInjection = createTranscriptSoftInjection(
+              deps,
+              workflowRun.id,
+              stepName,
+              () => iterationExecutionScope
+            );
             turnToken = interruptibleHandle.beginTurn(turnInterruptController, softInjection);
             iterationOptions.interruptSignal = turnInterruptController.signal;
             iterationOptions.softInjection = softInjection.channel;

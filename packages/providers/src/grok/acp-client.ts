@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { Readable, Writable } from 'node:stream';
 
+import { createLogger } from '@archon/paths';
+
 import {
   client,
   methods,
@@ -13,7 +15,7 @@ import {
   type Stream,
 } from '@agentclientprotocol/sdk';
 
-import type { MessageChunk, ModelUsageEntry, UsageBreakdown } from '../types';
+import type { MessageChunk, ModelUsageEntry, SoftInjectionChannel, UsageBreakdown } from '../types';
 import { STREAM_ABORTED_TERMINAL_REASON } from '../types';
 import { toUsageBreakdown } from '../usage-breakdown';
 import {
@@ -22,6 +24,12 @@ import {
   mapGrokAcpSessionUpdate,
 } from './acp-event-bridge';
 import { AsyncQueue } from './async-queue';
+
+let cachedLog: ReturnType<typeof createLogger> | undefined;
+function getLog(): ReturnType<typeof createLogger> {
+  cachedLog ??= createLogger('provider.grok.acp');
+  return cachedLog;
+}
 
 const DEFAULT_TERMINATE_GRACE_MS = 5_000;
 /** Post-cancel window for the agent to flush trailing updates and settle the prompt before a hung one is released. Mirrors the DeepSeek ACP client's drain window. */
@@ -39,6 +47,24 @@ const USD_TICKS_PER_DOLLAR = 1e10;
 
 type GrokAcpCancellationCause = 'node-cancel' | 'operator-interrupt' | 'cleanup';
 
+/**
+ * Vendor ACP method that hands a message to the running prompt. Verified live
+ * (`{sessionId, text}` -> `{result: {status: 'queued'}}`): a message sent while a tool
+ * call is in flight is consumed by the model at its next step inside the SAME
+ * `session/prompt` turn, so the prompt settles once. The flat `text` field is
+ * the shape the agent accepts; a `ContentBlock[]` is rejected.
+ */
+const GROK_INTERJECT_METHOD = '_x.ai/interject';
+
+interface GrokInterjectParams {
+  sessionId: string;
+  text: string;
+}
+
+interface GrokInterjectResponse {
+  result?: { status?: string };
+}
+
 export interface GrokAcpTurnInput {
   cwd: string;
   prompt: string;
@@ -55,6 +81,11 @@ export interface GrokAcpTurnInput {
   abortSignal?: AbortSignal;
   /** Operator Stop — cancels only the current prompt via ACP session/cancel; same wire path, distinct first-cause and distinct outcome (a resumable marked result, not a throw). */
   interruptSignal?: AbortSignal;
+  /**
+   * Mid-turn message channel (per-item Send now). A handler is registered only
+   * while the prompt is in flight and is removed before `session/close`.
+   */
+  softInjection?: SoftInjectionChannel;
 }
 
 export interface GrokAcpProcessInput extends GrokAcpTurnInput {
@@ -381,7 +412,32 @@ export async function* driveGrokAcpTurn(
       flushCancel();
 
       let promptResponse: PromptResponse | undefined;
+      let unregisterSoftInjection: (() => void) | undefined;
       try {
+        if (cancellationCause === undefined && input.softInjection !== undefined) {
+          unregisterSoftInjection = input.softInjection.ready(async request => {
+            if (cancellationCause !== undefined || promptSettledNaturally) return false;
+            try {
+              const ack = await ctx.request<GrokInterjectResponse, GrokInterjectParams>(
+                GROK_INTERJECT_METHOD,
+                { sessionId, text: request.text }
+              );
+              if (ack.result?.status !== 'queued') {
+                getLog().warn({ status: ack.result?.status }, 'grok.acp_interject_not_queued');
+                return false;
+              }
+              return true;
+            } catch (error) {
+              // A refused or failed interject leaves the durable entry queued;
+              // the caller reverts its claim on `false`.
+              getLog().warn(
+                { err: error as Error, errorType: (error as Error).constructor.name },
+                'grok.acp_interject_failed'
+              );
+              return false;
+            }
+          });
+        }
         if (cancellationCause === undefined) {
           try {
             promptResponse = await Promise.race([
@@ -402,6 +458,7 @@ export async function* driveGrokAcpTurn(
           promptSettledNaturally = true;
         }
       } finally {
+        unregisterSoftInjection?.();
         if (listenersAttached) {
           input.abortSignal?.removeEventListener('abort', onNodeCancel);
           input.interruptSignal?.removeEventListener('abort', onOperatorInterrupt);

@@ -2197,6 +2197,14 @@ describe('ConsoleComposerDock', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.body.intent).toBe('send_now');
     expect(calls[0]?.body.queued_message_id).toBe('id-a');
+    // The accepted item stays visible as in flight until the transcript shows its row.
+    const inFlight = host.querySelector('li[data-message-id="id-a"]');
+    expect(inFlight?.textContent).toContain('sending…');
+    expect(
+      [...(inFlight?.querySelectorAll('button') ?? [])].some(
+        button => (button.textContent ?? '').trim() === 'Send now'
+      )
+    ).toBe(false);
   });
 
   test('per-item Send now is absent without the capability flag', async () => {

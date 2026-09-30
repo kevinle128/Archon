@@ -1102,8 +1102,11 @@ export function beginSendNowItem(state: SteeringDockState, messageId: string): S
 }
 
 /**
- * A per-item Send now 200 removes the row from the pending band — it is now
- * `sent` and will appear as a transcript row, not a queue entry. Stop is
+ * A per-item Send now 200 moves the row from waiting to in flight: the server
+ * already claimed it and the live turn accepted it, so it stays visible as
+ * `sending…` until the transcript renders its operator row (the same handoff
+ * a typed Send now uses), and it no longer counts as queued. Dropping it here
+ * would show the message nowhere until the transcript's next read. Stop is
  * never invoked and no interrupt/idle transition happens on this path.
  */
 export function resolveSendNowItemSuccess(
@@ -1113,7 +1116,9 @@ export function resolveSendNowItemSuccess(
   if (state.sendingNowMessageId !== messageId) return state;
   return {
     ...state,
-    sent: state.sent.filter(entry => entry.messageId !== messageId),
+    sent: state.sent.map(entry =>
+      entry.messageId === messageId ? { ...entry, state: 'dispatching' } : entry
+    ),
     sendingNowMessageId: null,
     refusal: null,
     queueGeneration: state.queueGeneration + 1,

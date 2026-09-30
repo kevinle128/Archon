@@ -96,6 +96,7 @@ function createFakeGrokAgent(options?: {
   promptUsageMeta?: Record<string, unknown>;
   requestPermission?: boolean;
   onCancel?: (notify: NotifySessionUpdate) => void | Promise<void>;
+  interject?: (params: { sessionId: string; text: string }) => { result: { status: string } };
 }): FakeGrokAgent {
   const calls: RecordedCall[] = [];
   const permissionResponses: unknown[] = [];
@@ -139,6 +140,15 @@ function createFakeGrokAgent(options?: {
         _meta: options?.promptUsageMeta ? { usage: options.promptUsageMeta } : undefined,
       };
     })
+    .onRequest(
+      '_x.ai/interject',
+      // Vendor method: the SDK cannot infer its params, so the fake pins the shape it serves.
+      (params: unknown) => params as { sessionId: string; text: string },
+      c => {
+        calls.push({ method: '_x.ai/interject', params: c.params });
+        return options?.interject ? options.interject(c.params) : { result: { status: 'queued' } };
+      }
+    )
     .onRequest(methods.agent.session.close, c => {
       calls.push({ method: methods.agent.session.close, params: c.params });
       return {};
@@ -376,6 +386,107 @@ describe('driveGrokAcpTurn', () => {
     await expect(chunksPromise).rejects.toThrow('Query aborted');
     expect(fake.methodsCalled()).toContain(methods.agent.session.cancel);
     expect(fake.methodsCalled()).toContain(methods.agent.session.close);
+  });
+
+  describe('soft injection', () => {
+    type InjectHandler = (request: { messageId: string; text: string }) => Promise<boolean>;
+    function makeChannel(): {
+      channel: { ready(handler: InjectHandler): () => void };
+      current: () => InjectHandler | undefined;
+    } {
+      let handler: InjectHandler | undefined;
+      return {
+        channel: {
+          ready(next): () => void {
+            handler = next;
+            return (): void => {
+              if (handler === next) handler = undefined;
+            };
+          },
+        },
+        current: () => handler,
+      };
+    }
+
+    test('sends the message through _x.ai/interject inside the running prompt and resolves true on queued', async () => {
+      const hold = createDeferred<void>();
+      const fake = createFakeGrokAgent({ promptHold: hold, sessionId: 'sess-inject-1' });
+      const { channel, current } = makeChannel();
+      const chunksPromise = collect(
+        driveGrokAcpTurn(fake.app, baseInput({ softInjection: channel }))
+      );
+      await waitForMethod(fake.methodsCalled, methods.agent.session.prompt);
+
+      const accepted = await current()!({ messageId: 'msg-1', text: 'also do X' });
+
+      expect(accepted).toBe(true);
+      expect(fake.calls.find(call => call.method === '_x.ai/interject')?.params).toEqual({
+        sessionId: 'sess-inject-1',
+        text: 'also do X',
+      });
+      // The injection neither cancelled nor closed the turn.
+      expect(fake.methodsCalled()).not.toContain(methods.agent.session.cancel);
+      expect(fake.methodsCalled()).not.toContain(methods.agent.session.close);
+      hold.resolve();
+      const chunks = await chunksPromise;
+      expect(chunks.find(chunk => chunk.type === 'result')).toMatchObject({ type: 'result' });
+    });
+
+    test('resolves false when the agent does not report queued', async () => {
+      const hold = createDeferred<void>();
+      const fake = createFakeGrokAgent({
+        promptHold: hold,
+        interject: () => ({ result: { status: 'rejected' } }),
+      });
+      const { channel, current } = makeChannel();
+      const chunksPromise = collect(
+        driveGrokAcpTurn(fake.app, baseInput({ softInjection: channel }))
+      );
+      await waitForMethod(fake.methodsCalled, methods.agent.session.prompt);
+
+      expect(await current()!({ messageId: 'msg-1', text: 'x' })).toBe(false);
+
+      hold.resolve();
+      await chunksPromise;
+    });
+
+    test('unregisters once the prompt settles and refuses a late message', async () => {
+      const hold = createDeferred<void>();
+      const fake = createFakeGrokAgent({ promptHold: hold });
+      const { channel, current } = makeChannel();
+      const chunksPromise = collect(
+        driveGrokAcpTurn(fake.app, baseInput({ softInjection: channel }))
+      );
+      await waitForMethod(fake.methodsCalled, methods.agent.session.prompt);
+      const handler = current()!;
+
+      hold.resolve();
+      await chunksPromise;
+
+      expect(current()).toBeUndefined();
+      expect(await handler({ messageId: 'late', text: 'too late' })).toBe(false);
+      expect(fake.calls.filter(call => call.method === '_x.ai/interject')).toHaveLength(0);
+    });
+
+    test('refuses a message after operator Stop', async () => {
+      const hold = createDeferred<void>();
+      const fake = createFakeGrokAgent({ promptHold: hold });
+      const { channel, current } = makeChannel();
+      const interrupt = new AbortController();
+      const chunksPromise = collect(
+        driveGrokAcpTurn(
+          fake.app,
+          baseInput({ softInjection: channel, interruptSignal: interrupt.signal })
+        )
+      );
+      await waitForMethod(fake.methodsCalled, methods.agent.session.prompt);
+      const handler = current()!;
+
+      interrupt.abort();
+      expect(await handler({ messageId: 'after-stop', text: 'x' })).toBe(false);
+      await chunksPromise;
+      expect(fake.calls.filter(call => call.method === '_x.ai/interject')).toHaveLength(0);
+    });
   });
 
   test('operator Stop sends one session/cancel, closes, and yields the stream-abort marker (no throw)', async () => {

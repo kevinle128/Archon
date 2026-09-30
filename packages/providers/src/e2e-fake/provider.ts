@@ -16,7 +16,7 @@ import type {
   UsageBreakdown,
 } from '../types';
 
-import { E2E_FAKE_CAPABILITIES } from './capabilities';
+import { E2E_FAKE_CAPABILITIES, E2E_FAKE_SOFT_INJECT_CAPABILITIES } from './capabilities';
 
 const log = createLogger('provider.e2e-fake');
 
@@ -31,6 +31,10 @@ export const E2E_FAKE_TOOL_INPUT = { path: 'HITL_TOOL_INPUT.txt' } as const;
 export const E2E_FAKE_TOOL_OUTPUT = 'HITL_TOOL_OUTPUT_VISIBLE';
 export const E2E_FAKE_LOOP_DONE = 'E2E_LOOP_DONE';
 export const E2E_FAKE_TOOL_PASS_TEXT = '[e2e-fake] tool pass';
+/** Provider id of the soft-injectable variant; the default `e2e-fake` stays queue-only. */
+export const E2E_FAKE_SOFT_INJECT_PROVIDER_ID = 'e2e-fake-soft-inject';
+/** Prefix of the reply a soft-injectable fake writes for each accepted injection. */
+export const E2E_FAKE_SOFT_INJECT_REPLY = '[e2e-fake] soft-injected:';
 export const E2E_FAKE_TOOL_INTERRUPTED_OUTPUT = '[e2e-fake] tool interrupted';
 export const E2E_FAKE_INTERRUPT_TERMINAL_TOOL = 'aborted_tools';
 export const E2E_FAKE_INTERRUPT_TERMINAL_STREAM = 'aborted_streaming';
@@ -511,12 +515,18 @@ function parseUsageDirective(directive: string): UsageBreakdown {
  * `tool_result` chunks. Registered ONLY when `ARCHON_E2E_FAKE_PROVIDER` is set.
  */
 export class E2eFakeProvider implements IAgentProvider {
+  private readonly softInjectable: boolean;
+
+  constructor(options: { softInjectable?: boolean } = {}) {
+    this.softInjectable = options.softInjectable === true;
+  }
+
   getType(): string {
-    return 'e2e-fake';
+    return this.softInjectable ? E2E_FAKE_SOFT_INJECT_PROVIDER_ID : 'e2e-fake';
   }
 
   getCapabilities(): ProviderCapabilities {
-    return E2E_FAKE_CAPABILITIES;
+    return this.softInjectable ? E2E_FAKE_SOFT_INJECT_CAPABILITIES : E2E_FAKE_CAPABILITIES;
   }
 
   async *sendQuery(
@@ -655,13 +665,39 @@ export class E2eFakeProvider implements IAgentProvider {
         // Opt-in visual scenario: tool calls are live while the bounded wait
         // runs — first of node abort, turn interrupt, the delay settling, or
         // an opt-in releaseSignal marker (see waitForBoundary).
-        const boundary = await waitForBoundary(
-          scenario.delayMs ?? 0,
-          abortSignal,
-          interruptSignal,
-          scenario.releaseSignal
-        );
+        //
+        // A soft-injectable fake accepts messages for the length of the wait
+        // and reads them at the boundary, like a model reading a message
+        // queued during a tool call: each accepted message is echoed by id
+        // and answered inside this same turn.
+        const injected: { messageId: string; text: string }[] = [];
+        const unregisterSoftInjection = this.softInjectable
+          ? requestOptions?.softInjection?.ready(request => {
+              if (abortSignal?.aborted === true || interruptSignal?.aborted === true) {
+                return Promise.resolve(false);
+              }
+              injected.push({ messageId: request.messageId, text: request.text });
+              return Promise.resolve(true);
+            })
+          : undefined;
+        let boundary: 'elapsed' | 'aborted' | 'interrupted';
+        try {
+          boundary = await waitForBoundary(
+            scenario.delayMs ?? 0,
+            abortSignal,
+            interruptSignal,
+            scenario.releaseSignal
+          );
+        } finally {
+          unregisterSoftInjection?.();
+        }
         if (boundary === 'aborted') throw new Error('Query aborted');
+        if (boundary !== 'interrupted') {
+          for (const message of injected) {
+            yield { type: 'operator_delivery_ack', messageId: message.messageId };
+            yield { type: 'assistant', content: `${E2E_FAKE_SOFT_INJECT_REPLY} ${message.text}` };
+          }
+        }
         for (const [index, toolCallId] of pendingToolCallIds.entries()) {
           yield {
             type: 'tool_result',

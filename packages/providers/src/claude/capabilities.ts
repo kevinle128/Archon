@@ -79,7 +79,9 @@ export const CLAUDE_CAPABILITIES: ProviderCapabilities = {
   // tokens were still streaming after the push, and the terminal reason is
   // `completed`. An earlier spike reported a second `result` only because it
   // capped the run at `maxTurns: 1`, which cut the first turn off before the
-  // injected message could join it.
+  // injected message could join it. Through the Archon executor, 13 of 13
+  // per-item sends landed inside the running turn: the model acknowledged the
+  // token in its very next message, before the drained follow-up turn.
   softInjection: true,
   // Verified TRUE against the real SDK (spike:softinject:claude, 0.3.209):
   // starting the CLI with `--replay-user-messages` (via `extraArgs`, wired

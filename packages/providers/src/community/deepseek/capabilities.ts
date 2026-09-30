@@ -35,6 +35,11 @@ export const DEEPSEEK_CAPABILITIES = {
   // 'interrupted' by the adapter itself (verified live), so that row keeps
   // its proven interrupted outcome.
   interruptedToolStatus: false,
+  // Verified false against the real DSH `acp` profile: a second
+  // `session/prompt` sent while a tool call is in flight is refused with
+  // -32602 "a prompt is already in flight for this session", and the
+  // installed DSH package defines no vendor method that injects a message
+  // into a running prompt. A queued message waits for the turn boundary.
   softInjection: false,
   deliveryAck: false,
 } as const satisfies ProviderCapabilities;

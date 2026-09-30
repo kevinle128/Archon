@@ -28949,6 +28949,74 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     return mockSendQueryDag.mock.calls[callIndex][argIndex] as T;
   }
 
+  it('records an accepted soft injection as an operator row in the same turn and delivers only that entry on its echo', async () => {
+    let calls = 0;
+    let injectionOutcome: string | undefined;
+    let handlerSaw: { messageId: string; text: string } | undefined;
+    let queueDuringTurn: { id: string; state: string }[] = [];
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      calls++;
+      if (calls > 1) {
+        yield { type: 'result', sessionId: 'sess-2' };
+        return;
+      }
+      // The adapter registers once its live input exists.
+      options?.softInjection?.ready(async request => {
+        handlerSaw = request;
+        return true;
+      });
+      yield { type: 'assistant', content: 'working' };
+      enqueue(store, RUN_ID, 'review', 'queued-1', 'stay queued', 'op-a');
+      enqueue(store, RUN_ID, 'review', 'inject-2', 'redirect inside the turn', 'op-b');
+      // Per-item Send now: claim exactly one entry, then offer it to the turn.
+      await store.claimSteeringMessageForSoftInjection(RUN_ID, 'review', 'inject-2');
+      injectionOutcome = await liveHandle(RUN_ID, 'review').softInject({
+        messageId: 'inject-2',
+        text: 'redirect inside the turn',
+        operatorUserId: 'op-b',
+      });
+      const rowsBeforeEcho = await store.listNodeMessages(RUN_ID, 'review');
+      expect(rowsBeforeEcho.filter(isOperatorTextRow).map(r => r.metadata.message_id)).toEqual([
+        'inject-2',
+      ]);
+      queueDuringTurn = (await store.listSteeringQueue(RUN_ID, 'review')).map(e => ({
+        id: e.message_id,
+        state: e.state,
+      }));
+      yield { type: 'operator_delivery_ack', messageId: 'inject-2' };
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-1' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(injectionOutcome).toBe('delivered');
+    // The provider handler sees only the id and text; attribution stays executor-side.
+    expect(handlerSaw).toEqual({ messageId: 'inject-2', text: 'redirect inside the turn' });
+    // Until the echo arrives the injected entry is `sent` and the other stays `queued`.
+    expect(queueDuringTurn).toEqual([
+      { id: 'queued-1', state: 'queued' },
+      { id: 'inject-2', state: 'sent' },
+    ]);
+    const rows = await store.listNodeMessages(RUN_ID, 'review');
+    const operatorRows = rows.filter(isOperatorTextRow);
+    const injectedRows = operatorRows.filter(r => r.metadata.message_id === 'inject-2');
+    expect(injectedRows).toHaveLength(1);
+    expect(injectedRows[0]!.payload.text).toBe('redirect inside the turn');
+    expect(injectedRows[0]!.metadata.operator_user_id).toBe('op-b');
+    const queue = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queue.find(e => e.message_id === 'inject-2')?.state).toBe('delivered');
+    // The injection did not start a turn: the only follow-up carries the other entry.
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('stay queued');
+    expect(storedEventTypes(store).filter(t => t === 'node_started')).toHaveLength(1);
+  });
+
   it('interrupt parks an abort-marked result in idle and Send now drains old + new receipts in order on the same session', async () => {
     let calls = 0;
     let interruptOutcome: Promise<string> | undefined;
