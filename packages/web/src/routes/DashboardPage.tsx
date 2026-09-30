@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
-import { Workflow } from 'lucide-react';
+import { ChevronDown, Workflow } from 'lucide-react';
 import {
   listDashboardRuns,
   cancelWorkflowRun,
@@ -13,14 +13,11 @@ import {
   listCodebases,
   getHealth,
   type DashboardCounts,
-  type DashboardRunResponse,
 } from '@/lib/api';
 import type { WorkflowRunStatus } from '@/lib/types';
 import { ensureUtc } from '@/lib/format';
 import { StatusSummaryBar } from '@/components/dashboard/StatusSummaryBar';
-import { WorkflowRunGroup } from '@/components/dashboard/WorkflowRunGroup';
 import { WorkflowRunCard } from '@/components/dashboard/WorkflowRunCard';
-import { WorkflowHistoryTable } from '@/components/dashboard/WorkflowHistoryTable';
 import { useDashboardSSE } from '@/hooks/useDashboardSSE';
 import { useWorkflowStore } from '@/stores/workflow-store';
 
@@ -218,55 +215,6 @@ export function DashboardPage(): React.ReactElement {
     refetchInterval: 30_000,
   });
 
-  // Split into active and history (from server-filtered results)
-  const activeRuns = useMemo(
-    () =>
-      runs.filter(r => r.status === 'running' || r.status === 'pending' || r.status === 'paused'),
-    [runs]
-  );
-
-  /**
-   * Group active runs by parent_platform_id.
-   * Multi-run groups (2+ runs from the same chat) get their own row with a header.
-   * Singleton groups (1 run) are collected into a shared grid so they sit side-by-side.
-   */
-  const { multiRunGroups, singletonRuns } = useMemo(() => {
-    const groups = new Map<
-      string,
-      { parentPlatformId: string | null; runs: DashboardRunResponse[] }
-    >();
-    for (const run of activeRuns) {
-      const key = run.parent_platform_id ?? '__standalone__';
-      const existing = groups.get(key);
-      if (existing) {
-        existing.runs.push(run);
-      } else {
-        groups.set(key, {
-          parentPlatformId: run.parent_platform_id,
-          runs: [run],
-        });
-      }
-    }
-    const multi: { parentPlatformId: string | null; runs: DashboardRunResponse[] }[] = [];
-    const singles: DashboardRunResponse[] = [];
-    for (const group of groups.values()) {
-      if (group.runs.length > 1) {
-        multi.push(group);
-      } else {
-        singles.push(group.runs[0]);
-      }
-    }
-    return { multiRunGroups: multi, singletonRuns: singles };
-  }, [activeRuns]);
-
-  const historyRuns = useMemo(
-    () =>
-      runs.filter(
-        r => r.status === 'completed' || r.status === 'failed' || r.status === 'cancelled'
-      ),
-    [runs]
-  );
-
   const [actionError, setActionError] = useState<string | null>(null);
 
   async function runAction(
@@ -310,159 +258,151 @@ export function DashboardPage(): React.ReactElement {
   const totalPages = Math.ceil(total / pageSize);
   const hasMore = page + 1 < totalPages;
 
+  const rowProps = {
+    isDocker: health?.is_docker,
+    isWsl: health?.is_wsl,
+    wslDistro: health?.wsl_distro,
+    onCancel: handleCancel,
+    onResume: handleResume,
+    onAbandon: handleAbandon,
+    onDelete: handleDelete,
+    onApprove: handleApprove,
+    onReject: handleReject,
+  };
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex-1 overflow-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-text-primary">Mission Control</h1>
-          {dataUpdatedAt > 0 && (
-            <span className="text-xs text-text-tertiary">
-              Last updated {new Date(dataUpdatedAt).toLocaleTimeString()}
-            </span>
+      <div className="flex-1 overflow-auto">
+        <div className="mx-auto grid w-full max-w-[1200px] gap-6 px-8 py-8">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="grid gap-2">
+              <h1 className="text-[28px] font-semibold leading-tight text-text-primary">
+                Dashboard
+              </h1>
+              <p className="text-base text-text-secondary">All workflow runs across projects.</p>
+            </div>
+            <div className="flex flex-col items-end gap-1 font-mono text-xs text-text-secondary">
+              {health && (
+                <span>
+                  Capacity{' '}
+                  <b className="font-medium text-text-primary">
+                    {String(health.concurrency.active)}/{String(health.concurrency.maxConcurrent)}
+                  </b>{' '}
+                  active
+                </span>
+              )}
+              {dataUpdatedAt > 0 && (
+                <span className="text-text-tertiary">
+                  Last updated {new Date(dataUpdatedAt).toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <StatusSummaryBar
+            counts={counts}
+            activeFilter={statusFilter}
+            onFilterChange={setStatusFilter}
+            searchQuery={searchInput}
+            onSearchChange={handleSearchChange}
+            projectFilter={projectFilter}
+            onProjectFilterChange={setProjectFilter}
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
+            codebases={codebases}
+          />
+
+          {actionError && (
+            <div
+              role="alert"
+              className="rounded-[10px] border border-error/30 px-4 py-3 text-sm text-error"
+            >
+              {actionError}
+            </div>
           )}
-        </div>
 
-        {/* Status Summary Bar — receives real server counts */}
-        <StatusSummaryBar
-          counts={counts}
-          activeFilter={statusFilter}
-          onFilterChange={setStatusFilter}
-          searchQuery={searchInput}
-          onSearchChange={handleSearchChange}
-          projectFilter={projectFilter}
-          onProjectFilterChange={setProjectFilter}
-          dateRange={dateRange}
-          onDateRangeChange={setDateRange}
-          codebases={codebases}
-          health={health}
-        />
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <span className="text-sm text-text-tertiary">Loading...</span>
+            </div>
+          ) : isError ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-16">
+              <p className="text-sm text-error">
+                Failed to load workflow runs
+                {fetchError instanceof Error ? `: ${fetchError.message}` : ''}
+              </p>
+            </div>
+          ) : runs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-16">
+              <Workflow className="size-10 text-text-tertiary" strokeWidth={1.75} />
+              <p className="text-sm text-text-tertiary">No workflow runs found</p>
+            </div>
+          ) : (
+            <>
+              {/* Hairline-divided list; the filters block above supplies its own bottom rule. */}
+              <div className="-mt-2 border-t border-border">
+                {runs.map(run => (
+                  <WorkflowRunCard key={run.id} run={run} {...rowProps} />
+                ))}
+              </div>
 
-        {actionError && (
-          <div className="rounded-md border border-error/30 bg-error/5 px-4 py-3 text-sm text-error">
-            {actionError}
-          </div>
-        )}
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <span className="text-sm text-text-tertiary">Loading...</span>
-          </div>
-        ) : isError ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16">
-            <p className="text-sm text-error">
-              Failed to load workflow runs
-              {fetchError instanceof Error ? `: ${fetchError.message}` : ''}
-            </p>
-          </div>
-        ) : runs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16">
-            <Workflow className="h-10 w-10 text-text-tertiary" />
-            <p className="text-sm text-text-tertiary">No workflow runs found</p>
-          </div>
-        ) : (
-          <>
-            {/* Active Workflows */}
-            {activeRuns.length > 0 && (
-              <section>
-                <h2 className="mb-3 text-sm font-semibold text-text-secondary">Active Workflows</h2>
-                <div className="space-y-6">
-                  {/* Singleton runs (1 per chat or standalone) share a single grid */}
-                  {singletonRuns.length > 0 && (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      {singletonRuns.map(run => (
-                        <WorkflowRunCard
-                          key={run.id}
-                          run={run}
-                          isDocker={health?.is_docker}
-                          isWsl={health?.is_wsl}
-                          wslDistro={health?.wsl_distro}
-                          onCancel={handleCancel}
-                          onResume={handleResume}
-                          onAbandon={handleAbandon}
-                          onDelete={handleDelete}
-                          onApprove={handleApprove}
-                          onReject={handleReject}
-                        />
-                      ))}
-                    </div>
-                  )}
-                  {/* Multi-run groups get their own row with a chat header */}
-                  {multiRunGroups.map(group => (
-                    <WorkflowRunGroup
-                      key={group.parentPlatformId ?? 'standalone'}
-                      parentPlatformId={group.parentPlatformId}
-                      runs={group.runs}
-                      isDocker={health?.is_docker}
-                      isWsl={health?.is_wsl}
-                      wslDistro={health?.wsl_distro}
-                      onCancel={handleCancel}
-                      onResume={handleResume}
-                      onAbandon={handleAbandon}
-                      onDelete={handleDelete}
-                      onApprove={handleApprove}
-                      onReject={handleReject}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* History */}
-            {historyRuns.length > 0 && (
-              <section>
-                <h2 className="mb-3 text-sm font-semibold text-text-secondary">History</h2>
-                <WorkflowHistoryTable runs={historyRuns} onDelete={handleDelete} />
-              </section>
-            )}
-
-            {/* Pagination */}
-            <div className="flex items-center justify-between pt-2">
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-text-tertiary">
+              <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-text-secondary">
+                <span>
                   Showing {String(page * pageSize + 1)}&ndash;
                   {String(Math.min((page + 1) * pageSize, total))} of {String(total)} runs
                 </span>
-                <select
-                  value={pageSize}
-                  onChange={(e): void => {
-                    setPageSize(Number(e.target.value));
-                  }}
-                  className="rounded-md border border-border bg-surface-elevated px-2 py-1 text-xs text-text-primary focus:border-primary focus:outline-none"
-                >
-                  {PAGE_SIZE_OPTIONS.map(size => (
-                    <option key={size} value={size}>
-                      {String(size)} per page
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-2">
+                  <div className="relative w-32">
+                    <label className="sr-only" htmlFor="dashboard-page-size">
+                      Per page
+                    </label>
+                    <select
+                      id="dashboard-page-size"
+                      value={pageSize}
+                      onChange={(e): void => {
+                        setPageSize(Number(e.target.value));
+                      }}
+                      className="min-h-11 w-full appearance-none rounded-[10px] border border-border bg-background px-3 pr-9 text-sm text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {PAGE_SIZE_OPTIONS.map(size => (
+                        <option key={size} value={size}>
+                          {String(size)} per page
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary"
+                      strokeWidth={1.75}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(): void => {
+                      setPage(page - 1);
+                    }}
+                    disabled={page === 0}
+                    className="min-h-11 cursor-pointer rounded-[10px] px-4 text-sm font-medium text-text-secondary outline-none transition-colors duration-150 hover:bg-surface hover:text-text-primary focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:text-text-tertiary disabled:hover:bg-transparent"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs text-text-tertiary">
+                    Page {String(page + 1)} of {String(Math.max(1, totalPages))}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(): void => {
+                      setPage(page + 1);
+                    }}
+                    disabled={!hasMore}
+                    className="min-h-11 cursor-pointer rounded-[10px] px-4 text-sm font-medium text-text-secondary outline-none transition-colors duration-150 hover:bg-surface hover:text-text-primary focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:text-text-tertiary disabled:hover:bg-transparent"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={(): void => {
-                    setPage(page - 1);
-                  }}
-                  disabled={page === 0}
-                  className="rounded-md border border-border bg-surface-elevated px-3 py-1 text-xs text-text-secondary transition-colors hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <span className="text-xs text-text-tertiary">
-                  Page {String(page + 1)} of {String(Math.max(1, totalPages))}
-                </span>
-                <button
-                  onClick={(): void => {
-                    setPage(page + 1);
-                  }}
-                  disabled={!hasMore}
-                  className="rounded-md border border-border bg-surface-elevated px-3 py-1 text-xs text-text-secondary transition-colors hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
