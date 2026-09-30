@@ -727,6 +727,10 @@ describe('WorkflowEnvManageDialog mounted', () => {
     await act(async () => {
       root.unmount();
     });
+    // Radix FocusScope dispatches its unmount event from a 0 ms timeout. Let it
+    // run while this window is still installed; otherwise it fires after the
+    // globals are restored and fails in whichever test file runs next.
+    await new Promise(resolve => setTimeout(resolve, 0));
     globalThis.fetch = originalFetch;
     Reflect.deleteProperty(globalThis, 'NodeFilter');
     win.close();
