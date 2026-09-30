@@ -308,9 +308,14 @@ Started and stopped by me, each by exact PID:
   PID 24665 (isolated re-run of the flaky test alone, to diagnose), PID 26959
   (second full run, clean) — each waited out to natural completion (never a
   pattern match) before reporting results here.
-- Ports 3090, 3317, 5173, 5187, 8791 were never touched — confirmed by using
-  `lsof -tiTCP:<port> -sTCP:LISTEN` before starting anything on my own ports,
-  and by choosing `ARCHON_E2E_PORT_BASE=3560` up front for the e2e suite (port
+- Ports 3317, 5173, 5187, 8791 were never touched. Port 3090 saw exactly one
+  unintended read: the first, misconfigured Vite attempt (`VITE_API_PORT`
+  instead of `PORT`, see above) proxied one `GET .../workflows/runs/<my own
+scratch run id>` to it before I caught the 404 body and fixed the env var —
+  a read-only lookup for an id that only exists on my own server, not a
+  mutation, and not repeated after the fix. Both were confirmed via
+  `lsof -tiTCP:<port> -sTCP:LISTEN` before starting anything on my own ports.
+  `ARCHON_E2E_PORT_BASE=3560` was chosen up front for the e2e suite (port
   3400, its documented default base, is held by an unrelated Docker process).
 
 ## Attribution note
