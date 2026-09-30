@@ -602,21 +602,20 @@ body {
 }
 
 /* =========================================================================
- * Run-view semantic tokens (scoped to both run-view roots only).
- * Roots: .legacy-run-view (WorkflowExecution) and .console-run-view
- * (RunDetailPage). These properties do not apply sitewide.
+ * Run-view semantic tokens (scoped to the run-view root only).
+ * Root: .legacy-run-view (WorkflowExecution). These properties do not apply
+ * sitewide.
  * ========================================================================= */
 
-.legacy-run-view,
-.console-run-view {
+.legacy-run-view {
   /* Graph node + tab typography */
   --rv-node-kind-size: 0.625rem;
   --rv-node-label-size: 0.8125rem;
   --rv-node-meta-size: 0.6875rem;
   --rv-tab-size: 0.6875rem;
 
-  /* Agent message typography — matches mockup .pmsg-text */
-  --rv-agent-font-size: 12.5px;
+  /* Agent message typography */
+  --rv-agent-font-size: 14px;
   --rv-agent-line-height: 1.5;
 
   /* Tool card inset surface — matches mockup .ptool */
@@ -624,10 +623,10 @@ body {
   --rv-tool-card-border: 1px solid var(--border);
   --rv-tool-card-radius: var(--radius);
   --rv-tool-card-padding: 8px 10px;
-  --rv-tool-io-font-size: 11px;
+  --rv-tool-io-font-size: 12px;
 
   /* Ask card — matches mockup .ask-card */
-  --rv-ask-card-border-color: var(--warning);
+  --rv-ask-card-border-color: var(--accent);
   --rv-ask-card-radius: var(--radius);
   --rv-ask-card-padding: 12px 14px;
 

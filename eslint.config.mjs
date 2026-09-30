@@ -117,50 +117,5 @@ export default tseslint.config(
       // Constructor style preference
       '@typescript-eslint/consistent-generic-constructors': 'off',
     },
-  },
-
-  // Console spike (packages/web/src/experiments/console/**) — isolation guard.
-  // NFR4: no production web components/stores/contexts/routes/hooks, no React Query,
-  // no runtime @/lib/api. Type-only @/lib/api.generated is allowed; inspect graph
-  // layout may import @/lib/run-graph at runtime (outside these restricted patterns).
-  // This experiment must not couple to the production web UI's state/components
-  // so that it can be extracted or discarded cleanly.
-  {
-    files: ['packages/web/src/experiments/console/**/*.{ts,tsx}'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              // `**` matches nested paths too; the single `*` form let
-              // experiments couple to `@/components/layout/...` etc.
-              group: [
-                '@/components/**',
-                '@/contexts/**',
-                '@/hooks/**',
-                '@/routes/**',
-                '@/stores/**',
-              ],
-              message:
-                'The console spike must not import from production web UI modules. See packages/web/src/experiments/console/README.md.',
-            },
-            {
-              // Block every named import from `@/lib/api` — only generated
-              // types from `@/lib/api.generated` are allowed (different
-              // module path, not matched by this glob).
-              group: ['@/lib/api'],
-              message:
-                'Import only types from @/lib/api.generated. Skill calls go through packages/web/src/experiments/console/skills/.',
-            },
-            {
-              group: ['@tanstack/react-query'],
-              message:
-                'The console spike uses its own reactive store (store/cache.ts). No React Query.',
-            },
-          ],
-        },
-      ],
-    },
   }
 );

@@ -27,6 +27,7 @@ import {
   type FileDiff,
   type TaskSubtaskCard,
   type ToolBody,
+  headlineAfterLabel,
   type ToolFamily,
   type ToolOutcome,
   type ToolPresentationInput,
@@ -514,7 +515,8 @@ function splitHeadline(headline: string): { head: string; tail: string } | null 
 }
 
 function ToolHeadline({ presentation }: { presentation: ToolRowPresentation }): React.ReactElement {
-  const split = presentation.headlineKind === 'path' ? splitHeadline(presentation.headline) : null;
+  const headline = headlineAfterLabel(presentation);
+  const split = presentation.headlineKind === 'path' ? splitHeadline(headline) : null;
   if (split === null) {
     return (
       <span
@@ -523,7 +525,7 @@ function ToolHeadline({ presentation }: { presentation: ToolRowPresentation }): 
           presentation.family === 'todo' ? 'text-text-secondary' : 'text-text-primary'
         )}
       >
-        {presentation.headline}
+        {headline}
       </span>
     );
   }

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ReactElement, RefObject } from 'react';
 import type { Root } from 'react-dom/client';
 
-import { installHappyDom, restoreHappyDom } from '../experiments/console/test/install-happy-dom';
+import { installHappyDom, restoreHappyDom } from '../test/install-happy-dom';
 
 const react = await import('react');
 const reactDomClient = await import('react-dom/client');

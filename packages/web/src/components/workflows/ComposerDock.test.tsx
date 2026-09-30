@@ -3,7 +3,7 @@ process.env.NODE_ENV = 'development';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Root } from 'react-dom/client';
 
-import { installHappyDom, restoreHappyDom } from '@/experiments/console/test/install-happy-dom';
+import { installHappyDom, restoreHappyDom } from '@/test/install-happy-dom';
 import type {
   ClearSteeringDraftResponse,
   InterruptWorkflowNodeResponse,
