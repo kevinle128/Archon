@@ -85,7 +85,10 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] Step 2b: owner rejected S12 screens; switched to ui-ux-pro-max "AI-Native UI + Minimalism" (spec `ai-native-minimal-spec.md`, logo L4 Pixel kept)
 - [x] Step 2c: AI-native minimal mockup `ai-native-screens.html` built; verified light + dark in headless Chromium (no errors, no dashes, no private paths)
 - [x] Step 2d: owner approved the AI-native screens ("code cho tôi phiên bản này")
-- [ ] Step 3: implementation plan `plans/260930-2008-ai-native-ui-implementation/plan.md` (8 phases); waiting for owner approval before coding
+- [x] Step 3: plan approved by owner (all 8 phases)
+- [x] Phase 1-2 foundation + sidebar shell committed (ca44f10e); route cleanup (307768b0); plans (f21d1daf)
+- [x] Phases 3-7 committed: builder 57d55bd7, dashboard+workflows 52d9433c, chat 90a83b88, run detail 4555d1b6, settings+console port 29ce10b8; web tests all green
+- [ ] Phase 8 (running): delete experiments/console, run-view tokens, tool label dup + duration format fixes, brand guide + web.md + AGENTS.md + CHANGELOG, bun run validate, e2e
 - [ ] Step 3: after owner approves screens, plan the implementation in packages/web (tokens in index.css, brand guide update per AGENTS.md)
 - [ ] Decision for user: delete `packages/web/src/experiments/console/` (308 files) in follow-up; move `install-happy-dom` test helper to `src/test/` first
 - [ ] Decision for user: console-only features now have no UI (provider keys, GitHub connect, model tiers/aliases, per-user AI prefs, cost page); port into classic Settings/Dashboard or into the redesign
