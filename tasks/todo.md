@@ -90,7 +90,8 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] Phases 3-7 committed: builder 57d55bd7, dashboard+workflows 52d9433c, chat 90a83b88, run detail 4555d1b6, settings+console port 29ce10b8; web tests all green
 - [x] Phase 8 committed (6d6dc184 core reviewUrl fix, 904546c5 console removal + polish, e27bd941 docs, cdd79711 e2e routes); bun run validate EXIT 0
 - [x] Console gaps ported: ENV overlay manager + picker (7f36612e), run cost + per-node usage + run ENV overlay (7c80e270); HITL e2e 31 pass / 0 fail (b2bfd6c4); success token AA fix (c8c389e4); env dialog test teardown fix (97c42b5e); bun run validate EXIT 0
-- [ ] Still missing vs console (owner decision): Reply-to-parent-conversation action on run page, docked Artifacts panel
+- [x] Reply: exists in the run page Chat tab; e2e coverage restored (reply-parent, reply-parent-unavailable)
+- [x] Artifacts browser panel beside the node room (e2469b89); HITL 33 pass / 0 fail; bun run validate EXIT 0
 - [x] Logo images redrawn from assets/logo.svg (README, docs logo + favicon, web favicon, docs og:image)
 - [ ] Step 3: after owner approves screens, plan the implementation in packages/web (tokens in index.css, brand guide update per AGENTS.md)
 - [ ] Decision for user: delete `packages/web/src/experiments/console/` (308 files) in follow-up; move `install-happy-dom` test helper to `src/test/` first

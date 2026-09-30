@@ -43,3 +43,8 @@
 
 - Pattern: before asking the owner to approve deleting the console UI, I listed its "console-only features" from a grep for settings-style endpoints (provider keys, GitHub, tiers, aliases, cost). The cleanup phase later found more console-only features: the workflow ENV overlay manager and picker, the run cost strip and per-node usage breakdown, and the console-scoped HITL e2e specs. The owner approved the deletion on an incomplete list.
 - Rule: before proposing to remove a UI surface, inventory it from its routes and components (every route, every panel, every API call it makes), compare against the replacement, and list each gap in the approval question. Grepping for the features you already expect is not an inventory.
+
+## Verify a delegate's "feature is missing" claim in the code before telling the owner (2026-09-30)
+
+- Pattern: an e2e agent deleted the console Reply tests and called Reply a lost feature. I repeated that to the owner as a missing feature. Reading the code later showed the run page's Chat tab already sends replies to the parent conversation; only the test coverage was gone.
+- Rule: before reporting a feature as missing or lost, find where it lived, grep the replacement for the same API call or user-visible text, and state what is actually gone (the behavior, or only its tests).
