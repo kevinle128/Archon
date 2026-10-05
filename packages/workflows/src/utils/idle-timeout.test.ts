@@ -212,4 +212,103 @@ describe('withIdleTimeout', () => {
     expect(result).toEqual([{ type: 'assistant' }, { type: 'tool' }]);
     expect(onTimeout).toHaveBeenCalledTimes(1);
   });
+
+  // These exercise the optional externalSignal parameter: a caller-owned
+  // AbortController that ends the wrapper immediately, independent of the
+  // idle timer — the mechanism a decoupled cancellation poller relies on to
+  // guarantee a prompt, clean exit even when the underlying generator never
+  // settles on its own.
+  describe('externalSignal', () => {
+    test('ends promptly once the signal aborts, even while the generator hangs indefinitely', async () => {
+      const controller = new AbortController();
+      const result: string[] = [];
+      const startedAt = Date.now();
+      const run = (async (): Promise<void> => {
+        for await (const v of withIdleTimeout(
+          hangAfter(['a', 'b']),
+          5000, // deliberately long — must not be what ends this
+          undefined,
+          undefined,
+          controller.signal
+        )) {
+          result.push(v);
+        }
+      })();
+      // Give the generator's pre-hang values time to flow through first.
+      await new Promise(resolve => setTimeout(resolve, 20));
+      controller.abort();
+      await run;
+      const elapsedMs = Date.now() - startedAt;
+
+      expect(result).toEqual(['a', 'b']);
+      expect(elapsedMs).toBeLessThan(500);
+    });
+
+    test('an already-aborted signal ends the wrapper before the first pull', async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const result: string[] = [];
+
+      for await (const v of withIdleTimeout(
+        hangAfter(['a']),
+        5000,
+        undefined,
+        undefined,
+        controller.signal
+      )) {
+        result.push(v);
+      }
+
+      expect(result).toEqual([]);
+    });
+
+    test('the idle timer still fires normally when the external signal never aborts', async () => {
+      const controller = new AbortController();
+      const onTimeout = mock(() => {});
+      const result: string[] = [];
+
+      for await (const v of withIdleTimeout(
+        hangAfter(['a']),
+        50,
+        onTimeout,
+        undefined,
+        controller.signal
+      )) {
+        result.push(v);
+      }
+
+      expect(result).toEqual(['a']);
+      expect(onTimeout).toHaveBeenCalledTimes(1);
+    });
+
+    test('a generator that reacts to the abort by throwing settles quietly — no unhandled rejection', async () => {
+      const controller = new AbortController();
+      async function* reactsToAbort(): AsyncGenerator<string> {
+        yield 'a';
+        await new Promise<void>(resolve => {
+          controller.signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+        throw new Error('Query aborted');
+      }
+      const result: string[] = [];
+      const run = (async (): Promise<void> => {
+        for await (const v of withIdleTimeout(
+          reactsToAbort(),
+          5000,
+          undefined,
+          undefined,
+          controller.signal
+        )) {
+          result.push(v);
+        }
+      })();
+      await new Promise(resolve => setTimeout(resolve, 20));
+      controller.abort();
+
+      // Must resolve (not reject) — the orphaned generator's later throw is
+      // swallowed defensively, exactly like the idle-timeout path already does.
+      await run;
+      expect(result).toEqual(['a']);
+    });
+  });
 });

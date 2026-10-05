@@ -1,0 +1,65 @@
+{
+  "cx": {
+    "glyphs": { "✓": 0, "✕": 1, "◐": 0, "⚠": 0, "–": 4 },
+    "interrupted": 0,
+    "outputUnknown": 4,
+    "openDetails": 0,
+    "pill": "Failed"
+  },
+  "omp": {
+    "glyphs": { "✓": 0, "✕": 1, "◐": 0, "⚠": 3, "–": 1 },
+    "interrupted": 6,
+    "outputUnknown": 1,
+    "openDetails": 0,
+    "pill": "Failed"
+  },
+  "ds": {
+    "glyphs": { "✓": 0, "✕": 1, "◐": 0, "⚠": 3, "–": 1 },
+    "interrupted": 6,
+    "outputUnknown": 1,
+    "openDetails": 0,
+    "pill": "Failed"
+  },
+  "gk": {
+    "glyphs": { "✓": 0, "✕": 1, "◐": 0, "⚠": 0, "–": 4 },
+    "interrupted": 0,
+    "outputUnknown": 4,
+    "openDetails": 0,
+    "pill": "Failed"
+  },
+  "cl": {
+    "glyphs": { "✓": 0, "✕": 1, "◐": 0, "⚠": 3, "–": 1 },
+    "interrupted": 6,
+    "outputUnknown": 1,
+    "openDetails": 0,
+    "pill": "Failed"
+  },
+  "cxl": {
+    "glyphs": { "✓": 0, "✕": 1, "◐": 0, "⚠": 0, "–": 3 },
+    "interrupted": 0,
+    "outputUnknown": 3,
+    "openDetails": 0,
+    "pill": "Failed"
+  },
+  "gs": {
+    "glyphs": { "✓": 0, "✕": 1, "◐": 0, "⚠": 0, "–": 1 },
+    "interrupted": 0,
+    "outputUnknown": 1,
+    "openDetails": 0,
+    "pill": "Failed"
+  },
+  "deny": {
+    "glyphs": { "✓": 0, "✕": 2, "◐": 0, "⚠": 0, "–": 0 },
+    "interrupted": 0,
+    "outputUnknown": 0,
+    "openDetails": 1,
+    "pill": "Completed"
+  },
+  "B": {
+    "glyphs": { "✓": 21, "✕": 1, "◐": 0, "⚠": 0, "–": 0 },
+    "interrupted": 0,
+    "outputUnknown": 0,
+    "openDetails": 0,
+    "pill": "Completed"
+  }
+}

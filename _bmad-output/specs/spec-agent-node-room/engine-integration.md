@@ -82,6 +82,8 @@ The required cases are:
 4. An exception without an active operator interrupt is a provider or execution failure.
 5. Node-level termination takes the existing terminal path.
 
+Case 4 has a retryable sub-case for an automatically-claimed guidance turn (the auto-send claim described below): when the thrown exception is not abort-like, the live provider session is still usable (the turn had an established resume id), and the node itself was not cancelled, the executor reverts the claimed queue entry to the front with failure evidence and parks the node idle-after-interrupt (section 8) instead of failing it — the operator's Send now retries on the same session. A failure that loses the session (no session id to resume) is not retryable and still fails the node through the existing case-4 path. This classification is flat: no per-provider taxonomy, and it never applies to a non-guidance (ordinary iteration) turn.
+
 An interrupted end writes the interrupted transcript evidence, does not validate the partial output, does not complete the node, and does not advance the DAG.
 
 The node enters idle-after-interrupt and waits for Send now.
@@ -116,7 +118,9 @@ Queue acknowledgement is returned only after database commit.
 
 Withdrawal is idempotent while an item remains claimable.
 
-The durable state machine distinguishes at least draft, queued, awaiting-send-now, dispatching, sent, delivered, delivery-unknown, withdrawn, and failed outcomes.
+The durable state machine distinguishes at least draft, queued, awaiting-send-now, dispatching, sent, delivered, delivery-unknown, withdrawn, and never-sent outcomes.
+
+A retryable automatic-dispatch failure (section 4, case 4) is represented as additive failure evidence — `last_error` and a `dispatch_failure_count` counter — on an entry that reverts to `queued`, not as a distinct terminal `failed` state. The entry must stay re-claimable through the same FIFO claim query the executor already uses, and a terminal `failed` state would either need its own bespoke re-claim path or would stop being claimable at all; carrying the evidence on `queued` instead keeps one claim query and one state machine for every entry, whether it has failed before or not. The count exists to record attempts, not to cap them — there is no retry limit, and no automatic retry loop; every retry is operator-initiated through Send now.
 
 A provider acknowledgement advances a message to delivered only when it carries the stamped message id or another explicitly verified provider identifier.
 

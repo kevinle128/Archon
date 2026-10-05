@@ -1,0 +1,10 @@
+name: vq15-deny
+description: "Scratch - a Claude Bash call that the sleep guard denies."
+mutates_checkout: false
+nodes:
+  - id: deny-node
+    provider: claude
+    model: haiku
+    prompt: |
+      Run exactly this Bash command once: sleep 40 && echo guarded
+      If it is blocked, reply "blocked" and stop. Do not retry.

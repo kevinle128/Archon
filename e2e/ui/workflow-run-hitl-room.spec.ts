@@ -30,12 +30,14 @@ import {
 import { T } from '../lib/playwright/timeouts';
 
 const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
-const LEGACY_RATIO_VIEWPORT = { width: 1024, height: 900 } as const;
+const LEGACY_RATIO_VIEWPORT = { width: 1280, height: 900 } as const;
 const NARROW_VIEWPORT = { width: 390, height: 844 } as const;
-const DEFAULT_RATIO_MIN = 0.38;
-const DEFAULT_RATIO_MAX = 0.42;
+// The room is a fixed pixel width with no drag handle
+// (`packages/web/src/lib/room-split-layout.ts`). There is no user-adjustable
+// ratio to persist. The room only keeps this width when the run pane is at
+// least 60rem wide; a narrower pane shows it full width instead.
+const FIXED_ROOM_WIDTH = 460;
 const WIDTH_TOLERANCE_PX = 2;
-const RELOAD_RATIO_TOLERANCE = 0.02;
 const ROOM_MIN_WIDTH_PX = 240;
 const DRAFT_OTHER = 'shared-ask-draft';
 
@@ -70,16 +72,6 @@ async function boxWidth(locator: Locator, label: string): Promise<number> {
   return box?.width ?? 0;
 }
 
-async function roomRatio(page: Page, surface: 'console' | 'legacy'): Promise<number> {
-  const viewId = surface === 'console' ? 'console-run-view' : 'legacy-run-view';
-  const roomId = surface === 'console' ? 'console-run-room' : 'legacy-run-room';
-  const viewWidth = await boxWidth(panelLocator(page, viewId), viewId);
-  const roomWidth = await boxWidth(panelLocator(page, roomId), roomId);
-  const total = viewWidth + roomWidth;
-  expect(total, `${surface} split total width`).toBeGreaterThan(0);
-  return roomWidth / total;
-}
-
 async function waitForRunTitle(page: Page, workflowName: string): Promise<void> {
   await expect(page.getByText(new RegExp(workflowName, 'i')).first()).toBeVisible({
     timeout: T.medium,
@@ -90,12 +82,6 @@ function formatRecordedDuration(durationMs: number): string {
   if (durationMs < 1000) return `${String(durationMs)}ms`;
   if (durationMs < 60_000) return `${(durationMs / 1000).toFixed(1)}s`;
   return `${(durationMs / 60_000).toFixed(1)}m`;
-}
-
-async function openConsoleLogRow(page: Page, nodeId: string, index = 0): Promise<void> {
-  const buttons = page.getByRole('button', { name: new RegExp(nodeId) });
-  await expect(buttons.nth(index)).toBeVisible({ timeout: T.medium });
-  await buttons.nth(index).click();
 }
 
 async function openLegacyLogRow(page: Page, nodeId: string, index = 0): Promise<void> {
@@ -160,10 +146,6 @@ async function expectFileFamilyBody(row: Locator): Promise<void> {
   await expect(body).toContainText(HITL_TOOL_OUTPUT);
 }
 
-function executionSection(page: Page, nodeId: string): Locator {
-  return page.locator('section[data-execution-row-id]').filter({ hasText: nodeId }).first();
-}
-
 async function requireLongHistoryFixture(page: Page, archon: ArchonRuntime): Promise<CliRunResult> {
   try {
     const started = await archon.runHitlLongHistoryWorkflow();
@@ -185,39 +167,7 @@ async function requireLongHistoryFixture(page: Page, archon: ArchonRuntime): Pro
   }
 }
 
-test('[P1] [V:hitl.console-room-layout] Console room opens, closes, and releases its width', async ({
-  page,
-  archon,
-}) => {
-  await page.setViewportSize(SPLIT_VIEWPORT);
-  const started = await archon.runHitlWorkflow();
-  await openRunDetail(page, started.runId);
-  await waitForRunTitle(page, 'e2e-hitl-run');
-
-  await openConsoleLogRow(page, HITL_INSPECT_NODE);
-  const room = await waitForRoom(page, HITL_INSPECT_NODE);
-  const logRow = page.getByRole('button', { name: new RegExp(HITL_INSPECT_NODE) }).first();
-  const openWidth = await boxWidth(logRow, 'Console log row while room is open');
-  const roomWidth = await boxWidth(room, 'Console room');
-
-  await page.getByRole('button', { name: 'Close' }).click();
-  await expect(room).toHaveCount(0);
-  const closedWidth = await boxWidth(logRow, 'Console log row after room closes');
-  expect(
-    closedWidth - openWidth,
-    'closing the room returns its width to the log'
-  ).toBeGreaterThanOrEqual(roomWidth - WIDTH_TOLERANCE_PX);
-  await expect(page.getByText('Select a node', { exact: true })).toHaveCount(0);
-  await expect(panelLocator(page, 'console-run-room')).toHaveCount(0);
-  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
-  await openConsoleLogRow(page, HITL_INSPECT_NODE);
-  await waitForRoom(page, HITL_INSPECT_NODE);
-  const ratio = await roomRatio(page, 'console');
-  expect(ratio).toBeGreaterThanOrEqual(DEFAULT_RATIO_MIN);
-  expect(ratio).toBeLessThanOrEqual(DEFAULT_RATIO_MAX);
-});
-
-test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and percentage sized', async ({
+test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and fixed width', async ({
   page,
   archon,
 }) => {
@@ -231,9 +181,7 @@ test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and percentage si
   expect(width, 'Legacy room must be wide enough to read tool output').toBeGreaterThan(
     ROOM_MIN_WIDTH_PX
   );
-  const ratio = await roomRatio(page, 'legacy');
-  expect(ratio).toBeGreaterThanOrEqual(DEFAULT_RATIO_MIN);
-  expect(ratio).toBeLessThanOrEqual(DEFAULT_RATIO_MAX);
+  expect(Math.abs(width - FIXED_ROOM_WIDTH)).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
   const row = room.locator('details[data-tool-id]').first();
   // The collapsed summary names the file family; the Story 1.3 body/Raw swap
   // contract is identical on both surfaces.
@@ -249,21 +197,21 @@ test('[P1] [V:hitl.graph-selection] Graph selection restores the last explicit e
   const started = await archon.runHitlWorkflow();
   await openRunDetail(page, started.runId);
   await waitForRunTitle(page, 'e2e-hitl-run');
-  await openConsoleLogRow(page, HITL_LOOP_NODE, 0);
+  await openLegacyLogRow(page, HITL_LOOP_NODE, 0);
   const room = await waitForRoom(page, HITL_LOOP_NODE);
   const execution = page.getByLabel('Execution');
   await expect(execution).toBeVisible({ timeout: T.medium });
   const firstValue = await execution.locator('option').nth(0).getAttribute('value');
   expect(firstValue).toBeTruthy();
   await execution.selectOption(firstValue ?? '');
-  await expect(page.getByText('Iteration 1').first()).toBeVisible();
+  await expect(page.getByLabel('Execution').locator('option:checked')).toHaveText(/Iteration 1/);
   await page.getByRole('button', { name: 'Close' }).click();
 
-  await page.getByRole('button', { name: 'Graph' }).click();
-  await page.locator(`#console-graph-${encodeURIComponent(HITL_LOOP_NODE)}`).click();
+  await page.getByRole('tab', { name: 'Graph' }).click();
+  await page.locator(`.react-flow__node[data-id="${HITL_LOOP_NODE}"]`).click();
   const reopened = await waitForRoom(page, HITL_LOOP_NODE);
   await expect(page.getByLabel('Execution')).toHaveValue(firstValue ?? '');
-  await expect(page.getByText('Iteration 1').first()).toBeVisible();
+  await expect(page.getByLabel('Execution').locator('option:checked')).toHaveText(/Iteration 1/);
 });
 
 test('[P1] [V:hitl.agent-history] HITL agent history shows a readable tool row with outcome', async ({
@@ -274,7 +222,7 @@ test('[P1] [V:hitl.agent-history] HITL agent history shows a readable tool row w
   const started = await archon.runHitlWorkflow();
   await openRunDetail(page, started.runId);
   await waitForRunTitle(page, 'e2e-hitl-run');
-  await openConsoleLogRow(page, HITL_INSPECT_NODE);
+  await openLegacyLogRow(page, HITL_INSPECT_NODE);
   const room = await waitForRoom(page, HITL_INSPECT_NODE);
   await expect(room.getByText('ASSISTANT')).toBeVisible({ timeout: T.medium });
   const messages = await listNodeMessages(page, started.runId, HITL_INSPECT_NODE);
@@ -317,7 +265,7 @@ test('[P1] [V:hitl.execution-scope] Execution selector requests the selected sco
   try {
     await openRunDetail(page, started.runId);
     await waitForRunTitle(page, 'e2e-hitl-run');
-    await openConsoleLogRow(page, HITL_LOOP_NODE, 0);
+    await openLegacyLogRow(page, HITL_LOOP_NODE, 0);
     const room = await waitForRoom(page, HITL_LOOP_NODE);
     const execution = page.getByLabel('Execution');
     const optionOne = execution.locator('option').nth(0);
@@ -329,9 +277,9 @@ test('[P1] [V:hitl.execution-scope] Execution selector requests the selected sco
     expect(valueOne).not.toBe(valueTwo);
 
     await execution.selectOption(valueOne ?? '');
-    await expect(page.getByText('Iteration 1').first()).toBeVisible();
+    await expect(page.getByLabel('Execution').locator('option:checked')).toHaveText(/Iteration 1/);
     await execution.selectOption(valueTwo ?? '');
-    await expect(page.getByText('Iteration 2').first()).toBeVisible();
+    await expect(page.getByLabel('Execution').locator('option:checked')).toHaveText(/Iteration 2/);
 
     await expect
       .poll(() => {
@@ -348,7 +296,7 @@ test('[P1] [V:hitl.execution-scope] Execution selector requests the selected sco
   }
 });
 
-test('[P1] [V:hitl.ask-draft] Ask draft is shared across room and execution section', async ({
+test('[P1] [V:hitl.ask-draft] Ask draft survives closing and reopening the room', async ({
   browser,
   archon,
 }) => {
@@ -357,17 +305,16 @@ test('[P1] [V:hitl.ask-draft] Ask draft is shared across room and execution sect
     const started = await archon.runHitlWorkflow();
     await openRunDetail(page, started.runId);
     await waitForRunTitle(page, 'e2e-hitl-run');
-    await openConsoleLogRow(page, HITL_ASK_NODE);
+    await openLegacyLogRow(page, HITL_ASK_NODE);
     const room = await waitForRoom(page, HITL_ASK_NODE);
     await room.getByLabel('Other').check();
     await room.getByLabel(/Other answer for/).fill(DRAFT_OTHER);
-    const section = executionSection(page, HITL_ASK_NODE);
-    await expect(section.getByLabel(/Other answer for/)).toHaveValue(DRAFT_OTHER);
-    const roomCardId = await room.locator('form').first().getAttribute('id');
-    const sectionCardId = await section.locator('form').first().getAttribute('id');
-    expect(roomCardId).toBeTruthy();
-    expect(sectionCardId).toBeTruthy();
-    expect(roomCardId).not.toBe(sectionCardId);
+    await page.getByRole('button', { name: 'Close' }).click();
+    await expect(room).toHaveCount(0);
+
+    await openLegacyLogRow(page, HITL_ASK_NODE);
+    const reopened = await waitForRoom(page, HITL_ASK_NODE);
+    await expect(reopened.getByLabel(/Other answer for/)).toHaveValue(DRAFT_OTHER);
   });
 });
 
@@ -405,10 +352,10 @@ test('[P1] [V:hitl.ask-history] Answered and declined Ask records remain in plac
     expect(answerId).toBeTruthy();
     expect(declineId).toBeTruthy();
     if (!answerId || !declineId) throw new Error('missing two-ask request ids');
-    await openConsoleLogRow(page, HITL_ASK_ANSWER_NODE);
+    await openLegacyLogRow(page, HITL_ASK_ANSWER_NODE);
     const pendingAnswerRoom = await waitForRoom(page, HITL_ASK_ANSWER_NODE);
     await submitAskYes(page, pendingAnswerRoom, started.runId, answerId);
-    await openConsoleLogRow(page, HITL_ASK_DECLINE_NODE);
+    await openLegacyLogRow(page, HITL_ASK_DECLINE_NODE);
     const pendingDeclineRoom = await waitForRoom(page, HITL_ASK_DECLINE_NODE);
     await pendingDeclineRoom.getByRole('button', { name: 'Decline', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Decline this ask?' })).toBeVisible();
@@ -431,26 +378,16 @@ test('[P1] [V:hitl.ask-history] Answered and declined Ask records remain in plac
     await page.reload();
     await waitForRunTitle(page, 'e2e-hitl-two-asks');
 
-    await openConsoleLogRow(page, HITL_ASK_ANSWER_NODE);
+    await openLegacyLogRow(page, HITL_ASK_ANSWER_NODE);
     const answeredRoom = await waitForRoom(page, HITL_ASK_ANSWER_NODE);
     await expect(answeredRoom.getByText(/Answered/i).first()).toBeVisible({ timeout: T.medium });
     await expect(answeredRoom.getByRole('button', { name: 'Submit' })).toHaveCount(0);
-    await expect(
-      executionSection(page, HITL_ASK_ANSWER_NODE)
-        .getByText(/Answered/i)
-        .first()
-    ).toBeVisible();
 
     await page.getByRole('button', { name: 'Close' }).click();
-    await openConsoleLogRow(page, HITL_ASK_DECLINE_NODE);
+    await openLegacyLogRow(page, HITL_ASK_DECLINE_NODE);
     const declinedRoom = await waitForRoom(page, HITL_ASK_DECLINE_NODE);
     await expect(declinedRoom.getByText(/Declined/i).first()).toBeVisible({ timeout: T.medium });
     await expect(declinedRoom.getByRole('button', { name: 'Decline' })).toHaveCount(0);
-    await expect(
-      executionSection(page, HITL_ASK_DECLINE_NODE)
-        .getByText(/Declined/i)
-        .first()
-    ).toBeVisible();
   });
 });
 
@@ -468,7 +405,7 @@ test('[P1] [V:hitl.awaiting-focus] Awaiting input focuses the matching Ask', asy
       row => row.node_id === HITL_ASK_NODE && row.status === 'pending'
     )?.tool_use_id;
     expect(requestId).toBeTruthy();
-    await page.getByRole('button', { name: 'Awaiting input', exact: true }).click();
+    await page.getByRole('button', { name: /^Awaiting input/ }).click();
     const expectedId = `run-ask-card-${encodeURIComponent(requestId ?? '')}-room`;
     await expect
       .poll(async () =>
@@ -484,49 +421,6 @@ test('[P1] [V:hitl.awaiting-focus] Awaiting input focuses the matching Ask', asy
   });
 });
 
-test('[P1] [V:hitl.console-mobile-back] Narrow room uses Back without losing Log state', async ({
-  browser,
-  archon,
-}) => {
-  await pageWaitStarter(browser, archon, async page => {
-    await page.setViewportSize(NARROW_VIEWPORT);
-    const started = await archon.runHitlWorkflow();
-    await openRunDetail(page, started.runId);
-    await waitForRunTitle(page, 'e2e-hitl-run');
-    const logPane = page.getByTestId('console-run-log-scroll');
-    await expect(logPane).toBeVisible();
-    await logPane.evaluate((el: HTMLElement) => {
-      el.scrollTop = el.scrollHeight;
-    });
-    const scrollBefore = await logPane.evaluate((el: HTMLElement) => el.scrollTop);
-    expect(scrollBefore).toBeGreaterThan(0);
-    const logOpener = page
-      .locator('button[id^="console-log-"]')
-      .filter({ hasText: HITL_ASK_NODE })
-      .first();
-    const logOpenerId = await logOpener.getAttribute('id');
-    expect(logOpenerId).toBeTruthy();
-    await logOpener.dispatchEvent('click');
-    await waitForRoom(page, HITL_ASK_NODE);
-    await expect(logPane).toBeHidden();
-    expect(await logPane.count()).toBeGreaterThan(0);
-    const room = page.getByRole('region', { name: `${HITL_ASK_NODE} room` });
-    await room.getByLabel('Other').check();
-    await room.getByLabel(/Other answer for/).fill(DRAFT_OTHER);
-    await page.getByRole('button', { name: 'Back' }).click();
-    await expect(page.getByRole('button', { name: 'Log' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(logOpener).toBeVisible();
-    await expect(logPane).toBeVisible();
-    await expect
-      .poll(() => page.evaluate(() => document.activeElement?.id ?? ''))
-      .toBe(logOpenerId ?? '');
-    const scrollAfter = await logPane.evaluate((el: HTMLElement) => el.scrollTop);
-    expect(scrollAfter).toBe(scrollBefore);
-    await expect(executionSection(page, HITL_ASK_NODE).getByLabel(/Other answer for/)).toHaveValue(
-      DRAFT_OTHER
-    );
-  });
-});
 test('[P1] [V:hitl.legacy-mobile-back] Legacy narrow room restores Logs focus and Ask draft', async ({
   browser,
   archon,
@@ -591,51 +485,49 @@ test('[P1] [V:hitl.room-deeplink] Deep-link re-entry and focus restoration work'
 }) => {
   await page.setViewportSize(SPLIT_VIEWPORT);
   const started = await archon.runHitlWorkflow();
-  const opened = await openRunDetail(page, started.runId, HITL_INSPECT_NODE);
+  await openRunDetail(page, started.runId);
+  await waitForRunTitle(page, 'e2e-hitl-run');
+  await openLegacyLogRow(page, HITL_INSPECT_NODE);
   await waitForRoom(page, HITL_INSPECT_NODE);
   const opener = page.getByRole('button', { name: new RegExp(HITL_INSPECT_NODE) }).first();
   await expect(opener).toBeVisible();
   await page.getByRole('button', { name: 'Close' }).click();
-  await expect(panelLocator(page, 'console-run-room')).toHaveCount(0);
+  await expect(panelLocator(page, 'legacy-run-room')).toHaveCount(0);
   await expect(opener).toBeFocused();
 
-  await page.goto(`/console/p/${opened.projectId}/r/${started.runId}`);
+  await openLegacyRunDetail(page, started.runId);
   await waitForRunTitle(page, 'e2e-hitl-run');
-  await expect(panelLocator(page, 'console-run-room')).toHaveCount(0);
+  await expect(panelLocator(page, 'legacy-run-room')).toHaveCount(0);
 
-  await page.goto(
-    `/console/p/${opened.projectId}/r/${started.runId}?node=${encodeURIComponent(HITL_INSPECT_NODE)}`
-  );
+  await openRunDetail(page, started.runId, HITL_INSPECT_NODE);
   await waitForRoom(page, HITL_INSPECT_NODE);
 });
 
-test('[P1] [V:hitl.room-ratio] Reload restores the chosen ratio', async ({ page, archon }) => {
+test('[P1] [V:hitl.room-width-reload] Reload keeps the fixed room width', async ({
+  page,
+  archon,
+}) => {
+  // The room panel has no drag handle or user-adjustable ratio to persist
+  // (packages/web/src/lib/room-split-layout.ts, LEGACY_ROOM_WIDTH_PX) — the
+  // surviving proof is that a reload never corrupts the fixed width, and no
+  // separator ever appears for a user to try dragging.
   await page.setViewportSize(SPLIT_VIEWPORT);
   const started = await archon.runHitlWorkflow();
   await openRunDetail(page, started.runId);
   await waitForRunTitle(page, 'e2e-hitl-run');
-  await openConsoleLogRow(page, HITL_INSPECT_NODE);
-  await waitForRoom(page, HITL_INSPECT_NODE);
-  const separator = page.getByRole('separator', { name: 'Resize node room' });
-  const before = await roomRatio(page, 'console');
-  const box = await separator.boundingBox();
-  expect(box).toBeTruthy();
-  if (!box) throw new Error('missing separator');
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x - 120, box.y + box.height / 2, { steps: 8 });
-  await page.mouse.up();
-  const stored = await roomRatio(page, 'console');
-  expect(stored).toBeGreaterThan(before + 0.02);
-  expect(stored).toBeGreaterThanOrEqual(0.24);
-  expect(stored).toBeLessThanOrEqual(0.6);
+  await openLegacyLogRow(page, HITL_INSPECT_NODE);
+  const room = await waitForRoom(page, HITL_INSPECT_NODE);
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
+  const before = await boxWidth(room, 'Legacy room before reload');
+  expect(Math.abs(before - FIXED_ROOM_WIDTH)).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
 
   await page.reload();
   await waitForRunTitle(page, 'e2e-hitl-run');
-  await openConsoleLogRow(page, HITL_INSPECT_NODE);
-  await waitForRoom(page, HITL_INSPECT_NODE);
-  const restored = await roomRatio(page, 'console');
-  expect(Math.abs(restored - stored)).toBeLessThanOrEqual(RELOAD_RATIO_TOLERANCE);
+  await openLegacyLogRow(page, HITL_INSPECT_NODE);
+  const reopened = await waitForRoom(page, HITL_INSPECT_NODE);
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
+  const after = await boxWidth(reopened, 'Legacy room after reload');
+  expect(Math.abs(after - FIXED_ROOM_WIDTH)).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
 });
 
 test('[P1] [V:hitl.history-pagination] Complete history crosses a cursor boundary', async ({
@@ -649,7 +541,7 @@ test('[P1] [V:hitl.history-pagination] Complete history crosses a cursor boundar
   try {
     await openRunDetail(page, started.runId);
     await waitForRunTitle(page, 'e2e-hitl-long-history');
-    await openConsoleLogRow(page, HITL_LONG_NODE);
+    await openLegacyLogRow(page, HITL_LONG_NODE);
     const room = await waitForRoom(page, HITL_LONG_NODE);
     await expect
       .poll(async () => room.locator('[data-tool-id]').count(), { timeout: T.xlong })
@@ -672,7 +564,7 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
   const started = await requireLongHistoryFixture(page, archon);
   await openRunDetail(page, started.runId);
   await waitForRunTitle(page, 'e2e-hitl-long-history');
-  await openConsoleLogRow(page, HITL_LONG_NODE);
+  await openLegacyLogRow(page, HITL_LONG_NODE);
   const room = await waitForRoom(page, HITL_LONG_NODE);
   await expect
     .poll(async () => room.locator('[data-tool-id]').count(), { timeout: T.xlong })
@@ -736,49 +628,6 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
   });
 });
 
-test('[P1] [V:hitl.console-reply-unavailable] Console Reply rejects a missing parent', async ({
-  page,
-  archon,
-}) => {
-  await page.setViewportSize(SPLIT_VIEWPORT);
-  const started = await archon.runHitlWorkflow();
-  const creates: string[] = [];
-  page.on('request', request => {
-    if (request.method() !== 'POST') return;
-    const url = new URL(request.url());
-    if (url.pathname === '/api/conversations') creates.push(url.pathname);
-  });
-  await openRunDetail(page, started.runId);
-  await waitForRunTitle(page, 'e2e-hitl-run');
-  await expect(
-    page.getByText('Replies need a parent web conversation. This run has none.')
-  ).toBeVisible({ timeout: T.medium });
-  await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
-  expect(creates).toEqual([]);
-});
-
-test('[P1] [V:hitl.console-reply-parent] Console Reply uses the exact parent web conversation', async ({
-  browser,
-  archon,
-}) => {
-  await pageWaitStarter(browser, archon, async page => {
-    await page.setViewportSize(SPLIT_VIEWPORT);
-    const webRun = await archon.runHitlWorkflowViaWeb();
-    const posts: string[] = [];
-    page.on('request', request => {
-      if (request.method() !== 'POST') return;
-      posts.push(new URL(request.url()).pathname);
-    });
-    await openRunDetail(page, webRun.runId);
-    await waitForRunTitle(page, 'e2e-hitl-run');
-    await page.getByLabel('Reply').fill('parent-reply-from-room-spec');
-    await page.getByRole('button', { name: 'Send' }).click();
-    const expected = `/api/conversations/${encodeURIComponent(webRun.conversationId)}/message`;
-    await expect.poll(() => posts.includes(expected)).toBe(true);
-    expect(posts.includes('/api/conversations')).toBe(false);
-  });
-});
-
 test('[P1] [V:hitl.legacy-navigation] Legacy navigation and timeline survive without a parent', async ({
   page,
   archon,
@@ -800,7 +649,7 @@ test('[P1] [V:hitl.legacy-navigation] Legacy navigation and timeline survive wit
   });
 });
 
-test('[P1] [V:hitl.artifacts-room] Console Artifacts keeps the room docked', async ({
+test('[P1] [V:hitl.reply-parent-unavailable] Run chat reply disabled when parent unavailable', async ({
   page,
   archon,
 }) => {
@@ -808,13 +657,36 @@ test('[P1] [V:hitl.artifacts-room] Console Artifacts keeps the room docked', asy
   const started = await archon.runHitlWorkflow();
   await openRunDetail(page, started.runId);
   await waitForRunTitle(page, 'e2e-hitl-run');
-  await openConsoleLogRow(page, HITL_INSPECT_NODE);
-  await waitForRoom(page, HITL_INSPECT_NODE);
-  await page.getByRole('button', { name: 'Artifacts' }).click();
-  await expect(page.getByText(/No artifacts written to disk for this run/i)).toBeVisible({
-    timeout: T.medium,
+  await page.getByRole('tab', { name: 'Chat' }).click();
+  await expect(page.getByRole('form', { name: 'Run conversation composer' })).toBeVisible();
+  const sendButton = page.getByRole('button', { name: 'Send' });
+  await expect(sendButton).toBeDisabled();
+  await expect(
+    page.getByPlaceholder('This run has no parent conversation, so replies cannot be delivered.')
+  ).toBeVisible();
+});
+
+test('[P1] [V:hitl.reply-parent] Run chat reply posts to the exact parent web conversation', async ({
+  browser,
+  archon,
+}) => {
+  await pageWaitStarter(browser, archon, async page => {
+    await page.setViewportSize(SPLIT_VIEWPORT);
+    const webRun = await archon.runHitlWorkflowViaWeb();
+    const posts: string[] = [];
+    page.on('request', request => {
+      if (request.method() !== 'POST') return;
+      posts.push(new URL(request.url()).pathname);
+    });
+    await openRunDetail(page, webRun.runId);
+    await waitForRunTitle(page, 'e2e-hitl-run');
+    await page.getByRole('tab', { name: 'Chat' }).click();
+    await page.getByLabel('Message the run conversation').fill('parent-reply-from-room-spec');
+    await page.getByRole('button', { name: 'Send' }).click();
+    const expected = `/api/conversations/${encodeURIComponent(webRun.conversationId)}/message`;
+    await expect.poll(() => posts.includes(expected)).toBe(true);
+    expect(posts.includes('/api/conversations')).toBe(false);
   });
-  await expect(page.getByRole('region', { name: `${HITL_INSPECT_NODE} room` })).toBeVisible();
 });
 
 /**
@@ -973,9 +845,9 @@ test('[P1] [V:transcript-display.legacy-scroll-desktop] Legacy long-history room
   await pressScrollerEdge(scroller, 'End');
   await expectDocumentContained(page, 'keyboard transcript scroll');
 
-  // Applicable controls survive: header close and the resize handle.
+  // Applicable controls survive: header close. The room has no resize
+  // handle — it is a fixed pixel width with no drag handle.
   await expect(page.getByRole('button', { name: 'Close' })).toBeVisible();
-  await expect(page.getByRole('separator', { name: 'Resize node room' })).toBeVisible();
 });
 
 test('[P1] [V:transcript-display.legacy-scroll-narrow] Legacy narrow room keeps the document fixed', async ({

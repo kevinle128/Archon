@@ -12,11 +12,10 @@ import { E2E_STARTER_WEB_USER, E2E_TEAMMATE_WEB_USER, HITL_ASK_NODE } from './ar
 export type IdentityKind = 'starter' | 'teammate' | 'none';
 
 /**
- * Open a run's detail page (`/console/p/:projectId/r/:runId`).
+ * Open a run's detail page (`/workflows/runs/:runId`).
  *
- * The route needs the run's project (codebase) id. That id is data the run
- * itself produced, so we read it back from the REAL run-detail API rather than
- * threading it through the CLI envelope or mocking it — same principle the whole
+ * The project (codebase) id is read back from the REAL run-detail API rather
+ * than threaded through the CLI envelope or mocked — same principle the whole
  * suite follows: the app's own API/DB stay real, only the AI provider is faked.
  */
 export async function openRunDetail(
@@ -30,12 +29,12 @@ export async function openRunDetail(
   const projectId = detail.run?.codebase_id;
   expect(projectId, `run ${runId} has a project (codebase) id`).toBeTruthy();
   const nodeQuery = nodeId ? `?node=${encodeURIComponent(nodeId)}` : '';
-  await page.goto(`/console/p/${projectId ?? ''}/r/${runId}${nodeQuery}`);
+  await page.goto(`/workflows/runs/${encodeURIComponent(runId)}${nodeQuery}`);
   return { projectId: projectId ?? '' };
 }
 
 export async function openLegacyRunDetail(page: Page, runId: string): Promise<void> {
-  await page.goto(`/legacy/workflows/runs/${encodeURIComponent(runId)}`);
+  await page.goto(`/workflows/runs/${encodeURIComponent(runId)}`);
 }
 
 export async function openNodeRoom(page: Page, nodeId: string): Promise<void> {

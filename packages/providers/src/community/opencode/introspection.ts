@@ -11,7 +11,7 @@
  *   GET /provider/auth  → per-provider auth methods (oauth | api, labeled)
  *
  * Heavyweight by design: acquiring the embedded runtime starts the OpenCode
- * server if it isn't already running. Callers (the console settings card)
+ * server if it isn't already running. Callers (the Settings page card)
  * must hit this on demand — never from a passive settings-page load.
  *
  * Per-user limitation: OpenCode's auth store is server-global (`PUT

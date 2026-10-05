@@ -6,6 +6,10 @@ nodes:
   - id: steer-me
     provider: e2e-fake
     model: e2e-fake-model
+    # delayMs is the ceiling; releaseSignal lets a test end the wait early by
+    # writing the marker file (see e2eFakeReleaseSignalPath) the moment it has
+    # finished the steering it needed the node to stay open for. A test that
+    # never writes the marker still gets the full 30s wait, unchanged.
     prompt: |
-      <<E2E_SCENARIO>>{"interruptible":true,"emitTool":true,"delayMs":30000}<</E2E_SCENARIO>>
+      <<E2E_SCENARIO>>{"interruptible":true,"emitTool":true,"delayMs":30000,"releaseSignal":"queue-guidance-drain"}<</E2E_SCENARIO>>
       $ARGUMENTS

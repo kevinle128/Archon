@@ -1,0 +1,1357 @@
+{
+  "cycles": {
+    "A-c1": {
+      "tag": "A-c1",
+      "st": "c",
+      "sd": "l",
+      "ob": "c",
+      "stop": {
+        "post": 69,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 43,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"3e317a67-9cd4-46d6-a955-4befa466bb2c\",\"state\":\"sent\"}"
+      },
+      "probe": null,
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 76,
+        "stopAgainAt": 131,
+        "sendingAt": 131,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 TaskUpdate todo updated 54ms \u25b6",
+            "\u2713 TaskUpdate todo updated 53ms \u25b6",
+            "\u26a0 Bash echo begin-step-2; end=$((SECONDS+25)); while [ $S interrupted \u00b7",
+            "\u25d0 Bash echo begin-step-2; end=$((SECONDS+25)); while [ $S running \u00b7 2.1s TODO"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 605,
+        "stopAgainAt": 16,
+        "sendingAt": 16,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 TaskUpdate todo updated 54ms \u25b6",
+            "\u2713 TaskUpdate todo updated 53ms \u25b6",
+            "\u26a0 Bash echo begin-step-2; end=$((SECONDS+25)); while [ $S interrupted \u00b7",
+            "\u25d0 Bash echo begin-step-2; end=$((SECONDS+25)); while [ $S running TODO"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 131
+    },
+    "A-c2": {
+      "tag": "A-c2",
+      "st": "l",
+      "sd": "c",
+      "ob": "l",
+      "stop": {
+        "post": 66,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 39,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"50d7fb13-3aee-498d-86ca-a8013561a4cc\",\"state\":\"sent\"}"
+      },
+      "probe": null,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 207,
+        "stopAgainAt": 15,
+        "sendingAt": 15,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 TaskUpdate todo updated 77ms \u25b6",
+            "\u2713 TaskUpdate todo updated 59ms \u25b6",
+            "\u26a0 Bash echo begin-step-3; end=$((SECONDS+25)); while [ $S interrupted \u00b7",
+            "\u25d0 Bash echo begin-step-3; end=$((SECONDS+25)); while [ $S running \u00b7 8.6s TODO"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 208,
+        "stopAgainAt": 700,
+        "sendingAt": 700,
+        "flipBacks": 0,
+        "staleQueued": [
+          [
+            421,
+            "WILL SEND \u00b7 1",
+            "delete \u00b7 A-c2-Q1 queued: reply with the word A-c2ACK then continue with the remaining steps,Send now \u00b7 Cmd/Ctrl+Enter to send \u00b7 1 message will send"
+          ]
+        ],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 TaskUpdate todo updated 77ms \u25b6",
+            "\u2713 TaskUpdate todo updated 59ms \u25b6",
+            "\u26a0 Bash echo begin-step-3; end=$((SECONDS+25)); while [ $S interrupted \u00b7",
+            "\u25d0 Bash echo begin-step-3; end=$((SECONDS+25)); while [ $S running \u00b7 8.8s TODO"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 700
+    },
+    "A-c3": {
+      "tag": "A-c3",
+      "st": "c",
+      "sd": "l",
+      "ob": "c",
+      "stop": {
+        "post": 91,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 49,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"35651fa1-9611-4a1b-b644-7e68bdd8d3d5\",\"state\":\"sent\"}"
+      },
+      "probe": {
+        "clickedRel": 9,
+        "label": "delete \u00b7 A-c3-Q1 queued: reply with the word A-c3ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"9af30397-8f79-4591-b688-2055c13775f6\"}",
+          "200 {\"success\":true}"
+        ]
+      },
+      "C": {
+        "stoppingAt": 37,
+        "sendNowAt": 102,
+        "stopAgainAt": 59,
+        "sendingAt": 59,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 TaskUpdate todo updated 60ms \u25b6",
+            "\u2713 TaskUpdate todo updated 53ms \u25b6",
+            "\u26a0 Bash echo begin-step-4; end=$((SECONDS+25)); while [ $S interrupted \u00b7",
+            "\u25d0 Bash echo begin-step-4; end=$((SECONDS+25)); while [ $S running \u00b7 9.1s TODO"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 1078,
+        "stopAgainAt": 22,
+        "sendingAt": 22,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [[0, 22]],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 TaskUpdate todo updated 60ms \u25b6",
+            "\u2713 TaskUpdate todo updated 53ms \u25b6",
+            "\u26a0 Bash echo begin-step-4; end=$((SECONDS+25)); while [ $S interrupted \u00b7",
+            "\u25d0 Bash echo begin-step-4; end=$((SECONDS+25)); while [ $S running \u00b7 9.6s TODO"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 59
+    },
+    "B-c1": {
+      "tag": "B-c1",
+      "st": "c",
+      "sd": "l",
+      "ob": "c",
+      "stop": {
+        "post": 0
+      },
+      "send": {
+        "post": 25,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"23cb42a8-77b0-4907-952c-b7f087adb84f\",\"state\":\"awaiting_send_now\"}"
+      },
+      "probe": {
+        "clickedRel": 5,
+        "label": "delete \u00b7 B-Q1 queued: reply with BACK1 then continue",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"ae65dadf-5546-4cbb-ba8e-a0b79b03619f\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 1,
+        "stopAgainAt": 29,
+        "sendingAt": 29,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [[0, 29]],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 Bash echo begin-step-3; end=$((SECONDS+25)); while [ $S 25.1s ASSISTANT",
+            "\u2713 TaskUpdate todo updated 56ms \u25b6",
+            "\u2713 TaskUpdate todo updated 56ms ASSISTANT",
+            "\u26a0 Bash echo begin-step-4; end=$((SECONDS+25)); while [ $S interrupted \u00b7"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 1,
+        "stopAgainAt": 29,
+        "sendingAt": 29,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [[0, 29]],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 Bash echo begin-step-3; end=$((SECONDS+25)); while [ $S 25.1s ASSISTANT",
+            "\u2713 TaskUpdate todo updated 56ms \u25b6",
+            "\u2713 TaskUpdate todo updated 56ms ASSISTANT",
+            "\u26a0 Bash echo begin-step-4; end=$((SECONDS+25)); while [ $S interrupted \u00b7"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 29
+    },
+    "cx-c1": {
+      "tag": "cx-c1",
+      "st": "c",
+      "sd": "l",
+      "ob": "c",
+      "stop": {
+        "post": 0
+      },
+      "send": {
+        "post": 32,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"0f83f3c9-fc93-42da-a8f3-7211a94498a0\",\"state\":\"awaiting_send_now\"}"
+      },
+      "probe": {
+        "clickedRel": null,
+        "label": null
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 3,
+        "stopAgainAt": 120,
+        "sendingAt": 237,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [
+          [0, "end"],
+          [120, "end"],
+          [237, "end"]
+        ],
+        "overlap": [],
+        "last": {
+          "bands": "SENDING \u00b7 1",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 shell sleep 25 && echo step-1 exit 0 \u00b7",
+            "\u2013 shell sleep 25 && echo step-2 output unknown \u00b7"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 4,
+        "stopAgainAt": 1,
+        "sendingAt": 1,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [
+          [0, "end"],
+          [1, "end"]
+        ],
+        "overlap": [],
+        "last": {
+          "bands": "SENDING \u00b7 1",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 shell sleep 25 && echo step-1 exit 0 \u00b7",
+            "\u2013 shell sleep 25 && echo step-2 output unknown \u00b7"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 120
+    },
+    "cx-c2": {
+      "tag": "cx-c2",
+      "st": "l",
+      "sd": "c",
+      "ob": "l",
+      "stop": {
+        "post": 27,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 50,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"c6ea7bbd-07a3-472c-8773-03760e12e2bc\",\"state\":\"awaiting_send_now\"}"
+      },
+      "probe": {
+        "clickedRel": 12,
+        "label": "delete \u00b7 CX-Q2 queued note: say CXACK2 once",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"94e85498-70c1-4a6b-b923-fbba971fc8e8\"}",
+          "200 {\"success\":true}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 78,
+        "stopAgainAt": 4,
+        "sendingAt": 4,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "SENDING \u00b7 2",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 shell echo r2 exit 0 \u00b7",
+            "\u2713 shell echo r3 exit 0 \u00b7",
+            "\u2713 shell sleep 25 && echo step-2 exit 0 \u00b7",
+            "\u2713 shell sleep 25 && echo step-3 exit 0 \u00b7"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 79,
+        "stopAgainAt": 48,
+        "sendingAt": 48,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "SENDING \u00b7 2",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 shell echo r2 exit 0 \u00b7",
+            "\u2713 shell echo r3 exit 0 \u00b7",
+            "\u2713 shell sleep 25 && echo step-2 exit 0 \u00b7",
+            "\u2713 shell sleep 25 && echo step-3 exit 0 \u00b7"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 48
+    },
+    "cx2-c1": {
+      "tag": "cx2-c1",
+      "st": "l",
+      "sd": "c",
+      "ob": "l",
+      "stop": {
+        "post": 31,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 22,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"368c91ae-a6a8-4da1-8fef-51087680081f\",\"state\":\"sent\"}"
+      },
+      "probe": {
+        "clickedRel": 257,
+        "label": "delete \u00b7 cx2-c1-Q1 queued: reply with the word cx2-c1ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"27a44edc-7d1c-4af5-953a-ddff22da3dcb\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 169,
+        "stopAgainAt": 27,
+        "sendingAt": 27,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "SENDING \u00b7 1",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 shell sleep 25 && echo step-1 exit 0 \u00b7",
+            "\u2013 shell sleep 25 && echo step-2 output unknown \u00b7"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 170,
+        "stopAgainAt": 267,
+        "sendingAt": 267,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "SENDING \u00b7 1",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 shell sleep 25 && echo step-1 exit 0 \u00b7",
+            "\u2013 shell sleep 25 && echo step-2 output unknown \u00b7"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 267
+    },
+    "cx2-c2": {
+      "tag": "cx2-c2",
+      "st": "c",
+      "sd": "l",
+      "ob": "c",
+      "stop": {
+        "post": 32,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 33,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"49d6de3c-46bf-44f3-8f06-2d428595d20d\",\"state\":\"sent\"}"
+      },
+      "probe": {
+        "clickedRel": 73,
+        "label": "delete \u00b7 cx2-c2-Q1 queued: reply with the word cx2-c2ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"e0d01915-a15d-4382-9dfd-f49cdd0ac693\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 47,
+        "stopAgainAt": 103,
+        "sendingAt": 103,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "SENDING \u00b7 1",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 shell sleep 25 && echo step-1 exit 0 \u00b7",
+            "\u2013 shell sleep 25 && echo step-2 output unknown \u00b7",
+            "\u2013 shell sleep 25 && echo step-2 output unknown \u00b7"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 765,
+        "stopAgainAt": 21,
+        "sendingAt": 21,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "SENDING \u00b7 1",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 shell sleep 25 && echo step-1 exit 0 \u00b7",
+            "\u2013 shell sleep 25 && echo step-2 output unknown \u00b7",
+            "\u2013 shell sleep 25 && echo step-2 output unknown \u00b7"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 103
+    },
+    "ds-c1": {
+      "tag": "ds-c1",
+      "st": "c",
+      "sd": "l",
+      "ob": "c",
+      "stop": {
+        "post": 1079,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 41,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"63676a92-dafa-4d0a-ac53-59408f115346\",\"state\":\"sent\"}"
+      },
+      "probe": null,
+      "C": {
+        "stoppingAt": 42,
+        "sendNowAt": 1088,
+        "stopAgainAt": 124,
+        "sendingAt": 124,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 bash sleep 25 && echo step-1 25.0s THINKING",
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-2 running \u00b7 7.2s message to long-deepseek"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 1254,
+        "stopAgainAt": 16,
+        "sendingAt": 16,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 bash sleep 25 && echo step-1 25.0s THINKING",
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-2 running \u00b7 7.3s message to long-deepseek"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 124
+    },
+    "ds-c2": {
+      "tag": "ds-c2",
+      "st": "l",
+      "sd": "c",
+      "ob": "l",
+      "stop": {
+        "post": 1229,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 36,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"c25e70c2-d1c4-4afd-bcb8-0919a4315b3a\",\"state\":\"sent\"}"
+      },
+      "probe": {
+        "clickedRel": 16,
+        "label": "delete \u00b7 ds-c2-Q1 queued: reply with the word ds-c2ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"a1fb06e8-8ba8-4fbf-9fbb-3998d394d233\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 1361,
+        "stopAgainAt": 20,
+        "sendingAt": 20,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u2713 bash sleep 25 && echo step-2 25.0s \u25b6",
+            "\u26a0 bash sleep 25 && echo step-3 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-3 running \u00b7 8.8s message to long-deepseek"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 1362,
+        "stopAgainAt": 62,
+        "sendingAt": 62,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [[21, 62]],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u2713 bash sleep 25 && echo step-2 25.0s \u25b6",
+            "\u26a0 bash sleep 25 && echo step-3 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-3 running \u00b7 9.3s message to long-deepseek"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 21
+    },
+    "gk-c1": {
+      "tag": "gk-c1",
+      "st": "c",
+      "sd": "l",
+      "ob": "c",
+      "stop": {
+        "post": 3068,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 30,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"a0ee3069-d52a-4844-a0d4-a2510e5541a3\",\"state\":\"sent\"}"
+      },
+      "probe": null,
+      "C": {
+        "stoppingAt": 44,
+        "sendNowAt": 3072,
+        "stopAgainAt": 114,
+        "sendingAt": 114,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7",
+            "\u2013 generic timeout_ms: 20000 output unknown \u00b7"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 3197,
+        "stopAgainAt": 34,
+        "sendingAt": 34,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [[0, 34]],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7",
+            "\u2013 generic timeout_ms: 20000 output unknown \u00b7"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 114
+    },
+    "gk-c2": {
+      "tag": "gk-c2",
+      "st": "l",
+      "sd": "c",
+      "ob": "l",
+      "stop": {
+        "post": 3226,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 31,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"ff8ac17f-2e3f-4a94-9baf-2d9dc224f241\",\"state\":\"sent\"}"
+      },
+      "probe": {
+        "clickedRel": 16,
+        "label": "delete \u00b7 gk-c2-Q1 queued: reply with the word gk-c2ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"4619ab38-0968-475d-a7a9-e3930aca0d17\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 3364,
+        "stopAgainAt": 17,
+        "sendingAt": 17,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7",
+            "\u2013 generic timeout_ms: 20000 output unknown \u00b7",
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": 40,
+        "sendNowAt": 3365,
+        "stopAgainAt": 23,
+        "sendingAt": 23,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7",
+            "\u2013 generic timeout_ms: 20000 output unknown \u00b7",
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 23
+    },
+    "gk2-c1": {
+      "tag": "gk2-c1",
+      "st": "l",
+      "sd": "c",
+      "ob": "l",
+      "stop": {
+        "post": 3053,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 31,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"8b3f6de6-9afc-445c-9606-49851c6093f0\",\"state\":\"sent\"}"
+      },
+      "probe": {
+        "clickedRel": null,
+        "label": null
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 3182,
+        "stopAgainAt": 5,
+        "sendingAt": 5,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7",
+            "\u2013 generic timeout_ms: 20000 output unknown \u00b7"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": 40,
+        "sendNowAt": 3184,
+        "stopAgainAt": 46,
+        "sendingAt": 46,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7",
+            "\u2013 generic timeout_ms: 20000 output unknown \u00b7"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 46
+    },
+    "gk2-c2": {
+      "tag": "gk2-c2",
+      "st": "c",
+      "sd": "l",
+      "ob": "c",
+      "stop": {
+        "post": 2730,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 35,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"17b6bb8d-1787-48dd-a91d-5edce5e92df2\",\"state\":\"sent\"}"
+      },
+      "probe": {
+        "clickedRel": 71,
+        "label": "delete \u00b7 gk2-c2-Q1 queued: reply with the word gk2-c2ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"dabfb881-cb4f-4f4f-b1d6-3b1247f36c7f\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": 40,
+        "sendNowAt": 2734,
+        "stopAgainAt": 99,
+        "sendingAt": 99,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7",
+            "\u2013 generic timeout_ms: 20000 output unknown \u00b7",
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7",
+            "\u25d0 run_terminal_command sleep 25 && echo step-1 running \u00b7 1.5s message to long-grok"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 3209,
+        "stopAgainAt": 17,
+        "sendingAt": 17,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7",
+            "\u2013 generic timeout_ms: 20000 output unknown \u00b7",
+            "\u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7",
+            "\u25d0 run_terminal_command sleep 25 && echo step-1 running message to long-grok"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 99
+    },
+    "ls-c1": {
+      "tag": "ls-c1",
+      "st": "c",
+      "sd": "l",
+      "ob": "c",
+      "stop": {
+        "post": 0
+      },
+      "send": {
+        "post": 25,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"f53397fd-cda0-46a5-993f-cbd86d7f1cf1\",\"state\":\"sent\"}"
+      },
+      "probe": {
+        "clickedRel": 6,
+        "label": "delete \u00b7 LOOP-Q1 queued: reply with LOOPACK then continue",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"1fdf31bf-1c09-4013-a922-6696c696a244\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 1,
+        "stopAgainAt": 34,
+        "sendingAt": 34,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Go to iteration 2",
+          "status": "reading a finished iteration \u00b7 the agent is working in iteration 2",
+          "tools": [
+            "\u26a0 Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND interrupted \u00b7"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 1,
+        "stopAgainAt": 34,
+        "sendingAt": 34,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [[0, 34]],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Go to iteration 2",
+          "status": "reading a finished iteration \u00b7 the agent is working in iteration 2",
+          "tools": [
+            "\u26a0 Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND interrupted \u00b7"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 34
+    },
+    "omp-c1": {
+      "tag": "omp-c1",
+      "st": "c",
+      "sd": "l",
+      "ob": "c",
+      "stop": {
+        "post": 57,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 28,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"d64be95f-1081-460a-82bc-823f5b96cba0\",\"state\":\"sent\"}"
+      },
+      "probe": null,
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 60,
+        "stopAgainAt": 123,
+        "sendingAt": 123,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 bash sleep 25 && echo step-1 25.0s ASSISTANT",
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-2 running \u00b7 9.1s message to long-omp"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 228,
+        "stopAgainAt": 4,
+        "sendingAt": 4,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 bash sleep 25 && echo step-1 25.0s ASSISTANT",
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-2 running \u00b7 9.5s message to long-omp"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 123
+    },
+    "omp-c2": {
+      "tag": "omp-c2",
+      "st": "l",
+      "sd": "c",
+      "ob": "l",
+      "stop": {
+        "post": 53,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 36,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"a36db0bd-9023-467e-9288-a3553cf103f3\",\"state\":\"sent\"}"
+      },
+      "probe": {
+        "clickedRel": 17,
+        "label": "delete \u00b7 omp-c2-Q1 queued: reply with the word omp-c2ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"4ba18588-cc3a-4776-b685-505993b292d0\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 149,
+        "stopAgainAt": 34,
+        "sendingAt": 34,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [[0, 34]],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u2713 bash sleep 25 && echo step-2 25.0s ASSISTANT",
+            "\u26a0 bash sleep 25 && echo step-3 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-3 running \u00b7 10.1s message to long-omp"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": 42,
+        "sendNowAt": 150,
+        "stopAgainAt": 37,
+        "sendingAt": 37,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u2713 bash sleep 25 && echo step-2 25.0s ASSISTANT",
+            "\u26a0 bash sleep 25 && echo step-3 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-3 running \u00b7 10.6s message to long-omp"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 37
+    },
+    "omp2-c1": {
+      "tag": "omp2-c1",
+      "st": "l",
+      "sd": "c",
+      "ob": "l",
+      "stop": {
+        "post": 56,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 24,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"e3064aab-a57f-46c8-a4fa-acd7c25c5c01\",\"state\":\"sent\"}"
+      },
+      "probe": {
+        "clickedRel": 314,
+        "label": "delete \u00b7 omp2-c1-Q1 queued: reply with the word omp2-c1ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"95cdb39c-38cc-41aa-a129-7025c5933618\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 148,
+        "stopAgainAt": 7,
+        "sendingAt": 7,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 bash sleep 25 && echo step-1 25.0s \u25b6",
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-2 running \u00b7 10.1s message to long-omp"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": 40,
+        "sendNowAt": 149,
+        "stopAgainAt": 327,
+        "sendingAt": 327,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u2713 bash sleep 25 && echo step-1 25.0s \u25b6",
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-2 running \u00b7 10.1s message to long-omp"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 327
+    },
+    "omp2-c2": {
+      "tag": "omp2-c2",
+      "st": "c",
+      "sd": "l",
+      "ob": "c",
+      "stop": {
+        "post": 52,
+        "st": 200,
+        "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+      },
+      "send": {
+        "post": 34,
+        "st": 200,
+        "body": "{\"success\":true,\"message_id\":\"8f41e218-fa3e-4027-aa6f-4031e8e4e35d\",\"state\":\"sent\"}"
+      },
+      "probe": {
+        "clickedRel": 74,
+        "label": "delete \u00b7 omp2-c2-Q1 queued: reply with the word omp2-c2ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"f57fa241-e7e6-4a4c-b8c7-ea4ee3096846\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 62,
+        "stopAgainAt": 108,
+        "sendingAt": 108,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u2713 bash sleep 25 && echo step-2 25.0s \u25b6",
+            "\u26a0 bash sleep 25 && echo step-3 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-3 running \u00b7 10.3s message to long-omp"
+          ]
+        }
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 530,
+        "stopAgainAt": 17,
+        "sendingAt": 17,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": [],
+        "last": {
+          "bands": "",
+          "btns": "Stop,Queue \u00b7 Cmd/Ctrl+Enter to send \u00b7 0 messages queued",
+          "status": "agent generating",
+          "tools": [
+            "\u26a0 bash sleep 25 && echo step-2 interrupted \u00b7",
+            "\u2713 bash sleep 25 && echo step-2 25.0s \u25b6",
+            "\u26a0 bash sleep 25 && echo step-3 interrupted \u00b7",
+            "\u25d0 bash sleep 25 && echo step-3 running \u00b7 10.2s message to long-omp"
+          ]
+        }
+      },
+      "observerDeleteGoneMs": 108
+    }
+  },
+  "abandons": {
+    "B": {
+      "post": 11,
+      "C": {
+        "neverSentAt": 529,
+        "pillAt": 2217,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 382,
+        "pillAt": 1005,
+        "missing": []
+      }
+    },
+    "cl": {
+      "post": 3,
+      "C": {
+        "neverSentAt": 696,
+        "pillAt": 937,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 186,
+        "pillAt": 186,
+        "missing": []
+      }
+    },
+    "cx1": {
+      "post": 25,
+      "C": {
+        "neverSentAt": 604,
+        "pillAt": 604,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 515,
+        "pillAt": 1186,
+        "missing": []
+      }
+    },
+    "cx2": {
+      "post": 10,
+      "C": {
+        "neverSentAt": 888,
+        "pillAt": 1407,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 415,
+        "pillAt": 415,
+        "missing": []
+      }
+    },
+    "ds": {
+      "post": 8,
+      "C": {
+        "neverSentAt": 500,
+        "pillAt": 1135,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 491,
+        "pillAt": 2132,
+        "missing": []
+      }
+    },
+    "gk": {
+      "post": 4,
+      "C": {
+        "neverSentAt": 215,
+        "pillAt": 814,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 856,
+        "pillAt": 1748,
+        "missing": []
+      }
+    },
+    "gk2": {
+      "post": 10,
+      "C": {
+        "neverSentAt": 55,
+        "pillAt": 1710,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 653,
+        "pillAt": 653,
+        "missing": []
+      }
+    },
+    "lp": {
+      "post": 3,
+      "C": {
+        "neverSentAt": 616,
+        "pillAt": 616,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 217,
+        "pillAt": 217,
+        "missing": []
+      }
+    },
+    "omp": {
+      "post": 8,
+      "C": {
+        "neverSentAt": 371,
+        "pillAt": 1971,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 843,
+        "pillAt": 843,
+        "missing": []
+      }
+    },
+    "omp2": {
+      "post": 4,
+      "C": {
+        "neverSentAt": 579,
+        "pillAt": 579,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 483,
+        "pillAt": 483,
+        "missing": []
+      }
+    }
+  },
+  "withdrawRemoved": {
+    "c55acfa8-77f4-4daa-837f-f7641c60f9d1": true,
+    "94e85498-70c1-4a6b-b923-fbba971fc8e8": false,
+    "9af30397-8f79-4591-b688-2055c13775f6": false,
+    "ae65dadf-5546-4cbb-ba8e-a0b79b03619f": false,
+    "a1fb06e8-8ba8-4fbf-9fbb-3998d394d233": false,
+    "4ba18588-cc3a-4776-b685-505993b292d0": false,
+    "4619ab38-0968-475d-a7a9-e3930aca0d17": false,
+    "1fdf31bf-1c09-4013-a922-6696c696a244": false,
+    "27a44edc-7d1c-4af5-953a-ddff22da3dcb": false,
+    "e0d01915-a15d-4382-9dfd-f49cdd0ac693": false,
+    "95cdb39c-38cc-41aa-a129-7025c5933618": false,
+    "f57fa241-e7e6-4a4c-b8c7-ea4ee3096846": false,
+    "dabfb881-cb4f-4f4f-b1d6-3b1247f36c7f": false
+  },
+  "focus": {
+    "FX_console_keyboardStop": "117ms last-row -> 3238ms BODY (Legacy Send now at 2050ms)",
+    "AX_legacy_keyboardStop": "66ms last-row -> 2922ms BODY (Console Send now at 1683ms)",
+    "LS2_iteration_boundary": "textarea -> BODY at 61861ms (Console) / 64594ms (Legacy), prev element disconnected",
+    "coldLoad": {
+      "B-s5": "BODY/BODY",
+      "I1-s7": "BODY/BODY",
+      "F-s8": "DIV[data-last-row]:focus-visible in both shells",
+      "LF-s8": "BODY/BODY"
+    }
+  }
+}

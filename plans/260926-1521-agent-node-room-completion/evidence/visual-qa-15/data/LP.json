@@ -1,0 +1,93 @@
+{
+  "R": "3c23ec842ed84fc9d87debbe7e014d63",
+  "b0": {
+    "c": {
+      "sel": null,
+      "ta": "LP draft c",
+      "go": [],
+      "fin": false,
+      "focus": "TEXTAREA"
+    },
+    "l": {
+      "sel": null,
+      "ta": "LP draft l",
+      "go": [],
+      "fin": false,
+      "focus": "TEXTAREA"
+    }
+  },
+  "b1": {
+    "c": {
+      "sel": "Iteration 2 · running",
+      "ta": "LP draft c",
+      "go": [],
+      "fin": false,
+      "focus": "TEXTAREA"
+    },
+    "l": {
+      "sel": "Iteration 2 · running",
+      "ta": "LP draft l",
+      "go": [],
+      "fin": false,
+      "focus": "TEXTAREA"
+    }
+  },
+  "f1": {
+    "c": [
+      [1790747722146, "nosel|LP draft c|TEXTAREA"],
+      [1790747732166, "Iteration 2 · running|LP draft c|TEXTAREA"]
+    ],
+    "l": [
+      [1790747722145, "nosel|LP draft l|TEXTAREA"],
+      [1790747732127, "Iteration 2 · running|LP draft l|TEXTAREA"]
+    ]
+  },
+  "p1": {
+    "c": {
+      "sel": "Iteration 1",
+      "ta": null,
+      "go": ["Go to iteration 2"],
+      "fin": true,
+      "focus": "BODY"
+    },
+    "l": {
+      "sel": "Iteration 1",
+      "ta": null,
+      "go": ["Go to iteration 2"],
+      "fin": true,
+      "focus": "BODY"
+    }
+  },
+  "b2": {
+    "c": {
+      "sel": "Iteration 1",
+      "ta": null,
+      "go": ["Go to iteration 3"],
+      "fin": true,
+      "focus": "BODY"
+    },
+    "l": {
+      "sel": "Iteration 1",
+      "ta": null,
+      "go": ["Go to iteration 3"],
+      "fin": true,
+      "focus": "BODY"
+    }
+  },
+  "afterGo": {
+    "c": {
+      "sel": "Iteration 3 · running",
+      "ta": "LP draft c",
+      "go": [],
+      "fin": false,
+      "focus": "TEXTAREA"
+    },
+    "l": {
+      "sel": "Iteration 3 · running",
+      "ta": "LP draft l",
+      "go": [],
+      "fin": false,
+      "focus": "TEXTAREA"
+    }
+  }
+}

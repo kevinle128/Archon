@@ -1,0 +1,49 @@
+{
+  "tag": "c01",
+  "sender": "c",
+  "observer": "l",
+  "R": "e26aa9ac440725f7dac4c2552ba43644",
+  "shotBefore": "/Users/dale/orca/Archon/.claude/worktrees/agent-a4b1bef9c53f33b3c/plans/260926-1521-agent-node-room-completion/evidence/soft-inject/scripts/shots/app-console-c01-before.png",
+  "click": { "status": 200, "resolvedMs": 24 },
+  "shotSent": "/Users/dale/orca/Archon/.claude/worktrees/agent-a4b1bef9c53f33b3c/plans/260926-1521-agent-node-room-completion/evidence/soft-inject/scripts/shots/app-console-c01-sent.png",
+  "status": "completed",
+  "frames": {
+    "c": [
+      [1790764543110, "Running|Stop,Queue|0|0||||||"],
+      [1790764543143, "Running|Stop,Queue|1|1|QUEUED · 1|ONE||||"],
+      [1790764543169, "Running|Stop,Queue|2|2|QUEUED · 2|ONE,TWO||||"],
+      [1790764544451, "Running|Stop,Queue|1|1|QUEUED · 1|ONE,TWO*||||"],
+      [1790764544894, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:none|||"],
+      [1790764552902, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:delivered|||"],
+      [1790764597144, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered|||"],
+      [1790764598047, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:none|||"],
+      [1790764600156, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:delivered|||"],
+      [1790764600860, "Completed||0|0|||TWO:delivered,ONE:delivered|||"]
+    ],
+    "l": [
+      [1790764543110, "Running|Stop,Queue|0|0||||||"],
+      [1790764543869, "Running|Stop,Queue|2|2|QUEUED · 2|ONE,TWO||||"],
+      [1790764544801, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:none|||"],
+      [1790764552902, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:delivered|||"],
+      [1790764597139, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered|||"],
+      [1790764598905, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:none|||"],
+      [1790764600151, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:delivered|||"],
+      [1790764600793, "Completed||0|0|||TWO:delivered,ONE:delivered|||"]
+    ]
+  },
+  "shotEnd": "/Users/dale/orca/Archon/.claude/worktrees/agent-a4b1bef9c53f33b3c/plans/260926-1521-agent-node-room-completion/evidence/soft-inject/scripts/shots/app-console-c01-end.png",
+  "clickedAt": 1790764544420,
+  "queue": [
+    ["c01 ONE keep", "delivered"],
+    ["c01 TWO: end", "delivered"]
+  ],
+  "rowCount": 25,
+  "attempts": ["9803067f-83ed-46c9-a68c-cd8d8de3265f"],
+  "promptRows": 1,
+  "operatorRows": [
+    [6, "c01 TWO: end y"],
+    [22, "c01 ONE keep t"]
+  ],
+  "ackInAgentText": 3,
+  "toolRowsAfterInjection": 9
+}

@@ -164,6 +164,18 @@ mock.module('@archon/workflows/event-emitter', () => ({
         return mockUnsubscribe;
       }
     ),
+    // No run in this test suite is ever "live" in-process — every CLI
+    // invocation here is its own fresh process — so abandonWorkflow's
+    // no-live-executor-here check always reads as true.
+    getConversationId: mock(() => undefined),
+    emit: mock(() => undefined),
+    // Unused by any test today — every abandon test here relies on the
+    // default empty `findNonTerminalNodes()` mock, so the orphaned-node
+    // write path (which registers/unregisters a run's conversation for the
+    // span of its emits) never runs — present so a future test that gives
+    // `findNonTerminalNodes` a non-empty result doesn't throw.
+    registerRun: mock(() => undefined),
+    unregisterRun: mock(() => undefined),
   })),
 }));
 
@@ -307,6 +319,7 @@ mock.module('@archon/core/db/workflows', () => ({
 mock.module('@archon/core/db/workflow-events', () => ({
   listWorkflowEvents: mock(() => Promise.resolve([])),
   createWorkflowEvent: mock(() => Promise.resolve()),
+  findNonTerminalNodes: mock(() => Promise.resolve([])),
 }));
 
 mock.module('@archon/core/db/users', () => ({

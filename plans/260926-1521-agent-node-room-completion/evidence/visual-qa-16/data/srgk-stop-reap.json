@@ -1,0 +1,122 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793850392,
+  "end": 1790793859397,
+  "procs": [
+    {
+      "pid": 7637,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790793850392,
+      "last": 1790793856336
+    },
+    {
+      "pid": 9482,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793850392,
+      "last": 1790793855418
+    },
+    {
+      "pid": 9907,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 9908,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 9911,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 9913,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 9917,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 9918,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 9921,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 13534,
+      "cmd": "zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>n",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 13810,
+      "cmd": "sleep 25",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 11138,
+      "cmd": "node context7-mcp",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 11182,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 10407,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793850392,
+      "last": 1790793851780
+    },
+    {
+      "pid": 13972,
+      "cmd": "<defunct>",
+      "first": 1790793852097,
+      "last": 1790793852415
+    },
+    {
+      "pid": 13986,
+      "cmd": "<defunct>",
+      "first": 1790793852747,
+      "last": 1790793852747
+    },
+    {
+      "pid": 14017,
+      "cmd": "<defunct>",
+      "first": 1790793853083,
+      "last": 1790793853430
+    },
+    {
+      "pid": 14027,
+      "cmd": "<defunct>",
+      "first": 1790793853746,
+      "last": 1790793853746
+    },
+    {
+      "pid": 14080,
+      "cmd": "<defunct>",
+      "first": 1790793854140,
+      "last": 1790793854466
+    }
+  ]
+}

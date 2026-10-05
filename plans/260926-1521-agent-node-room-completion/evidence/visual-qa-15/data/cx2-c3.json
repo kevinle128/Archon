@@ -1,0 +1,14 @@
+{
+  "R": "9147f4315007dbcf54c05c4e1b09a6eb",
+  "stop": { "clicked": 1790747314542, "post": 34, "sendNowSeen": 36, "http": 200 },
+  "probe": {
+    "send": { "clicked": 1790747315489, "sendResolved": 1790747315525, "st": 200 },
+    "probeMs": 22,
+    "offeredAtProbe": 1,
+    "probeClickedAfterResolve": 44,
+    "del": {
+      "http": 200,
+      "body": "{\"success\":true,\"message_id\":\"222d79ad-fb6f-43e5-ac14-314c317daae0\"}"
+    }
+  }
+}

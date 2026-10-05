@@ -246,6 +246,32 @@ describe('mapWorkflowEvent — interaction_resolved', () => {
   });
 });
 
+describe('mapWorkflowEvent — node_turn_interrupted', () => {
+  test('maps to its own wire type carrying only run and node identity', () => {
+    const event: WorkflowEmitterEvent = {
+      type: 'node_turn_interrupted',
+      runId: 'r1',
+      nodeId: 'review',
+    };
+    const e = JSON.parse(mapWorkflowEvent(event) ?? '{}') as Record<string, unknown>;
+    expect(e).toMatchObject({ type: 'node_turn_interrupted', runId: 'r1', nodeId: 'review' });
+    expectNoAskPayloadLeak(e);
+  });
+});
+
+describe('mapWorkflowEvent — node_turn_started', () => {
+  test('maps to its own wire type carrying only run and node identity', () => {
+    const event: WorkflowEmitterEvent = {
+      type: 'node_turn_started',
+      runId: 'r1',
+      nodeId: 'review',
+    };
+    const e = JSON.parse(mapWorkflowEvent(event) ?? '{}') as Record<string, unknown>;
+    expect(e).toMatchObject({ type: 'node_turn_started', runId: 'r1', nodeId: 'review' });
+    expectNoAskPayloadLeak(e);
+  });
+});
+
 describe('mapWorkflowEvent — DAG node events', () => {
   test('maps live node_started events with runtime AI metadata', () => {
     const event: WorkflowEmitterEvent = {

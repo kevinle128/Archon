@@ -1,0 +1,93 @@
+{
+  "post": 3,
+  "res": { "success": true, "message": "Abandoned workflow: vq12-loop-steer" },
+  "C": {
+    "neverSentAt": 615,
+    "pillAt": 615,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND 31.4s THINKING",
+        "– Bash echo begin-b; end=$((SECONDS+30)); while [ $SECOND output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -264,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ls2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        256,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ls2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [615, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "L": {
+    "neverSentAt": 347,
+    "pillAt": 347,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND 31.4s THINKING",
+        "– Bash echo begin-b; end=$((SECONDS+30)); while [ $SECOND output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -263,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ls2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        56,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ls2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        176,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ls2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [347, "NEVER SENT · 1", "", "Failed", 1],
+      [3355, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "raf": {
+    "c": [
+      [-300, "Running||delete,Stop,Queue|TA|QUEUED · 1||0"],
+      [586, "Running||||NEVER SENT · 1|node finished · none of this was sent|1"],
+      [595, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1"]
+    ],
+    "l": [
+      [-300, "Running||delete,Stop,Queue|TA|QUEUED · 1||0"],
+      [347, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1"]
+    ]
+  }
+}

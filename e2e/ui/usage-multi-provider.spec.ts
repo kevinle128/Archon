@@ -22,9 +22,11 @@ test('[P1] a run spanning two providers shows a per-provider cost breakdown', as
   await openCostForRun(page, runId);
 
   // Both providers appear as their own groups...
-  await expect(page.getByText('anthropic').first()).toBeVisible({ timeout: T.medium });
-  await expect(page.getByText('openai').first()).toBeVisible();
+  await expect(page.locator('#set-usage').getByText('anthropic').first()).toBeVisible({
+    timeout: T.medium,
+  });
+  await expect(page.locator('#set-usage').getByText('openai').first()).toBeVisible();
   // ...each carrying its own reported cost.
-  await expect(page.getByText('$0.30').first()).toBeVisible();
-  await expect(page.getByText('$0.20').first()).toBeVisible();
+  await expect(page.locator('#set-usage').getByText('$0.30').first()).toBeVisible();
+  await expect(page.locator('#set-usage').getByText('$0.20').first()).toBeVisible();
 });

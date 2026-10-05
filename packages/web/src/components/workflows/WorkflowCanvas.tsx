@@ -222,7 +222,7 @@ export function WorkflowCanvas({
         if (targetNode?.data.when) {
           return {
             ...edge,
-            style: { stroke: 'var(--node-prompt)', strokeDasharray: '6 4' },
+            style: { stroke: 'var(--node-prompt)', strokeDasharray: '6 4', strokeWidth: 1 },
             type: 'smoothstep' as const,
           };
         }
@@ -553,11 +553,15 @@ export function WorkflowCanvas({
         panOnDrag
         selectionOnDrag={false}
         fitView
-        colorMode="dark"
         className="bg-background"
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--border)" />
-        <MiniMap className="!bg-surface !border-border" maskColor="rgba(0,0,0,0.6)" />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
+        <MiniMap
+          className="!rounded-[10px] !border !border-border !bg-surface"
+          style={{ width: 144, height: 96 }}
+          nodeColor="var(--text-tertiary)"
+          nodeStrokeWidth={0}
+        />
         <Controls />
       </ReactFlow>
 
@@ -574,7 +578,7 @@ export function WorkflowCanvas({
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 min-w-[140px] rounded-md border border-border bg-surface-elevated py-1 shadow-md"
+          className="fixed z-50 min-w-[140px] rounded-[10px] border border-border bg-surface-elevated py-1"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button

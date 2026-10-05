@@ -1,0 +1,1275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>W5 Aurora Glass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --mid: #050912;
+    --ink: #f4f8f6;
+    --ink2: #d5e0de;
+    --lime: #c6ff3d;
+    --lime-text: #d6ff7a;
+    --tang: #ffa25e;
+    --tang-text: #ffc294;
+    --ui: "Outfit", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+    --mono: "Fira Code", ui-monospace, "SF Mono", Menlo, monospace;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+    --cell: min(3.2vw, 5.5vh, 50px);
+    --gap: calc(var(--cell) * .14);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--mid); }
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    font-family: var(--ui);
+    color: var(--ink);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
+
+  /* ---------- Aurora backdrop ---------- */
+  #aurora { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; z-index: 0; display: block; }
+  .grain, .vignette { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
+  .vignette { background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(3, 5, 10, .55) 100%); }
+  .grain {
+    opacity: .07;
+    background-size: 180px 180px;
+  }
+
+  /* ---------- Glass recipe ----------
+     The frosted layer lives on ::before, not on the element itself, so glass
+     children (logo tiles, node cards) still see the aurora through their own
+     backdrop-filter instead of a flattened parent. --tint is the readable
+     backing that keeps text at AA over the brightest aurora bloom. */
+  .glass { position: relative; z-index: 0; }
+  .glass::before {
+    content: "";
+    position: absolute; inset: 0; z-index: -1;
+    border-radius: inherit;
+    background: var(--tint, rgba(6, 11, 19, .66));
+    -webkit-backdrop-filter: blur(var(--blur, 26px)) saturate(170%);
+    backdrop-filter: blur(var(--blur, 26px)) saturate(170%);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, .15),
+      inset 0 1px 0 rgba(255, 255, 255, .42),
+      inset 0 -1px 0 rgba(255, 255, 255, .05);
+  }
+  .glass::after {
+    content: "";
+    position: absolute; inset: 0; z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, 0) 32%);
+  }
+
+  /* ---------- Shell ---------- */
+  .shell {
+    position: relative; z-index: 2;
+    height: 100vh; height: 100dvh;
+    min-height: 660px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(380px, .95fr);
+    gap: 26px;
+    padding: 26px 30px 112px;
+  }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    --tint: radial-gradient(70% 62% at 24% 40%, rgba(6, 11, 19, .16), rgba(6, 11, 19, .5) 58%, rgba(6, 11, 19, .64) 100%);
+    --blur: 20px;
+    border-radius: 36px;
+    padding: clamp(22px, 2.6vw, 38px);
+    display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden;
+    box-shadow: 0 40px 80px -40px rgba(0, 0, 0, .75);
+  }
+  .hero-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .crumb { font-weight: 500; font-size: 15px; color: var(--ink2); letter-spacing: .01em; }
+  .crumb b { color: var(--ink); font-weight: 600; }
+  .crumb span { opacity: .8; margin: 0 6px; }
+  .hero-top .spacer { flex: 1; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 999px;
+    font-size: 13px; font-weight: 500; color: var(--ink);
+    background: rgba(6, 11, 19, .55);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16), inset 0 1px 0 rgba(255, 255, 255, .22);
+    white-space: nowrap;
+  }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 10px var(--lime); }
+  .chip.live .dot { animation: beat 1.4s ease-in-out infinite; }
+  .chip.mono { font-family: var(--mono); font-size: 12px; }
+
+  .hero-mid {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    gap: clamp(20px, 2.6vw, 40px); align-items: center;
+    margin-top: clamp(14px, 2.6vh, 30px);
+  }
+  .side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .side h2 { margin: 0; font-size: clamp(20px, 1.75vw, 26px); line-height: 1.18; font-weight: 700; letter-spacing: -.01em; }
+  .side h2 em { font-style: normal; color: var(--lime-text); }
+  .side p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink2); max-width: 36ch; }
+  .now {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-radius: 14px;
+    background: rgba(6, 11, 19, .62);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14);
+    font-size: 14px; font-weight: 500; color: var(--ink);
+    min-height: 42px;
+  }
+  .now .now-dot { flex: none; width: 10px; height: 10px; border-radius: 3px; background: var(--lime); box-shadow: 0 0 12px var(--lime); }
+  .now[data-mode="waiting"] .now-dot { background: var(--tang); box-shadow: 0 0 12px var(--tang); }
+  .now span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pins { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+  .pins-title { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink2); margin-top: 4px; }
+  .pins li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 12px; border-radius: 12px;
+    background: rgba(6, 11, 19, .5);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
+    font-family: var(--mono); font-size: 13px; color: var(--ink);
+    white-space: nowrap; overflow: hidden;
+  }
+  .pins li .tag { margin-left: auto; font-family: var(--ui); font-size: 12px; font-weight: 600; color: var(--lime-text); }
+  .pins li .sq { flex: none; width: 8px; height: 8px; border-radius: 2px; background: rgba(255, 255, 255, .35); }
+  .pins li.on .sq { background: var(--lime); box-shadow: 0 0 8px var(--lime); }
+
+  .wordmark {
+    margin: auto 0 0;
+    padding-top: 10px;
+    font-weight: 800;
+    font-size: clamp(64px, min(17vh, 11.5vw), 176px);
+    line-height: .84;
+    letter-spacing: -.05em;
+    color: #fff;
+    text-shadow: 0 2px 30px rgba(0, 0, 0, .35);
+    display: flex; align-items: flex-end; gap: .12em;
+  }
+  .wordmark small {
+    font-size: 14px; font-weight: 500; letter-spacing: .02em; line-height: 1.4;
+    color: var(--ink2); padding-bottom: .9em; max-width: 16ch;
+  }
+
+  /* ---------- Pixel A: 49 glass tiles ---------- */
+  .logo {
+    --px: -400px; --py: -400px;
+    display: grid;
+    grid-template-columns: repeat(7, var(--cell));
+    grid-template-rows: repeat(7, var(--cell));
+    gap: var(--gap);
+    position: relative;
+  }
+  .tile { position: relative; border-radius: calc(var(--cell) * .24); }
+  .tile.on {
+    background-color: rgba(255, 255, 255, .14);
+    background-image: linear-gradient(145deg, rgba(255, 255, 255, .46) 0%, rgba(255, 255, 255, .12) 46%, rgba(255, 255, 255, .22) 100%);
+    -webkit-backdrop-filter: blur(3px) saturate(280%) brightness(1.35);
+    backdrop-filter: blur(3px) saturate(280%) brightness(1.35);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, .52),
+      inset 0 1.5px 0 rgba(255, 255, 255, .95),
+      inset 1.5px 0 0 rgba(255, 255, 255, .32),
+      inset 0 -12px 16px -12px rgba(0, 16, 24, .55),
+      0 14px 24px -14px rgba(0, 0, 0, .75);
+  }
+  .tile.on::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: radial-gradient(calc(var(--cell) * 3.4) circle at
+      calc(var(--px) - var(--c) * (var(--cell) + var(--gap)))
+      calc(var(--py) - var(--r) * (var(--cell) + var(--gap))),
+      rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 70%);
+  }
+  .tile.off {
+    /* Empty cells stay barely-there so the filled A reads clearly against the aurora. */
+    background: rgba(0, 10, 16, .18);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05);
+  }
+  .runner {
+    --k: 0;
+    grid-row: 4; grid-column: 3;
+    z-index: 2;
+    border-radius: calc(var(--cell) * .24);
+    background: radial-gradient(circle at 34% 28%, #f5ffd6 0%, #c6ff3d 46%, #97dd1c 100%);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, .8),
+      0 0 16px 3px rgba(198, 255, 61, .75),
+      0 0 60px 14px rgba(198, 255, 61, .32);
+    transform: translateX(calc(var(--k) * (var(--cell) + var(--gap))));
+    transition: transform .24s cubic-bezier(.34, 1.56, .64, 1);
+  }
+  .runner.hold { animation: breathe 1.8s ease-in-out infinite; }
+  .logo.wave .tile.on { animation: glint 1.1s var(--ease) both; animation-delay: calc(var(--d) * 55ms); }
+
+  /* ---------- Run panel ---------- */
+  .run {
+    --tint: rgba(6, 11, 19, .6);
+    --blur: 30px;
+    border-radius: 32px;
+    padding: 20px 20px 14px;
+    display: flex; flex-direction: column; gap: 12px;
+    min-height: 0;
+    box-shadow: 0 40px 80px -40px rgba(0, 0, 0, .75);
+  }
+  .run-top { display: flex; align-items: center; gap: 10px; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--ink2); }
+  .run-top .spacer { flex: 1; }
+  .state-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 5px 12px 5px 10px; border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+    background: rgba(198, 255, 61, .14); color: var(--lime-text);
+    box-shadow: inset 0 0 0 1px rgba(198, 255, 61, .42);
+  }
+  .state-pill i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .state-pill[data-s="running"] i { animation: beat 1.2s ease-in-out infinite; }
+  .state-pill[data-s="waiting"] { background: rgba(255, 162, 94, .16); color: var(--tang-text); box-shadow: inset 0 0 0 1px rgba(255, 162, 94, .5); }
+  .state-pill[data-s="queued"] { background: rgba(255, 255, 255, .08); color: var(--ink2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .2); }
+  .run-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .run-title h1 { margin: 0; font-size: clamp(26px, 2.3vw, 34px); font-weight: 700; letter-spacing: -.02em; font-family: var(--ui); }
+  .run-title .step { font-size: 14px; color: var(--ink2); font-weight: 500; }
+  .input-line {
+    display: flex; align-items: center; gap: 10px; min-width: 0;
+    font-family: var(--mono); font-size: 13px; color: var(--ink);
+  }
+  .input-line .lbl { font-family: var(--ui); font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink2); }
+  .input-line code { font-family: inherit; padding: 4px 10px; border-radius: 8px; background: rgba(6, 11, 19, .6); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .segs { list-style: none; margin: 2px 0 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+  .segs li { height: 6px; border-radius: 99px; background: rgba(255, 255, 255, .1); position: relative; overflow: hidden; }
+  .segs li[data-s="done"] { background: var(--k); box-shadow: 0 0 10px rgba(var(--kr), .6); }
+  .segs li[data-s="running"], .segs li[data-s="waiting"] { background: rgba(var(--kr), .35); }
+  .segs li[data-s="running"]::after {
+    content: ""; position: absolute; inset: 0; width: 45%;
+    background: linear-gradient(90deg, transparent, var(--k), transparent);
+    animation: sweep 1.2s linear infinite;
+  }
+  .segs li[data-s="waiting"] { background: var(--tang); animation: beat 1.6s ease-in-out infinite; }
+  .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .legend li { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12px; color: var(--kt); }
+  .legend .glyph { width: 22px; height: 22px; border-radius: 7px; }
+  .legend .glyph svg { width: 14px; height: 14px; }
+
+  .stage {
+    position: relative;
+    flex: 1; min-height: 0;
+    overflow-x: hidden; overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, .25) transparent;
+    margin: 0 -8px; padding: 6px 8px 0;
+  }
+  .spacer-y { width: 1px; }
+  .foot { font-size: 12px; color: var(--ink2); display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+  /* ---------- Kind palette ---------- */
+  [data-kind="bash"]    { --k: #ffa25e; --kr: 255, 162, 94;  --kt: #ffc294; }
+  [data-kind="prompt"]  { --k: #c6ff3d; --kr: 198, 255, 61;  --kt: #d6ff7a; }
+  [data-kind="loop"]    { --k: #3ee8c8; --kr: 62, 232, 200;  --kt: #7cf2dc; }
+  [data-kind="command"] { --k: #9fd6ff; --kr: 159, 214, 255; --kt: #c4e6ff; }
+  .glyph {
+    flex: none; display: grid; place-items: center;
+    width: 30px; height: 30px; border-radius: 9px;
+    color: var(--k);
+    background: rgba(var(--kr), .14);
+    box-shadow: inset 0 0 0 1px rgba(var(--kr), .5), inset 0 1px 0 rgba(255, 255, 255, .25);
+  }
+  .glyph svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---------- Node cards ---------- */
+  .node {
+    --tint: rgba(6, 11, 19, .74);
+    --blur: 16px;
+    position: absolute; top: 6px; left: 8px; right: 8px;
+    border-radius: 20px;
+    transform-origin: 50% 0;
+    transition: transform .7s var(--ease), box-shadow .45s ease;
+    box-shadow: 0 18px 36px -22px rgba(0, 0, 0, .8);
+    will-change: transform;
+  }
+  .node[data-state="pending"] { --tint: rgba(5, 9, 16, .84); }
+  .node[data-state="running"] {
+    box-shadow: 0 0 0 1px rgba(var(--kr), .6), 0 20px 50px -18px rgba(var(--kr), .5), 0 24px 50px -24px rgba(0, 0, 0, .8);
+  }
+  .node[data-state="waiting"] {
+    box-shadow: 0 0 0 1px rgba(255, 162, 94, .7), 0 20px 56px -16px rgba(255, 162, 94, .55), 0 24px 50px -24px rgba(0, 0, 0, .8);
+  }
+  .nh { position: relative; display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 14px 0 11px; }
+  .node[data-state="running"] .nh::after {
+    content: ""; position: absolute; top: 0; left: 0; height: 2px; width: 34%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--k), transparent);
+    animation: sweep 1.5s linear infinite;
+  }
+  .nn { font-family: var(--mono); font-size: 14px; font-weight: 500; color: var(--ink); white-space: nowrap; }
+  .nk {
+    font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--kt); padding: 3px 7px; border-radius: 6px;
+    background: rgba(var(--kr), .12);
+  }
+  .ns { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--ink2); white-space: nowrap; min-width: 0; }
+  .ns .sum { overflow: hidden; text-overflow: ellipsis; }
+  .ns .dur { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); font-family: var(--mono); font-size: 12.5px; }
+  .ns .dur svg { width: 14px; height: 14px; stroke: var(--kt); fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+  .ns sup { font-size: 10px; color: var(--ink2); }
+  .ns .run-lbl { color: var(--kt); }
+  .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(var(--kr), .3); border-top-color: var(--k); animation: spin .8s linear infinite; }
+  .pill-wait {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 4px 11px 4px 9px; border-radius: 999px;
+    background: rgba(255, 162, 94, .16);
+    box-shadow: inset 0 0 0 1px rgba(255, 162, 94, .6);
+    color: var(--tang-text); font-weight: 600;
+  }
+  .pill-wait i { width: 8px; height: 8px; border-radius: 50%; background: var(--tang); animation: beat 1.4s ease-in-out infinite; }
+  .node[data-state="pending"] .nn { color: var(--ink2); }
+  .node[data-state="pending"] .glyph { background: rgba(var(--kr), .08); box-shadow: inset 0 0 0 1px rgba(var(--kr), .3); }
+
+  .nb { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .55s var(--ease); }
+  .node.open .nb { grid-template-rows: 1fr; }
+  .nb-clip { min-height: 0; overflow: hidden; }
+  .nb-pad { padding: 0 16px 16px 52px; display: flex; flex-direction: column; gap: 10px; }
+  .nb-pad { opacity: 0; transition: opacity .2s ease; }
+  .node.open .nb-pad { opacity: 1; transition: opacity .35s ease .12s; }
+  .msg { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink); }
+  .msg.you {
+    align-self: flex-start;
+    font-size: 14px;
+    padding: 8px 12px; border-radius: 14px 14px 14px 5px;
+    background: rgba(198, 255, 61, .1);
+    box-shadow: inset 0 0 0 1px rgba(198, 255, 61, .38);
+  }
+  .msg.you b { display: block; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--lime-text); margin-bottom: 2px; }
+  .typing::after {
+    content: ""; display: inline-block; width: .5em; height: 1.05em; margin-left: 3px; vertical-align: -.16em;
+    border-radius: 2px; background: var(--k, var(--lime));
+    animation: caret 1s steps(1) infinite;
+  }
+  .tool {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 12px;
+    background: rgba(255, 255, 255, .05);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .13);
+    font-family: var(--mono); font-size: 13px; color: var(--ink);
+    min-width: 0;
+  }
+  .tool b { font-weight: 500; color: #7cf2dc; }
+  .tool code { font-family: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .tool .t-st { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; font-family: var(--ui); font-size: 12px; color: var(--ink2); }
+  .tool .t-st svg { width: 14px; height: 14px; stroke: var(--lime); fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+  .tool .spin { --kr: 124, 242, 220; --k: #7cf2dc; }
+  .log { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.55; color: var(--ink2); white-space: pre-wrap; word-break: break-word; }
+  .log.ok { color: var(--kt); }
+  .iters { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
+  .iters .ring { display: flex; gap: 6px; }
+  .iters .ring i {
+    width: 26px; height: 26px; border-radius: 8px;
+    display: grid; place-items: center; font-style: normal;
+    font-family: var(--mono); font-size: 12px; color: var(--ink2);
+    box-shadow: inset 0 0 0 1px rgba(62, 232, 200, .35);
+  }
+  .iters .ring i.on { background: #3ee8c8; color: #04201b; box-shadow: 0 0 14px rgba(62, 232, 200, .6); }
+  .iters .ring i.cur { box-shadow: inset 0 0 0 2px #3ee8c8; color: var(--ink); }
+
+  /* ---------- Waiting question card ---------- */
+  .ask {
+    --tint: linear-gradient(160deg, rgba(34, 16, 6, .84), rgba(10, 10, 14, .86));
+    --blur: 22px;
+    position: absolute; left: 8px; width: calc(100% - 16px); top: 0;
+    z-index: 80;
+    border-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255, 162, 94, .55), 0 26px 60px -20px rgba(255, 140, 60, .5), 0 30px 60px -30px rgba(0, 0, 0, .9);
+  }
+  .ask-in { padding: 16px 18px 16px; }
+  .ask-top { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--tang-text); }
+  .ask-top i { width: 8px; height: 8px; border-radius: 2px; background: var(--tang); box-shadow: 0 0 10px var(--tang); }
+  .ask-q { margin: 6px 0 12px; font-size: clamp(18px, 1.5vw, 21px); font-weight: 600; line-height: 1.3; letter-spacing: -.005em; }
+  .ask form { display: flex; gap: 8px; }
+  .ask input {
+    flex: 1; min-width: 0; height: 44px; padding: 0 14px;
+    border: 0; border-radius: 13px;
+    background: rgba(0, 0, 0, .42);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .2), inset 0 2px 6px rgba(0, 0, 0, .35);
+    color: var(--ink); font-size: 15px;
+  }
+  .ask input::placeholder { color: #b9c5c3; }
+  .ask input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--tang), inset 0 2px 6px rgba(0, 0, 0, .35); }
+  .send {
+    flex: none; height: 44px; padding: 0 18px; border: 0; border-radius: 13px; cursor: pointer;
+    font-weight: 700; font-size: 15px; color: #0c1604;
+    background: linear-gradient(180deg, #dcff8a, #c6ff3d 55%, #a9e82a);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 8px 22px -8px rgba(198, 255, 61, .8);
+    transition: transform .15s ease;
+  }
+  .send:hover { transform: translateY(-1px); }
+  .send:active { transform: translateY(1px); }
+  .auto { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 13px; color: var(--ink2); }
+  .auto .bar { width: 64px; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, .14); overflow: hidden; flex: none; }
+  .auto .bar i { display: block; height: 100%; background: var(--tang); transform-origin: 0 50%; transform: scaleX(0); }
+
+  /* ---------- Dock ---------- */
+  .dock {
+    --tint: rgba(6, 11, 19, .58);
+    --blur: 24px;
+    position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 30;
+    transform: translateX(-50%);
+    height: 86px;
+    display: flex; align-items: flex-end; gap: 4px;
+    padding: 0 12px 8px;
+    border-radius: 28px;
+    box-shadow: 0 30px 60px -24px rgba(0, 0, 0, .8);
+  }
+  .dock-item {
+    --s: 1;
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    padding: 0 5px; border: 0; background: none; cursor: pointer;
+    color: var(--ink); font-size: 12px; font-weight: 500;
+    position: relative;
+  }
+  .dock-ico {
+    width: calc(48px * var(--s)); height: calc(48px * var(--s));
+    border-radius: calc(15px * var(--s));
+    display: grid; place-items: center;
+    background: linear-gradient(160deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, .05));
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .24), inset 0 1px 0 rgba(255, 255, 255, .55), 0 10px 20px -10px rgba(0, 0, 0, .7);
+    transition: width .14s ease-out, height .14s ease-out, border-radius .14s ease-out;
+  }
+  .dock-ico svg { width: 46%; height: 46%; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .dock-item[aria-current="page"] .dock-ico {
+    color: #0c1604;
+    background: linear-gradient(170deg, #e2ff9c, #c6ff3d 50%, #a2e124);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85), inset 0 0 0 1px rgba(255, 255, 255, .5), 0 0 26px -2px rgba(198, 255, 61, .7);
+  }
+  .dock-item[aria-current="page"] .dock-lbl { color: var(--lime-text); font-weight: 600; }
+  .dock-item[aria-current="page"]::after {
+    content: ""; position: absolute; bottom: -5px; left: 50%; width: 4px; height: 4px; margin-left: -2px;
+    border-radius: 50%; background: var(--lime); box-shadow: 0 0 6px var(--lime);
+  }
+  .dock-item:focus-visible { outline: none; }
+  .dock-item:focus-visible .dock-ico { outline: 2px solid var(--lime); outline-offset: 3px; }
+  .dock-sep { width: 1px; align-self: stretch; margin: 16px 4px 12px; background: rgba(255, 255, 255, .16); }
+
+  .caption {
+    --tint: rgba(6, 11, 19, .6);
+    --blur: 18px;
+    position: fixed; left: 22px; bottom: calc(26px + env(safe-area-inset-bottom, 0px)); z-index: 30;
+    padding: 8px 14px 8px 10px; border-radius: 999px;
+    display: flex; align-items: center; gap: 9px;
+    font-size: 13px; font-weight: 600; letter-spacing: .02em;
+  }
+  .caption .mini { display: grid; grid-template-columns: repeat(2, 7px); gap: 2px; }
+  .caption .mini i { width: 7px; height: 7px; border-radius: 2px; background: rgba(255, 255, 255, .5); }
+  .caption .mini i:nth-child(2) { background: var(--lime); }
+  .caption .mini i:nth-child(3) { background: #3ee8c8; }
+  .caption .mini i:nth-child(4) { background: var(--tang); }
+
+  /* ---------- Keyframes ---------- */
+  @keyframes beat { 0%, 100% { transform: scale(1); } 50% { transform: scale(.6); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes caret { 50% { opacity: 0; } }
+  @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(320%); } }
+  @keyframes breathe {
+    0%, 100% { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .8), 0 0 12px 2px rgba(198, 255, 61, .55), 0 0 40px 8px rgba(198, 255, 61, .2); }
+    50% { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .9), 0 0 22px 6px rgba(198, 255, 61, .9), 0 0 80px 22px rgba(198, 255, 61, .42); }
+  }
+  @keyframes glint {
+    0% { background-color: rgba(198, 255, 61, 0); }
+    35% { background-color: rgba(198, 255, 61, .45); }
+    100% { background-color: rgba(198, 255, 61, 0); }
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 1200px), (max-height: 830px) {
+    .pins, .pins-title { display: none; }
+  }
+  @media (max-width: 1100px) {
+    .shell { gap: 18px; padding-left: 18px; padding-right: 18px; }
+    .side p { display: none; }
+    .wordmark small { display: none; }
+  }
+  @media (max-height: 760px) {
+    .legend { display: none; }
+    .shell { padding-top: 18px; }
+  }
+  @media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; height: auto; min-height: 100dvh; }
+    .run { min-height: 640px; }
+    .hero-mid { grid-template-columns: 1fr; }
+    .caption { display: none; }
+  }
+
+  /* ---------- Fallbacks ---------- */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass::before { background: #0b1720; }
+    .hero::before { background: #0b1720; }
+    .tile.on { background-color: #2c6f6a; }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .glass::before, .hero::before {
+      -webkit-backdrop-filter: none; backdrop-filter: none;
+      background: #0b1720;
+    }
+    .node[data-state="pending"]::before { background: #08111a; }
+    .ask::before { background: #1d1109; }
+    .tile.on {
+      -webkit-backdrop-filter: none; backdrop-filter: none;
+      background-color: #2c6f6a;
+    }
+    .tile.off { background: #0e1d26; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+  .rm *, .rm *::before, .rm *::after { animation: none !important; transition: none !important; }
+</style>
+</head>
+<body>
+<canvas id="aurora" aria-hidden="true"></canvas>
+<div class="vignette" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<main class="shell">
+  <section class="hero glass" aria-label="Archon">
+    <div class="hero-top">
+      <div class="crumb"><b>Workflows</b><span>/</span>ak-feature</div>
+      <div class="spacer"></div>
+      <span class="chip live"><span class="dot" aria-hidden="true"></span>1 live run</span>
+      <span class="chip mono" id="started">Started 17:48 ICT</span>
+    </div>
+
+    <div class="hero-mid">
+      <div class="logo" id="logo" role="img" aria-label="Archon pixel A logo"></div>
+      <div class="side">
+        <h2>Agents run the steps. <em>You make the calls.</em></h2>
+        <p>Governed workflows that mix shell steps, AI agents and human gates, with every decision on the record.</p>
+        <div class="now" id="now" aria-live="polite"><span class="now-dot" aria-hidden="true"></span><span id="nowText">Starting ak-feature</span></div>
+        <div class="pins-title">Pinned workflows</div>
+        <ul class="pins">
+          <li class="on"><span class="sq" aria-hidden="true"></span>ak-feature<span class="tag">Live</span></li>
+          <li><span class="sq" aria-hidden="true"></span>archon-fix-github-issue</li>
+          <li><span class="sq" aria-hidden="true"></span>archon-idea-to-pr</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="wordmark">Archon<small>Governed agentic automation</small></div>
+  </section>
+
+  <section class="run glass" aria-label="Live run of ak-feature">
+    <div class="run-top">
+      <span class="eyebrow">Live run</span>
+      <span class="spacer"></span>
+      <span class="state-pill" id="runState" data-s="queued" aria-live="polite"><i aria-hidden="true"></i><span>Starting</span></span>
+    </div>
+    <div class="run-title">
+      <h1>ak-feature</h1>
+      <span class="step" id="stepText">Node 0 of 6</span>
+    </div>
+    <div class="input-line"><span class="lbl">Input</span><code>kevinle128/Archon issue #266</code></div>
+    <ol class="segs" id="segs" aria-hidden="true"></ol>
+    <ul class="legend" id="legend" aria-label="Node kinds"></ul>
+
+    <div class="stage" id="stage">
+      <div class="spacer-y" id="spacerY"></div>
+      <section class="ask glass" id="ask" hidden aria-label="Human input needed">
+        <div class="ask-in" id="askIn">
+          <div class="ask-top"><i aria-hidden="true"></i>plan is waiting for you</div>
+          <p class="ask-q">Should the plan include a data migration?</p>
+          <form id="askForm" autocomplete="off">
+            <input id="askInput" type="text" placeholder="Type your answer" aria-label="Your answer">
+            <button type="submit" class="send">Send answer</button>
+          </form>
+          <div class="auto"><span class="bar" aria-hidden="true"><i id="askBar"></i></span><span id="askAuto">Sending a sample answer in 4s</span></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="foot"><span>* Sample durations. Simulated run: answer yourself, or it auto-sends.</span></div>
+  </section>
+</main>
+
+<nav class="dock glass" id="dock" aria-label="Primary">
+  <button class="dock-item" type="button" data-nav="Chat">
+    <span class="dock-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v10H9l-5 4z"/><path d="M8.5 10.5h7"/></svg></span>
+    <span class="dock-lbl">Chat</span>
+  </button>
+  <button class="dock-item" type="button" data-nav="Runs">
+    <span class="dock-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M10 8.5l5 3.5-5 3.5z"/></svg></span>
+    <span class="dock-lbl">Runs</span>
+  </button>
+  <button class="dock-item" type="button" data-nav="Workflows" aria-current="page">
+    <span class="dock-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="6" height="6" rx="1.6"/><rect x="15" y="4" width="6" height="6" rx="1.6"/><rect x="9" y="15" width="6" height="6" rx="1.6"/><path d="M6 10v2.5h12V10M12 12.5V15"/></svg></span>
+    <span class="dock-lbl">Workflows</span>
+  </button>
+  <button class="dock-item" type="button" data-nav="Builder">
+    <span class="dock-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l4.5-1 10-10a2.1 2.1 0 00-3-3l-10 10z"/><path d="M13.5 7.5l3 3"/></svg></span>
+    <span class="dock-lbl">Builder</span>
+  </button>
+  <span class="dock-sep" aria-hidden="true"></span>
+  <button class="dock-item" type="button" data-nav="Settings">
+    <span class="dock-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></span>
+    <span class="dock-lbl">Settings</span>
+  </button>
+</nav>
+
+<div class="caption glass" aria-hidden="true"><span class="mini"><i></i><i></i><i></i><i></i></span>W5 Aurora Glass</div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ---------- Motion preference ---------- */
+  const rmQuery = matchMedia('(prefers-reduced-motion: reduce)');
+  let reduced = rmQuery.matches;
+  const applyRM = () => {
+    document.documentElement.classList.toggle('rm', reduced);
+    drawAurora();
+  };
+  if (rmQuery.addEventListener) rmQuery.addEventListener('change', (e) => { reduced = e.matches; applyRM(); });
+
+  /* ---------- Pixel A: 49 glass tiles + runner ---------- */
+  const PATTERN = ['..###..', '.##.##.', '##...##', '#######', '##...##', '##...##', '##...##'];
+  const logo = document.getElementById('logo');
+  PATTERN.forEach((row, r) => {
+    [...row].forEach((ch, c) => {
+      const t = document.createElement('span');
+      t.className = 'tile ' + (ch === '#' ? 'on' : 'off');
+      // Explicit placement: the runner is explicitly placed too, and auto-placed
+      // tiles would otherwise skip its cell and shift the whole A.
+      t.style.gridRow = String(r + 1);
+      t.style.gridColumn = String(c + 1);
+      t.style.setProperty('--r', r);
+      t.style.setProperty('--c', c);
+      t.style.setProperty('--d', r + c);
+      logo.appendChild(t);
+    });
+  });
+  const runnerEl = document.createElement('span');
+  runnerEl.className = 'runner';
+  logo.appendChild(runnerEl);
+
+  logo.addEventListener('pointermove', (e) => {
+    const b = logo.getBoundingClientRect();
+    logo.style.setProperty('--px', (e.clientX - b.left) + 'px');
+    logo.style.setProperty('--py', (e.clientY - b.top) + 'px');
+  });
+  logo.addEventListener('pointerleave', () => {
+    logo.style.setProperty('--px', '-400px');
+    logo.style.setProperty('--py', '-400px');
+  });
+
+  /* Runner walks crossbar columns 2, 3, 4 while an agent works. */
+  const RUN_PATH = [2, 3, 4, 3];
+  const runner = { mode: 'idle', idx: 0, acc: 0 };
+  function setRunnerCol(col) { runnerEl.style.setProperty('--k', col - 2); }
+  function setRunnerMode(mode) {
+    runner.mode = mode;
+    runnerEl.classList.toggle('hold', mode === 'waiting');
+    if (mode === 'waiting') setRunnerCol(4);
+    else if (mode === 'idle') setRunnerCol(2);
+    else if (reduced) setRunnerCol(3);
+  }
+  function runnerTick(dt) {
+    if (runner.mode !== 'running' || reduced) return;
+    runner.acc += dt;
+    if (runner.acc >= 340) {
+      runner.acc = 0;
+      runner.idx = (runner.idx + 1) % RUN_PATH.length;
+      setRunnerCol(RUN_PATH[runner.idx]);
+    }
+  }
+  function wave() {
+    if (reduced) return;
+    logo.classList.remove('wave');
+    void logo.offsetWidth;
+    logo.classList.add('wave');
+  }
+
+  /* ---------- Aurora canvas ---------- */
+  const cv = document.getElementById('aurora');
+  const ctx = cv.getContext('2d');
+  // Blobs are soft, so render at a fraction of the capped device pixel ratio.
+  const RENDER_SCALE = 0.4;
+  let CW = 1, CH = 1;
+  const BLOBS = [
+    { rgb: [5, 66, 80],    a: .95, r: .80, x: .18, y: .86, ax: .12, ay: .08, fx: .031, fy: .024, p: 0.0 },
+    { rgb: [12, 138, 128], a: .70, r: .56, x: .30, y: .26, ax: .17, ay: .12, fx: .027, fy: .035, p: 1.3 },
+    { rgb: [168, 255, 36], a: .50, r: .34, x: .22, y: .42, ax: .15, ay: .16, fx: .039, fy: .030, p: 2.1, key: 'lime' },
+    { rgb: [255, 118, 38], a: .66, r: .40, x: .80, y: .18, ax: .12, ay: .14, fx: .028, fy: .037, p: 3.7, key: 'tang' },
+    { rgb: [255, 104, 30], a: .42, r: .30, x: .10, y: .98, ax: .12, ay: .05, fx: .026, fy: .033, p: 2.9, key: 'tang' },
+    { rgb: [18, 196, 168], a: .46, r: .42, x: .74, y: .80, ax: .16, ay: .10, fx: .034, fy: .029, p: 4.4 },
+    { rgb: [255, 176, 72], a: .30, r: .26, x: .54, y: .56, ax: .22, ay: .18, fx: .044, fy: .047, p: 5.2, key: 'tang' },
+    { rgb: [190, 255, 90], a: .28, r: .22, x: .88, y: .62, ax: .10, ay: .22, fx: .050, fy: .036, p: 0.8, key: 'lime' }
+  ];
+  const AUR_MODES = {
+    idle:    { speed: .6,  lime: 1,    tang: 1 },
+    running: { speed: 1,   lime: 1.1,  tang: .9 },
+    waiting: { speed: .25, lime: .72,  tang: 1.55 },
+    done:    { speed: 1.6, lime: 1.75, tang: .85 }
+  };
+  const aur = { phase: 0, speed: .6, lime: 1, tang: 1, target: AUR_MODES.idle, frame: 0 };
+  function setAurora(mode) {
+    aur.target = AUR_MODES[mode];
+    if (reduced) { aur.speed = aur.target.speed; aur.lime = aur.target.lime; aur.tang = aur.target.tang; drawAurora(); }
+  }
+  function sizeCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    CW = Math.max(1, Math.round(window.innerWidth * dpr * RENDER_SCALE));
+    CH = Math.max(1, Math.round(window.innerHeight * dpr * RENDER_SCALE));
+    cv.width = CW; cv.height = CH;
+    drawAurora();
+  }
+  function drawAurora() {
+    const TAU = Math.PI * 2;
+    const m = Math.max(CW, CH);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#050912';
+    ctx.fillRect(0, 0, CW, CH);
+    ctx.globalCompositeOperation = 'screen';
+    for (const b of BLOBS) {
+      const boost = b.key === 'lime' ? aur.lime : b.key === 'tang' ? aur.tang : 1;
+      const a = Math.min(.95, b.a * boost);
+      const x = (b.x + b.ax * Math.sin(aur.phase * b.fx * TAU + b.p)) * CW;
+      const y = (b.y + b.ay * Math.cos(aur.phase * b.fy * TAU + b.p * 1.7)) * CH;
+      const rad = b.r * m * (1 + .08 * Math.sin(aur.phase * .05 * TAU + b.p));
+      const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+      const [r0, g0, b0] = b.rgb;
+      g.addColorStop(0, `rgba(${r0},${g0},${b0},${a})`);
+      g.addColorStop(.45, `rgba(${r0},${g0},${b0},${a * .42})`);
+      g.addColorStop(1, `rgba(${r0},${g0},${b0},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, CW, CH);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  function auroraTick(dt) {
+    const k = Math.min(1, dt / 700);
+    aur.speed += (aur.target.speed - aur.speed) * k;
+    aur.lime += (aur.target.lime - aur.lime) * k;
+    aur.tang += (aur.target.tang - aur.tang) * k;
+    aur.phase += (dt / 1000) * aur.speed;
+    // Every second frame is plenty for a slow aurora and halves backdrop re-blur work.
+    aur.frame = (aur.frame + 1) % 2;
+    if (aur.frame === 0) drawAurora();
+  }
+
+  /* ---------- Simulation clock (advances only inside the rAF loop) ---------- */
+  let clock = 0;
+  let timers = [];
+  function wait(ms) { return new Promise((res) => timers.push({ at: clock + ms, res })); }
+  function flushTimers() {
+    if (!timers.length) return;
+    const due = timers.filter((t) => t.at <= clock);
+    if (!due.length) return;
+    timers = timers.filter((t) => t.at > clock);
+    due.forEach((t) => t.res());
+  }
+
+  /* ---------- Run model ---------- */
+  const GLYPH = {
+    bash: '<svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M7.5 10l3 2.2-3 2.2M12.5 15h4"/></svg>',
+    prompt: '<svg viewBox="0 0 24 24"><path d="M12 3.5c.7 4.3 4.2 7.8 8.5 8.5-4.3.7-7.8 4.2-8.5 8.5-.7-4.3-4.2-7.8-8.5-8.5 4.3-.7 7.8-4.2 8.5-8.5z"/></svg>',
+    loop: '<svg viewBox="0 0 24 24"><path d="M17 3l3 3-3 3"/><path d="M4 11.5V10a4 4 0 014-4h12"/><path d="M7 21l-3-3 3-3"/><path d="M20 12.5V14a4 4 0 01-4 4H4"/></svg>',
+    command: '<svg viewBox="0 0 24 24"><path d="M12 2.8l9.2 9.2-9.2 9.2L2.8 12z"/><path d="M9.8 9.6l2.4 2.4-2.4 2.4M13.2 14.6h2"/></svg>'
+  };
+  const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  const NODES = [
+    { id: 'setup', kind: 'bash', dur: '6.7s' },
+    { id: 'plan', kind: 'prompt', dur: '48.3s' },
+    { id: 'verify-and-fix-plan', kind: 'prompt', dur: '21.6s' },
+    { id: 'build-ralph-prd', kind: 'prompt', dur: '17.2s' },
+    { id: 'ralph-loop-run', kind: 'loop', dur: '3m 04s' },
+    { id: 'create-pull-request', kind: 'command', dur: '9.1s' }
+  ];
+
+  const stage = document.getElementById('stage');
+  const spacerY = document.getElementById('spacerY');
+  const segsEl = document.getElementById('segs');
+  const legendEl = document.getElementById('legend');
+  const runStateEl = document.getElementById('runState');
+  const stepText = document.getElementById('stepText');
+  const nowEl = document.getElementById('now');
+  const nowText = document.getElementById('nowText');
+  const startedEl = document.getElementById('started');
+
+  ['bash', 'prompt', 'loop', 'command'].forEach((k) => {
+    const li = document.createElement('li');
+    li.dataset.kind = k;
+    li.innerHTML = `<span class="glyph" aria-hidden="true">${GLYPH[k]}</span>${k}`;
+    legendEl.appendChild(li);
+  });
+
+  const nodes = NODES.map((d, i) => {
+    const el = document.createElement('article');
+    el.className = 'node glass';
+    el.dataset.kind = d.kind;
+    el.dataset.state = 'pending';
+    el.setAttribute('aria-label', `${d.id}, ${d.kind} node`);
+    el.innerHTML =
+      `<header class="nh"><span class="glyph" aria-hidden="true">${GLYPH[d.kind]}</span>` +
+      `<span class="nn">${d.id}</span><span class="nk">${d.kind}</span><span class="ns"></span></header>` +
+      `<div class="nb"><div class="nb-clip"><div class="nb-pad"></div></div></div>`;
+    stage.insertBefore(el, spacerY);
+    const seg = document.createElement('li');
+    seg.dataset.kind = d.kind;
+    segsEl.appendChild(seg);
+    return {
+      ...d, i, el, seg,
+      head: el.querySelector('.nh'),
+      ns: el.querySelector('.ns'),
+      pad: el.querySelector('.nb-pad'),
+      state: 'pending', open: false, sum: ''
+    };
+  });
+
+  function statusHTML(n) {
+    switch (n.state) {
+      case 'running': return '<span class="spin" aria-hidden="true"></span><span class="run-lbl">Running</span>';
+      case 'waiting': return '<span class="pill-wait"><i aria-hidden="true"></i>Waiting for you</span>';
+      case 'done': return `<span class="sum">${n.sum}</span><span class="dur">${CHECK}${n.dur}<sup>*</sup></span>`;
+      default: return '<span>Queued</span>';
+    }
+  }
+  function setRunState(s, label) {
+    runStateEl.dataset.s = s;
+    runStateEl.querySelector('span').textContent = label;
+  }
+  function setNow(text, mode) {
+    nowText.textContent = text;
+    nowEl.dataset.mode = mode || '';
+  }
+  function setState(n, s, quiet) {
+    n.state = s;
+    n.el.dataset.state = s;
+    n.seg.dataset.s = s;
+    n.ns.innerHTML = statusHTML(n);
+    if (quiet) return;
+    const active = nodes.find((x) => x.state === 'running' || x.state === 'waiting');
+    if (active) {
+      stepText.textContent = `Node ${active.i + 1} of ${nodes.length}`;
+      if (active.state === 'waiting') {
+        setRunState('waiting', 'Waiting for you');
+        setNow(`${active.id} needs your answer`, 'waiting');
+        setRunnerMode('waiting');
+        setAurora('waiting');
+      } else {
+        setRunState('running', 'Running');
+        setNow(`${active.id} is running (${active.kind})`, 'running');
+        setRunnerMode('running');
+        setAurora('running');
+      }
+    }
+    layout();
+  }
+
+  /* ---------- Spatial stack layout ----------
+     Done cards stack at the top, the active card sits in focus, the question
+     card slots in right under the waiting node, and queued cards wait in a deck.
+     When the stage is short, finished cards compress into a peeking pile. */
+  const GAP = 10, PEEK = 13, DONE_PEEK = 9;
+  const askEl = document.getElementById('ask');
+  const askIn = document.getElementById('askIn');
+  const A = { open: false, h: 0, top: 0, node: null, resolve: null, t: 0, paused: false };
+
+  function cardH(n) { return n.head.offsetHeight + (n.open ? n.pad.offsetHeight : 0); }
+  function place(n, y, s, z) {
+    n.el.style.transform = `translate3d(0, ${y.toFixed(1)}px, 0) scale(${s.toFixed(3)})`;
+    n.el.style.zIndex = String(z);
+  }
+  function layout() {
+    const H = stage.clientHeight - 6;
+    const done = nodes.filter((n) => n.state === 'done');
+    const act = nodes.filter((n) => n.state === 'running' || n.state === 'waiting');
+    const pend = nodes.filter((n) => n.state === 'pending');
+    const hs = new Map(nodes.map((n) => [n, cardH(n)]));
+    const deckH = pend.length ? hs.get(pend[0]) + (pend.length - 1) * PEEK : 0;
+    let natural = deckH;
+    done.forEach((n) => { natural += hs.get(n) + GAP; });
+    act.forEach((n) => { natural += hs.get(n) + GAP; });
+    if (A.open) natural += A.h + GAP;
+    const compress = natural > H && done.length > 1;
+
+    let y = 0;
+    if (compress) {
+      done.forEach((n, i) => {
+        const back = done.length - 1 - i;
+        place(n, i * DONE_PEEK, 1 - back * .035, 10 + i);
+      });
+      y = (done.length - 1) * DONE_PEEK + hs.get(done[done.length - 1]) + GAP;
+    } else {
+      done.forEach((n, i) => { place(n, y, 1, 10 + i); y += hs.get(n) + GAP; });
+    }
+    let focusTop = -1;
+    act.forEach((n) => {
+      focusTop = y;
+      place(n, y, 1, 60);
+      y += hs.get(n) + GAP;
+      if (n.state === 'waiting' && A.open) {
+        A.top = y + 6;
+        askEl.style.top = A.top + 'px';
+        y += A.h + GAP;
+      }
+    });
+    pend.forEach((n, i) => { place(n, y + i * PEEK, 1 - i * .035, 40 - i); });
+    spacerY.style.height = Math.max(0, y + deckH) + 'px';
+    if (focusTop >= 0) follow(focusTop, y - GAP + 6, H);
+  }
+  /* Keep the working card (and its question) in view when the stage is short. */
+  function follow(top, bottom, H) {
+    const cur = stage.scrollTop;
+    let target = cur;
+    if (bottom - top > H || bottom > cur + H) target = bottom - H;
+    if (bottom - top <= H && top < target) target = top;
+    if (top < cur && bottom - top <= H) target = top;
+    target = Math.max(0, Math.round(target));
+    if (Math.abs(target - cur) > 2) stage.scrollTo({ top: target, behavior: reduced ? 'auto' : 'smooth' });
+  }
+
+  /* ---------- Streaming helpers ---------- */
+  async function stream(el, text, cps) {
+    // Reduced motion: show the whole text at once, but keep the cycle's pacing.
+    if (reduced) { el.textContent = text; layout(); await wait((text.length * 1000) / cps); return; }
+    el.classList.add('typing');
+    const t0 = clock;
+    let shown = 0;
+    while (shown < text.length) {
+      await wait(16);
+      const next = Math.min(text.length, Math.floor(((clock - t0) * cps) / 1000));
+      if (next !== shown) { shown = next; el.textContent = text.slice(0, shown); layout(); }
+    }
+    el.classList.remove('typing');
+    layout();
+  }
+  function add(n, tag, cls) {
+    const el = document.createElement(tag);
+    el.className = cls;
+    n.pad.appendChild(el);
+    return el;
+  }
+  const say = (n, text) => stream(add(n, 'p', 'msg'), text, 58);
+  const log = (n, text, ok) => stream(add(n, 'p', ok ? 'log ok' : 'log'), text, 95);
+  function you(n, text) {
+    const el = add(n, 'p', 'msg you');
+    el.innerHTML = '<b>You answered</b>';
+    el.appendChild(document.createTextNode(text));
+    layout();
+  }
+  function tool(n, verb, path) {
+    const el = add(n, 'div', 'tool');
+    el.innerHTML = `<b>${verb}</b><code>${path}</code><span class="t-st"><span class="spin" aria-hidden="true"></span>reading</span>`;
+    layout();
+    return el;
+  }
+  function toolDone(el) { el.querySelector('.t-st').innerHTML = `${CHECK}done`; }
+  function loopUI(n) {
+    const el = add(n, 'div', 'iters');
+    el.innerHTML = '<span class="ring"><i>1</i><i>2</i><i>3</i></span><span class="it-t">Iteration 1 of 3</span>';
+    const cells = el.querySelectorAll('.ring i');
+    const label = el.querySelector('.it-t');
+    layout();
+    return {
+      set(k) {
+        cells.forEach((c, j) => { c.className = j < k - 1 ? 'on' : j === k - 1 ? 'cur' : ''; });
+        label.textContent = `Iteration ${k} of 3, story ${k} of 3`;
+      },
+      done() {
+        cells.forEach((c) => { c.className = 'on'; });
+        label.textContent = 'All 3 stories pass their checks';
+      }
+    };
+  }
+
+  async function begin(n) {
+    n.pad.innerHTML = '';
+    n.open = true;
+    n.el.classList.add('open');
+    setState(n, 'running');
+    await wait(reduced ? 60 : 340);
+  }
+  function finish(n, sum) {
+    n.sum = sum;
+    n.open = false;
+    n.el.classList.remove('open');
+    setState(n, 'done');
+  }
+
+  /* ---------- Waiting question: morphs out of the waiting pill ---------- */
+  const askForm = document.getElementById('askForm');
+  const askInput = document.getElementById('askInput');
+  const askBar = document.getElementById('askBar');
+  const askAuto = document.getElementById('askAuto');
+  const AUTO_MS = 3600;
+  const SAMPLE_ANSWER = 'Yes, add a reversible migration for the new table.';
+
+  function rectIn(el) {
+    const sr = stage.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    return { left: r.left - sr.left, top: r.top - sr.top + stage.scrollTop, width: r.width, height: r.height };
+  }
+  function cancelAskAnims() {
+    askEl.getAnimations().forEach((a) => a.cancel());
+    askIn.getAnimations().forEach((a) => a.cancel());
+  }
+  function openAsk(n) {
+    cancelAskAnims();
+    A.open = true; A.node = n; A.t = 0; A.paused = false;
+    askInput.value = '';
+    askBar.style.transform = 'scaleX(0)';
+    askAuto.textContent = `Sending a sample answer in ${Math.ceil(AUTO_MS / 1000)}s`;
+    askEl.hidden = false;
+    A.h = askEl.offsetHeight;
+    layout();
+    const pill = n.el.querySelector('.pill-wait');
+    if (reduced || !pill || !askEl.animate) return;
+    const from = rectIn(pill);
+    const to = { left: askEl.offsetLeft, top: A.top, width: askEl.offsetWidth, height: A.h };
+    askEl.animate([
+      { left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px', borderRadius: '999px' },
+      { left: to.left + 'px', top: to.top + 'px', width: to.width + 'px', height: to.height + 'px', borderRadius: '24px' }
+    ], { duration: 680, easing: 'cubic-bezier(.2, .9, .22, 1)' });
+    askIn.animate([
+      { opacity: 0, transform: 'translateY(8px)' },
+      { opacity: 0, transform: 'translateY(8px)', offset: .38 },
+      { opacity: 1, transform: 'none' }
+    ], { duration: 680, easing: 'ease-out' });
+  }
+  function closeAsk() {
+    if (!A.open) return;
+    A.open = false;
+    const n = A.node;
+    const cur = { left: askEl.offsetLeft, top: askEl.offsetTop, width: askEl.offsetWidth, height: askEl.offsetHeight };
+    layout();
+    if (reduced || !askEl.animate || !n) { askEl.hidden = true; return; }
+    const to = rectIn(n.ns);
+    const w = Math.max(96, Math.min(to.width, 180));
+    const anim = askEl.animate([
+      { left: cur.left + 'px', top: cur.top + 'px', width: cur.width + 'px', height: cur.height + 'px', borderRadius: '24px' },
+      { left: (to.left + to.width - w) + 'px', top: to.top + 'px', width: w + 'px', height: Math.max(26, to.height) + 'px', borderRadius: '999px' }
+    ], { duration: 460, easing: 'cubic-bezier(.55, 0, .2, 1)' });
+    askIn.animate([{ opacity: 1 }, { opacity: 0, offset: .35 }, { opacity: 0 }], { duration: 460 });
+    anim.onfinish = () => { if (!A.open) askEl.hidden = true; };
+  }
+  function closeAskInstant() {
+    cancelAskAnims();
+    A.open = false; A.resolve = null;
+    askEl.hidden = true;
+  }
+  function ask(n) {
+    return new Promise((res) => { A.resolve = res; openAsk(n); });
+  }
+  function submitAnswer(text) {
+    if (!A.resolve) return;
+    const r = A.resolve;
+    A.resolve = null;
+    closeAsk();
+    r(text);
+  }
+  askForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitAnswer(askInput.value.trim() || SAMPLE_ANSWER);
+  });
+  askInput.addEventListener('focus', () => { A.paused = true; });
+  askInput.addEventListener('input', () => { A.paused = true; });
+  askInput.addEventListener('blur', () => { A.paused = askInput.value.trim() !== ''; });
+  function askTick(dt) {
+    if (!A.open || !A.resolve) return;
+    if (A.paused) { askAuto.textContent = 'Auto-send paused while you answer'; return; }
+    A.t += dt;
+    const left = Math.max(0, AUTO_MS - A.t);
+    if (!reduced) askBar.style.transform = `scaleX(${(1 - left / AUTO_MS).toFixed(3)})`;
+    askAuto.textContent = `Sending a sample answer in ${Math.ceil(left / 1000)}s`;
+    if (left <= 0) submitAnswer(SAMPLE_ANSWER);
+  }
+
+  /* ---------- The run script ---------- */
+  const PLAN_MSG = 'Reading issue #266 and the repo layout. Two options for the data model, I need one decision from you.';
+  const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Saigon' });
+
+  function reset() {
+    closeAskInstant();
+    nodes.forEach((n) => {
+      n.pad.innerHTML = '';
+      n.open = false;
+      n.sum = '';
+      n.el.classList.remove('open');
+      setState(n, 'pending', true);
+    });
+    startedEl.textContent = `Started ${timeFmt.format(new Date())} ICT`;
+    stepText.textContent = `Node 0 of ${nodes.length}`;
+    setRunState('queued', 'Starting');
+    setNow('Starting ak-feature for issue #266', 'idle');
+    setRunnerMode('idle');
+    setAurora('idle');
+    stage.scrollTop = 0;
+    layout();
+  }
+
+  async function cycle() {
+    reset();
+    await wait(800);
+
+    let n = nodes[0];
+    await begin(n);
+    await log(n, '$ git worktree add worktrees/issue-266');
+    await log(n, '$ bun install --frozen-lockfile');
+    await log(n, 'Environment ready', true);
+    await wait(260);
+    finish(n, 'Worktree ready');
+    await wait(280);
+
+    n = nodes[1];
+    await begin(n);
+    await say(n, PLAN_MSG);
+    await wait(220);
+    const t = tool(n, 'Read', 'packages/web/src/App.tsx');
+    await wait(620);
+    toolDone(t);
+    await wait(320);
+    setState(n, 'waiting');
+    const answer = await ask(n);
+    setState(n, 'running');
+    you(n, answer);
+    await wait(260);
+    await say(n, 'Got it. Adding that to the plan.');
+    await wait(220);
+    finish(n, 'Plan ready with your call');
+    await wait(220);
+
+    n = nodes[2];
+    await begin(n);
+    await say(n, 'Checked each step against the repo. Fixed one wrong file path.');
+    await wait(220);
+    finish(n, '1 fix applied');
+    await wait(200);
+
+    n = nodes[3];
+    await begin(n);
+    await say(n, 'PRD ready: 3 stories, each with acceptance checks.');
+    await wait(220);
+    finish(n, '3 stories');
+    await wait(200);
+
+    n = nodes[4];
+    await begin(n);
+    const L = loopUI(n);
+    for (let k = 1; k <= 3; k++) { L.set(k); await wait(440); }
+    L.done();
+    await wait(260);
+    finish(n, '3 of 3 iterations');
+    await wait(200);
+
+    n = nodes[5];
+    await begin(n);
+    await log(n, '$ gh pr create --base develop');
+    await log(n, 'Pull request opened for issue #266', true);
+    await wait(240);
+    finish(n, 'Pull request opened');
+
+    stepText.textContent = `${nodes.length} of ${nodes.length} nodes done`;
+    setRunState('done', 'Completed');
+    setNow('Run complete. A fresh run starts in a moment.', 'done');
+    setRunnerMode('idle');
+    setAurora('done');
+    wave();
+    await wait(1600);
+  }
+
+  /* ---------- Dock with magnification ---------- */
+  const dock = document.getElementById('dock');
+  const items = [...dock.querySelectorAll('.dock-item')];
+  let centers = [];
+  function cacheCenters() {
+    centers = items.map((it) => {
+      const r = it.querySelector('.dock-ico').getBoundingClientRect();
+      return r.left + r.width / 2;
+    });
+  }
+  function resetDock() { items.forEach((it) => it.style.setProperty('--s', '1')); }
+  dock.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') cacheCenters(); });
+  dock.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    if (!centers.length) cacheCenters();
+    items.forEach((it, i) => {
+      const d = Math.abs(e.clientX - centers[i]);
+      const s = 1 + .55 * Math.cos(Math.min(d / 170, 1) * Math.PI / 2);
+      it.style.setProperty('--s', s.toFixed(3));
+    });
+  });
+  dock.addEventListener('pointerleave', () => { resetDock(); centers = []; });
+  items.forEach((it) => {
+    it.addEventListener('click', () => {
+      items.forEach((x) => x.removeAttribute('aria-current'));
+      it.setAttribute('aria-current', 'page');
+    });
+    it.addEventListener('focus', () => { it.style.setProperty('--s', '1.22'); });
+    it.addEventListener('blur', () => { it.style.setProperty('--s', '1'); });
+  });
+
+  /* ---------- One rAF loop: sim clock, runner, question timer, aurora ---------- */
+  let last = performance.now();
+  let rafId = 0;
+  function tick(now) {
+    const dt = Math.min(now - last, 100);
+    last = now;
+    clock += dt;
+    flushTimers();
+    askTick(dt);
+    runnerTick(dt);
+    if (!reduced) auroraTick(dt);
+    rafId = requestAnimationFrame(tick);
+  }
+  function startLoop() {
+    if (rafId) return;
+    last = performance.now();
+    rafId = requestAnimationFrame(tick);
+  }
+  function stopLoop() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopLoop(); else startLoop(); });
+
+  let resizeT = 0;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(() => {
+      sizeCanvas();
+      if (A.open) A.h = askEl.offsetHeight;
+      layout();
+    }, 80);
+  });
+
+  /* Film grain tile, generated once so the page needs no extra asset. */
+  (function makeGrain() {
+    const g = document.createElement('canvas');
+    g.width = g.height = 180;
+    const gx = g.getContext('2d');
+    const img = gx.createImageData(180, 180);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = Math.random() * 255;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 150;
+    }
+    gx.putImageData(img, 0, 0);
+    document.querySelector('.grain').style.backgroundImage = `url(${g.toDataURL()})`;
+  })();
+
+  sizeCanvas();
+  applyRM();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layout());
+  if (!document.hidden) startLoop();
+  (async function main() {
+    for (;;) await cycle();
+  })();
+})();
+</script>
+</body>
+</html>

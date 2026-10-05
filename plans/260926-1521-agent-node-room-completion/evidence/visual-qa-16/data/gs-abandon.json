@@ -1,0 +1,29 @@
+{
+  "R": "175580986fed57a0e14e956a7677135e",
+  "post": 3,
+  "abandonAt": 1790794120777,
+  "k0": { "c": "Running||Queue|TA||||0|0|||BODY|0", "l": "Running||Queue|TA||||0|0|||BODY|0" },
+  "k1": {
+    "c": "Running||Queue|TA|QUEUED · 2|2 messages queued||2|2|||TEXTAREA|0",
+    "l": "Running||Queue|TA|QUEUED · 2|2 messages queued||2|2|||BODY|0"
+  },
+  "raf": {
+    "c": [
+      [-1504, "Running||Queue|TA|QUEUED · 2|2 messages queued||2|2|||TEXTAREA|0"],
+      [46, "Failed||||QUEUED · 2|||2|0|||DIV[room]|0"],
+      [
+        56,
+        "Failed||||NEVER SENT · 2|node finished · none of this was sent|node finished · none of this was sent|2|0|||DIV[room]|0"
+      ]
+    ],
+    "l": [
+      [-1504, "Running||Queue|TA|QUEUED · 2|2 messages queued||2|2|||BODY|0"],
+      [45, "Failed||||QUEUED · 2|||2|0|||BODY|0"],
+      [
+        58,
+        "Failed||||NEVER SENT · 2|node finished · none of this was sent|node finished · none of this was sent|2|0|||DIV[room]|0"
+      ]
+    ]
+  },
+  "gets": []
+}

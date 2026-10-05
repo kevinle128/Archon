@@ -1,0 +1,18 @@
+{
+  "R": "1a036dc34bd5973359c93a66f4223690",
+  "stopper": "l",
+  "sender": "c",
+  "stop": { "clicked": 1790747103848, "resolved": 1790747103874, "st": 200 },
+  "send": { "clicked": 1790747104499, "sendResolved": 1790747104524, "st": 200 },
+  "tc": [
+    [-25, "TEXTAREA", "Running", "Send now"],
+    [-1, "BUTTON", "Running", "Send now"],
+    [8, "TEXTAREA", "Running", "Stop,Queue"],
+    [3017, "TEXTAREA", "Running", "Stop,Queue"]
+  ],
+  "tl": [
+    [-26, "DIV[room]", "Running", "Send now"],
+    [101, "DIV[room]", "Running", "Stop,Queue"],
+    [2608, "DIV[room]", "Running", "Stop,Queue"]
+  ]
+}

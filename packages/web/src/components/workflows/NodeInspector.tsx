@@ -1,10 +1,11 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useId } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import type { DagNodeData } from './DagNodeComponent';
 import type { CommandEntry, DagNode, RouteLoopConfig, RouteLoopOutcome } from '@/lib/api';
+import { X } from 'lucide-react';
 import { useProviders } from '@/hooks/useProviders';
 
 // Keep in sync with triggerRuleSchema.options in @archon/workflows/schemas/dag-node.ts
@@ -27,15 +28,15 @@ export interface NodeInspectorProps {
 }
 
 const inputClass =
-  'w-full rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-accent';
+  'w-full rounded-[10px] border border-border bg-background px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 
 const selectClass =
-  'w-full rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent';
+  'w-full cursor-pointer rounded-[10px] border border-border bg-background px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 
-const labelClass = 'text-[10px] text-text-tertiary uppercase tracking-wide';
+const labelClass = 'text-xs font-medium text-text-secondary';
 
 const textareaClass =
-  'w-full rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-text-primary font-mono placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-accent resize-y';
+  'w-full rounded-[10px] border border-border bg-background px-3 py-2 font-mono text-xs text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent resize-y';
 
 const ROUTE_OUTCOMES = [
   'positive',
@@ -87,9 +88,12 @@ function Field({
   label: string;
   children: React.ReactNode;
 }): React.ReactElement {
+  const labelId = useId();
   return (
-    <div className="flex flex-col gap-1">
-      <label className={labelClass}>{label}</label>
+    <div role="group" aria-labelledby={labelId} className="flex flex-col gap-1.5">
+      <span id={labelId} className={labelClass}>
+        {label}
+      </span>
       {children}
     </div>
   );
@@ -168,7 +172,7 @@ function DependencyTags({
       {values.map(dep => (
         <span
           key={dep}
-          className="inline-flex items-center gap-1 rounded-md bg-surface-elevated px-1.5 py-0.5 text-[10px] font-mono text-text-secondary"
+          className="inline-flex items-center gap-1 rounded-md bg-surface-elevated px-1.5 py-0.5 text-xs font-mono text-text-secondary"
         >
           {dep}
           <button
@@ -202,7 +206,7 @@ function DependencyTags({
           onBlur={handleAdd}
           autoFocus
           placeholder="node-id"
-          className="w-20 rounded-md border border-border bg-surface px-1.5 py-0.5 text-[10px] font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-accent"
+          className="w-20 rounded-md border border-border bg-surface px-1.5 py-0.5 text-xs font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-accent"
         />
       ) : (
         <button
@@ -231,7 +235,7 @@ function GeneralTab({
   const hasReadOnlyContent = node.nodeType === 'plannotator_gate' || node.nodeType === 'cancel';
 
   return (
-    <div className="flex flex-col gap-3 p-3">
+    <div className="flex flex-col gap-4 p-4">
       {/* Node ID */}
       <Field label="Node ID">
         <input
@@ -242,7 +246,7 @@ function GeneralTab({
           }}
           className={cn(inputClass, 'font-mono')}
         />
-        <p className="text-[9px] text-warning">
+        <p className="text-xs text-warning">
           Changing the node ID may break dependency references.
         </p>
       </Field>
@@ -437,7 +441,7 @@ function GeneralTab({
               2
             )}
           </pre>
-          <p className="text-[9px] text-text-tertiary">
+          <p className="text-xs text-text-tertiary">
             Read-only here. Edit the workflow YAML to change this payload.
           </p>
         </Field>
@@ -483,7 +487,7 @@ function ExecutionTab({
   const isBash = node.nodeType === 'bash';
 
   return (
-    <div className="flex flex-col gap-3 p-3">
+    <div className="flex flex-col gap-4 p-4">
       {!isBash && (
         <>
           <ProviderField node={node} onUpdate={onUpdate} selectClass={selectClass} />
@@ -656,7 +660,7 @@ function ToolsTab({
   };
 
   return (
-    <div className="flex flex-col gap-3 p-3">
+    <div className="flex flex-col gap-4 p-4">
       <Field label="Mode">
         <div className="flex gap-1">
           {(['none', 'allow', 'deny'] as const).map(mode => (
@@ -786,7 +790,7 @@ function AdvancedTab({
   onUpdate: (updates: Partial<DagNodeData>) => void;
 }): React.ReactElement {
   return (
-    <div className="flex flex-col gap-3 p-3">
+    <div className="flex flex-col gap-4 p-4">
       <JsonTextareaField
         label="Output Format (JSON Schema)"
         value={node.output_format}
@@ -819,7 +823,7 @@ function AdvancedTab({
           placeholder=".archon/mcp/github.json"
           className={cn(inputClass, 'font-mono')}
         />
-        <p className="text-[9px] text-text-tertiary">
+        <p className="text-xs text-text-tertiary">
           Path relative to repo root. JSON matching SDK McpServerConfig format.
         </p>
       </Field>
@@ -852,15 +856,19 @@ function DagInspector({
   return (
     <div key={node.id} className="flex flex-col h-full border-l border-border bg-surface">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-        <span className="flex-1 truncate text-xs font-semibold text-text-primary">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <b className="text-sm font-semibold text-text-primary">Inspector</b>
+        <span className="rounded-md bg-surface-inset px-1.5 py-0.5 font-mono text-xs text-text-secondary">
+          {node.nodeType}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-xs text-text-tertiary">
           {node.label || node.id}
         </span>
         <Button
           variant="destructive"
           size="sm"
           onClick={onDelete}
-          className="h-6 shrink-0 px-2 text-[10px]"
+          className="h-8 shrink-0 rounded-[10px] px-3 text-xs"
           aria-label="Delete node"
         >
           Delete
@@ -868,31 +876,32 @@ function DagInspector({
         <button
           type="button"
           onClick={onClose}
-          className="shrink-0 px-1 text-sm leading-none text-text-tertiary hover:text-text-primary"
+          className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-[10px] text-text-tertiary transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           title="Close inspector"
+          aria-label="Close inspector"
         >
-          x
+          <X className="size-4" aria-hidden="true" />
         </button>
       </div>
 
       {/* Tabbed content */}
       <Tabs defaultValue="general" className="flex-1 flex flex-col gap-0">
         <TabsList variant="line" className="px-2 pt-1 w-full justify-start">
-          <TabsTrigger value="general" className="text-xs">
+          <TabsTrigger value="general" className="text-sm">
             General
           </TabsTrigger>
           {!isRouteLoop && !hasReadOnlyContent && (
-            <TabsTrigger value="execution" className="text-xs">
+            <TabsTrigger value="execution" className="text-sm">
               Execution
             </TabsTrigger>
           )}
           {showAiTabs && (
-            <TabsTrigger value="tools" className="text-xs">
+            <TabsTrigger value="tools" className="text-sm">
               Tools
             </TabsTrigger>
           )}
           {showAiTabs && (
-            <TabsTrigger value="advanced" className="text-xs">
+            <TabsTrigger value="advanced" className="text-sm">
               Advanced
             </TabsTrigger>
           )}

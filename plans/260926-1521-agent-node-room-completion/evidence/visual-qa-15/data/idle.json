@@ -1,0 +1,14 @@
+{
+  "I1": {
+    "c": "Failed||||NEVER SENT · 1|node failed · interrupted with no redirect · none of this was sent|node failed · interrupted with no redirect · none of this was sent|-1|0|||BODY",
+    "l": "Failed||||NEVER SENT · 1|node failed · interrupted with no redirect · none of this was sent|node failed · interrupted with no redirect · none of this was sent|-1|0|||BODY",
+    "headC": "PROMPT\ncl-node\nFailed\n✕\nstarted 12:14 · failed after idle timeout · claude · haiku\nPROMPT · VQ15-OPERATOR\nRun these Bash steps one at a time, each as its own se",
+    "band": "NEVER SENT · 1\n▾\n1\nI1-Q1 queued before stop\n\nnode failed · interrupted with no redirect · none of this was sent"
+  },
+  "I2": {
+    "c": "Failed||||NEVER SENT · 2|node failed · interrupted with no redirect · none of this was sent|node failed · interrupted with no redirect · none of this was sent|-1|0|||BODY",
+    "l": "Failed||||NEVER SENT · 2|node failed · interrupted with no redirect · none of this was sent|node failed · interrupted with no redirect · none of this was sent|-1|0|||BODY",
+    "headC": "PROMPT\ncl-node\nFailed\n✕\nstarted 12:14 · failed after idle timeout · claude · haiku\nPROMPT · VQ15-OPERATOR\nRun these Bash steps one at a time, each as its own se",
+    "band": "NEVER SENT · 2\n▾\n1\nI2-Q1 queued before stop\n2\nk\n\nnode failed · interrupted with no redirect · none of this was sent"
+  }
+}

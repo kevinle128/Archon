@@ -1,0 +1,141 @@
+{
+  "streamHosts": ["localhost:5283", "localhost:3415"],
+  "disconnect30s": {
+    "legacyB": 0,
+    "consoleRuns": 0,
+    "legacyDashboard": 0
+  },
+  "finResults": [
+    {
+      "cycle": 1,
+      "sendNowPostMs": 1790743069604,
+      "terminalReadMs": 1790743069717,
+      "firstTerminalFrameMs": 1790743069746,
+      "controlsClearedMs": 1790743069598,
+      "controlFrameNeverSeen": true,
+      "latencyAfterTerminalFrameMs": -148,
+      "frames": [
+        [1790743069598, "||SENDNOW|Running"],
+        [1790743069746, "|||Completed"]
+      ]
+    },
+    {
+      "cycle": 2,
+      "sendNowPostMs": 1790743072645,
+      "terminalReadMs": 1790743072760,
+      "firstTerminalFrameMs": 1790743072790,
+      "controlsClearedMs": 1790743072644,
+      "controlFrameNeverSeen": true,
+      "latencyAfterTerminalFrameMs": -146,
+      "frames": [
+        [1790743072644, "||SENDNOW|Running"],
+        [1790743072790, "|||Completed"]
+      ]
+    },
+    {
+      "cycle": 3,
+      "sendNowPostMs": 1790743075677,
+      "terminalReadMs": 1790743075806,
+      "firstTerminalFrameMs": 1790743075837,
+      "controlsClearedMs": 1790743075654,
+      "controlFrameNeverSeen": true,
+      "latencyAfterTerminalFrameMs": -183,
+      "frames": [
+        [1790743075654, "||SENDNOW|Running"],
+        [1790743075837, "|||Completed"]
+      ]
+    },
+    {
+      "cycle": 4,
+      "sendNowPostMs": 1790743078723,
+      "terminalReadMs": 1790743078833,
+      "firstTerminalFrameMs": 1790743078866,
+      "controlsClearedMs": 1790743078720,
+      "controlFrameNeverSeen": true,
+      "latencyAfterTerminalFrameMs": -146,
+      "frames": [
+        [1790743078720, "||SENDNOW|Running"],
+        [1790743078866, "|||Completed"]
+      ]
+    },
+    {
+      "cycle": 5,
+      "sendNowPostMs": 1790743081733,
+      "terminalReadMs": 1790743081843,
+      "firstTerminalFrameMs": 1790743081870,
+      "controlsClearedMs": 1790743081731,
+      "controlFrameNeverSeen": true,
+      "latencyAfterTerminalFrameMs": -139,
+      "frames": [
+        [1790743081731, "||SENDNOW|Running"],
+        [1790743081870, "|||Completed"]
+      ]
+    },
+    {
+      "cycle": 6,
+      "sendNowPostMs": 1790743084742,
+      "terminalReadMs": 1790743084852,
+      "firstTerminalFrameMs": 1790743084881,
+      "controlsClearedMs": 1790743084740,
+      "controlFrameNeverSeen": true,
+      "latencyAfterTerminalFrameMs": -141,
+      "frames": [
+        [1790743084740, "||SENDNOW|Running"],
+        [1790743084881, "|||Completed"]
+      ]
+    },
+    {
+      "cycle": 7,
+      "sendNowPostMs": 1790743087758,
+      "terminalReadMs": 1790743087867,
+      "firstTerminalFrameMs": 1790743087889,
+      "controlsClearedMs": 1790743087757,
+      "controlFrameNeverSeen": true,
+      "latencyAfterTerminalFrameMs": -132,
+      "frames": [
+        [1790743087757, "||SENDNOW|Running"],
+        [1790743087889, "|||Completed"]
+      ]
+    },
+    {
+      "cycle": 8,
+      "sendNowPostMs": 1790743090336,
+      "terminalReadMs": 1790743090446,
+      "firstTerminalFrameMs": 1790743090474,
+      "controlsClearedMs": 1790743090334,
+      "controlFrameNeverSeen": true,
+      "latencyAfterTerminalFrameMs": -140,
+      "frames": [
+        [1790743090334, "||SENDNOW|Running"],
+        [1790743090474, "|||Completed"]
+      ]
+    },
+    {
+      "cycle": 9,
+      "sendNowPostMs": 1790743093353,
+      "terminalReadMs": 1790743093462,
+      "firstTerminalFrameMs": 1790743093486,
+      "controlsClearedMs": 1790743093351,
+      "controlFrameNeverSeen": true,
+      "latencyAfterTerminalFrameMs": -135,
+      "frames": [
+        [1790743093351, "||SENDNOW|Running"],
+        [1790743093486, "|||Completed"]
+      ]
+    },
+    {
+      "cycle": 10,
+      "sendNowPostMs": 1790743096349,
+      "terminalReadMs": 1790743096531,
+      "firstTerminalFrameMs": 1790743096556,
+      "controlsClearedMs": 1790743096348,
+      "controlFrameNeverSeen": true,
+      "latencyAfterTerminalFrameMs": -208,
+      "frames": [
+        [1790743096348, "||SENDNOW|Running"],
+        [1790743096556, "|||Completed"]
+      ]
+    }
+  ],
+  "consoleRunsPageTerminalMessages": 592
+}

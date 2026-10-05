@@ -22,5 +22,22 @@ export const CODEX_CAPABILITIES: ProviderCapabilities = {
   nativeTools: false,
   containerExec: false, // no in-container spawn path yet (fail-fast source of truth)
   askHuman: false,
-  interrupt: false,
+  // Verified against the real @openai/codex-sdk (interrupt-resume-spike.ts,
+  // plus a live Stop mid-tool against the running server) — a stream-abort
+  // path: the adapter kills its own stream/child and synthesizes the
+  // `stream_aborted` terminal reason. Session resume works via the existing
+  // thread id, so redirect continues on the same thread rather than
+  // silently starting a new one.
+  interrupt: 'stream-abort',
+  // The SDK kills the whole child process on abort and never reports which
+  // tool call, if any, was in flight — a still-open tool at turn end has no
+  // provable fate, so it must settle 'unknown', never a guessed 'interrupted'.
+  interruptedToolStatus: false,
+  // Verified false: the SDK runs one `codex exec` per turn, writes the whole
+  // prompt to the child's stdin and closes it (`@openai/codex-sdk` dist
+  // index.js, `child.stdin.write(input); child.stdin.end()`), so there is no
+  // channel to hand the running turn a second message. A queued message
+  // waits for the turn boundary.
+  softInjection: false,
+  deliveryAck: false,
 };

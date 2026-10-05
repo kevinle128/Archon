@@ -1,0 +1,104 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793487933,
+  "end": 1790793500227,
+  "procs": [
+    {
+      "pid": 46704,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793487933,
+      "last": 1790793499930
+    },
+    {
+      "pid": 49745,
+      "cmd": "node bin.js --profile acp",
+      "first": 1790793487933,
+      "last": 1790793492235
+    },
+    {
+      "pid": 50095,
+      "cmd": "bash -c sleep 25; echo s1",
+      "first": 1790793487933,
+      "last": 1790793488259
+    },
+    {
+      "pid": 50096,
+      "cmd": "sleep 25",
+      "first": 1790793487933,
+      "last": 1790793488259
+    },
+    {
+      "pid": 47016,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793487933,
+      "last": 1790793499930
+    },
+    {
+      "pid": 47021,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793487933,
+      "last": 1790793499930
+    },
+    {
+      "pid": 47024,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793487933,
+      "last": 1790793499930
+    },
+    {
+      "pid": 47025,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793487933,
+      "last": 1790793499930
+    },
+    {
+      "pid": 47028,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793487933,
+      "last": 1790793499930
+    },
+    {
+      "pid": 47030,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793487933,
+      "last": 1790793499930
+    },
+    {
+      "pid": 47031,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793487933,
+      "last": 1790793499930
+    },
+    {
+      "pid": 50215,
+      "cmd": "zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>n",
+      "first": 1790793487933,
+      "last": 1790793497201
+    },
+    {
+      "pid": 48515,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793487933,
+      "last": 1790793499930
+    },
+    {
+      "pid": 48235,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793487933,
+      "last": 1790793499930
+    },
+    {
+      "pid": 48467,
+      "cmd": "node context7-mcp",
+      "first": 1790793487933,
+      "last": 1790793499930
+    },
+    {
+      "pid": 50241,
+      "cmd": "sleep 9",
+      "first": 1790793488561,
+      "last": 1790793497201
+    }
+  ]
+}

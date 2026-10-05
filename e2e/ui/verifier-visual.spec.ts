@@ -32,7 +32,7 @@ interface QueueAnatomy {
   caret: boolean;
   ordinals: string[];
   firstMarked: boolean;
-  humanTextUsesSans: boolean;
+  humanTextUsesMono: boolean;
   sentStatuses: number;
 }
 
@@ -41,8 +41,11 @@ async function queueAnatomy(section: Locator): Promise<QueueAnatomy> {
     const header = element.querySelector('button[aria-expanded]');
     const list = element.querySelector('[role="list"], ul');
     const rows = list === null ? [] : Array.from(list.children);
+    // The decorative 1-based position number is an aria-hidden sibling span;
+    // the message-text span is the first non-decorative one.
     const firstMessage = Array.from(rows[0]?.querySelectorAll('span') ?? []).find(
-      child => child.textContent?.trim() === messages[0]
+      child =>
+        child.getAttribute('aria-hidden') !== 'true' && child.textContent?.trim() === messages[0]
     );
     const font = firstMessage === undefined ? '' : getComputedStyle(firstMessage).fontFamily;
     return {
@@ -51,7 +54,7 @@ async function queueAnatomy(section: Locator): Promise<QueueAnatomy> {
       caret: header?.textContent?.includes('▾') ?? false,
       ordinals: rows.map(row => row.firstElementChild?.textContent?.trim() ?? ''),
       firstMarked: rows[0] !== undefined && getComputedStyle(rows[0]).boxShadow !== 'none',
-      humanTextUsesSans: /Inter|sans-serif/i.test(font) && !/JetBrains Mono|monospace/i.test(font),
+      humanTextUsesMono: /JetBrains Mono|monospace/i.test(font),
       sentStatuses: rows.reduce(
         (count, row) =>
           count +
@@ -162,13 +165,19 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
                   : HITL_INSPECT_NODE;
             room = await openRoom(page, surface, runId, node, node.split('.').at(-1) ?? node);
             if (viewport.width === 1440) {
+              // Both rooms are fixed pixel widths with no drag handle
+              // (packages/web/src/lib/room-split-layout.ts) — 520px Console,
+              // 460px Legacy. The ratio write below is inert on both
+              // surfaces (kept for a minimal diff); the measured width
+              // always lands on the fixed value for its surface.
+              const desktopRoomWidth = surface === 'console' ? 520 : 460;
               const panel = page.locator(`#${surface}-run-room`);
               const metrics = await panel.evaluate(el => ({
                 width: el.getBoundingClientRect().width,
                 group: el.parentElement!.getBoundingClientRect().width,
               }));
               const width = (await room.boundingBox())!.width;
-              const ratio = ((460 + metrics.width - width) / metrics.group) * 100;
+              const ratio = ((desktopRoomWidth + metrics.width - width) / metrics.group) * 100;
               await page.evaluate(
                 ({ key, ratio }): void => {
                   localStorage.setItem(key, String(ratio));
@@ -176,7 +185,9 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
                 { key: `archon.run-room.ratio.${surface}`, ratio }
               );
               room = await openRoom(page, surface, runId, node, node.split('.').at(-1) ?? node);
-              expect(Math.abs((await room.boundingBox())!.width - 460)).toBeLessThanOrEqual(2);
+              expect(
+                Math.abs((await room.boundingBox())!.width - desktopRoomWidth)
+              ).toBeLessThanOrEqual(2);
             }
             // Enter keyboard modality before setting the capture's focus target.
             // Legacy reaches the room by pointer, which suppresses :focus-visible.
@@ -296,7 +307,7 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
               caret: true,
               ordinals: ['1', '2'],
               firstMarked: true,
-              humanTextUsesSans: true,
+              humanTextUsesMono: true,
               sentStatuses: 0,
             });
           }

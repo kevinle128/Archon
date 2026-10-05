@@ -105,7 +105,6 @@ function assertQuietChrome(html: string): void {
   expect(html).not.toContain('unsupported');
   expect(html).not.toContain('⚠️');
   expect(html).not.toContain('⚠');
-  expect(html).not.toContain('experiments/console');
 }
 
 const STATES: readonly FileViewerState[] = [

@@ -1,18 +1,26 @@
 /**
  * Renderer-free fold of recorded todo tool inputs into current checklist state.
  *
- * Two provider shapes share the concept and nothing else:
+ * Three provider shapes share the concept and nothing else:
  * - Claude `TodoWrite`: `{ todos: [{ content, status, activeForm }] }`, a
  *   whole-list snapshot with three explicit statuses and no phases. Folding is
  *   last-call-wins onto a single `Tasks` phase.
  * - OMP `todo`: `{ op, ... }` mutations over named phases, plus the legacy
  *   `{ ops: [...] }` batch. Status is implied by which op ran.
+ * - Claude `TaskCreate`/`TaskUpdate`: one task per call, identified by a
+ *   `taskId` the caller stamps onto the record (the tool assigns it in its
+ *   *output*, which this module never sees — see `TodoItem.id`), not by its
+ *   renamable `content`. All Task-family items live in one `Tasks` phase,
+ *   like `TodoWrite`; a call the caller cannot correlate to a known id is a
+ *   no-op, never a fabricated blank row.
  *
  * Every call applies to a scratch copy and commits only on success, so a
  * malformed call never manufactures a state the provider did not commit. After
  * each successful mutating OMP op the state is normalized: at most one
  * in-progress item survives, and the first pending item is promoted when none
  * is running. `view` is a true read-only no-op — it does not even normalize.
+ * Task-family calls skip this normalization entirely: unlike OMP, Claude's
+ * own tool never implies a side effect on a task the call did not name.
  */
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'abandoned' | 'blocked';
@@ -21,6 +29,15 @@ export interface TodoItem {
   content: string;
   status: TodoStatus;
   blocker?: string;
+  /**
+   * Stable identity for a source whose items can be renamed after creation
+   * (Claude's `TaskCreate`/`TaskUpdate`, keyed by `taskId`) — `content` is
+   * not safe to match on there the way OMP's and TodoWrite's immutable
+   * `content` already is. Undefined for every other source.
+   * `projectTerminalTodoState`'s rebuilt items drop it, matching `blocker`:
+   * once a checklist reaches its terminal presentation it never folds again.
+   */
+  id?: string;
 }
 
 export interface TodoPhase {
@@ -67,9 +84,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function cloneItem(item: TodoItem): TodoItem {
-  return item.blocker === undefined
-    ? { content: item.content, status: item.status }
-    : { content: item.content, status: item.status, blocker: item.blocker };
+  const clone: TodoItem = { content: item.content, status: item.status };
+  if (item.blocker !== undefined) clone.blocker = item.blocker;
+  if (item.id !== undefined) clone.id = item.id;
+  return clone;
 }
 
 function clonePhases(phases: readonly TodoPhase[]): TodoPhase[] {
@@ -351,6 +369,78 @@ function applyClaudeSnapshot(todos: readonly unknown[]): TodoPhase[] | null {
   return items.length === 0 ? [] : [{ phase: DEFAULT_PHASE, items }];
 }
 
+function findTaskById(phases: readonly TodoPhase[], id: string): TodoItem | null {
+  for (const phase of phases) {
+    const item = phase.items.find(candidate => candidate.id === id);
+    if (item !== undefined) return item;
+  }
+  return null;
+}
+
+/** Claude's `TaskUpdate.status` values this fold recognizes; anything else is malformed. */
+const TASK_UPDATE_STATUSES: ReadonlySet<string> = new Set([
+  'pending',
+  'in_progress',
+  'completed',
+  'deleted',
+]);
+
+/**
+ * Widens Claude's four `TaskUpdate` statuses into the shared five. `deleted`
+ * has no direct match — OMP's `drop` already means "no longer active, not
+ * completed" and renders the same struck-through way, so it is the nearest
+ * honest analogue rather than a new status this contract would have to add.
+ */
+const TASK_STATUS_TO_TODO: Readonly<Record<string, TodoStatus>> = {
+  pending: 'pending',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  deleted: 'abandoned',
+};
+
+/**
+ * Upsert one `TaskCreate`/`TaskUpdate` call by its `taskId` — every
+ * Task-family record carries this key by the time it reaches this fold
+ * (`agent-history.ts` merges a `TaskCreate` call's output-assigned id onto
+ * its input under the same key `TaskUpdate` already sends natively). All
+ * Task-family items live in the one `Tasks` phase; the tool has no phase
+ * concept of its own. Only `subject` (title) and `status` drive the
+ * checklist — `description`, `activeForm`, `addBlocks`, `addBlockedBy`,
+ * `owner`, and `metadata` are real fields the agent reads but carry nothing
+ * a flat checklist renders. A `taskId` this fold has not seen before, with
+ * no `subject` to establish it, is rejected rather than fabricating a blank
+ * row — the same "unknown target is a no-op" rule OMP's own `findTask`
+ * already enforces.
+ */
+function applyTaskRecord(phases: TodoPhase[], record: Record<string, unknown>): TodoPhase[] | null {
+  const taskId = record.taskId;
+  if (typeof taskId !== 'string' || taskId.length === 0) return null;
+  const subject = record.subject;
+  if (subject !== undefined && (typeof subject !== 'string' || subject.length === 0)) return null;
+  const status = record.status;
+  if (status !== undefined && (typeof status !== 'string' || !TASK_UPDATE_STATUSES.has(status))) {
+    return null;
+  }
+  const existing = findTaskById(phases, taskId);
+  if (existing === null) {
+    if (typeof subject !== 'string') return null;
+    let target = phases.find(candidate => candidate.phase === DEFAULT_PHASE);
+    if (target === undefined) {
+      target = { phase: DEFAULT_PHASE, items: [] };
+      phases.push(target);
+    }
+    target.items.push({
+      content: subject,
+      status: typeof status === 'string' ? TASK_STATUS_TO_TODO[status] : 'pending',
+      id: taskId,
+    });
+    return phases;
+  }
+  if (typeof subject === 'string') existing.content = subject;
+  if (typeof status === 'string') existing.status = TASK_STATUS_TO_TODO[status];
+  return phases;
+}
+
 /**
  * Fold ordered tool inputs into the current todo phases. Never throws, never
  * mutates inputs, and returns fresh objects containing only non-empty phases.
@@ -362,6 +452,12 @@ export function projectTodoState(inputs: readonly unknown[]): TodoPhase[] {
     if (Array.isArray(input.todos)) {
       const snapshot = applyClaudeSnapshot(input.todos);
       if (snapshot !== null) state = snapshot;
+      continue;
+    }
+    if (typeof input.taskId === 'string' && input.taskId.length > 0) {
+      const scratch = clonePhases(state);
+      const next = applyTaskRecord(scratch, input);
+      if (next !== null) state = next;
       continue;
     }
     if (Array.isArray(input.ops)) {
@@ -400,6 +496,67 @@ export function projectTodoState(inputs: readonly unknown[]): TodoPhase[] {
   return state
     .filter(phase => phase.items.length > 0)
     .map(phase => ({ phase: phase.phase, items: phase.items.map(cloneItem) }));
+}
+
+/** Node lifecycle statuses that reach the checklist's terminal projection. */
+export type TodoTerminalOutcome = 'completed' | 'interrupted';
+
+const TODO_TERMINAL_OUTCOME_BY_NODE_STATUS: Readonly<Record<string, TodoTerminalOutcome>> = {
+  completed: 'completed',
+  failed: 'interrupted',
+  // `LogRow['status']` folds a cancelled execution into `skipped`
+  // (`statusFromNodeExecution` in build-log-rows.ts) — a cancelled row's own
+  // status is never literally `'cancelled'`. `cancelled` stays mapped too
+  // for a caller holding the run-level status instead of the row's.
+  cancelled: 'interrupted',
+  skipped: 'interrupted',
+};
+
+/**
+ * The node lifecycle status a checklist reads to pick its terminal outcome,
+ * or null while the node is still `pending`/`running`/`awaiting`/`skipped` —
+ * the raw folded state renders unprojected in every one of those.
+ */
+export function todoTerminalOutcome(nodeStatus: string): TodoTerminalOutcome | null {
+  return TODO_TERMINAL_OUTCOME_BY_NODE_STATUS[nodeStatus] ?? null;
+}
+
+/**
+ * A single item's terminal projection. A completed node finished the plan it
+ * declared, so every item still short of `completed` reads as done — this
+ * never applies to `abandoned`, which is already the agent's own terminal
+ * claim about that item, not a claim this projection gets to overrule. An
+ * interrupted node proved nothing about work still in flight, so only the
+ * `in_progress` item — the one the strip would otherwise show mid-run forever
+ * — steps back to `pending`; every other status already recorded the
+ * agent's own verdict and stays exactly as folded.
+ */
+function projectTerminalItem(itemValue: TodoItem, outcome: TodoTerminalOutcome): TodoItem {
+  if (outcome === 'completed') {
+    if (itemValue.status === 'completed' || itemValue.status === 'abandoned') return itemValue;
+    return { content: itemValue.content, status: 'completed' };
+  }
+  return itemValue.status === 'in_progress'
+    ? { content: itemValue.content, status: 'pending' }
+    : itemValue;
+}
+
+/**
+ * Presentation-only terminal fold: never rewrites the persisted todo events
+ * `projectTodoState` already committed, only the phases a renderer is about
+ * to draw for a node that has reached a terminal lifecycle status. Returns
+ * the input unchanged while the node is still live.
+ */
+export function projectTerminalTodoState(
+  phases: readonly TodoPhase[],
+  nodeStatus: string
+): readonly TodoPhase[] {
+  const outcome = todoTerminalOutcome(nodeStatus);
+  if (outcome === null) return phases;
+  return phases.map(phase => ({
+    phase: phase.phase,
+    items: phase.items.map(item => projectTerminalItem(item, outcome)),
+  }));
 }
 
 /**

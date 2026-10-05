@@ -1,0 +1,74 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793911914,
+  "end": 1790793921942,
+  "procs": [
+    {
+      "pid": 14408,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790793911914,
+      "last": 1790793921632
+    },
+    {
+      "pid": 22335,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790793911914,
+      "last": 1790793917861
+    },
+    {
+      "pid": 23481,
+      "cmd": "zsh -c source snapshot-zsh-1790793909309-90mrta.sh 2>null ||",
+      "first": 1790793911914,
+      "last": 1790793917184
+    },
+    {
+      "pid": 23483,
+      "cmd": "sleep 6",
+      "first": 1790793911914,
+      "last": 1790793916850
+    },
+    {
+      "pid": 22175,
+      "cmd": "zsh -c source snapshot-zsh-1790793870590-8q2u1v.sh 2>null ||",
+      "first": 1790793911914,
+      "last": 1790793921632
+    },
+    {
+      "pid": 22590,
+      "cmd": "(sleep)",
+      "first": 1790793911914,
+      "last": 1790793911914
+    },
+    {
+      "pid": 23561,
+      "cmd": "sleep 6",
+      "first": 1790793912227,
+      "last": 1790793917861
+    },
+    {
+      "pid": 23771,
+      "cmd": "sleep 6",
+      "first": 1790793917184,
+      "last": 1790793917184
+    },
+    {
+      "pid": 23797,
+      "cmd": "(sh)",
+      "first": 1790793917523,
+      "last": 1790793917523
+    },
+    {
+      "pid": 23798,
+      "cmd": "(sh)",
+      "first": 1790793917523,
+      "last": 1790793917523
+    },
+    {
+      "pid": 23885,
+      "cmd": "sleep 6",
+      "first": 1790793918174,
+      "last": 1790793921632
+    }
+  ]
+}

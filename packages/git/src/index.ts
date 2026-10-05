@@ -120,3 +120,11 @@ export type {
   RetryRefResult,
   DeleteRetryRefsResult,
 } from './retry-refs';
+
+// Node execution git evidence (start/end snapshots for change attribution)
+export {
+  buildExecutionEvidenceRef,
+  captureExecutionEvidenceSnapshot,
+  diffCommitRange,
+} from './execution-evidence';
+export type { ExecutionEvidenceRefIdentity, ExecutionEvidenceSnapshot } from './execution-evidence';

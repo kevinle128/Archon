@@ -74,5 +74,9 @@ export function parseClaudeConfig(raw: Record<string, unknown>): ClaudeProviderD
     result.claudeBinaryPath = raw.claudeBinaryPath;
   }
 
+  if (typeof raw.advisorModel === 'string' && raw.advisorModel.trim().length > 0) {
+    result.advisorModel = raw.advisorModel;
+  }
+
   return result;
 }

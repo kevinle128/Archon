@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archon Pixel: 8 style</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Silkscreen:wght@400;700&family=VT323&family=Pixelify+Sans:wght@400;600;700&family=DotGothic16&family=Chakra+Petch:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&family=Space+Mono:wght@400;700&family=Archivo+Black&family=Rubik:wght@400;600;800&family=Schibsted+Grotesk:wght@400;600;800;900&family=JetBrains+Mono:wght@400;600&family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --k-bg: #0E0E11; --k-sf: #17171C; --k-line: #2A2A33; --k-tx: #F2F2F5; --k-tx2: #B4B4C2; --k-tx3: #8A8A9C; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--k-bg); color: var(--k-tx); font: 15px/1.5 "Rubik", system-ui, sans-serif; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 48px 24px 96px; }
+  .intro { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .intro svg { width: 88px; height: 88px; }
+  h1 { font: 400 clamp(22px, 3vw, 34px)/1.35 "Press Start 2P", monospace; margin: 0; }
+  .lead { color: var(--k-tx2); max-width: 72ch; margin: 18px 0 0; }
+  .jump { display: flex; gap: 8px; flex-wrap: wrap; margin: 26px 0 8px; }
+  .jump a { color: var(--k-tx); text-decoration: none; font-size: 13px; font-weight: 600; padding: 7px 12px; border: 1px solid var(--k-line); border-radius: 999px; }
+  .jump a:hover { border-color: var(--k-tx2); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 28px; }
+  @media (max-width: 1150px) { .grid { grid-template-columns: 1fr; } }
+  .item { display: grid; gap: 14px; scroll-margin-top: 20px; }
+  .item.locked .shot { outline: 3px solid var(--k-tx); outline-offset: 4px; }
+  .cap { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; align-items: start; }
+  .cap h2 { margin: 0; font: 800 20px/1.2 "Rubik", sans-serif; }
+  .cap h2 span { color: var(--k-tx3); font-weight: 400; font-size: 14px; margin-left: 6px; }
+  .cap p { margin: 0; color: var(--k-tx2); font-size: 14px; grid-column: 1 / -1; }
+  .cap .fonts { grid-column: 1 / -1; font: 12px "JetBrains Mono", monospace; color: var(--k-tx3); }
+  .cap .chips { grid-column: 1 / -1; display: flex; gap: 0; border-radius: 8px; overflow: hidden; height: 22px; }
+  .cap .chips i { flex: 1; }
+  .cap .aa { grid-column: 1 / -1; font-size: 12px; color: var(--k-tx3); }
+  .cap .aa b { color: #9BE8B0; } .cap .aa b.bad { color: #FF8A80; }
+  .cap button { font: 700 13px "Rubik", sans-serif; background: var(--k-tx); color: var(--k-bg); border: 0; border-radius: 999px; padding: 9px 16px; cursor: pointer; white-space: nowrap; }
+  .cap button:active { transform: scale(.97); }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--k-tx); color: var(--k-bg); font: 600 14px "Rubik", sans-serif; padding: 12px 18px; border-radius: 999px; }
+
+  /* ================= Shared mini Archon screen, themed per style ================= */
+  .shot { position: relative; isolation: isolate; overflow: hidden; background: var(--bg); color: var(--tx); font-family: var(--body);
+          border-radius: var(--frame-r, 16px); min-height: 460px; display: flex; flex-direction: column; }
+  .shot .fx { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+  .shot .bar { display: flex; align-items: center; gap: 14px; padding: 0 16px; height: 54px; background: var(--sf); border-bottom: var(--bw) solid var(--line); flex-wrap: nowrap; }
+  .shot .brand { display: flex; align-items: center; gap: 9px; flex: none; }
+  .shot .brand svg { width: 26px; height: 26px; }
+  .shot .wm { font-family: var(--display); font-weight: var(--display-w, 700); letter-spacing: var(--wm-track, 0.06em); text-transform: uppercase; line-height: 1; }
+  .shot .brand .wm { font-size: var(--wm-sm, 15px); }
+  .shot nav { display: flex; gap: 2px; overflow: hidden; }
+  .shot nav a { font-size: 12.5px; font-weight: 600; color: var(--tx2); padding: 6px 10px; border-radius: var(--r-sm); white-space: nowrap; }
+  .shot nav a.on { background: var(--ac); color: var(--onac); }
+  .shot .body { padding: 18px; display: grid; gap: 16px; flex: 1; }
+  .shot .hero { display: flex; align-items: center; gap: 16px; }
+  .shot .hero svg { width: 76px; height: 76px; flex: none; }
+  .shot .hero .wm { font-size: var(--wm-lg, 34px); }
+  .shot .hero small { display: block; font-size: 12.5px; color: var(--tx2); margin-top: 8px; font-family: var(--body); text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .shot .cols { display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; }
+  @media (max-width: 640px) { .shot .cols { grid-template-columns: 1fr; } .shot nav a:nth-child(n+4) { display: none; } }
+  .shot .panel { background: var(--sf); border: var(--bw) solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 10px; align-content: start; box-shadow: var(--shadow); position: relative; }
+  .shot .ph { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .shot .ph b { font-family: var(--display); font-weight: var(--display-w, 700); font-size: var(--h-size, 14px); letter-spacing: var(--h-track, 0.02em); }
+  .shot .ph span { font-family: var(--mono); font-size: 11px; color: var(--tx3); }
+  .shot .prog { height: 10px; background: var(--rs); border-radius: var(--r-sm); overflow: hidden; }
+  .shot .prog i { display: block; height: 100%; width: 25%; background: var(--sig); }
+  .shot .nodes { display: grid; gap: 6px; }
+  .shot .node { display: grid; grid-template-columns: 66px 1fr auto; gap: 8px; align-items: center; font-size: 12.5px; padding: 7px 9px; background: var(--rs); border-radius: var(--r-sm); }
+  .shot .node .k { font-family: var(--mono); font-size: 10.5px; font-weight: 600; }
+  .shot .node .s { font-size: 11.5px; font-weight: 700; font-family: var(--mono); }
+  .shot .node.wait { box-shadow: inset 0 0 0 2px var(--ac2); }
+  .shot .ask { border: 2px solid var(--ac2); }
+  .shot .ask label { font-size: 13px; font-weight: 600; }
+  .shot input { font: inherit; font-size: 13px; color: var(--tx); background: var(--bg); border: var(--bw) solid var(--line); border-radius: var(--r-sm); padding: 9px 10px; width: 100%; }
+  .shot input::placeholder { color: var(--tx3); }
+  .shot input:focus { outline: 2px solid var(--ac); outline-offset: 1px; }
+  .shot .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .shot .btn { font: 700 13px var(--body); padding: 9px 14px; border-radius: var(--r-btn); cursor: pointer; border: var(--bw) solid transparent; white-space: nowrap; }
+  .shot .btn.pri { background: var(--ac); color: var(--onac); border-color: var(--btn-line, transparent); box-shadow: var(--btn-shadow, none); }
+  .shot .btn.pri:active { transform: translate(2px, 2px); box-shadow: none; }
+  .shot .btn.sec { background: transparent; color: var(--tx); border-color: var(--line); }
+  .shot .stats { display: flex; gap: 6px; flex-wrap: wrap; }
+  .shot .stats span { font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 3px 8px; background: var(--rs); border-radius: var(--r-sm); }
+
+  /* Stepped "pixel" corners shared by the retro styles. */
+  .pxc { clip-path: polygon(0 6px, 3px 6px, 3px 3px, 6px 3px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 3px, calc(100% - 3px) 3px, calc(100% - 3px) 6px, 100% 6px,
+    100% calc(100% - 6px), calc(100% - 3px) calc(100% - 6px), calc(100% - 3px) calc(100% - 3px), calc(100% - 6px) calc(100% - 3px), calc(100% - 6px) 100%,
+    6px 100%, 6px calc(100% - 3px), 3px calc(100% - 3px), 3px calc(100% - 6px), 0 calc(100% - 6px)); }
+
+  /* ---------- 1 Game Boy ---------- */
+  .s-gb .fx { background-image: radial-gradient(rgba(15,56,15,.10) 1px, transparent 1.2px); background-size: 4px 4px; }
+  .s-gb .panel { border-width: 3px; }
+
+  /* ---------- 2 Arcade CRT ---------- */
+  .s-arc .fx { background: repeating-linear-gradient(0deg, rgba(0,0,0,.28) 0 1px, transparent 1px 3px); }
+  .s-arc .hero svg { filter: drop-shadow(3px 0 0 #FF2BD6) drop-shadow(-3px 0 0 #00E5FF); }
+  .s-arc .panel { border-color: #00E5FF; }
+
+  /* ---------- 3 Retro OS ---------- */
+  .s-os .bar { background: linear-gradient(90deg, #0A1F7A, #1F6FD6); color: #F4F6FF; border-bottom: 0; }
+  .s-os .bar nav a { color: #DCE4FF; } .s-os .bar nav a.on { background: #C8CCD6; color: #111; box-shadow: inset -1px -1px 0 #5A5E68, inset 1px 1px 0 #FFFFFF; }
+  .s-os .panel, .s-os .btn, .s-os input { box-shadow: inset -2px -2px 0 #5A5E68, inset 2px 2px 0 #FFFFFF; border: 0; }
+  .s-os input { box-shadow: inset 2px 2px 0 #5A5E68, inset -2px -2px 0 #FFFFFF; background: #FFFFFF; }
+  .s-os .panel { padding-top: 38px; }
+  .s-os .panel::before { content: attr(data-win); position: absolute; left: 4px; right: 4px; top: 4px; height: 24px; display: flex; align-items: center; padding: 0 8px;
+    font: 700 12px var(--body); color: #FFFFFF; background: linear-gradient(90deg, #8A2BB8, #F062A8); }
+  .s-os .panel.ask { border: 0; box-shadow: inset -2px -2px 0 #5A5E68, inset 2px 2px 0 #FFFFFF, 0 0 0 2px #F062A8; }
+  .s-os .btn.pri { box-shadow: inset -2px -2px 0 #0A1F7A, inset 2px 2px 0 #7FA8FF; }
+  .s-os .btn.pri:active { box-shadow: inset 2px 2px 0 #0A1F7A, inset -2px -2px 0 #7FA8FF; transform: none; }
+
+  /* ---------- 4 Brutal grid paper ---------- */
+  .s-bru { background-image: linear-gradient(#11111114 1px, transparent 1px), linear-gradient(90deg, #11111114 1px, transparent 1px); background-size: 20px 20px; }
+
+  /* ---------- 5 Voxel craft ---------- */
+  .s-vox { background: linear-gradient(#7EC8F0 0 38%, #A8DCF5 38% 100%); }
+  .s-vox .bar { box-shadow: 0 4px 0 #3D7A26; }
+  .s-vox .panel { box-shadow: 4px 4px 0 #6B4424, 8px 8px 0 #4A2E17; }
+
+  /* ---------- 6 Amber terminal ---------- */
+  .s-amb .fx { background: repeating-linear-gradient(0deg, rgba(0,0,0,.35) 0 1px, transparent 1px 3px), radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,.45) 100%); }
+  .s-amb { text-shadow: 0 0 6px rgba(255,176,0,.35); }
+  .s-amb .panel, .s-amb .node, .s-amb input { border-style: dashed; }
+  .s-amb .node { border: 1px dashed #5A3F00; }
+  /* VT323 has a small x-height, so every text size in this style is bumped up. */
+  .s-amb nav a, .s-amb .node, .s-amb .hero small { font-size: 18px; }
+  .s-amb .ask label, .s-amb .btn, .s-amb input { font-size: 19px; }
+  .s-amb .node .k, .s-amb .node .s, .s-amb .stats span, .s-amb .ph span { font-size: 16px; }
+
+  /* ---------- 7 Candy 8-bit ---------- */
+  .s-can .fx { background-image: radial-gradient(#FF8FC733 2px, transparent 2.5px); background-size: 22px 22px; }
+  .s-can .panel { border-style: dashed; }
+
+  /* ---------- 8 Swiss pixel ---------- */
+  .s-swi .hero { border-bottom: 2px solid #111111; padding-bottom: 14px; }
+  .s-swi .hero .wm { font-size: 46px; }
+  .s-swi .panel { border-width: 0; border-top: 2px solid #111111; padding-left: 0; padding-right: 0; background: transparent; }
+  .s-swi.s-swc .panel { background: #F2F2EF; border: 1px solid #111111; border-top-width: 2px; padding: 14px; }
+  /* S12: S8 with full ink borders on every block, still flat (no grid, no shadow). */
+  .s-swi.s-swb .panel { border: 2px solid #111111; padding: 14px; }
+  .s-swi.s-swb .bar { border-bottom: 2px solid #111111; }
+  .s-swi.s-swb .hero { border-bottom: 0; padding-bottom: 0; }
+  .s-swi.s-swb .node { box-shadow: inset 0 0 0 1px #111111; }
+  .s-swi.s-swb .node.wait { box-shadow: inset 0 0 0 2px #1F2BFF; }
+  .s-swi.s-swb.shot { border: 2px solid #111111; }
+  .s-swi.s-swc .bar { background: #F2F2EF; }
+
+  /* Pixel runner on the logo crossbar */
+  .runner { animation: run 1.8s steps(1) infinite; }
+  @keyframes run { 0% { transform: translateX(0); } 33% { transform: translateX(8px); } 66% { transform: translateX(16px); } }
+  .shot .prog i { animation: fill 3s steps(6) infinite; }
+  @keyframes fill { from { width: 12%; } to { width: 40%; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  footer { margin-top: 56px; color: var(--k-tx3); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="intro"><span id="introLogo"></span><h1>Archon Pixel<br>8 style</h1></div>
+  <p class="lead">Logo đã chốt: L4 Pixel. Dưới đây là 8 style khác nhau, mỗi style gồm bộ màu, font, chất liệu và cách xử lý giao diện riêng, áp lên cùng một màn hình Archon mẫu (run ak-feature đang chờ bạn ở node plan). Chữ trong màn hình mẫu để tiếng Anh như UI thật; font pixel không có dấu tiếng Việt nên chỉ dùng cho wordmark và tiêu đề tiếng Anh. Bấm "Chốt style này" dưới style bạn thích, hoặc nói tôi ghép phần của các style với nhau.</p>
+  <div class="jump" id="jump"></div>
+  <div class="grid" id="grid"></div>
+  <footer>Thời lượng là số mẫu. Tên workflow, node và issue lấy từ dữ liệu thật của project.</footer>
+</div>
+
+<script>
+/* Locked mark: 7x7 pixel A on a 64 grid; `f` = pixel fill, `r` = crossbar runner, `sh` = optional extrude/shadow copy. */
+function pixelA(f, r, sh) {
+  const rows = ['..###..', '.##.##.', '##...##', '#######', '##...##', '##...##', '##...##'];
+  const cells = (fill, dx, dy) => rows.map((row, y) => [...row].map((c, x) => c === '#'
+    ? `<rect x="${4 + x * 8 + dx}" y="${4 + y * 8 + dy}" width="8" height="8" fill="${fill}"/>` : '').join('')).join('');
+  const shadow = sh ? sh.map(([c, d]) => cells(c, d, d)).join('') : '';
+  return `<svg viewBox="0 0 70 70" aria-hidden="true" shape-rendering="crispEdges">${shadow}${cells(f, 0, 0)}` +
+    `<rect class="runner" x="20" y="28" width="8" height="8" fill="${r}"/></svg>`;
+}
+
+const STYLES = [
+  { id: 'S1', cls: 's-gb pxc', name: 'Pocket Green', tag: 'Game Boy',
+    note: 'Bốn tông xanh của máy chơi game cầm tay đời đầu, nền chấm ma trận, góc bo kiểu pixel. Hoài cổ, cực kỳ nhận diện.',
+    fonts: 'Silkscreen (tiêu đề, wordmark) + IBM Plex Mono (nội dung)', display: "'Silkscreen'", body: "'IBM Plex Mono'", mono: "'IBM Plex Mono'",
+    c: { bg: '#9BBC0F', sf: '#8BAC0F', rs: '#A7C62A', line: '#0F380F', tx: '#0F380F', tx2: '#1E451E', tx3: '#1D3A0A', ac: '#0F380F', onac: '#9BBC0F', ac2: '#0F380F', ok: '#0F380F', warn: '#3A4A05', err: '#4A1A0A' },
+    k: { command: '#0F380F', prompt: '#0F380F', bash: '#0F380F', loop: '#0F380F', approval: '#0F380F' },
+    logo: ['#0F380F', '#9BBC0F', [['#306230', 3]]], v: { r: '0px', rsm: '0px', rbtn: '0px', bw: '2px', shadow: 'none', sig: '#306230', wmt: '0.08em', dw: 700 } },
+  { id: 'S2', cls: 's-arc pxc', name: 'Neon Arcade', tag: 'CRT 80s',
+    note: 'Màn hình CRT đêm: xanh cyan, hồng magenta, vàng điện, có vạch quét và logo lệch màu RGB. Năng lượng cao nhất.',
+    fonts: 'Press Start 2P (wordmark, tiêu đề) + Chakra Petch (nội dung) + Space Mono', display: "'Press Start 2P'", body: "'Chakra Petch'", mono: "'Space Mono'",
+    c: { bg: '#07071A', sf: '#0F0F2E', rs: '#17173F', line: '#2A2A6B', tx: '#F0F4FF', tx2: '#B8C0E8', tx3: '#8A93C8', ac: '#FFE600', onac: '#1A1600', ac2: '#FF2BD6', ok: '#39FF9E', warn: '#FFE600', err: '#FF4D6A' },
+    k: { command: '#00E5FF', prompt: '#FF2BD6', bash: '#FFE600', loop: '#39FF9E', approval: '#FF8A3D' },
+    logo: ['#00E5FF', '#FFE600', null], v: { r: '0px', rsm: '0px', rbtn: '0px', bw: '2px', shadow: 'none', sig: '#FF2BD6', wmt: '0.02em', dw: 400, wmsm: '11px', wmlg: '24px', hsize: '11px' } },
+  { id: 'S3', cls: 's-os', name: 'Desktop 98', tag: 'Retro OS pastel',
+    note: 'Giao diện hệ điều hành cuối thập niên 90: nút nổi khối, thanh tiêu đề cửa sổ, nhưng pha màu pastel hồng tím cho trẻ trung.',
+    fonts: 'Pixelify Sans (wordmark, tiêu đề) + Tahoma/Verdana hệ thống (nội dung) + JetBrains Mono', display: "'Pixelify Sans'", body: 'Tahoma, Verdana, sans-serif', mono: "'JetBrains Mono'",
+    c: { bg: '#3FB6B2', sf: '#C8CCD6', rs: '#DADDE5', line: '#5A5E68', tx: '#111111', tx2: '#2E3138', tx3: '#4A4E58', ac: '#1F4FD6', onac: '#FFFFFF', ac2: '#C21F7A', ok: '#0B6B2E', warn: '#7A4A00', err: '#A3121E' },
+    k: { command: '#1F4FD6', prompt: '#8A2BB8', bash: '#7A4A00', loop: '#0B6B5A', approval: '#C21F7A' },
+    logo: ['#1F4FD6', '#F062A8', [['#0A1F7A', 3]]], v: { r: '0px', rsm: '0px', rbtn: '0px', bw: '0px', shadow: 'none', sig: '#1F4FD6', wmt: '0.02em', dw: 700, framer: '6px' } },
+  { id: 'S4', cls: 's-bru', name: 'Grid Brutal', tag: 'Neo-brutalism',
+    note: 'Giấy kẻ ô, viền mực 3px, bóng cứng lệch góc, một màu cà chua nổi bật. Táo bạo, vui, rất hợp cộng đồng dev.',
+    fonts: 'Archivo Black (wordmark, tiêu đề) + Space Mono (nội dung và mã)', display: "'Archivo Black'", body: "'Space Mono'", mono: "'Space Mono'",
+    c: { bg: '#F4F5F0', sf: '#FDFDF9', rs: '#EAEBE3', line: '#111111', tx: '#111111', tx2: '#33332E', tx3: '#55554C', ac: '#FF4D2E', onac: '#111111', ac2: '#2E5BFF', ok: '#0B6E3A', warn: '#8A5200', err: '#C8231A' },
+    k: { command: '#2E5BFF', prompt: '#B0229C', bash: '#8A5200', loop: '#0B6E5E', approval: '#C8231A' },
+    logo: ['#111111', '#FF4D2E', [['#FF4D2E', 4]]], v: { r: '0px', rsm: '0px', rbtn: '0px', bw: '3px', shadow: '6px 6px 0 #111111', sig: '#FF4D2E', wmt: '0.01em', dw: 400, btnline: '#111111', btnshadow: '3px 3px 0 #111111' } },
+  { id: 'S5', cls: 's-vox', name: 'Voxel Craft', tag: 'Khối 3D',
+    note: 'Thế giới khối: trời xanh, cỏ, đất, logo đùn khối 3D, panel có bóng bậc thang. Chơi vui, dễ thương mà vẫn rõ ràng.',
+    fonts: 'Silkscreen (wordmark) + Rubik (tiêu đề, nội dung) + JetBrains Mono', display: "'Silkscreen'", body: "'Rubik'", mono: "'JetBrains Mono'",
+    c: { bg: '#A8DCF5', sf: '#F4FBF1', rs: '#E2F2DA', line: '#3D7A26', tx: '#1C2A12', tx2: '#35472A', tx3: '#4C5E40', ac: '#2E6B1C', onac: '#FFFFFF', ac2: '#D9534F', ok: '#2E7A1A', warn: '#8A5A00', err: '#B8312E' },
+    k: { command: '#2F6FB8', prompt: '#8E44AD', bash: '#8A5A00', loop: '#2E7A1A', approval: '#B8312E' },
+    logo: ['#5DBB3F', '#FFD84A', [['#8B5A2B', 3], ['#5A3A1B', 6]]], v: { r: '4px', rsm: '2px', rbtn: '4px', bw: '3px', shadow: 'none', sig: '#4E9F2E', wmt: '0.06em', dw: 700 } },
+  { id: 'S6', cls: 's-amb pxc', name: 'Amber Terminal', tag: 'Phosphor 1-bit',
+    note: 'Màn hình phosphor hổ phách một màu, vạch quét, chữ phát sáng nhẹ. Rất "hacker", tối giản và cá tính.',
+    fonts: 'VT323 (toàn bộ, cỡ lớn) ', display: "'VT323'", body: "'VT323'", mono: "'VT323'",
+    c: { bg: '#120C02', sf: '#1A1204', rs: '#241906', line: '#5A3F00', tx: '#FFB000', tx2: '#E09A00', tx3: '#B07A00', ac: '#FFB000', onac: '#120C02', ac2: '#FFD66B', ok: '#FFB000', warn: '#FFD66B', err: '#FF6A3D' },
+    k: { command: '#FFB000', prompt: '#FFD66B', bash: '#FFB000', loop: '#FFD66B', approval: '#FF6A3D' },
+    logo: ['#FFB000', '#FFE7A8', null], v: { r: '0px', rsm: '0px', rbtn: '0px', bw: '1px', shadow: 'none', sig: '#FFB000', wmt: '0.08em', dw: 400, wmsm: '22px', wmlg: '52px', hsize: '20px', fs: '17px' } },
+  { id: 'S7', cls: 's-can', name: 'Candy 8-bit', tag: 'Kawaii pastel',
+    note: 'Pastel hồng, bạc hà, oải hương, bơ, viền nét đứt và góc bo tròn. Dễ thương, thân thiện, rất trẻ.',
+    fonts: 'DotGothic16 (wordmark) + M PLUS Rounded 1c (tiêu đề, nội dung) + JetBrains Mono', display: "'DotGothic16'", body: "'M PLUS Rounded 1c'", mono: "'JetBrains Mono'",
+    c: { bg: '#FFEAF4', sf: '#FFF8FB', rs: '#FFE0EE', line: '#F4A6CC', tx: '#3B1E33', tx2: '#5E3A55', tx3: '#7A5270', ac: '#C22477', onac: '#FFFFFF', ac2: '#7B5CF0', ok: '#16664A', warn: '#8A5A00', err: '#C21F4B' },
+    k: { command: '#3E6FD8', prompt: '#7B5CF0', bash: '#8A5A00', loop: '#1E7A6A', approval: '#E0338A' },
+    logo: ['#FF6FB5', '#7FE3C4', [['#B9A6FF', 4]]], v: { r: '18px', rsm: '10px', rbtn: '999px', bw: '2px', shadow: '0 6px 0 #F4A6CC', sig: '#7FE3C4', wmt: '0.04em', dw: 400, wmlg: '38px' } },
+  { id: 'S8', cls: 's-swi', name: 'Swiss Pixel', tag: 'Editorial tối giản',
+    note: 'Lưới Thụy Sĩ, chữ grotesk đậm và rất lớn, chỉ đen và một màu xanh Klein. Logo pixel là điểm nhấn duy nhất. Hiện đại, thời trang.',
+    fonts: 'Schibsted Grotesk (wordmark, tiêu đề, nội dung) + JetBrains Mono', display: "'Schibsted Grotesk'", body: "'Schibsted Grotesk'", mono: "'JetBrains Mono'",
+    c: { bg: '#F2F2EF', sf: '#F2F2EF', rs: '#E6E6E1', line: '#111111', tx: '#111111', tx2: '#3A3A36', tx3: '#5A5A54', ac: '#1F2BFF', onac: '#FFFFFF', ac2: '#1F2BFF', ok: '#0B6E3A', warn: '#8A5200', err: '#D0021B' },
+    k: { command: '#1F2BFF', prompt: '#111111', bash: '#111111', loop: '#111111', approval: '#1F2BFF' },
+    logo: ['#111111', '#1F2BFF', null], v: { r: '0px', rsm: '0px', rbtn: '0px', bw: '1px', shadow: 'none', sig: '#1F2BFF', wmt: '-0.04em', dw: 900, framer: '0px' } },
+];
+
+/* Later variants S9-S11 (S8 + grid paper, and S4 without shadows in S8 colours). The owner asked to go back to the
+   original eight, so they only show when the page is opened with #all. */
+const S8 = STYLES.find(s => s.id === 'S8');
+const S4 = STYLES.find(s => s.id === 'S4');
+/* Owner's pick (2026-09-30): L4 Pixel + S8 Swiss Pixel with borders. Always shown first. */
+STYLES.unshift({ ...S8, id: 'S12', cls: 's-swi s-swb', name: 'Swiss Pixel Border', tag: 'S8 + viền đầy đủ',
+  note: 'Đúng màu, font và bố cục của S8 Swiss Pixel, thêm viền mực 2px quanh khung, thanh điều hướng, mỗi panel và mỗi dòng node. Phẳng, không nền caro, không đổ bóng.' });
+if (location.hash === '#all') STYLES.unshift(
+  /* Owner's final pick: S4 structure and fonts, no drop shadows anywhere, S8 colors. */
+  { ...S4, id: 'S11', name: 'Grid Mono', tag: 'S4 không đổ bóng + màu S8',
+    note: 'Khung của S4 (nền caro, viền mực 3px, Archivo Black + Space Mono) nhưng bỏ hết đổ bóng ở panel, nút và logo, dùng bảng màu của S8: xám giấy, mực đen, một màu xanh Klein.',
+    c: { ...S8.c }, k: { ...S8.k }, logo: ['#111111', '#1F2BFF', null],
+    v: { ...S4.v, shadow: 'none', btnshadow: 'none', sig: '#1F2BFF' } },
+  { ...S8, id: 'S9', cls: 's-swi s-bru', name: 'Swiss Grid', tag: 'S8 + caro S4, caro phủ toàn bộ',
+    note: 'Đúng S8 Swiss Pixel, thêm nền giấy kẻ ô 20px của S4. Panel trong suốt nên caro chạy cả dưới chữ, rất đồng nhất với logo pixel.' },
+  { ...S8, id: 'S10', cls: 's-swi s-bru s-swc', name: 'Swiss Grid Card', tag: 'S8 + caro S4, panel nền đặc',
+    note: 'Caro chỉ ở nền. Panel có nền đặc và viền mảnh, nên chữ trong panel đọc dễ hơn khi màn hình nhiều dữ liệu.' },
+);
+
+function lum(h) { const n = h.replace('#', ''); return [0, 2, 4].map(i => parseInt(n.slice(i, i + 2), 16) / 255)
+  .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0); }
+function cr(a, b) { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+
+function shot(s) {
+  const c = s.c, v = s.v, L = s.logo;
+  const vars = { bg: c.bg, sf: c.sf, rs: c.rs, line: c.line, tx: c.tx, tx2: c.tx2, tx3: c.tx3, ac: c.ac, onac: c.onac, ac2: c.ac2,
+    r: v.r, 'r-sm': v.rsm, 'r-btn': v.rbtn, bw: v.bw, shadow: v.shadow, sig: v.sig, display: s.display, body: s.body, mono: s.mono,
+    'wm-track': v.wmt, 'display-w': v.dw, 'frame-r': v.framer || '16px', 'btn-line': v.btnline || 'transparent', 'btn-shadow': v.btnshadow || 'none' };
+  if (v.wmsm) vars['wm-sm'] = v.wmsm; if (v.wmlg) vars['wm-lg'] = v.wmlg; if (v.hsize) vars['h-size'] = v.hsize;
+  const style = Object.entries(vars).map(([k, x]) => `--${k}:${x}`).join(';') + (v.fs ? `;font-size:${v.fs}` : '');
+  const mark = pixelA(L[0], L[1], L[2]);
+  // The waiting label and signal chip fall back to body text when the signal color is too faint on the row surface.
+  const waitCol = cr(c.ac2, c.rs) >= 4.5 ? c.ac2 : c.tx;
+  const nodes = [['bash', 'setup', 'DONE 6.7s', c.ok, ''], ['prompt', 'plan', 'WAITING', waitCol, 'wait'], ['prompt', 'verify-and-fix-plan', 'PENDING', c.tx3, ''],
+    ['loop', 'ralph-loop-run', 'PENDING', c.tx3, ''], ['command', 'create-pull-request', 'PENDING', c.tx3, '']];
+  return `<div class="shot ${s.cls}" style="${style}">
+    <div class="fx"></div>
+    <div class="bar"><div class="brand">${mark}<span class="wm">Archon</span></div>
+      <nav><a>Chat</a><a>Runs</a><a class="on">Workflows</a><a>Builder</a><a>Settings</a></nav></div>
+    <div class="body">
+      <div class="hero">${mark}<div><span class="wm">Archon</span><small>Governed agent workflows</small></div></div>
+      <div class="cols">
+        <div class="panel" data-win="ak-feature.run">
+          <div class="ph"><b>ak-feature</b><span>issue #266</span></div>
+          <div class="prog"><i></i></div>
+          <div class="nodes">${nodes.map(([k, n, st, col, cls]) => `<div class="node ${cls}"><span class="k" style="color:${s.k[k]}">${k}</span><span>${n}</span><span class="s" style="color:${col}">${st}</span></div>`).join('')}</div>
+        </div>
+        <div class="panel ask" data-win="plan: needs you">
+          <div class="ph"><b>Plan needs you</b></div>
+          <label for="in-${s.id}">Should the plan include a data migration?</label>
+          <input id="in-${s.id}" placeholder="Type your answer">
+          <div class="btns"><button class="btn pri" type="button">Send answer</button><button class="btn sec" type="button">View logs</button></div>
+          <div class="stats"><span style="color:${c.ok}">1 done</span><span style="color:${waitCol}">1 waiting</span><span style="color:${c.tx3}">3 pending</span></div>
+        </div>
+      </div>
+    </div></div>`;
+}
+
+function aa(s) {
+  const c = s.c;
+  // Retro OS draws body text on the panel surface, not the teal desktop, so measure against the surface there.
+  const base = s.id === 'S3' ? c.sf : c.bg;
+  const pairs = [cr(c.tx, base), cr(c.tx2, base), cr(c.tx3, base), cr(c.onac, c.ac), cr(c.ok, c.rs), cr(c.tx3, c.rs)];
+  const worst = Math.min(...pairs);
+  return `Chữ chính <b>${pairs[0].toFixed(1)}</b> · Tương phản thấp nhất <b class="${worst < 4.5 ? 'bad' : ''}">${worst.toFixed(1)}</b> ${worst < 4.5 ? '(chưa đạt AA)' : '(đạt AA)'}`;
+}
+
+document.getElementById('introLogo').innerHTML = pixelA('#F2F2F5', '#FF4D2E', null);
+document.getElementById('jump').innerHTML = STYLES.map(s => `<a href="#${s.id}">${s.id} ${s.name}</a>`).join('');
+document.getElementById('grid').innerHTML = STYLES.map(s => `
+  <section class="item" id="${s.id}">
+    ${shot(s)}
+    <div class="cap">
+      <h2>${s.id} ${s.name}<span>${s.tag}</span></h2>
+      <button type="button" data-lock="${s.id}">Chốt style này</button>
+      <p>${s.note}</p>
+      <div class="fonts">${s.fonts}</div>
+      <div class="chips">${[s.c.bg, s.c.sf, s.c.tx, s.c.ac, s.c.ac2, s.logo[0], s.logo[1]].map(x => `<i style="background:${x}"></i>`).join('')}</div>
+      <div class="aa">${aa(s)}</div>
+    </div>
+  </section>`).join('');
+
+document.getElementById('grid').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-lock]'); if (!b) return;
+  const s = STYLES.find(x => x.id === b.dataset.lock);
+  document.querySelectorAll('.item').forEach(el => el.classList.toggle('locked', el.id === s.id));
+  let t = document.querySelector('.toast'); if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+  t.textContent = `Chốt: L4 Pixel + ${s.id} ${s.name}. Gửi dòng này cho Claude.`;
+});
+</script>
+</body>
+</html>

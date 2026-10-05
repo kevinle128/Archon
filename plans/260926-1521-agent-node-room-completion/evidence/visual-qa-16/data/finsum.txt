@@ -1,0 +1,13 @@
+{'tag': 'FIN1', 'sd': 'c', 'dl': 100, 'status': 'completed', 'termC': 151, 'termL': 149, 'senderLiveEnds': 164, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+{'tag': 'FIN10', 'sd': 'l', 'dl': 0, 'status': 'completed', 'termC': 54, 'termL': 50, 'senderLiveEnds': 65, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+{'tag': 'FIN11', 'sd': 'c', 'dl': 100, 'status': 'completed', 'termC': 198, 'termL': 207, 'senderLiveEnds': 221, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+{'tag': 'FIN12', 'sd': 'l', 'dl': 100, 'status': 'completed', 'termC': 166, 'termL': 166, 'senderLiveEnds': 181, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+{'tag': 'FIN2', 'sd': 'l', 'dl': 100, 'status': 'completed', 'termC': 171, 'termL': 155, 'senderLiveEnds': 155, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+{'tag': 'FIN3', 'sd': 'c', 'dl': 100, 'status': 'completed', 'termC': 151, 'termL': 147, 'senderLiveEnds': 161, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+{'tag': 'FIN4', 'sd': 'l', 'dl': 100, 'status': 'completed', 'termC': 146, 'termL': 148, 'senderLiveEnds': 161, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+{'tag': 'FIN5', 'sd': 'c', 'dl': 0, 'status': 'completed', 'termC': 45, 'termL': 43, 'senderLiveEnds': 56, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+{'tag': 'FIN6', 'sd': 'l', 'dl': 100, 'status': 'completed', 'termC': 158, 'termL': 152, 'senderLiveEnds': 180, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+{'tag': 'FIN7', 'sd': 'c', 'dl': 100, 'status': 'completed', 'termC': 144, 'termL': 143, 'senderLiveEnds': 161, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+{'tag': 'FIN8', 'sd': 'l', 'dl': 100, 'status': 'completed', 'termC': 172, 'termL': 169, 'senderLiveEnds': 185, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+{'tag': 'FIN9', 'sd': 'c', 'dl': 100, 'status': 'completed', 'termC': 148, 'termL': 144, 'senderLiveEnds': 160, 'lateLive': 0, 'falseNS': 0, 'rec': 0, 'esErr': {'c': 0, 'l': 0}, 'q': ['sent', 'sent']}
+cycles 12 lateLive>0: 0 falseNS: 0 rec: 0

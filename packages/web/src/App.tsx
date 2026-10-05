@@ -12,7 +12,6 @@ import { WorkflowExecutionPage } from '@/routes/WorkflowExecutionPage';
 import { WorkflowBuilderPage } from '@/routes/WorkflowBuilderPage';
 import { SettingsPage } from '@/routes/SettingsPage';
 import { LoginPage } from '@/routes/LoginPage';
-import { ConsoleApp } from '@/experiments/console/ConsoleApp';
 import { SessionGate } from '@/components/auth/SessionGate';
 
 interface ErrorBoundaryState {
@@ -41,17 +40,17 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
   render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <div className="flex h-screen items-center justify-center bg-zinc-950 p-8">
+        <div className="flex h-screen items-center justify-center bg-background p-8">
           <div className="max-w-md text-center">
-            <h1 className="mb-2 text-xl font-semibold text-zinc-100">Something went wrong</h1>
-            <p className="mb-4 text-sm text-zinc-400">
+            <h1 className="mb-2 text-xl font-semibold text-text-primary">Something went wrong</h1>
+            <p className="mb-4 text-sm text-text-secondary">
               {this.state.error?.message ?? 'An unexpected error occurred.'}
             </p>
             <button
               onClick={(): void => {
                 window.location.reload();
               }}
-              className="rounded-md bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700"
+              className="rounded-md bg-surface-elevated px-4 py-2 text-sm text-text-primary hover:bg-surface-hover"
             >
               Reload page
             </button>
@@ -72,49 +71,22 @@ export function App(): React.ReactElement {
             <Routes>
               {/* Login mounts OUTSIDE the SessionGate so it is always reachable. */}
               <Route path="/login" element={<LoginPage />} />
-              {/* The console is now the default UI. */}
-              <Route path="/" element={<Navigate to="/console" replace />} />
-              {/*
-                Console mounts OUTSIDE Layout (so it does not inherit TopNav) but
-                still INSIDE SessionGate — otherwise /console would bypass web auth
-                that every other app route enforces. When web auth is disabled (the
-                solo default) SessionGate passes children through unchanged after a
-                brief auth-status check (cached for the session) — no login required.
-              */}
               <Route
-                path="/console/*"
-                element={
-                  <SessionGate>
-                    <ConsoleApp />
-                  </SessionGate>
-                }
-              />
-              {/*
-                Classic UI, re-rooted under /legacy for the deprecation window.
-                The console links here via "Old UI"; /legacy lands on chat. Removed
-                from the codebase once the console has proven itself.
-              */}
-              <Route
-                path="/legacy"
                 element={
                   <SessionGate>
                     <Layout />
                   </SessionGate>
                 }
               >
-                {/* Land on /legacy/chat (not /legacy) so the TopNav Chat tab highlights. */}
-                <Route index element={<Navigate to="chat" replace />} />
-                <Route path="chat" element={<ChatPage />} />
-                <Route path="chat/*" element={<ChatPage />} />
-                <Route path="dashboard" element={<DashboardPage />} />
-                <Route path="workflows" element={<WorkflowsPage />} />
-                <Route path="workflows/builder" element={<WorkflowBuilderPage />} />
-                <Route path="workflows/runs/:runId" element={<WorkflowExecutionPage />} />
-                <Route
-                  path="workflows/runs"
-                  element={<Navigate to="/legacy/workflows" replace />}
-                />
-                <Route path="settings" element={<SettingsPage />} />
+                <Route path="/" element={<Navigate to="/chat" replace />} />
+                <Route path="/chat" element={<ChatPage />} />
+                <Route path="/chat/*" element={<ChatPage />} />
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/workflows" element={<WorkflowsPage />} />
+                <Route path="/workflows/builder" element={<WorkflowBuilderPage />} />
+                <Route path="/workflows/runs/:runId" element={<WorkflowExecutionPage />} />
+                <Route path="/workflows/runs" element={<Navigate to="/workflows" replace />} />
+                <Route path="/settings" element={<SettingsPage />} />
               </Route>
             </Routes>
           </BrowserRouter>

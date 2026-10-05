@@ -1,0 +1,112 @@
+{
+  "R": "87af4cd555ce4da23333160b7f81fdd8",
+  "sd": "l",
+  "dl": 100,
+  "send": {
+    "clicked": 1790729656508,
+    "sendResolved": 1790729656531,
+    "st": 200,
+    "url": "/api/workflows/runs/87af4cd555ce4da23333160b7f81fdd8/nodes/fake-node/send",
+    "body": "{\"success\":true,\"message_id\":\"1074ae2b-be01-4773-9a97-ee017bb2597e\",\"state\":\"awaiting_send_now\"}"
+  },
+  "gets": [
+    { "s": "l", "t": -1732, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -1341, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -1250, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "l", "t": -1249, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "l", "t": -1245, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -337, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -240, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": 2, "k": "q", "es": "live", "no": null, "n": 2 },
+    { "s": "c", "t": 100, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "c", "t": 211, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "c", "t": 226, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "l", "t": 1006, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "l", "t": 1014, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 1014, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "l", "t": 1038, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "l", "t": 3256, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 3256, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 3256, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 3256, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 4768, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 4768, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 4768, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 4768, "k": "r", "st": "completed", "ns": "fake-node:completed" }
+  ],
+  "status": "completed",
+  "nodeDone": ["2026-09-30 00:54:16"],
+  "q": [
+    {
+      "message_id": "931e0776-40a5-49b2-affc-9b8b80d6f8bf",
+      "message": "EVD3-Q1 queued item",
+      "operator_user_id": "3a7535c4721e32049e37249603dc7807",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    },
+    {
+      "message_id": "1074ae2b-be01-4773-9a97-ee017bb2597e",
+      "message": "EVD3 typed redirect <<E2E_SCENARIO>>{\"delayMs\":100}<</E2E_SCENARIO>>",
+      "operator_user_id": "3a7535c4721e32049e37249603dc7807",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    }
+  ],
+  "c": [
+    [-2077, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [116, "SENDING · 1|Running|agent generating|0"],
+    [124, "|Running|agent generating|0"],
+    [219, "|Completed||0"]
+  ],
+  "l": [
+    [-2077, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [-2, "SENDING · 2|Running|agent idle · Send now delivers|0"],
+    [6, "SENDING · 2|Running|agent generating|0"],
+    [283, "|Running|agent generating|0"],
+    [1036, "|Completed||0"]
+  ],
+  "tc": [
+    [-2077, "Running||delete,Send|TA|WILL SEND · 1|agent idle · Send now delivers|0|-1"],
+    [116, "Running||Stop,Queue|TA|SENDING · 1|agent generating|0|-1"],
+    [124, "Running||Stop,Queue|TA||agent generating|0|-1"],
+    [219, "Completed||||||0|-1"]
+  ],
+  "tl": [
+    [-2077, "Running||delete,Send|TA|WILL SEND · 1|agent idle · Send now delivers|0|-1"],
+    [-2, "Running||Send|TA|SENDING · 2|agent idle · Send now delivers|0|-1"],
+    [6, "Running||Stop,Queue|TA|SENDING · 2|agent generating|0|-1"],
+    [283, "Running||Stop,Queue|TA||agent generating|0|-1"],
+    [1036, "Completed||||||0|-1"]
+  ],
+  "es": {
+    "c": [
+      [-9436, "new"],
+      [-9421, "open"]
+    ],
+    "l": [
+      [-7811, "new"],
+      [-7811, "close"],
+      [-7810, "new"],
+      [-7798, "open"],
+      [-6060, "error"],
+      [-3054, "open"],
+      [-52, "error"],
+      [2952, "open"],
+      [5955, "error"]
+    ],
+    "l2": [
+      [-6076, "new"],
+      [-6076, "close"],
+      [-6076, "new"],
+      [-6060, "open"],
+      [-3054, "error"],
+      [-52, "open"],
+      [2952, "error"],
+      [5955, "open"]
+    ]
+  }
+}

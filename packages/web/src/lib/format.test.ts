@@ -63,13 +63,13 @@ describe('formatDuration', () => {
   test('returns minutes for exactly 60000ms', () => {
     const start = '2024-03-10T14:30:00.000Z';
     const end = '2024-03-10T14:31:00.000Z';
-    expect(formatDuration(start, end)).toBe('1.0m');
+    expect(formatDuration(start, end)).toBe('1m');
   });
 
   test('returns minutes for durations over 60s', () => {
     const start = '2024-03-10T14:30:00.000Z';
     const end = '2024-03-10T14:32:30.000Z';
-    expect(formatDuration(start, end)).toBe('2.5m');
+    expect(formatDuration(start, end)).toBe('2m 30s');
   });
 
   test('uses Date.now() when completedAt is null', () => {
@@ -147,22 +147,46 @@ describe('formatDurationMs', () => {
   });
 
   test('returns minutes for exactly 60000ms', () => {
-    expect(formatDurationMs(60000)).toBe('1.0m');
+    expect(formatDurationMs(60000)).toBe('1m');
   });
 
-  test('returns minutes for 90000ms (1.5 minutes)', () => {
-    expect(formatDurationMs(90000)).toBe('1.5m');
+  test('returns minutes for 90000ms (1m 30s)', () => {
+    expect(formatDurationMs(90000)).toBe('1m 30s');
   });
 
   test('returns minutes for large values', () => {
-    expect(formatDurationMs(600000)).toBe('10.0m');
+    expect(formatDurationMs(600000)).toBe('10m');
   });
 
   test('one decimal place for seconds', () => {
     expect(formatDurationMs(1500)).toBe('1.5s');
   });
 
-  test('one decimal place for minutes', () => {
-    expect(formatDurationMs(75000)).toBe('1.3m');
+  test('minutes keep whole seconds', () => {
+    expect(formatDurationMs(75000)).toBe('1m 15s');
+  });
+});
+
+describe('long durations', () => {
+  const HOUR = 3_600_000;
+  const DAY = 24 * HOUR;
+
+  test('shows hours and minutes without seconds from one hour', () => {
+    expect(formatDurationMs(3 * HOUR + 40 * 60_000 + 20_000)).toBe('3h 40m');
+  });
+
+  test('shows days and hours without minutes from one day', () => {
+    expect(formatDurationMs(4 * DAY + 6 * HOUR + 30 * 60_000)).toBe('4d 6h');
+  });
+
+  test('omits a zero unit', () => {
+    expect(formatDurationMs(2 * HOUR)).toBe('2h');
+    expect(formatDurationMs(DAY)).toBe('1d');
+  });
+
+  test('formats a run that lasted 6136.5 minutes as days and hours', () => {
+    const start = '2024-03-10T00:00:00.000Z';
+    const end = new Date(new Date(start).getTime() + 6136.5 * 60_000).toISOString();
+    expect(formatDuration(start, end)).toBe('4d 6h');
   });
 });

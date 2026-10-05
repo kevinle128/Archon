@@ -236,7 +236,10 @@ async function assertNeverSentBox(
   for (let i = 0; i < expected.length; i += 1) {
     const entry = expected[i]!;
     const item = items.nth(i);
-    await expect(item).toHaveText(entry.text);
+    // The decorative 1-based position number is an aria-hidden sibling span,
+    // excluded from the accessible name but not from raw textContent — so an
+    // exact match must tolerate it; toContainText still proves the message.
+    await expect(item).toContainText(entry.text);
     if (entry.messageId === null) {
       expect(await item.getAttribute('data-message-id')).toBeNull();
     } else {
@@ -514,9 +517,14 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
 
 async function measureNeverSentVisual(room: Locator): Promise<Record<string, unknown>> {
   const list = neverSentList(room);
+  // The band header is an interactive toggle button (mirroring TodoStrip's
+  // button/aria-expanded shape), never a static heading. Its label — the
+  // uppercase/tracked/colored text this function measures — is carried by
+  // the button's own first (non-decorative) span child, not the button
+  // element itself.
   const header = room
-    .locator('h3')
-    .filter({ hasText: /^never sent ·/i })
+    .getByRole('button', { name: /^never sent ·/i })
+    .locator('span:not([aria-hidden="true"])')
     .first();
   const alert = neverSentAlert(room);
   const scrollWrap = list.locator('xpath=..');
@@ -524,7 +532,8 @@ async function measureNeverSentVisual(room: Locator): Promise<Record<string, unk
   const geometry = await room.evaluate(roomEl => {
     const listEl = roomEl.querySelector('ul[aria-label^="Never sent"]');
     const wrap = listEl?.parentElement ?? null;
-    const headerEl = roomEl.querySelector('h3');
+    const headerButton = listEl?.closest('section')?.querySelector('button') ?? null;
+    const headerEl = headerButton?.querySelector('span:not([aria-hidden="true"])') ?? null;
     const style = wrap ? roomEl.ownerDocument.defaultView?.getComputedStyle(wrap) : null;
     const headerStyle = headerEl
       ? roomEl.ownerDocument.defaultView?.getComputedStyle(headerEl)
@@ -539,9 +548,13 @@ async function measureNeverSentVisual(room: Locator): Promise<Record<string, unk
         scrollWider: span.scrollWidth > span.clientWidth + 1,
       };
     });
-    const focusables = listEl
+    // Scoped to the read-only content body, deliberately excluding the
+    // band's own collapse/expand header toggle: the disclosure text ("no
+    // field, no Stop, no send") is about steering controls on the finished
+    // items themselves, not about the header being collapsible.
+    const focusables = wrap
       ? Array.from(
-          (listEl.closest('section') ?? roomEl).querySelectorAll(
+          wrap.querySelectorAll(
             'button, a, input, textarea, select, [tabindex]:not([tabindex="-1"])'
           )
         ).filter(el => {

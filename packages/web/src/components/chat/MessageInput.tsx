@@ -8,8 +8,8 @@ import {
   type DragEvent,
   type ClipboardEvent,
 } from 'react';
-import { ArrowUp, Loader2, Paperclip, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { Folder, Loader2, Paperclip, Send, X } from 'lucide-react';
 
 /** Binary (non-text) MIME types explicitly accepted */
 const ACCEPTED_BINARY_MIME_TYPES = new Set([
@@ -109,6 +109,8 @@ interface MessageInputProps {
   onSend: (message: string, files?: File[]) => void;
   disabled: boolean;
   disabledReason?: string;
+  /** Project the message runs against, shown as the scope chip. */
+  projectName?: string;
 }
 
 export interface MessageInputHandle {
@@ -122,7 +124,7 @@ function formatBytes(bytes: number): string {
 }
 
 const messageInput = forwardRef<MessageInputHandle, MessageInputProps>(function MessageInputInner(
-  { onSend, disabled, disabledReason }: MessageInputProps,
+  { onSend, disabled, disabledReason, projectName }: MessageInputProps,
   ref
 ): React.ReactElement {
   const [value, setValue] = useState('');
@@ -242,20 +244,25 @@ const messageInput = forwardRef<MessageInputHandle, MessageInputProps>(function 
 
   return (
     <div
-      className={`border-t border-border bg-surface p-4 transition-colors${dragging ? ' bg-primary/5' : ''}`}
+      className="sticky bottom-0 shrink-0 bg-background px-8 pb-4"
       title={disabledReason}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="mx-auto flex max-w-3xl flex-col gap-2">
+      <div
+        className={cn(
+          'mx-auto max-w-[760px] rounded-xl border bg-background px-4 pb-2 pt-1 transition-colors duration-150 focus-within:border-accent focus-within:outline-2 focus-within:outline-accent',
+          dragging ? 'border-accent bg-accent-muted' : 'border-border'
+        )}
+      >
         {/* File preview chips */}
         {files.length > 0 && (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1 pt-2">
             {files.map(({ file, id }) => (
               <div
                 key={id}
-                className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-text-secondary"
+                className="flex items-center gap-1 rounded-md border border-border bg-surface px-2 py-1 text-xs text-text-secondary"
               >
                 <span className="max-w-[140px] truncate" title={file.name}>
                   {file.name}
@@ -266,7 +273,7 @@ const messageInput = forwardRef<MessageInputHandle, MessageInputProps>(function 
                   onClick={() => {
                     removeFile(id);
                   }}
-                  className="ml-1 text-text-tertiary hover:text-text-primary"
+                  className="ml-1 cursor-pointer text-text-tertiary hover:text-text-primary"
                   aria-label={`Remove ${file.name}`}
                 >
                   <X className="h-3 w-3" />
@@ -277,58 +284,71 @@ const messageInput = forwardRef<MessageInputHandle, MessageInputProps>(function 
         )}
 
         {/* File error */}
-        {fileError !== null && <p className="text-xs text-destructive">{fileError}</p>}
+        {fileError !== null && <p className="pt-2 text-xs text-error">{fileError}</p>}
 
-        {/* Input row */}
-        <div className="flex items-end gap-2">
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept={ACCEPTED_EXTENSIONS}
-            className="hidden"
-            onChange={handleFilePickerChange}
-            disabled={disabled}
-          />
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={ACCEPTED_EXTENSIONS}
+          className="hidden"
+          onChange={handleFilePickerChange}
+          disabled={disabled}
+        />
 
-          {/* Attach button */}
-          <Button
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={handleInput}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          disabled={disabled}
+          aria-label="Message Archon"
+          placeholder={dragging ? 'Drop files here...' : (disabledReason ?? 'Message Archon...')}
+          rows={1}
+          className="block min-h-11 w-full resize-none overflow-hidden border-0 bg-transparent pb-0.5 pt-2.5 text-base leading-normal text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ maxHeight: '200px' }}
+        />
+
+        <div className="-ml-2 flex items-center gap-2">
+          <button
             type="button"
-            variant="ghost"
-            size="icon"
             disabled={disabled || files.length >= MAX_FILES}
             onClick={() => fileInputRef.current?.click()}
-            className="h-10 w-10 shrink-0 text-text-tertiary hover:text-text-primary"
+            className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-[10px] text-text-secondary transition-colors duration-150 hover:bg-surface-elevated hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
             title="Attach file"
+            aria-label="Attach a file"
           >
-            <Paperclip className="h-4 w-4" />
-          </Button>
-
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={handleInput}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            disabled={disabled}
-            placeholder={dragging ? 'Drop files here...' : (disabledReason ?? 'Message Archon...')}
-            rows={1}
-            className="flex-1 resize-none overflow-hidden rounded-lg border border-border bg-background px-4 py-2 text-sm leading-6 text-text-primary placeholder:text-text-tertiary focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ minHeight: '40px', maxHeight: '200px' }}
-          />
-          <Button
+            <Paperclip className="h-5 w-5" strokeWidth={1.5} />
+          </button>
+          {projectName && (
+            <span className="inline-flex min-h-6 min-w-0 items-center gap-1 rounded-full border border-border px-2 text-xs text-text-secondary">
+              <Folder className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+              <span className="truncate">{projectName}</span>
+            </span>
+          )}
+          <span className="flex-1" />
+          <span className="hidden whitespace-nowrap text-xs text-text-tertiary sm:inline">
+            Enter to send &middot; Shift+Enter for a new line
+          </span>
+          <button
+            type="button"
             onClick={handleSend}
             disabled={disabled || !value.trim()}
-            size="icon"
-            className="h-10 w-10 shrink-0 rounded-lg bg-primary text-primary-foreground hover:bg-accent-hover disabled:opacity-50"
+            aria-label="Send message"
+            className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-accent px-4 text-sm font-medium text-accent-foreground transition-colors duration-150 hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
             {disabled && !disabledReason ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2
+                className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                strokeWidth={1.5}
+              />
             ) : (
-              <ArrowUp className="h-4 w-4" />
+              <Send className="h-4 w-4" strokeWidth={1.5} />
             )}
-          </Button>
+            Send
+          </button>
         </div>
       </div>
     </div>

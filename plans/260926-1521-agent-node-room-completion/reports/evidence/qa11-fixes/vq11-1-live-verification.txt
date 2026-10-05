@@ -1,0 +1,21 @@
+[A] runId=169e57f7d782d771fa334d6f6fb8be12
+[A] samples=61 sawRecoveryRequired=false
+[A] sawTerminal=true finalTextarea=0 finalQueueButton=0
+[B] runId=b2da92a500db1e0e060b0d4e302ddc52
+[B] abandon status=200
+[B-legacy] samples=6 sawRecoveryRequired=false
+[B-console] samples=1 sawRecoveryRequired=false
+[B] legacy={"sawRecoveryRequired":false,"sawTerminal":true,"samples":6} console={"sawRecoveryRequired":false,"sawTerminal":true,"samples":1}
+VQ11-1 LIVE VERIFICATION: PASS
+
+Method: real Claude haiku provider (not e2e-fake), server on 3355 with
+config/credentials copied from ~/.archon, web on 5223. Scenario A dispatched
+qa11-real-claude (fast ~8s node) with Legacy already open before completion,
+polled the full page body text every ~150ms for "Recovery required" (never
+appeared) and for the terminal pill ("Completed"/"Failed"); confirmed no
+textarea/Queue button remained once terminal. Scenario B dispatched
+qa11-real-claude-slow (long node, count to 200) with BOTH Legacy and Console
+open, waited for the Stop button (proving the node was actually running),
+then POSTed /abandon and polled both shells' full page text; neither ever
+showed "Recovery required" and both reached a terminal pill (console reached
+it on the very first poll, i.e. effectively immediately).

@@ -92,22 +92,71 @@ function closeQuery(queryToClose: ClosableQuery | undefined, reason: string): vo
 }
 
 /**
- * One user message on the interrupt-capable streaming input. The iterable
- * stays open after yielding until `holdOpen` settles — the SDK keeps the
- * query's control channel (interrupt, setPermissionMode, …) alive only while
- * input is streaming, so the provider resolves the gate in every result,
- * error, Cancel, and finally path.
+ * The interrupt-capable streaming input for one query attempt. It yields the
+ * prompt message first and then stays open, accepting further user messages
+ * through `push()` until `close()` - the SDK keeps the query's control channel
+ * (interrupt, setPermissionMode, ...) alive only while input is streaming, so
+ * the provider closes it in every result, error, Cancel, and finally path.
+ *
+ * `push()` returns `false` once the input is closed, so a caller never
+ * believes a message reached a dead turn.
  */
-async function* singleTurnInput(
-  text: string,
-  holdOpen: Promise<void>
-): AsyncGenerator<SDKUserMessage, void, undefined> {
-  yield {
+interface LiveTurnInput {
+  readonly iterable: AsyncGenerator<SDKUserMessage, void, undefined>;
+  push(message: SDKUserMessage): boolean;
+  close(): void;
+}
+
+/**
+ * Builds one user message. `uuid`, when provided, stamps the durable operator
+ * message id (delivery ack) - the CLI echoes it back on the output stream
+ * (`isReplay: true`) only when started with `--replay-user-messages`.
+ */
+function buildUserMessage(text: string, uuid?: string): SDKUserMessage {
+  return {
     type: 'user',
     message: { role: 'user', content: text },
     parent_tool_use_id: null,
+    // The durable steering message id is caller-stamped as a UUID (see
+    // steering-api-contract.md); the SDK's `UUID` template-literal type
+    // needs pinning since it is validated at the durable-store boundary,
+    // not by this SDK type.
+    ...(uuid !== undefined ? { uuid: uuid as SDKUserMessage['uuid'] } : {}),
   };
-  await holdOpen;
+}
+
+function createLiveTurnInput(first: SDKUserMessage): LiveTurnInput {
+  const queue: SDKUserMessage[] = [first];
+  let wake: (() => void) | undefined;
+  let closed = false;
+  const iterable = (async function* (): AsyncGenerator<SDKUserMessage, void, undefined> {
+    for (;;) {
+      const next = queue.shift();
+      if (next !== undefined) {
+        yield next;
+        continue;
+      }
+      if (closed) return;
+      await new Promise<void>(resolve => {
+        wake = resolve;
+      });
+    }
+  })();
+  return {
+    iterable,
+    push(message): boolean {
+      if (closed) return false;
+      queue.push(message);
+      wake?.();
+      wake = undefined;
+      return true;
+    },
+    close(): void {
+      closed = true;
+      wake?.();
+      wake = undefined;
+    },
+  };
 }
 
 /**
@@ -144,14 +193,35 @@ async function* raceInterruptFailure<T>(
 }
 
 /**
- * Content block type for assistant messages
+ * Content block shapes for assistant messages. Duck-typed rather than
+ * imported from the raw Anthropic SDK's Beta message types — that package is
+ * a peer dependency of the Agent SDK and is not itself installed here.
+ *
+ * `thinking` carries plaintext extended-thinking output. An install that has
+ * not requested thinking summaries returns the block with an EMPTY
+ * `thinking` field (proven empirically: `Settings.showThinkingSummaries`
+ * unset yields `thinking: ''` even with `thinking.type: 'enabled'`) — an
+ * empty field means "not displayable", not "no thinking happened".
+ *
+ * `redacted_thinking` never carries readable text (`data` is an opaque,
+ * encrypted blob) and must never be treated as displayable.
+ *
+ * `server_tool_use` / `advisor_tool_result` are the raw Anthropic Messages
+ * API shape for the hosted advisor tool (`type: 'advisor_20260301'`), per
+ * platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool. Not
+ * empirically observed through the Claude Code CLI's `advisorModel` setting
+ * on this install — see `advisorInputSubagentType` for the path that was.
  */
 interface ContentBlock {
-  type: 'text' | 'tool_use';
+  type: string;
   text?: string;
   name?: string;
   input?: Record<string, unknown>;
   id?: string;
+  thinking?: string;
+  data?: string;
+  content?: { type: string; text?: string; encrypted_content?: string; error_code?: string };
+  tool_use_id?: string;
 }
 
 function normalizeClaudeUsage(usage?: {
@@ -927,7 +997,17 @@ function buildBaseClaudeOptions(
     // Per-node override wins over the assistant-level default; the final
     // fallback stays ['project', 'user'] (the SDK-loading default Archon ships).
     settingSources,
-    hooks: buildToolCaptureHooks(toolResultQueue),
+    settings: {
+      // Without this, a `thinking` content block's `thinking` field arrives
+      // EMPTY (proven empirically) — the API omits displayable text unless
+      // summaries are explicitly requested. Always on: it only affects
+      // whether existing thinking is shown, never whether thinking happens.
+      showThinkingSummaries: true,
+      ...(assistantDefaults.advisorModel !== undefined
+        ? { advisorModel: assistantDefaults.advisorModel }
+        : {}),
+    },
+    hooks: buildToolCaptureHooks(toolResultQueue, requestOptions?.interruptSignal),
     stderr: (data: string): void => {
       const output = data.trim();
       if (!output) return;
@@ -959,7 +1039,10 @@ function buildBaseClaudeOptions(
  * Build SDK hooks that capture tool use results into a shared queue.
  * The queue is drained during stream normalization.
  */
-function buildToolCaptureHooks(toolResultQueue: ToolResultEntry[]): Options['hooks'] {
+function buildToolCaptureHooks(
+  toolResultQueue: ToolResultEntry[],
+  interruptSignal: AbortSignal | undefined
+): Options['hooks'] {
   return {
     PostToolUse: [
       {
@@ -1004,7 +1087,19 @@ function buildToolCaptureHooks(toolResultQueue: ToolResultEntry[]): Options['hoo
                 getLog().debug({ input }, 'claude.post_tool_use_failure_no_error_field');
               }
               const errorText = rawError ?? 'tool failed';
-              const isInterrupt = (input as { is_interrupt?: boolean }).is_interrupt === true;
+              // The SDK's own `is_interrupt` flag is the primary signal, but
+              // it is not the only proof available: the operator's interrupt
+              // signal is already aborted by the time some cut-off tools'
+              // failures reach this hook, even when the SDK reports them as
+              // a plain error with no `is_interrupt` flag (observed live —
+              // the SDK's own "the user doesn't want to proceed" text on a
+              // call the operator's Stop actually caused). Persisting this
+              // as `'interrupted'` here, once, is what lets the web fold
+              // trust the persisted outcome directly instead of guessing
+              // from row adjacency after the fact.
+              const isInterrupt =
+                (input as { is_interrupt?: boolean }).is_interrupt === true ||
+                interruptSignal?.aborted === true;
               const prefix = isInterrupt ? '⚠️ Interrupted' : '❌ Error';
               toolResultQueue.push({
                 toolName,
@@ -1015,6 +1110,38 @@ function buildToolCaptureHooks(toolResultQueue: ToolResultEntry[]): Options['hoo
               });
             } catch (e) {
               getLog().error({ err: e, input }, 'claude.post_tool_use_failure_hook_error');
+            }
+            return { continue: true };
+          }) as HookCallback,
+        ],
+      },
+    ],
+    // A denied tool call never runs, so PostToolUse never fires for it — the
+    // executor's runningTools entry would otherwise stay open for the rest of
+    // the turn (`◐ running` with no result row). This hook covers a deny
+    // that goes through canUseTool's own short-circuit (auto-mode classifier,
+    // dontAsk mode, a configured deny rule). It does NOT cover every denial
+    // source — see streamClaudeMessages' `event.type === 'user'` handling for
+    // a built-in CLI guard (e.g. the leading-sleep block) that denies before
+    // canUseTool ever runs and reaches neither this hook nor
+    // SDKPermissionDeniedMessage, only a synthetic is_error tool_result.
+    PermissionDenied: [
+      {
+        hooks: [
+          (async (input: Record<string, unknown>): Promise<{ continue: true }> => {
+            try {
+              const toolName = (input as { tool_name?: string }).tool_name ?? 'unknown';
+              const toolUseId = (input as { tool_use_id?: string }).tool_use_id;
+              const reason = (input as { reason?: string }).reason;
+              toolResultQueue.push({
+                toolName,
+                toolOutput: `⛔ Blocked: ${reason ?? 'denied by a permission hook'}`,
+                ...(toolUseId !== undefined ? { toolCallId: toolUseId } : {}),
+                toolOutcome: 'error',
+                outputState: 'full' as const,
+              });
+            } catch (e) {
+              getLog().error({ err: e, input }, 'claude.permission_denied_hook_error');
             }
             return { continue: true };
           }) as HookCallback,
@@ -1128,13 +1255,66 @@ function createClaudeAskRuntime(
 // ─── Stream Normalizer ───────────────────────────────────────────────────
 
 /**
+ * The advisor consult's tool result is a Task/Agent dispatch completion.
+ * The SDK's own `AgentToolCompletedOutput` shape carries the subagent's
+ * final report as `content: [{ type: 'text', text }, ...]` (proven
+ * empirically); this reads that text so the notification shows the
+ * advisor's actual words instead of the enclosing JSON envelope. A result
+ * that is not JSON, or does not match this shape, is returned unchanged —
+ * never partially parsed or guessed at.
+ */
+function extractAgentDispatchText(toolOutput: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(toolOutput);
+  } catch {
+    return toolOutput;
+  }
+  const content = (parsed as { content?: unknown })?.content;
+  if (!Array.isArray(content)) return toolOutput;
+  const texts = content
+    .filter(
+      (block): block is { type: 'text'; text: string } =>
+        typeof block === 'object' &&
+        block !== null &&
+        (block as { type?: unknown }).type === 'text' &&
+        typeof (block as { text?: unknown }).text === 'string'
+    )
+    .map(block => block.text);
+  return texts.length > 0 ? texts.join('\n\n') : toolOutput;
+}
+
+/**
+ * A Messages API `tool_result` content block's own `content` field is a
+ * string or an array of text/image blocks (never JSON-encoded like a
+ * `tool_response`). Flattens either shape to plain text; a block with no
+ * extractable text (e.g. image-only) contributes nothing.
+ */
+function textFromToolResultContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter(
+      (block): block is { type: 'text'; text: string } =>
+        typeof block === 'object' &&
+        block !== null &&
+        (block as { type?: unknown }).type === 'text' &&
+        typeof (block as { text?: unknown }).text === 'string'
+    )
+    .map(block => block.text)
+    .join('\n\n');
+}
+
+/**
  * Normalize raw Claude SDK events into Archon MessageChunks.
  * Drains the tool result queue between events (populated by SDK hooks).
  */
 async function* streamClaudeMessages(
   events: AsyncGenerator,
   toolResultQueue: ToolResultEntry[],
-  sanitizeAskResume = false
+  sanitizeAskResume = false,
+  advisorModel?: string,
+  interruptSignal?: AbortSignal
 ): AsyncGenerator<MessageChunk> {
   // Synthetic error message recorded while waiting for the terminal result to
   // confirm it (#1797). Detection is two-signal: the typed wrapper `error`
@@ -1142,11 +1322,33 @@ async function* streamClaudeMessages(
   // result. See ClaudeApiResultError.
   let pendingSdkError: { code: SDKAssistantMessageError; text: string } | undefined;
 
+  // Tool-use ids of a Task/Agent dispatch whose `subagent_type` is the
+  // advisor consult (empirically observed: Claude Code's `advisorModel`
+  // setting resolves to an ordinary subagent dispatch, not the raw Messages
+  // API's `server_tool_use` block — see the ContentBlock docstring). Its
+  // eventual tool_result IS the advisor's notification.
+  const pendingAdvisorToolUseIds = new Set<string>();
+
+  // Tool name per open tool_use id (from the assistant's own tool_use block),
+  // needed to label a call the hooks below never got a chance to settle.
+  const toolNameByCallId = new Map<string, string>();
+  // Call ids the hook-drain loop has already yielded a tool_result for. A
+  // built-in CLI guard (e.g. the leading-sleep block) denies a call BEFORE
+  // it ever runs: no PostToolUse/PostToolUseFailure/PermissionDenied hook
+  // fires for it (proven empirically — those hooks cover only a call that
+  // reached execution or canUseTool's own deny path), so the ONLY signal
+  // Archon ever sees is a plain Messages API `user` turn carrying an
+  // `is_error: true` tool_result. This set is what tells the `user`-message
+  // handling below whether a call already settled through a hook, so it
+  // never double-yields a result the drain loop already produced.
+  const hookSettledCallIds = new Set<string>();
+
   for await (const msg of events) {
     // Drain tool results captured by hooks before processing the next event
     while (toolResultQueue.length > 0) {
       const tr = toolResultQueue.shift();
       if (tr) {
+        if (tr.toolCallId !== undefined) hookSettledCallIds.add(tr.toolCallId);
         yield {
           type: 'tool_result',
           toolName: tr.toolName,
@@ -1156,6 +1358,13 @@ async function* streamClaudeMessages(
           ...(tr.truncated !== undefined ? { truncated: tr.truncated } : {}),
           ...(tr.outputState !== undefined ? { outputState: tr.outputState } : {}),
         };
+        if (tr.toolCallId !== undefined && pendingAdvisorToolUseIds.delete(tr.toolCallId)) {
+          yield {
+            type: 'advisor',
+            content: extractAgentDispatchText(tr.toolOutput),
+            ...(advisorModel !== undefined ? { advisorModel } : {}),
+          };
+        }
       }
     }
 
@@ -1200,6 +1409,44 @@ async function* streamClaudeMessages(
             toolInput: block.input ?? {},
             ...(block.id !== undefined ? { toolCallId: block.id } : {}),
           };
+          if (block.id !== undefined) toolNameByCallId.set(block.id, block.name);
+          // Task/Agent dispatch to the advisor consult (see the ContentBlock
+          // docstring). The dispatch still renders as an ordinary tool row
+          // above; its eventual tool_result also becomes an advisor
+          // notification once toolResultQueue delivers it.
+          if (block.input?.subagent_type === 'advisor' && block.id !== undefined) {
+            pendingAdvisorToolUseIds.add(block.id);
+          }
+        } else if (block.type === 'thinking' && block.thinking) {
+          // An empty `thinking` field means the install has not requested
+          // display of this thinking (Settings.showThinkingSummaries unset,
+          // or the block predates the display feature) — never persisted.
+          yield { type: 'thinking', content: block.thinking };
+        } else if (block.type === 'redacted_thinking') {
+          // Opaque encrypted reasoning; never displayable, never logged.
+          getLog().debug({}, 'claude.redacted_thinking_block_skipped');
+        } else if (block.type === 'server_tool_use' && block.name === 'advisor') {
+          // Raw Anthropic Messages API advisor tool (`advisor_20260301`).
+          // Its result block follows in the same content array — nothing to
+          // yield yet.
+          continue;
+        } else if (block.type === 'advisor_tool_result') {
+          const result = block.content;
+          const text =
+            result?.type === 'advisor_result' && typeof result.text === 'string'
+              ? result.text
+              : result?.type === 'advisor_redacted_result'
+                ? 'The advisor responded, but its answer is encrypted and not readable in this session.'
+                : result?.type === 'advisor_tool_result_error'
+                  ? `The advisor could not respond (${result.error_code ?? 'unavailable'}).`
+                  : undefined;
+          if (text !== undefined) {
+            yield {
+              type: 'advisor',
+              content: text,
+              ...(advisorModel !== undefined ? { advisorModel } : {}),
+            };
+          }
         }
       }
     } else if (event.type === 'system') {
@@ -1321,6 +1568,61 @@ async function* streamClaudeMessages(
         };
       } else {
         getLog().debug({ subtype: sysMsg.subtype }, 'claude.system_message_unhandled');
+      }
+    } else if (event.type === 'user') {
+      // With `extraArgs: { 'replay-user-messages': null }` the CLI re-emits
+      // each stdin-delivered user message on stdout (`isReplay: true`) once
+      // accepted — the verified delivery-acknowledgement signal (CAP-13).
+      // Correlation is the caller-stamped `uuid` alone; an id that matches no
+      // pending durable entry is a harmless no-op at the store layer, never
+      // inferred from timing or content.
+      const replay = msg as { isReplay?: boolean; uuid?: string };
+      if (replay.isReplay === true && typeof replay.uuid === 'string') {
+        yield { type: 'operator_delivery_ack', messageId: replay.uuid };
+      }
+      // A call the CLI's own guard denies before it ever reaches execution
+      // (e.g. the leading-sleep block) settles only as a plain Messages API
+      // tool_result on this user turn, with is_error true — no PostToolUse,
+      // PostToolUseFailure, or PermissionDenied hook fires for it (see
+      // buildToolCaptureHooks' PermissionDenied comment). Every OTHER
+      // tool_result the model receives is already covered by a hook whose
+      // drain (above, at the top of this loop) runs strictly before this
+      // branch and records the call id in hookSettledCallIds — so only a
+      // call that hooks never touched reaches this fallback, and a normal
+      // executed call is never double-counted. This is also where a tool
+      // call the operator's Stop cut off mid-flight can surface (verified
+      // live — the CLI settles the aborted call here, never through
+      // PostToolUseFailure): the operator's interrupt signal already being
+      // aborted at this point is proof, the same discriminator
+      // buildToolCaptureHooks uses.
+      const userMessage = msg as { message?: { content?: unknown } };
+      const userContent = userMessage.message?.content;
+      if (Array.isArray(userContent)) {
+        for (const block of userContent) {
+          if (
+            typeof block !== 'object' ||
+            block === null ||
+            (block as { type?: unknown }).type !== 'tool_result'
+          ) {
+            continue;
+          }
+          const toolResult = block as {
+            tool_use_id?: unknown;
+            is_error?: unknown;
+            content?: unknown;
+          };
+          if (toolResult.is_error !== true || typeof toolResult.tool_use_id !== 'string') continue;
+          if (hookSettledCallIds.has(toolResult.tool_use_id)) continue;
+          const toolName = toolNameByCallId.get(toolResult.tool_use_id) ?? 'unknown';
+          yield {
+            type: 'tool_result',
+            toolName,
+            toolOutput: textFromToolResultContent(toolResult.content),
+            toolCallId: toolResult.tool_use_id,
+            toolOutcome: interruptSignal?.aborted === true ? 'interrupted' : 'error',
+            outputState: 'full',
+          };
+        }
       }
     } else if (event.type === 'rate_limit_event') {
       const rateLimitMsg = msg as { rate_limit_info?: Record<string, unknown> };
@@ -1462,6 +1764,13 @@ async function* streamClaudeMessages(
         ...(tr.truncated !== undefined ? { truncated: tr.truncated } : {}),
         ...(tr.outputState !== undefined ? { outputState: tr.outputState } : {}),
       };
+      if (tr.toolCallId !== undefined && pendingAdvisorToolUseIds.delete(tr.toolCallId)) {
+        yield {
+          type: 'advisor',
+          content: extractAgentDispatchText(tr.toolOutput),
+          ...(advisorModel !== undefined ? { advisorModel } : {}),
+        };
+      }
     }
   }
 }
@@ -1736,9 +2045,16 @@ export class ClaudeProvider implements IAgentProvider {
         const controller = new AbortController();
         currentController = controller;
         const askBridge: ClaudeAskBridge = {};
-        // Provider-owned gate that keeps the one-message streaming input open
-        // for the whole query lifetime; resolved in this attempt's finally.
-        let releaseInput: (() => void) | undefined;
+        // Streaming input held open for the whole query lifetime, plus the
+        // soft-injection registration that feeds it; both end together in
+        // `endLiveInput` (every result, error, Cancel, and finally path).
+        let liveInput: LiveTurnInput | undefined;
+        let unregisterSoftInjection: (() => void) | undefined;
+        const endLiveInput = (): void => {
+          unregisterSoftInjection?.();
+          unregisterSoftInjection = undefined;
+          liveInput?.close();
+        };
 
         // 1. Build SDK options (env and cliPath pre-computed above)
         const options = buildBaseClaudeOptions(
@@ -1800,10 +2116,20 @@ export class ClaudeProvider implements IAgentProvider {
           // a provider-owned deferred — control methods (interrupt) require it.
           let promptInput: string | AsyncIterable<SDKUserMessage> = queryPrompt;
           if (interruptSignal) {
-            const holdOpen = new Promise<void>(resolve => {
-              releaseInput = resolve;
-            });
-            promptInput = singleTurnInput(queryPrompt, holdOpen);
+            liveInput = createLiveTurnInput(
+              buildUserMessage(queryPrompt, requestOptions?.operatorMessageId)
+            );
+            promptInput = liveInput.iterable;
+            if (
+              requestOptions?.operatorMessageId !== undefined ||
+              requestOptions?.softInjection !== undefined
+            ) {
+              // `--replay-user-messages` requires the streaming-input path
+              // established above. It makes the CLI echo every stamped user
+              // message (the turn's own prompt and any soft-injected one), the
+              // signal streamClaudeMessages turns into a delivery ack.
+              options.extraArgs = { ...options.extraArgs, 'replay-user-messages': null };
+            }
           }
           const rawEvents = query({ prompt: promptInput, options });
           currentQuery = rawEvents;
@@ -1817,6 +2143,18 @@ export class ClaudeProvider implements IAgentProvider {
             // The signal may have aborted during per-attempt setup, before the
             // query existed — deliver the pending interrupt to the live query.
             if (interruptRequested) onInterrupt();
+            const input = liveInput;
+            if (input !== undefined && requestOptions?.softInjection !== undefined) {
+              // The handler resolves true only when the still-open streaming
+              // input took the message; an ended or interrupted turn refuses.
+              unregisterSoftInjection = requestOptions.softInjection.ready(
+                (request): Promise<boolean> =>
+                  Promise.resolve(
+                    !interruptSignal.aborted &&
+                      input.push(buildUserMessage(request.text, request.messageId))
+                  )
+              );
+            }
           }
           const timeoutMs = getFirstEventTimeoutMs();
           const diagnostics = buildFirstEventHangDiagnostics(
@@ -1840,7 +2178,13 @@ export class ClaudeProvider implements IAgentProvider {
           // Fold any usage retained from prior retry attempts into the terminal
           // result so spent tokens remain queryable after recovery.
           for await (const chunk of withResumedOutcome(
-            streamClaudeMessages(interruptibleEvents, toolResultQueue, hasAskResume),
+            streamClaudeMessages(
+              interruptibleEvents,
+              toolResultQueue,
+              hasAskResume,
+              assistantDefaults.advisorModel,
+              interruptSignal
+            ),
             resumedOutcome(resumeSessionId, true)
           )) {
             const sanitized =
@@ -1850,7 +2194,7 @@ export class ClaudeProvider implements IAgentProvider {
             // A terminal result while input is still streaming: signal input
             // EOF so the subprocess exits — the SDK otherwise keeps the query
             // open awaiting the next streamed message and the stream never ends.
-            if (sanitized.type === 'result') releaseInput?.();
+            if (sanitized.type === 'result') endLiveInput();
             if (sanitized.type === 'result' && accumulatedUsage) {
               const usageBreakdown = mergeUsageBreakdowns(
                 accumulatedUsage,
@@ -1949,7 +2293,7 @@ export class ClaudeProvider implements IAgentProvider {
           await new Promise(resolve => setTimeout(resolve, delayMs));
           lastError = enrichedError;
         } finally {
-          releaseInput?.();
+          endLiveInput();
           currentQuery = undefined;
           currentInterrupt = undefined;
         }

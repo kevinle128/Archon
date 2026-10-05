@@ -1,0 +1,66 @@
+{
+  "tag": "SIC12",
+  "sender": "l",
+  "observer": "c",
+  "R": "b21e92e0b3245defdbcb878671090d31",
+  "node": "cl-node",
+  "pre": {
+    "l": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||TEXTAREA|2",
+    "c": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||BODY|2"
+  },
+  "click": { "status": 200, "resolvedMs": 30 },
+  "coldOpenedAt": 1790793040873,
+  "status": "completed",
+  "frames": {
+    "l": [
+      [1790793038052, "Running|Stop,Queue|0|0||||||||BODY"],
+      [1790793038060, "Running|Stop,Queue|0|0||||||||TEXTAREA"],
+      [1790793038076, "Running|Stop,Queue|0|0||||||||BUTTON:Queue · Cmd/Ct"],
+      [1790793038085, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs||||||TEXTAREA"],
+      [1790793038110, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs||||||BUTTON:Queue · Cmd/Ct"],
+      [1790793038119, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||TEXTAREA"],
+      [1790793039343, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||BUTTON:Send now · SIC"],
+      [1790793039352, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790793050331, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs|TWO:delivered||||below|BODY"],
+      [1790793103854, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered||||below|BODY"],
+      [1790793104423, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent||||below|BODY"],
+      [1790793108853, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:delivered||||below|BODY"],
+      [1790793109665, "Completed||0|0|||TWO:delivered,ONE:delivered||||below|BODY"]
+    ],
+    "c": [
+      [1790793038052, "Running|Stop,Queue|0|0||||||||BODY"],
+      [1790793038303, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||BODY"],
+      [1790793039803, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790793050335, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs|TWO:delivered||||below|BODY"],
+      [1790793103853, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered||||below|BODY"],
+      [1790793104424, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent||||below|BODY"],
+      [1790793108853, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:delivered||||below|BODY"],
+      [1790793109665, "Completed||0|0|||TWO:delivered,ONE:delivered||||below|BODY"]
+    ],
+    "x": [
+      [1790793041126, "NOROOM"],
+      [1790793041306, "Running||0|0||||||||BODY"],
+      [1790793041362, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790793050345, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs|TWO:delivered||||below|BODY"],
+      [1790793103853, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered||||below|BODY"],
+      [1790793104404, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent||||below|BODY"],
+      [1790793108853, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:delivered||||below|BODY"],
+      [1790793109667, "Completed||0|0|||TWO:delivered,ONE:delivered||||below|BODY"]
+    ]
+  },
+  "clickedAt": 1790793039315,
+  "roomWidth": { "l": 460, "c": 460 },
+  "queue": [
+    ["SIC12 ONE ke", "delivered"],
+    ["SIC12 TWO: e", "delivered"]
+  ],
+  "rowCount": 26,
+  "attempts": ["c580fb90-f18a-4d1a-9443-3991aea804ff"],
+  "promptRows": 1,
+  "operatorRows": [
+    [7, "SIC12 TWO: end"],
+    [23, "SIC12 ONE keep"]
+  ],
+  "ackInAgentText": 2,
+  "toolRowsAfterInjection": 8
+}

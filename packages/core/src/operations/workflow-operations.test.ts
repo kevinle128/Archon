@@ -32,9 +32,16 @@ mock.module('../db/workflows', () => ({
 }));
 
 const mockCreateWorkflowEvent = mock(() => Promise.resolve());
+interface MockNonTerminalNode {
+  nodeId: string;
+  scope: Record<string, unknown>;
+  terminalEventType: 'node_failed' | 'loop_iteration_failed';
+}
+const mockFindNonTerminalNodes = mock((): Promise<MockNonTerminalNode[]> => Promise.resolve([]));
 
 mock.module('../db/workflow-events', () => ({
   createWorkflowEvent: mockCreateWorkflowEvent,
+  findNonTerminalNodes: mockFindNonTerminalNodes,
 }));
 
 const mockDeleteWorkflowNodeSessions = mock(() => Promise.resolve({ deleted: 0 }));
@@ -94,8 +101,33 @@ mock.module('../db/workflow-pending-interactions', () => ({
 }));
 
 const mockEmit = mock((_event: unknown) => undefined);
+// Default: no run is registered — every existing test in this file exercises
+// a run with no live executor in this (test) process, matching production
+// reality for a unit test that never starts a real dag-executor.
+const mockGetConversationId = mock((_runId: string): string | undefined => undefined);
+const mockRegisterRun = mock((_runId: string, _conversationId: string) => undefined);
+const mockUnregisterRun = mock((_runId: string) => undefined);
 mock.module('@archon/workflows/event-emitter', () => ({
-  getWorkflowEventEmitter: () => ({ emit: mockEmit }),
+  getWorkflowEventEmitter: () => ({
+    emit: mockEmit,
+    getConversationId: mockGetConversationId,
+    registerRun: mockRegisterRun,
+    unregisterRun: mockUnregisterRun,
+  }),
+}));
+
+interface MockConversation {
+  platform_conversation_id: string;
+}
+// Default: resolves, matching production reality for a run whose conversation
+// row still exists — the abandon-of-a-restart-recovered-run tests below exercise
+// the null/throw fallbacks explicitly.
+const mockGetConversationById = mock(
+  (_id: string): Promise<MockConversation | null> =>
+    Promise.resolve({ platform_conversation_id: 'web-conv-1' })
+);
+mock.module('../db/conversations', () => ({
+  getConversationById: mockGetConversationById,
 }));
 
 const mockLogger = {
@@ -1391,6 +1423,18 @@ describe('abandonWorkflow', () => {
     mockReclaimContainerEnv.mockImplementation(() => Promise.resolve());
     mockFindChildRuns.mockClear();
     mockFindChildRuns.mockImplementation(() => Promise.resolve([]));
+    mockFindNonTerminalNodes.mockClear();
+    mockFindNonTerminalNodes.mockImplementation(() => Promise.resolve([]));
+    mockCreateWorkflowEvent.mockClear();
+    mockEmit.mockClear();
+    mockGetConversationId.mockClear();
+    mockGetConversationId.mockImplementation(() => undefined);
+    mockRegisterRun.mockClear();
+    mockUnregisterRun.mockClear();
+    mockGetConversationById.mockClear();
+    mockGetConversationById.mockImplementation(() =>
+      Promise.resolve({ platform_conversation_id: 'web-conv-1' })
+    );
   });
 
   test('cancels a non-terminal run', async () => {
@@ -1591,6 +1635,271 @@ describe('abandonWorkflow', () => {
     await expect(abandonWorkflow('run-1')).rejects.toThrow(
       "Cannot abandon run with status 'cancelled'"
     );
+  });
+
+  // A restart-recovered run has no live executor in THIS process — nothing
+  // ever writes the node_failed event a live cancel path would, so the
+  // Console/Legacy header stays on a stale "running" projection indefinitely.
+  // Abandon is the explicit user action that settles it.
+  describe('terminal node events for a run with no live executor here', () => {
+    test('writes one node_failed event per non-terminal node, and emits it for a live UI refresh', async () => {
+      mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        { nodeId: 'prompt-a', scope: {}, terminalEventType: 'node_failed' },
+        { nodeId: 'loop-b', scope: {}, terminalEventType: 'node_failed' },
+      ]);
+
+      await abandonWorkflow('run-1');
+
+      expect(mockFindNonTerminalNodes).toHaveBeenCalledWith('run-1');
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledTimes(2);
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledWith({
+        workflow_run_id: 'run-1',
+        event_type: 'node_failed',
+        step_name: 'prompt-a',
+        data: { error: 'Cancelled by user' },
+      });
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledWith({
+        workflow_run_id: 'run-1',
+        event_type: 'node_failed',
+        step_name: 'loop-b',
+        data: { error: 'Cancelled by user' },
+      });
+      expect(mockEmit).toHaveBeenCalledWith({
+        type: 'node_failed',
+        runId: 'run-1',
+        nodeId: 'prompt-a',
+        nodeName: 'prompt-a',
+        error: 'Cancelled by user',
+      });
+      expect(mockEmit).toHaveBeenCalledWith({
+        type: 'node_failed',
+        runId: 'run-1',
+        nodeId: 'loop-b',
+        nodeName: 'loop-b',
+        error: 'Cancelled by user',
+      });
+    });
+
+    // Without a run→conversation mapping, the SSE bridge's own
+    // `getConversationId(event.runId)` lookup (workflow-bridge.ts) can never
+    // resolve a target, so an already-open Console/Legacy tab never learns the
+    // node settled — the durable write lands, but the live push is stranded.
+    // Registering the run's own conversation for the span of the emits closes
+    // that gap without leaving a permanent mapping behind.
+    test('registers the run’s platform conversation before emitting, and unregisters it after', async () => {
+      mockGetWorkflowRun.mockResolvedValueOnce(
+        makePausedRun({ status: 'running', conversation_id: 'conv-7' })
+      );
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        { nodeId: 'prompt-a', scope: {}, terminalEventType: 'node_failed' },
+      ]);
+      mockGetConversationById.mockImplementationOnce((id: unknown) => {
+        expect(id).toBe('conv-7');
+        return Promise.resolve({ platform_conversation_id: 'web-live-tab' });
+      });
+      const order: string[] = [];
+      mockRegisterRun.mockImplementationOnce((...args: unknown[]) => {
+        order.push('register');
+        expect(args).toEqual(['run-1', 'web-live-tab']);
+      });
+      mockEmit.mockImplementationOnce(() => {
+        order.push('emit');
+      });
+      mockUnregisterRun.mockImplementationOnce((runId: unknown) => {
+        order.push('unregister');
+        expect(runId).toBe('run-1');
+      });
+
+      await abandonWorkflow('run-1');
+
+      expect(order).toEqual(['register', 'emit', 'unregister']);
+    });
+
+    test('writes the durable event even when the run’s conversation cannot be found, without registering a mapping', async () => {
+      mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        { nodeId: 'prompt-a', scope: {}, terminalEventType: 'node_failed' },
+      ]);
+      mockGetConversationById.mockImplementationOnce(() => Promise.resolve(null));
+
+      await abandonWorkflow('run-1');
+
+      expect(mockRegisterRun).not.toHaveBeenCalled();
+      expect(mockUnregisterRun).not.toHaveBeenCalled();
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledTimes(1);
+      expect(mockEmit).toHaveBeenCalledTimes(1);
+    });
+
+    test('writes the durable event even when the conversation lookup fails, without registering a mapping', async () => {
+      mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        { nodeId: 'prompt-a', scope: {}, terminalEventType: 'node_failed' },
+      ]);
+      mockGetConversationById.mockImplementationOnce(() => Promise.reject(new Error('db blip')));
+
+      await abandonWorkflow('run-1');
+
+      expect(mockRegisterRun).not.toHaveBeenCalled();
+      expect(mockUnregisterRun).not.toHaveBeenCalled();
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledTimes(1);
+    });
+
+    // A loop node's own execution scope (occurrence/attempt/retry epoch,
+    // current iteration) must ride along so the synthesized event attaches
+    // to the same execution/iteration row a live cancel's own write would —
+    // never landing unscoped, which would leave that row's own status stuck.
+    test('carries a node’s own execution scope onto the synthesized event', async () => {
+      mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        {
+          nodeId: 'loop-b',
+          scope: { occurrence_id: 'occ-1', attempt_id: 'att-1', retry_epoch: 0, iteration: 2 },
+          terminalEventType: 'node_failed',
+        },
+      ]);
+
+      await abandonWorkflow('run-1');
+
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledWith({
+        workflow_run_id: 'run-1',
+        event_type: 'node_failed',
+        step_name: 'loop-b',
+        data: {
+          occurrence_id: 'occ-1',
+          attempt_id: 'att-1',
+          retry_epoch: 0,
+          iteration: 2,
+          error: 'Cancelled by user',
+        },
+      });
+    });
+
+    // A loop mid-iteration reports TWO open executions for the same
+    // step_name — the container (closed by node_failed) and the current
+    // iteration (closed by loop_iteration_failed). Writing only one would
+    // leave the other permanently `running` in the execution-history
+    // projection (the exact VQ10-3 symptom).
+    test('writes a loop_iteration_failed event for an open iteration, distinct from the container node_failed', async () => {
+      mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        {
+          nodeId: 'loop-b',
+          scope: { occurrence_id: 'occ-outer', attempt_id: 'att-outer', retry_epoch: 0 },
+          terminalEventType: 'node_failed',
+        },
+        {
+          nodeId: 'loop-b',
+          scope: {
+            occurrence_id: 'occ-iter-2',
+            attempt_id: 'att-iter-2',
+            retry_epoch: 0,
+            iteration: 2,
+          },
+          terminalEventType: 'loop_iteration_failed',
+        },
+      ]);
+
+      await abandonWorkflow('run-1');
+
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledTimes(2);
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledWith({
+        workflow_run_id: 'run-1',
+        event_type: 'node_failed',
+        step_name: 'loop-b',
+        data: {
+          occurrence_id: 'occ-outer',
+          attempt_id: 'att-outer',
+          retry_epoch: 0,
+          error: 'Cancelled by user',
+        },
+      });
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledWith({
+        workflow_run_id: 'run-1',
+        event_type: 'loop_iteration_failed',
+        step_name: 'loop-b',
+        data: {
+          occurrence_id: 'occ-iter-2',
+          attempt_id: 'att-iter-2',
+          retry_epoch: 0,
+          iteration: 2,
+          error: 'Cancelled by user',
+        },
+      });
+      expect(mockEmit).toHaveBeenCalledWith({
+        type: 'node_failed',
+        runId: 'run-1',
+        nodeId: 'loop-b',
+        nodeName: 'loop-b',
+        error: 'Cancelled by user',
+      });
+      expect(mockEmit).toHaveBeenCalledWith({
+        type: 'loop_iteration_failed',
+        runId: 'run-1',
+        nodeId: 'loop-b',
+        iteration: 2,
+        error: 'Cancelled by user',
+      });
+    });
+
+    test('writes nothing when a live executor in this process still owns the run', async () => {
+      mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
+      mockGetConversationId.mockImplementation(() => 'conv-1');
+
+      await abandonWorkflow('run-1');
+
+      // The live executor's own cancel path owns this node — never preempted.
+      expect(mockFindNonTerminalNodes).not.toHaveBeenCalled();
+      expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    });
+
+    test('writes nothing when the run has no non-terminal nodes', async () => {
+      mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
+      mockFindNonTerminalNodes.mockResolvedValueOnce([]);
+
+      await abandonWorkflow('run-1');
+
+      expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+      expect(mockEmit).not.toHaveBeenCalled();
+      // Nothing to emit — the conversation lookup (and any registration) never runs.
+      expect(mockGetConversationById).not.toHaveBeenCalled();
+      expect(mockRegisterRun).not.toHaveBeenCalled();
+    });
+
+    test('writes nothing when the cancel CAS loses the race (already terminal)', async () => {
+      mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'paused' }));
+      mockCancelWorkflowRun.mockImplementationOnce(() => Promise.resolve({ cancelled: false }));
+
+      await abandonWorkflow('run-1');
+
+      expect(mockFindNonTerminalNodes).not.toHaveBeenCalled();
+      expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    });
+
+    test('is idempotent: a second abandon of the same already-cancelled run writes nothing more', async () => {
+      mockGetWorkflowRun.mockResolvedValue(makePausedRun({ status: 'running' }));
+      mockFindNonTerminalNodes.mockResolvedValueOnce([
+        { nodeId: 'prompt-a', scope: {}, terminalEventType: 'node_failed' },
+      ]);
+
+      await abandonWorkflow('run-1');
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledTimes(1);
+
+      // The second call's CAS loses (the run is already cancelled) — no
+      // repeat write, so a double-click never duplicates the terminal event.
+      mockCancelWorkflowRun.mockImplementationOnce(() => Promise.resolve({ cancelled: false }));
+      await abandonWorkflow('run-1');
+      expect(mockCreateWorkflowEvent).toHaveBeenCalledTimes(1);
+    });
+
+    test('a lookup failure is logged and never fails the abandon', async () => {
+      mockGetWorkflowRun.mockResolvedValueOnce(makePausedRun({ status: 'running' }));
+      mockFindNonTerminalNodes.mockImplementationOnce(() => Promise.reject(new Error('db blip')));
+
+      const { run } = await abandonWorkflow('run-1');
+      expect(run.id).toBe('run-1');
+      expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    });
   });
 });
 

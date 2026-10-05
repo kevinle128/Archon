@@ -5,25 +5,47 @@ import {
   applyRoomDeepLink,
   askCardId,
   buildExecutionHeader,
+  capExecutionOptions,
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
+  computeLoopIterationCount,
+  computeRunOfTotal,
+  disambiguateExecutionOptions,
+  excludeRepresentedLoopContainers,
+  EXECUTION_OPTIONS_MAX,
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
   hasUnsettledNodeExecutions,
+  headerMetaLine,
+  isLiveRowStatus,
   latestNodeExecutionKey,
+  loopMaxIterationsForNode,
+  nodeKindChip,
   openRoom,
   openExplicitRoom,
   rememberRoomScroll,
   resetRoomVisit,
   resolveFinishedIterationView,
+  effectiveNodeRoomStatus,
+  resolveFollowedRow,
+  resolveGapHoldStatus,
   resolveRunDetailRefetchIntervalMs,
   roomOpenerId,
   runtimeForSelection,
+  shouldRefetchRunOnDockFinished,
+  statusPill,
   type ExecutionLoopAncestryEntry,
   type ExecutionRow,
   type ExecutionRowSelection,
+  type RoomVisitSelection,
+  selectableExecutionRows,
 } from './execution-room-model';
+
+/** Local hour for a fixed UTC instant, so header clock-label tests are timezone-agnostic. */
+function startedHours(): string {
+  return String(new Date('2026-09-08T04:52:00.000Z').getHours()).padStart(2, '0');
+}
 
 const RUN_STARTED_AT = '2026-09-08T00:00:00.000Z';
 const NODE_ID = 'review';
@@ -49,12 +71,14 @@ function nodeStarted(args: {
   attemptId?: string;
   provider?: string;
   model?: string;
+  retryEpoch?: number;
 }): WorkflowEvent {
   const data: Record<string, unknown> = {};
   if (args.occurrenceId !== undefined) data.occurrence_id = args.occurrenceId;
   if (args.attemptId !== undefined) data.attempt_id = args.attemptId;
   if (args.provider !== undefined) data.provider = args.provider;
   if (args.model !== undefined) data.model = args.model;
+  if (args.retryEpoch !== undefined) data.retry_epoch = args.retryEpoch;
   return {
     id: args.id,
     workflow_run_id: 'run-1',
@@ -99,6 +123,191 @@ describe('chooseExecutionForNode', () => {
 
   test('returns null for an unknown node', () => {
     expect(chooseExecutionForNode(rows, 'other', 'awaiting')).toBeNull();
+  });
+});
+
+describe('isLiveRowStatus', () => {
+  test('running and awaiting are live; every other status is not', () => {
+    expect(isLiveRowStatus('running')).toBe(true);
+    expect(isLiveRowStatus('awaiting')).toBe(true);
+    expect(isLiveRowStatus('completed')).toBe(false);
+    expect(isLiveRowStatus('failed')).toBe(false);
+    expect(isLiveRowStatus('skipped')).toBe(false);
+    expect(isLiveRowStatus('cancelled')).toBe(false);
+    expect(isLiveRowStatus('pending')).toBe(false);
+  });
+});
+
+describe('resolveFollowedRow', () => {
+  const iteration1 = row({ id: 'iter-1', status: 'completed', order: 0 });
+  const iteration2 = row({ id: 'iter-2', status: 'running', order: 1 });
+  const iteration3Awaiting = row({ id: 'iter-3', status: 'awaiting', order: 2 });
+  const rows = [iteration1, iteration2];
+  const selection = (over: Partial<RoomVisitSelection>): RoomVisitSelection => ({
+    nodeId: NODE_ID,
+    rowId: iteration1.id,
+    openerId: null,
+    followingLive: true,
+    ...over,
+  });
+
+  test('a null selection resolves to null', () => {
+    expect(resolveFollowedRow(null, rows)).toBeNull();
+  });
+
+  test('following live advances to a newer live row once one appears', () => {
+    expect(resolveFollowedRow(selection({ rowId: iteration1.id }), rows)).toBe(iteration2);
+  });
+
+  test('following live advances again when an even newer row supersedes it', () => {
+    const withIteration3 = [iteration1, { ...iteration2, status: 'completed' }, iteration3Awaiting];
+    expect(resolveFollowedRow(selection({ rowId: iteration2.id }), withIteration3)).toBe(
+      iteration3Awaiting
+    );
+  });
+
+  test('an explicit pick of a finished row is pinned, never advancing to a live row', () => {
+    expect(
+      resolveFollowedRow(selection({ rowId: iteration1.id, followingLive: false }), rows)
+    ).toBe(iteration1);
+  });
+
+  test('the gap between iterations — nothing live yet — stays on the just-finished row', () => {
+    const onlyFinished = [iteration1];
+    expect(resolveFollowedRow(selection({ rowId: iteration1.id }), onlyFinished)).toBe(iteration1);
+  });
+
+  test('following live on the row that is itself already live is a no-op', () => {
+    expect(resolveFollowedRow(selection({ rowId: iteration2.id }), rows)).toBe(iteration2);
+  });
+});
+
+describe('resolveGapHoldStatus', () => {
+  test('holds the node status while following live with nothing live selected', () => {
+    expect(
+      resolveGapHoldStatus({ followingLive: true, rowStatus: 'completed', nodeStatus: 'running' })
+    ).toBe('running');
+  });
+
+  test('does not override an already-live row status', () => {
+    expect(
+      resolveGapHoldStatus({ followingLive: true, rowStatus: 'running', nodeStatus: 'running' })
+    ).toBe('running');
+  });
+
+  test('never holds for an explicit (non-following) selection', () => {
+    expect(
+      resolveGapHoldStatus({ followingLive: false, rowStatus: 'completed', nodeStatus: 'running' })
+    ).toBe('completed');
+  });
+
+  test('releases once the node itself goes terminal — the loop actually finished', () => {
+    expect(
+      resolveGapHoldStatus({ followingLive: true, rowStatus: 'completed', nodeStatus: 'completed' })
+    ).toBe('completed');
+  });
+
+  test('a missing node status never holds', () => {
+    expect(
+      resolveGapHoldStatus({ followingLive: true, rowStatus: 'completed', nodeStatus: undefined })
+    ).toBe('completed');
+    expect(
+      resolveGapHoldStatus({ followingLive: true, rowStatus: 'completed', nodeStatus: null })
+    ).toBe('completed');
+  });
+});
+
+describe('excludeRepresentedLoopContainers', () => {
+  const container = {
+    node_id: 'loop',
+    node_type: 'loop',
+    occurrence_id: 'container-1',
+    retry_epoch: 0,
+    started_at: '2026-09-20T12:45:01.000Z',
+    ended_at: '2026-09-20T13:52:50.000Z',
+  };
+  const iteration = {
+    node_id: 'loop',
+    occurrence_id: 'iteration-1',
+    retry_epoch: 0,
+    loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+    started_at: '2026-09-20T12:45:01.000Z',
+  };
+
+  test('drops the container when a matching iteration owns the same run window', () => {
+    const result = excludeRepresentedLoopContainers([container, iteration]);
+    expect(result).toEqual([iteration]);
+  });
+
+  test('a non-loop node_type is never treated as a container', () => {
+    const notALoop = { ...container, node_type: 'prompt' };
+    const result = excludeRepresentedLoopContainers([notALoop, iteration]);
+    expect(result).toEqual([notALoop, iteration]);
+  });
+
+  test("a container already carrying loop_ancestry (a nested loop's own container) is kept", () => {
+    const nestedContainer = {
+      ...container,
+      loop_ancestry: [{ node_id: 'outer', iteration: 1 }],
+    };
+    const result = excludeRepresentedLoopContainers([nestedContainer, iteration]);
+    expect(result).toEqual([nestedContainer, iteration]);
+  });
+
+  test('keeps the container when the iteration ancestry prefix does not match', () => {
+    const deeperIteration = {
+      ...iteration,
+      loop_ancestry: [
+        { node_id: 'outer', iteration: 2 },
+        { node_id: 'loop', iteration: 1 },
+      ],
+    };
+    const result = excludeRepresentedLoopContainers([container, deeperIteration]);
+    expect(result).toEqual([container, deeperIteration]);
+  });
+
+  test('keeps the container when retry epochs differ', () => {
+    const laterEpochIteration = { ...iteration, retry_epoch: 1 };
+    const result = excludeRepresentedLoopContainers([container, laterEpochIteration]);
+    expect(result).toEqual([container, laterEpochIteration]);
+  });
+
+  test('keeps the container when route activation sequences differ', () => {
+    const routedContainer = { ...container, route_activation_seq: 1 };
+    const result = excludeRepresentedLoopContainers([routedContainer, iteration]);
+    expect(result).toEqual([routedContainer, iteration]);
+  });
+
+  test('keeps the container when the iteration starts outside its run window', () => {
+    const laterIteration = { ...iteration, started_at: '2026-09-26T06:37:33.000Z' };
+    const result = excludeRepresentedLoopContainers([container, laterIteration]);
+    expect(result).toEqual([container, laterIteration]);
+  });
+
+  test('a resumed invocation is a distinct window and both containers stay distinguishable', () => {
+    const secondContainer = {
+      ...container,
+      occurrence_id: 'container-2',
+      started_at: '2026-09-26T06:37:33.000Z',
+      ended_at: '2026-09-26T06:37:44.000Z',
+    };
+    const secondIteration = {
+      ...iteration,
+      occurrence_id: 'iteration-2',
+      started_at: '2026-09-26T06:37:33.000Z',
+    };
+    const result = excludeRepresentedLoopContainers([
+      container,
+      iteration,
+      secondContainer,
+      secondIteration,
+    ]);
+    expect(result).toEqual([iteration, secondIteration]);
+  });
+
+  test('never hides a container that owns no iteration at all', () => {
+    const result = excludeRepresentedLoopContainers([container]);
+    expect(result).toEqual([container]);
   });
 });
 
@@ -547,6 +756,537 @@ describe('chooseExecutionForInteraction', () => {
   });
 });
 
+describe('nodeKindChip', () => {
+  test('maps a kind with an established token to its label and tone', () => {
+    expect(nodeKindChip('command')).toEqual({ label: 'command', tone: 'node-command' });
+    expect(nodeKindChip('prompt')).toEqual({ label: 'prompt', tone: 'node-prompt' });
+    expect(nodeKindChip('bash')).toEqual({ label: 'bash', tone: 'node-bash' });
+    expect(nodeKindChip('loop')).toEqual({ label: 'loop', tone: 'node-loop' });
+    expect(nodeKindChip('approval')).toEqual({ label: 'approval', tone: 'node-approval' });
+  });
+
+  test('folds script into bash and a plannotator gate into approval', () => {
+    expect(nodeKindChip('script')).toEqual({ label: 'script', tone: 'node-bash' });
+    expect(nodeKindChip('plannotator_gate')).toEqual({
+      label: 'plannotator_gate',
+      tone: 'node-approval',
+    });
+  });
+
+  test('omits the chip for a kind with no established token, rather than inventing one', () => {
+    expect(nodeKindChip('workflow')).toBeNull();
+    expect(nodeKindChip('route_loop')).toBeNull();
+    expect(nodeKindChip('loop_group')).toBeNull();
+    expect(nodeKindChip('unknown')).toBeNull();
+    expect(nodeKindChip(null)).toBeNull();
+    expect(nodeKindChip(undefined)).toBeNull();
+  });
+});
+
+describe('statusPill', () => {
+  test('capitalizes the label and assigns the matching status tone', () => {
+    expect(statusPill('running')).toEqual({ label: 'Running', tone: 'accent' });
+    expect(statusPill('awaiting')).toEqual({ label: 'Waiting on you', tone: 'warning' });
+    expect(statusPill('completed')).toEqual({ label: 'Completed', tone: 'success' });
+    expect(statusPill('failed')).toEqual({ label: 'Failed', tone: 'error' });
+  });
+
+  test('skipped and cancelled read a neutral, colorless pill', () => {
+    expect(statusPill('skipped')).toEqual({ label: 'Skipped', tone: null });
+    expect(statusPill('cancelled')).toEqual({ label: 'Cancelled', tone: null });
+  });
+
+  test('a recovery-required signal overrides a still-running row to an explicit warning pill', () => {
+    expect(statusPill('running', true)).toEqual({ label: 'Recovery required', tone: 'warning' });
+    expect(statusPill('awaiting', true)).toEqual({ label: 'Recovery required', tone: 'warning' });
+  });
+
+  test('recoveryRequired defaults to false, leaving the ordinary pill untouched', () => {
+    expect(statusPill('running')).toEqual({ label: 'Running', tone: 'accent' });
+  });
+
+  // A recovery-required signal can clear (or a status catch up to terminal)
+  // in either order after Abandon of a restart-recovered node — the durable
+  // terminal outcome must never be masked by the other poll's timing.
+  test('a durable terminal status wins over a recovery-required flag that has not cleared yet', () => {
+    expect(statusPill('failed', true)).toEqual({ label: 'Failed', tone: 'error' });
+    expect(statusPill('completed', true)).toEqual({ label: 'Completed', tone: 'success' });
+    expect(statusPill('cancelled', true)).toEqual({ label: 'Cancelled', tone: null });
+    expect(statusPill('skipped', true)).toEqual({ label: 'Skipped', tone: null });
+  });
+});
+
+describe('effectiveNodeRoomStatus', () => {
+  test('a still-running/awaiting status is replaced by the dock-reported terminal outcome', () => {
+    expect(effectiveNodeRoomStatus('running', 'failed')).toBe('failed');
+    expect(effectiveNodeRoomStatus('running', 'completed')).toBe('completed');
+    expect(effectiveNodeRoomStatus('awaiting', 'skipped')).toBe('skipped');
+  });
+
+  test('null/undefined terminalOutcome leaves the status untouched', () => {
+    expect(effectiveNodeRoomStatus('running', null)).toBe('running');
+    expect(effectiveNodeRoomStatus('running', undefined)).toBe('running');
+  });
+
+  // Mirrors `statusPill`'s own `recoveryRequired` precedent: a status that
+  // already IS one of the durable terminal outcomes always wins, because it
+  // can only be terminal because something already settled it, while the
+  // dock's own read can still be momentarily behind a status the caller
+  // learned through a different, faster channel.
+  test('an already-terminal status wins over a dock-reported outcome that disagrees', () => {
+    expect(effectiveNodeRoomStatus('completed', 'failed')).toBe('completed');
+    expect(effectiveNodeRoomStatus('cancelled', 'failed')).toBe('cancelled');
+  });
+
+  test('feeding the resolved status into statusPill never renders Running once an outcome is known', () => {
+    const resolved = effectiveNodeRoomStatus('running', 'failed');
+    expect(statusPill(resolved)).toEqual({ label: 'Failed', tone: 'error' });
+  });
+});
+
+describe('shouldRefetchRunOnDockFinished', () => {
+  test('fires on the edge into finished while the cached run status is still non-terminal', () => {
+    expect(shouldRefetchRunOnDockFinished('recovery_required', 'finished', 'running')).toBe(true);
+    expect(shouldRefetchRunOnDockFinished(null, 'finished', 'running')).toBe(true);
+  });
+
+  test('never fires when already finished last render (not a fresh edge)', () => {
+    expect(shouldRefetchRunOnDockFinished('finished', 'finished', 'running')).toBe(false);
+  });
+
+  test('never fires once the cached run status is already terminal', () => {
+    expect(shouldRefetchRunOnDockFinished('recovery_required', 'finished', 'completed')).toBe(
+      false
+    );
+    expect(shouldRefetchRunOnDockFinished('recovery_required', 'finished', 'failed')).toBe(false);
+    expect(shouldRefetchRunOnDockFinished('recovery_required', 'finished', 'cancelled')).toBe(
+      false
+    );
+  });
+
+  test('never fires for a transition into any state other than finished', () => {
+    expect(shouldRefetchRunOnDockFinished('finished', 'recovery_required', 'running')).toBe(false);
+    expect(shouldRefetchRunOnDockFinished(null, 'live', 'running')).toBe(false);
+  });
+});
+
+describe('disambiguateExecutionOptions', () => {
+  test('appends the live-status word only to the option whose row is running or awaiting', () => {
+    expect(
+      disambiguateExecutionOptions([
+        { id: 'a', label: 'Iteration 1', status: 'completed' },
+        { id: 'b', label: 'Iteration 2', status: 'running' },
+      ])
+    ).toEqual([
+      { id: 'a', label: 'Iteration 1' },
+      { id: 'b', label: 'Iteration 2 · running' },
+    ]);
+  });
+
+  test('numbers a later option whose text still collides after the status word', () => {
+    expect(
+      disambiguateExecutionOptions([
+        { id: 'a', label: 'Iteration 1', status: 'failed' },
+        { id: 'b', label: 'Iteration 1', status: 'failed' },
+      ])
+    ).toEqual([
+      { id: 'a', label: 'Iteration 1' },
+      { id: 'b', label: 'Iteration 1 · Run 2' },
+    ]);
+  });
+
+  test('a third collision keeps counting rather than repeating Run 2', () => {
+    expect(
+      disambiguateExecutionOptions([
+        { id: 'a', label: 'Iteration 1', status: 'failed' },
+        { id: 'b', label: 'Iteration 1', status: 'failed' },
+        { id: 'c', label: 'Iteration 1', status: 'failed' },
+      ]).map(option => option.label)
+    ).toEqual(['Iteration 1', 'Iteration 1 · Run 2', 'Iteration 1 · Run 3']);
+  });
+
+  test('distinct labels never gain a Run suffix', () => {
+    expect(
+      disambiguateExecutionOptions([
+        { id: 'a', label: 'Iteration 1', status: 'completed' },
+        { id: 'b', label: 'Iteration 2', status: 'completed' },
+      ])
+    ).toEqual([
+      { id: 'a', label: 'Iteration 1' },
+      { id: 'b', label: 'Iteration 2' },
+    ]);
+  });
+});
+
+describe('computeRunOfTotal', () => {
+  function occ(
+    id: string,
+    status: string,
+    selection: Extract<ExecutionRowSelection, { kind: 'occurrence' }>
+  ): { id: string; status: string; selection: ExecutionRowSelection } {
+    return { id, status, selection };
+  }
+
+  test('reports run position and total across two real retries in the same slot', () => {
+    const rows = [
+      occ('run-1', 'failed', { kind: 'occurrence', occurrenceId: 'occ-1', retryEpoch: 0 }),
+      occ('run-2', 'completed', { kind: 'occurrence', occurrenceId: 'occ-2', retryEpoch: 1 }),
+    ];
+    expect(computeRunOfTotal(rows, 'run-2')).toEqual({ run: 2, total: 2 });
+    expect(computeRunOfTotal(rows, 'run-1')).toEqual({ run: 1, total: 2 });
+  });
+
+  test('is null when the node only ever ran once in that slot', () => {
+    const rows = [occ('run-1', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1' })];
+    expect(computeRunOfTotal(rows, 'run-1')).toBeNull();
+  });
+
+  test('excludes a skipped resume marker from the total, even with a different retry epoch', () => {
+    const rows = [
+      occ('real', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1', retryEpoch: 0 }),
+      occ('resume-marker', 'skipped', { kind: 'occurrence', occurrenceId: 'occ-2', retryEpoch: 1 }),
+    ];
+    expect(computeRunOfTotal(rows, 'real')).toBeNull();
+  });
+
+  test('scopes the count to the selected row’s own iteration, not the whole node', () => {
+    const rows = [
+      occ('iter1-run1', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-1',
+        iteration: 1,
+        retryEpoch: 0,
+      }),
+      occ('iter3-run1', 'failed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-2',
+        iteration: 3,
+        retryEpoch: 0,
+      }),
+      occ('iter3-run2', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-3',
+        iteration: 3,
+        retryEpoch: 1,
+      }),
+    ];
+    expect(computeRunOfTotal(rows, 'iter3-run2')).toEqual({ run: 2, total: 2 });
+    expect(computeRunOfTotal(rows, 'iter1-run1')).toBeNull();
+  });
+
+  test('ranks by surviving position, not the raw retry epoch, when a middle epoch was entirely skipped', () => {
+    const rows = [
+      occ('epoch-0', 'failed', { kind: 'occurrence', occurrenceId: 'occ-1', retryEpoch: 0 }),
+      occ('epoch-1-skipped', 'skipped', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-2',
+        retryEpoch: 1,
+      }),
+      occ('epoch-2', 'completed', { kind: 'occurrence', occurrenceId: 'occ-3', retryEpoch: 2 }),
+    ];
+    expect(computeRunOfTotal(rows, 'epoch-2')).toEqual({ run: 2, total: 2 });
+    expect(computeRunOfTotal(rows, 'epoch-0')).toEqual({ run: 1, total: 2 });
+  });
+
+  test('is null for a non-occurrence selection or an unknown row id', () => {
+    const rows = [occ('run-1', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1' })];
+    expect(computeRunOfTotal(rows, 'missing')).toBeNull();
+    expect(
+      computeRunOfTotal(
+        [
+          {
+            id: 'loop-iter',
+            status: 'running',
+            selection: { kind: 'loop_iteration', iteration: 1 },
+          },
+        ],
+        'loop-iter'
+      )
+    ).toBeNull();
+  });
+});
+
+describe('computeLoopIterationCount', () => {
+  function occ(
+    id: string,
+    status: string,
+    selection: Extract<ExecutionRowSelection, { kind: 'occurrence' }>
+  ): { id: string; status: string; selection: ExecutionRowSelection } {
+    return { id, status, selection };
+  }
+
+  test('counts only the selected row’s own retry, not every retry of a single-iteration loop', () => {
+    // A max_iterations: 1 loop retried once: two total node executions, but
+    // each is its own one-iteration run — the header's "of N" must read 1,
+    // never 2, or it contradicts "· max 1" (VQ3-6).
+    const rows = [
+      occ('run0-iter1', 'failed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-0',
+        iteration: 1,
+        retryEpoch: 0,
+      }),
+      occ('run1-iter1', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-1',
+        iteration: 1,
+        retryEpoch: 1,
+      }),
+    ];
+    expect(computeLoopIterationCount(rows, 'run1-iter1')).toBe(1);
+    expect(computeLoopIterationCount(rows, 'run0-iter1')).toBe(1);
+  });
+
+  test('counts every iteration of one live, non-retried run', () => {
+    const rows = [
+      occ('iter1', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1', iteration: 1 }),
+      occ('iter2', 'completed', { kind: 'occurrence', occurrenceId: 'occ-2', iteration: 2 }),
+      occ('iter3', 'running', { kind: 'occurrence', occurrenceId: 'occ-3', iteration: 3 }),
+    ];
+    expect(computeLoopIterationCount(rows, 'iter3')).toBe(3);
+  });
+
+  test('does not mix iterations from a different run into the count', () => {
+    const rows = [
+      occ('run0-iter1', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-0a',
+        iteration: 1,
+        retryEpoch: 0,
+      }),
+      occ('run0-iter2', 'failed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-0b',
+        iteration: 2,
+        retryEpoch: 0,
+      }),
+      occ('run1-iter1', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-1a',
+        iteration: 1,
+        retryEpoch: 1,
+      }),
+    ];
+    expect(computeLoopIterationCount(rows, 'run1-iter1')).toBe(1);
+    expect(computeLoopIterationCount(rows, 'run0-iter2')).toBe(2);
+  });
+
+  test('is null for a non-loop-iteration selection or an unknown row id', () => {
+    const rows = [occ('run-1', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1' })];
+    expect(computeLoopIterationCount(rows, 'run-1')).toBeNull();
+    expect(computeLoopIterationCount(rows, 'missing')).toBeNull();
+    expect(
+      computeLoopIterationCount(
+        [{ id: 'node-row', status: 'completed', selection: { kind: 'node' } }],
+        'node-row'
+      )
+    ).toBeNull();
+  });
+
+  test('counts every legacy loop_iteration row as one live run (pre-occurrence-tracking history)', () => {
+    const rows = [
+      { id: 'legacy-1', status: 'completed', selection: { kind: 'loop_iteration', iteration: 1 } },
+      { id: 'legacy-2', status: 'running', selection: { kind: 'loop_iteration', iteration: 2 } },
+    ] as const;
+    expect(computeLoopIterationCount(rows, 'legacy-2')).toBe(2);
+  });
+});
+
+describe('headerMetaLine', () => {
+  test('joins start time, live state, run count, provider, and model', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'running',
+        durationMs: null,
+        runOfTotal: { run: 2, total: 2 },
+        provider: 'omp',
+        model: 'claude-opus-5',
+      })
+    ).toBe(`started ${startedHours()}:52 · running… · run 2 of 2 · omp · claude-opus-5`);
+  });
+
+  test('reports a finished duration instead of running when the row is terminal', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'completed',
+        durationMs: 18 * 60_000 + 21_000,
+        runOfTotal: null,
+        provider: 'omp',
+        model: 'claude-opus-5',
+      })
+    ).toBe(`started ${startedHours()}:52 · 18m 21s · omp · claude-opus-5`);
+  });
+
+  test('reads a failed idle-await expiry without inventing a duration number', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'failed',
+        durationMs: 1_800_000,
+        runOfTotal: null,
+        provider: null,
+        model: null,
+        idleAwaitExpired: true,
+      })
+    ).toBe(`started ${startedHours()}:52 · failed after idle timeout`);
+  });
+
+  test('omits every segment whose own data is absent', () => {
+    expect(
+      headerMetaLine({
+        startedAt: null,
+        status: 'pending',
+        durationMs: null,
+        runOfTotal: null,
+        provider: null,
+        model: null,
+      })
+    ).toBeNull();
+  });
+
+  test('a recovery-required signal reports the restart, never running…, for a non-terminal row', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'running',
+        durationMs: null,
+        runOfTotal: null,
+        provider: 'omp',
+        model: 'claude-opus-5',
+        recoveryRequired: true,
+      })
+    ).toBe(`started ${startedHours()}:52 · restored after server restart · omp · claude-opus-5`);
+  });
+
+  test('prefixes the iteration and drops the run count while viewing finished history', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'completed',
+        durationMs: 6 * 60_000 + 4_000,
+        runOfTotal: { run: 2, total: 2 },
+        provider: 'omp',
+        model: 'claude-opus-5',
+        iterationPrefix: 1,
+      })
+    ).toBe(`iteration 1 · started ${startedHours()}:52 · 6m 04s · omp · claude-opus-5`);
+  });
+
+  test('reports the node’s own failure reason in place of a duration number', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'failed',
+        durationMs: 9_000,
+        runOfTotal: null,
+        provider: 'claude',
+        model: 'haiku',
+        statusReason: "exceeded max iterations (1) without a passing 'until_bash' check",
+      })
+    ).toBe(
+      `started ${startedHours()}:52 · exceeded max iterations (1) without a passing 'until_bash' check · claude · haiku`
+    );
+  });
+
+  test('idle-await expiry wins over a supplied status reason', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'failed',
+        durationMs: 1_800_000,
+        runOfTotal: null,
+        provider: null,
+        model: null,
+        idleAwaitExpired: true,
+        statusReason: 'some other reason',
+      })
+    ).toBe(`started ${startedHours()}:52 · failed after idle timeout`);
+  });
+
+  test('appends waiting on operator right after running… for an idle-after-interrupt agent', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'running',
+        durationMs: null,
+        runOfTotal: null,
+        provider: 'omp',
+        model: 'claude-opus-5',
+        waitingOnOperator: true,
+      })
+    ).toBe(`started ${startedHours()}:52 · running… · waiting on operator · omp · claude-opus-5`);
+  });
+
+  test('omits waiting on operator while the agent is generating', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'running',
+        durationMs: null,
+        runOfTotal: null,
+        provider: 'omp',
+        model: 'claude-opus-5',
+        waitingOnOperator: false,
+      })
+    ).toBe(`started ${startedHours()}:52 · running… · omp · claude-opus-5`);
+  });
+});
+
+describe('loopMaxIterationsForNode', () => {
+  test('reads a loop node’s own cap, never the selector-display ceiling', () => {
+    expect(loopMaxIterationsForNode({ loop: { max_iterations: 4 } })).toBe(4);
+    expect(loopMaxIterationsForNode({ loop_group: { max_iterations: 6 } })).toBe(6);
+  });
+
+  test('is null for a non-loop node, or when no definition is known yet', () => {
+    expect(loopMaxIterationsForNode({})).toBeNull();
+    expect(loopMaxIterationsForNode(null)).toBeNull();
+    expect(loopMaxIterationsForNode(undefined)).toBeNull();
+  });
+});
+
+describe('capExecutionOptions', () => {
+  function rows(count: number): { id: string; order: number }[] {
+    return Array.from({ length: count }, (_, i) => ({ id: `r${String(i + 1)}`, order: i + 1 }));
+  }
+
+  test('returns every row unchanged when at or under the ceiling', () => {
+    expect(capExecutionOptions(rows(8))).toEqual(rows(8));
+    expect(capExecutionOptions(rows(3))).toEqual(rows(3));
+    expect(capExecutionOptions([])).toEqual([]);
+  });
+
+  test('a loop past the ceiling keeps only the most recent N, oldest dropped', () => {
+    const capped = capExecutionOptions(rows(11));
+    expect(capped).toHaveLength(8);
+    expect(capped.map(r => r.id)).toEqual(['r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11']);
+  });
+
+  test('the kept rows stay in chronological order even from unordered input', () => {
+    const all = rows(11);
+    const shuffled = [...all].reverse();
+    const capped = capExecutionOptions(shuffled);
+    expect(capped.map(r => r.id)).toEqual(['r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11']);
+  });
+
+  test('the live execution (highest order) is always kept, never dropped', () => {
+    const live = { id: 'live', order: 12 };
+    const capped = capExecutionOptions([...rows(11), live]);
+    expect(capped.map(r => r.id)).toContain('live');
+    expect(capped.at(-1)).toEqual(live);
+  });
+
+  test('a custom max is honored', () => {
+    expect(capExecutionOptions(rows(5), 3).map(r => r.id)).toEqual(['r3', 'r4', 'r5']);
+  });
+
+  test('the default ceiling is 8', () => {
+    expect(EXECUTION_OPTIONS_MAX).toBe(8);
+  });
+});
+
 describe('buildExecutionHeader', () => {
   test('labels iteration, route, attempt, and unknown executions from selection data', () => {
     expect(
@@ -594,7 +1334,7 @@ describe('buildExecutionHeader', () => {
         events: [],
         runStartedAt: RUN_STARTED_AT,
       }).executionLabel
-    ).toBe('Attempt 3');
+    ).toBe('Run 3');
     expect(
       buildExecutionHeader({
         row: row({
@@ -633,7 +1373,7 @@ describe('buildExecutionHeader', () => {
         events: [],
         runStartedAt: RUN_STARTED_AT,
       }).executionLabel
-    ).toBe('Iteration 2 · Attempt 2');
+    ).toBe('Iteration 2 · Run 2');
 
     expect(
       buildExecutionHeader({
@@ -648,6 +1388,110 @@ describe('buildExecutionHeader', () => {
         runStartedAt: RUN_STARTED_AT,
       }).executionLabel
     ).toBe('Execution unknown');
+  });
+
+  test("nodeLabel strips the log stream's ×N/#N execution suffix; a bare label passes through", () => {
+    expect(
+      buildExecutionHeader({
+        row: row({ id: 'loop-row', status: 'completed', order: 0, label: 'implement ×3' }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).nodeLabel
+    ).toBe('implement');
+    expect(
+      buildExecutionHeader({
+        row: row({ id: 'route-row', status: 'completed', order: 0, label: 'router #2' }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).nodeLabel
+    ).toBe('router');
+    expect(
+      buildExecutionHeader({
+        row: row({ id: 'plain-row', status: 'completed', order: 0, label: 'implement' }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).nodeLabel
+    ).toBe('implement');
+  });
+
+  test('a bare first occurrence reads "Run 1", never the banned "Attempt" wording', () => {
+    expect(
+      buildExecutionHeader({
+        row: row({
+          id: 'bare',
+          status: 'completed',
+          order: 0,
+          selection: {
+            kind: 'occurrence',
+            occurrenceId: 'occ-bare',
+            attemptId: 'att-bare',
+            retryEpoch: 0,
+          },
+          unknownScope: false,
+        }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).executionLabel
+    ).toBe('Run 1');
+  });
+
+  test('ranks "Run N" by surviving position when siblingRows is given, not the raw epoch', () => {
+    const siblingRows = [
+      row({
+        id: 'epoch-0',
+        status: 'failed',
+        order: 0,
+        selection: { kind: 'occurrence', occurrenceId: 'occ-1', retryEpoch: 0 },
+      }),
+      row({
+        id: 'epoch-1-skipped',
+        status: 'skipped',
+        order: 1,
+        selection: { kind: 'occurrence', occurrenceId: 'occ-2', retryEpoch: 1 },
+      }),
+      row({
+        id: 'epoch-2',
+        status: 'completed',
+        order: 2,
+        selection: { kind: 'occurrence', occurrenceId: 'occ-3', retryEpoch: 2 },
+      }),
+    ];
+    expect(
+      buildExecutionHeader({
+        row: siblingRows[2],
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        siblingRows,
+      }).executionLabel
+    ).toBe('Run 2');
+    // Omitting siblingRows keeps the raw-epoch label — correct whenever
+    // there is no skipped epoch to create a gap, and the only option a
+    // caller with no sibling rows in hand (most fixtures) has.
+    expect(
+      buildExecutionHeader({
+        row: siblingRows[2],
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).executionLabel
+    ).toBe('Run 3');
+  });
+
+  test('loopMaxIterations passes through from the input, defaulting to null', () => {
+    expect(
+      buildExecutionHeader({
+        row: row({ id: 'loop-node', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        loopMaxIterations: 4,
+      }).loopMaxIterations
+    ).toBe(4);
+    expect(
+      buildExecutionHeader({
+        row: row({ id: 'plain-node', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).loopMaxIterations
+    ).toBeNull();
   });
 
   test('startedOffsetMs is measured from the run started_at', () => {
@@ -771,6 +1615,196 @@ describe('buildExecutionHeader', () => {
     expect(header.model).toBe('sonnet');
     expect(header.unknownScope).toBe(true);
   });
+
+  test('a live loop iteration reads provider and model from the loop node’s own node_started row', () => {
+    // The loop node's node_started carries its OWN outer occurrence/attempt
+    // identity, never the same as any individual iteration's nested scope —
+    // a live loop_iteration selection has no occurrence identity of its own
+    // to match against, so it must still resolve from that outer row.
+    const selected = row({
+      id: 'loop-live',
+      status: 'running',
+      order: 0,
+      selection: { kind: 'loop_iteration', iteration: 2 },
+      unknownScope: true,
+    });
+    const header = buildExecutionHeader({
+      row: selected,
+      events: [
+        nodeStarted({
+          id: 'loop-start',
+          occurrenceId: 'occ-loop-outer',
+          attemptId: 'att-loop-outer',
+          provider: 'claude',
+          model: 'haiku',
+        }),
+      ],
+      runStartedAt: RUN_STARTED_AT,
+    });
+    expect(header.provider).toBe('claude');
+    expect(header.model).toBe('haiku');
+  });
+
+  test('a retried loop iteration reads provider and model from its own retry epoch’s node_started row', () => {
+    const selected = row({
+      id: 'loop-retried',
+      status: 'completed',
+      order: 0,
+      selection: {
+        kind: 'occurrence',
+        occurrenceId: 'occ-iter-inner',
+        attemptId: 'att-iter-inner',
+        retryEpoch: 1,
+        iteration: 1,
+      },
+      unknownScope: false,
+    });
+    const header = buildExecutionHeader({
+      row: selected,
+      events: [
+        nodeStarted({
+          id: 'loop-start-epoch-0',
+          occurrenceId: 'occ-loop-outer-0',
+          attemptId: 'att-loop-outer-0',
+          provider: 'claude',
+          model: 'haiku',
+          retryEpoch: 0,
+        }),
+        nodeStarted({
+          id: 'loop-start-epoch-1',
+          occurrenceId: 'occ-loop-outer-1',
+          attemptId: 'att-loop-outer-1',
+          provider: 'codex',
+          model: 'gpt-5',
+          retryEpoch: 1,
+        }),
+      ],
+      runStartedAt: RUN_STARTED_AT,
+    });
+    // The selected row is on retry epoch 1, so its provider/model come from
+    // the loop's SECOND start row, never the first retry's.
+    expect(header.provider).toBe('codex');
+    expect(header.model).toBe('gpt-5');
+  });
+
+  test('status reads the node’s own condition, not a historical row’s, whenever they differ', () => {
+    // A loop that exceeded max_iterations reads Failed at the node level even
+    // while an earlier iteration that itself completed is selected.
+    const failedNode = buildExecutionHeader({
+      row: row({
+        id: 'iter-1',
+        status: 'completed',
+        order: 0,
+        selection: { kind: 'loop_iteration', iteration: 1 },
+      }),
+      events: [],
+      runStartedAt: RUN_STARTED_AT,
+      nodeStatus: 'failed',
+      nodeError: "exceeded max iterations (1) without a passing 'until_bash' check",
+    });
+    expect(failedNode.status).toBe('failed');
+    expect(failedNode.statusReason).toBe(
+      "exceeded max iterations (1) without a passing 'until_bash' check"
+    );
+
+    // A node that later succeeded on retry reads Completed even while
+    // viewing the earlier run that failed.
+    const completedAfterRetry = buildExecutionHeader({
+      row: row({
+        id: 'run-1',
+        status: 'failed',
+        order: 0,
+        selection: { kind: 'occurrence', occurrenceId: 'occ-1', attemptId: 'att-1', retryEpoch: 0 },
+      }),
+      events: [],
+      runStartedAt: RUN_STARTED_AT,
+      nodeStatus: 'completed',
+      nodeError: 'some earlier failure',
+    });
+    expect(completedAfterRetry.status).toBe('completed');
+    // The reason is only ever meaningful while the node itself is failed.
+    expect(completedAfterRetry.statusReason).toBeNull();
+  });
+
+  test('status falls back to the selected row when no node status is supplied', () => {
+    const header = buildExecutionHeader({
+      row: row({ id: 'solo', status: 'running', order: 0 }),
+      events: [],
+      runStartedAt: RUN_STARTED_AT,
+    });
+    expect(header.status).toBe('running');
+    expect(header.statusReason).toBeNull();
+  });
+
+  // Abandon of a restart-recovered node (no live executor) can settle the
+  // RUN before the node's own durable write catches up — the header must
+  // never keep claiming a live process the run itself already says is gone.
+  describe('runStatus projection onto a still-running/awaiting node', () => {
+    test('a terminal run status settles a still-running node to failed (cancelled)', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'running',
+        runStatus: 'cancelled',
+      });
+      expect(header.status).toBe('failed');
+    });
+
+    test('a terminal run status settles a still-running node to failed (failed)', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'running',
+        runStatus: 'failed',
+      });
+      expect(header.status).toBe('failed');
+    });
+
+    test('a terminal run status settles a still-awaiting node to completed', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'awaiting',
+        runStatus: 'completed',
+      });
+      expect(header.status).toBe('completed');
+    });
+
+    test('a live (non-terminal) run status never overrides the node status', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'running',
+        runStatus: 'running',
+      });
+      expect(header.status).toBe('running');
+    });
+
+    test('a terminal run status never overrides a node status that is already terminal', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'completed',
+        runStatus: 'failed',
+      });
+      expect(header.status).toBe('completed');
+    });
+
+    test('an omitted run status leaves the node status exactly as reported', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'running',
+      });
+      expect(header.status).toBe('running');
+    });
+  });
 });
 
 describe('roomOpenerId and askCardId', () => {
@@ -799,11 +1833,13 @@ describe('room visit transitions', () => {
       nodeId: NODE_ID,
       rowId: awaiting.id,
       openerId,
+      followingLive: true,
     });
     expect(opened.selection).toEqual({
       nodeId: NODE_ID,
       rowId: awaiting.id,
       openerId,
+      followingLive: true,
     });
     expect(opened.lastExplicitRowByNode).toEqual({});
   });
@@ -813,6 +1849,7 @@ describe('room visit transitions', () => {
       nodeId: NODE_ID,
       rowId: awaiting.id,
       openerId,
+      followingLive: true,
     });
     expect(opened.lastExplicitRowByNode).toEqual({ [NODE_ID]: awaiting.id });
   });
@@ -822,6 +1859,7 @@ describe('room visit transitions', () => {
       nodeId: NODE_ID,
       rowId: awaiting.id,
       openerId,
+      followingLive: true,
     });
     const withScroll = rememberRoomScroll(opened, 'run-1:review', 120);
     const closed = closeRoom(withScroll);
@@ -895,6 +1933,7 @@ describe('room visit transitions', () => {
         nodeId: NODE_ID,
         rowId: awaiting.id,
         openerId,
+        followingLive: true,
       }),
       'scope',
       80
@@ -1483,5 +2522,31 @@ describe('resolveRunDetailRefetchIntervalMs (T3.10–T3.14 core)', () => {
     ).toBe(false);
     expect(resolveRunDetailRefetchIntervalMs('cancelled', [])).toBe(false);
     expect(resolveRunDetailRefetchIntervalMs('cancelled', undefined)).toBe(false);
+  });
+});
+
+describe('selectableExecutionRows', () => {
+  test('drops a skipped resume marker when the node has a row that ran', () => {
+    const rows = [
+      { id: 'ran', status: 'completed' },
+      { id: 'marker', status: 'skipped' },
+    ];
+    expect(selectableExecutionRows(rows).map(row => row.id)).toEqual(['ran']);
+  });
+
+  test('keeps the selected row even when it is skipped', () => {
+    const rows = [
+      { id: 'ran', status: 'completed' },
+      { id: 'marker', status: 'skipped' },
+    ];
+    expect(selectableExecutionRows(rows, 'marker').map(row => row.id)).toEqual(['ran', 'marker']);
+  });
+
+  test('keeps every row when the node only ever skipped', () => {
+    const rows = [
+      { id: 'a', status: 'skipped' },
+      { id: 'b', status: 'skipped' },
+    ];
+    expect(selectableExecutionRows(rows).map(row => row.id)).toEqual(['a', 'b']);
   });
 });

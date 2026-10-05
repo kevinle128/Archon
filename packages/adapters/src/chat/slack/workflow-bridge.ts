@@ -180,6 +180,8 @@ export class SlackWorkflowBridge {
         case 'container_lifecycle':
         case 'node_awaiting':
         case 'interaction_resolved':
+        case 'node_turn_interrupted':
+        case 'node_turn_started':
           break;
         default: {
           const exhaustive: never = event;

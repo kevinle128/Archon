@@ -202,10 +202,12 @@ function nextLoaderOptions(
     limit: 100,
   };
   if (selection.kind === 'occurrence') {
+    // Occurrence-scoped only — CAP-6 forbids keying the room's transcript on
+    // attempt_id. A steered node writes every guidance turn's rows under the
+    // SAME occurrence, so fetching by occurrence_id alone already returns
+    // the full transcript; forwarding attemptId would silently drop every
+    // turn but the one the selection's projected execution happens to carry.
     options.occurrenceId = selection.occurrenceId;
-    if (selection.attemptId !== undefined) {
-      options.attemptId = selection.attemptId;
-    }
   }
   if (signal !== undefined) {
     options.signal = signal;

@@ -1,0 +1,19 @@
+{
+  "status": "completed",
+  "q": [
+    ["FIN8-Q1 queu", "sent"],
+    ["FIN8 typed r", "sent"]
+  ],
+  "falseNS": { "c": [], "l": [] },
+  "c": [
+    [-26, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [-2, "SENDING · 2|Running|agent idle · Send now delivers|0"],
+    [8, "SENDING · 2|Running|agent generating|0"],
+    [120, "|Completed||0"]
+  ],
+  "l": [
+    [-26, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [174, "|Recovery required|agent idle · Send now delivers|0"],
+    [1126, "|Completed||0"]
+  ]
+}

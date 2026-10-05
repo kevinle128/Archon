@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { z } from 'zod';
 
-import { createLogger } from '@archon/paths';
+import { createLogger, getArchonHome } from '@archon/paths';
 
 import type {
   IAgentProvider,
@@ -14,7 +16,7 @@ import type {
   UsageBreakdown,
 } from '../types';
 
-import { E2E_FAKE_CAPABILITIES } from './capabilities';
+import { E2E_FAKE_CAPABILITIES, E2E_FAKE_SOFT_INJECT_CAPABILITIES } from './capabilities';
 
 const log = createLogger('provider.e2e-fake');
 
@@ -29,10 +31,28 @@ export const E2E_FAKE_TOOL_INPUT = { path: 'HITL_TOOL_INPUT.txt' } as const;
 export const E2E_FAKE_TOOL_OUTPUT = 'HITL_TOOL_OUTPUT_VISIBLE';
 export const E2E_FAKE_LOOP_DONE = 'E2E_LOOP_DONE';
 export const E2E_FAKE_TOOL_PASS_TEXT = '[e2e-fake] tool pass';
+/** Provider id of the soft-injectable variant; the default `e2e-fake` stays queue-only. */
+export const E2E_FAKE_SOFT_INJECT_PROVIDER_ID = 'e2e-fake-soft-inject';
+/** Prefix of the reply a soft-injectable fake writes for each accepted injection. */
+export const E2E_FAKE_SOFT_INJECT_REPLY = '[e2e-fake] soft-injected:';
 export const E2E_FAKE_TOOL_INTERRUPTED_OUTPUT = '[e2e-fake] tool interrupted';
 export const E2E_FAKE_INTERRUPT_TERMINAL_TOOL = 'aborted_tools';
 export const E2E_FAKE_INTERRUPT_TERMINAL_STREAM = 'aborted_streaming';
 const INTERRUPTIBLE_MAX_DELAY_MS = 120_000;
+
+/**
+ * Cross-process early-release marker for a bounded wait (`waitForBoundary`).
+ * The fake provider runs inside the spawned Archon server process, so a test
+ * running in a separate Playwright process cannot call it directly; writing a
+ * file under this worker's own `ARCHON_HOME` is a signal both processes can
+ * see. `delayMs` remains the wait's ceiling — a test that never writes the
+ * marker (or crashes before writing it) still gets the original fixed-delay
+ * behavior, so this is opt-in and backward compatible for every scenario that
+ * does not set `releaseSignal`.
+ */
+export function e2eFakeReleaseSignalPath(name: string): string {
+  return join(getArchonHome(), 'e2e-fake-release', name);
+}
 
 /**
  * Deterministic task-dispatch payloads for the node-room e2e proof. The OMP
@@ -172,6 +192,14 @@ const scenarioSchema = z
     emitTodo: z.boolean().optional(),
     askHuman: z.boolean().optional(),
     delayMs: z.number().int().nonnegative().optional(),
+    /**
+     * Opt-in early-release marker name for a bounded `delayMs` wait — see
+     * `e2eFakeReleaseSignalPath`. Absent by default, so every existing
+     * scenario keeps waiting out its fixed `delayMs` unchanged.
+     */
+    releaseSignal: z.string().min(1).optional(),
+    /** Soft-injectable fake only: accept messages but never echo them, like a transport that dropped them at turn end. */
+    dropSoftInjected: z.boolean().optional(),
     doneWhenPromptIncludes: z.string().min(1).optional(),
     repeatTool: z.number().int().min(1).max(200).optional(),
     largeLastToolOutput: z.boolean().optional(),
@@ -403,26 +431,36 @@ function findAskHumanTool(nativeTools: NativeTool[] | undefined): NativeTool {
   return tool;
 }
 
+/** Poll interval for an opt-in `releaseSignal` marker file (see `waitForBoundary`). */
+const RELEASE_SIGNAL_POLL_MS = 150;
+
 /**
  * First-wins bounded wait: the delay elapsing is the natural path, the node
  * `abortSignal` (Cancel) outranks a same-tick turn `interruptSignal` (Stop),
- * and every listener/timer is removed on settle so a spent wait leaves
- * nothing behind.
+ * an opt-in `releaseSignal` marker file ends the wait early the moment a test
+ * writes it (see `e2eFakeReleaseSignalPath`), and every listener/timer is
+ * removed on settle so a spent wait leaves nothing behind. `delayMs` stays
+ * the ceiling either way, so a scenario with no `releaseSignal` — or one
+ * whose signal never arrives — behaves exactly as before.
  */
 async function waitForBoundary(
   delayMs: number,
   abortSignal: AbortSignal | undefined,
-  interruptSignal: AbortSignal | undefined
+  interruptSignal: AbortSignal | undefined,
+  releaseSignal?: string
 ): Promise<'elapsed' | 'aborted' | 'interrupted'> {
   if (abortSignal?.aborted) return 'aborted';
   if (interruptSignal?.aborted) return 'interrupted';
   if (delayMs <= 0) return 'elapsed';
+  const releasePath =
+    releaseSignal === undefined ? undefined : e2eFakeReleaseSignalPath(releaseSignal);
   return new Promise(resolve => {
     let settled = false;
     const finish = (): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (releasePoll !== undefined) clearInterval(releasePoll);
       abortSignal?.removeEventListener('abort', onAbort);
       interruptSignal?.removeEventListener('abort', onInterrupt);
       resolve(
@@ -430,6 +468,19 @@ async function waitForBoundary(
       );
     };
     const timer = setTimeout(finish, delayMs);
+    const releasePoll =
+      releasePath === undefined
+        ? undefined
+        : setInterval(() => {
+            if (!existsSync(releasePath)) return;
+            try {
+              unlinkSync(releasePath);
+            } catch {
+              // Another poll tick (or the test) may already have removed it;
+              // the file's prior existence is all this wait needed to know.
+            }
+            finish();
+          }, RELEASE_SIGNAL_POLL_MS);
     const onAbort = (): void => {
       finish();
     };
@@ -466,12 +517,18 @@ function parseUsageDirective(directive: string): UsageBreakdown {
  * `tool_result` chunks. Registered ONLY when `ARCHON_E2E_FAKE_PROVIDER` is set.
  */
 export class E2eFakeProvider implements IAgentProvider {
+  private readonly softInjectable: boolean;
+
+  constructor(options: { softInjectable?: boolean } = {}) {
+    this.softInjectable = options.softInjectable === true;
+  }
+
   getType(): string {
-    return 'e2e-fake';
+    return this.softInjectable ? E2E_FAKE_SOFT_INJECT_PROVIDER_ID : 'e2e-fake';
   }
 
   getCapabilities(): ProviderCapabilities {
-    return E2E_FAKE_CAPABILITIES;
+    return this.softInjectable ? E2E_FAKE_SOFT_INJECT_CAPABILITIES : E2E_FAKE_CAPABILITIES;
   }
 
   async *sendQuery(
@@ -523,7 +580,12 @@ export class E2eFakeProvider implements IAgentProvider {
     // interruptible scenario moves it behind the in-flight tool call so a
     // Stop lands while the tool card is live.
     if (!interruptible) {
-      const boundary = await waitForBoundary(scenario.delayMs ?? 0, abortSignal, interruptSignal);
+      const boundary = await waitForBoundary(
+        scenario.delayMs ?? 0,
+        abortSignal,
+        interruptSignal,
+        scenario.releaseSignal
+      );
       if (boundary === 'aborted') throw new Error('Query aborted');
       if (boundary === 'interrupted') {
         // No tool was emitted yet — a mid-text interrupt mirrors the SDK's
@@ -603,8 +665,34 @@ export class E2eFakeProvider implements IAgentProvider {
       }
       if (interruptible) {
         // Opt-in visual scenario: tool calls are live while the bounded wait
-        // runs — first of node abort, turn interrupt, or the delay settles it.
-        const boundary = await waitForBoundary(scenario.delayMs ?? 0, abortSignal, interruptSignal);
+        // runs — first of node abort, turn interrupt, the delay settling, or
+        // an opt-in releaseSignal marker (see waitForBoundary).
+        //
+        // A soft-injectable fake accepts messages for the length of the wait
+        // and reads them at the boundary, like a model reading a message
+        // queued during a tool call: each accepted message is echoed by id
+        // and answered inside this same turn.
+        const injected: { messageId: string; text: string }[] = [];
+        const unregisterSoftInjection = this.softInjectable
+          ? requestOptions?.softInjection?.ready(request => {
+              if (abortSignal?.aborted === true || interruptSignal?.aborted === true) {
+                return Promise.resolve(false);
+              }
+              injected.push({ messageId: request.messageId, text: request.text });
+              return Promise.resolve(true);
+            })
+          : undefined;
+        let boundary: 'elapsed' | 'aborted' | 'interrupted';
+        try {
+          boundary = await waitForBoundary(
+            scenario.delayMs ?? 0,
+            abortSignal,
+            interruptSignal,
+            scenario.releaseSignal
+          );
+        } finally {
+          unregisterSoftInjection?.();
+        }
         if (boundary === 'aborted') throw new Error('Query aborted');
         for (const [index, toolCallId] of pendingToolCallIds.entries()) {
           yield {
@@ -615,6 +703,14 @@ export class E2eFakeProvider implements IAgentProvider {
             toolCallId,
             toolOutcome: boundary === 'interrupted' ? 'interrupted' : 'success',
           };
+        }
+        // The model reads accepted messages once the running tool returns: the
+        // echo and the answer follow the tool result.
+        if (boundary !== 'interrupted' && scenario.dropSoftInjected !== true) {
+          for (const message of injected) {
+            yield { type: 'operator_delivery_ack', messageId: message.messageId };
+            yield { type: 'assistant', content: `${E2E_FAKE_SOFT_INJECT_REPLY} ${message.text}` };
+          }
         }
         if (boundary === 'interrupted') {
           log.info({ sessionId }, 'e2e-fake.query_interrupted_tools');

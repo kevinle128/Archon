@@ -1,0 +1,1 @@
+{'kind': 'steer', 'mode': None, 'injectAckSeen': True, 'agentEnds': 1, 'toolStartsAtFirstMarker': 6, 'toolStartsTotal': 6, 'finalHasMarker': True, 'outcome': 'ok'}

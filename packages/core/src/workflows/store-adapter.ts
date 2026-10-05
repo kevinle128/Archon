@@ -13,7 +13,9 @@ import * as workflowEventOutboxDb from '../db/workflow-event-outbox';
 import * as workflowNodeSessionDb from '../db/workflow-node-sessions';
 import * as workflowNodeMessageDb from '../db/workflow-node-messages';
 import * as workflowPendingInteractionDb from '../db/workflow-pending-interactions';
+import * as workflowSteeringDb from '../db/workflow-steering';
 import * as workflowCheckpointDb from '../db/workflow-checkpoints';
+import * as workflowNodeExecutionEvidenceDb from '../db/workflow-node-execution-evidence';
 import * as codebaseDb from '../db/codebases';
 import * as envVarDb from '../db/env-vars';
 import { resolveEventRoute, type NotRoutableReason } from '../events/binding-router';
@@ -123,7 +125,7 @@ function enrichApprovalPayload(
     const configured = process.env.ARCHON_PUBLIC_URL?.trim();
     if (!configured) throw new Error('ARCHON_PUBLIC_URL is required for approval callbacks');
     const url = requireHttpUrl(configured, 'ARCHON_PUBLIC_URL');
-    url.pathname = `/console/p/${encodeURIComponent(run.codebase_id)}/r/${encodeURIComponent(run.id)}`;
+    url.pathname = `/workflows/runs/${encodeURIComponent(run.id)}`;
     url.search = '';
     url.hash = '';
     reviewUrl = url.toString();
@@ -429,6 +431,10 @@ export function createWorkflowStore(): IWorkflowStore {
     enqueueExternalWorkflowEvent,
     upsertWorkflowNodeCheckpoint: workflowCheckpointDb.upsertWorkflowNodeCheckpoint,
     getLatestWorkflowNodeCheckpoint: workflowCheckpointDb.getLatestWorkflowNodeCheckpoint,
+    startWorkflowNodeExecutionEvidence:
+      workflowNodeExecutionEvidenceDb.startWorkflowNodeExecutionEvidence,
+    completeWorkflowNodeExecutionEvidence:
+      workflowNodeExecutionEvidenceDb.completeWorkflowNodeExecutionEvidence,
     getDagResumeSnapshot: workflowEventDb.getDagResumeSnapshot,
     getCodebase: codebaseDb.getCodebase,
     getCodebaseEnvVars: envVarDb.getCodebaseEnvVars,
@@ -443,6 +449,37 @@ export function createWorkflowStore(): IWorkflowStore {
       workflowPendingInteractionDb.listPendingInteractions(workflowRunId),
     resolvePendingInteraction: input =>
       workflowPendingInteractionDb.resolvePendingInteraction(input),
+    getSteeringDraft: key => workflowSteeringDb.getSteeringDraft(key),
+    upsertSteeringDraft: input => workflowSteeringDb.upsertSteeringDraft(input),
+    clearSteeringDraft: key => workflowSteeringDb.clearSteeringDraft(key),
+    getSteeringNodeSettings: (workflowRunId, nodeId) =>
+      workflowSteeringDb.getSteeringNodeSettings(workflowRunId, nodeId),
+    upsertSteeringNodeSettings: input => workflowSteeringDb.upsertSteeringNodeSettings(input),
+    enqueueSteeringMessage: input => workflowSteeringDb.enqueueSteeringMessage(input),
+    withdrawSteeringMessage: (workflowRunId, nodeId, messageId) =>
+      workflowSteeringDb.withdrawSteeringMessage(workflowRunId, nodeId, messageId),
+    listSteeringQueue: (workflowRunId, nodeId) =>
+      workflowSteeringDb.listSteeringQueue(workflowRunId, nodeId),
+    claimSteeringQueue: (workflowRunId, nodeId, limit) =>
+      workflowSteeringDb.claimSteeringQueue(workflowRunId, nodeId, limit),
+    markSteeringMessagesSent: (workflowRunId, nodeId, messageIds) =>
+      workflowSteeringDb.markSteeringMessagesSent(workflowRunId, nodeId, messageIds),
+    revertSteeringQueueClaim: (workflowRunId, nodeId, messageIds, failureMessage, failureKind) =>
+      workflowSteeringDb.revertSteeringQueueClaim(
+        workflowRunId,
+        nodeId,
+        messageIds,
+        failureMessage,
+        failureKind
+      ),
+    markSteeringMessageDelivered: (workflowRunId, nodeId, messageId) =>
+      workflowSteeringDb.markSteeringMessageDelivered(workflowRunId, nodeId, messageId),
+    claimSteeringMessageForSoftInjection: (workflowRunId, nodeId, messageId) =>
+      workflowSteeringDb.claimSteeringMessageForSoftInjection(workflowRunId, nodeId, messageId),
+    revertSteeringSoftInjectionClaim: (workflowRunId, nodeId, messageId) =>
+      workflowSteeringDb.revertSteeringSoftInjectionClaim(workflowRunId, nodeId, messageId),
+    reconcileNeverSentSteeringMessages: (workflowRunId, nodeId) =>
+      workflowSteeringDb.reconcileNeverSentSteeringMessages(workflowRunId, nodeId),
   };
 }
 

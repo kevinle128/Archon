@@ -1,0 +1,48 @@
+{
+  "tag": "c22",
+  "sender": "c",
+  "observer": "l",
+  "R": "f8c709afd761dd105c2ebb53321e4d8d",
+  "node": "cl-node",
+  "click": { "status": 200, "resolvedMs": 23 },
+  "status": "completed",
+  "frames": {
+    "c": [
+      [1790772589143, "Running|Stop,Queue|0|0|||||||"],
+      [1790772589177, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|||||"],
+      [1790772589202, "Running|Stop,Queue|2|2|QUEUED · 2|ONE,TWO|||||"],
+      [1790772590426, "Running|Stop,Queue|1|1|QUEUED · 1|ONE,TWO*|||||"],
+      [1790772598660, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:sent||||below"],
+      [1790772599043, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:delivered||||below"],
+      [1790772643243, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered||||below"],
+      [1790772643562, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent||||below"],
+      [1790772646234, "Completed||0|0|||TWO:delivered,ONE:sent||||below"],
+      [1790772646252, "Completed||0|0|||TWO:delivered,ONE:delivered||||below"]
+    ],
+    "l": [
+      [1790772589143, "Running|Stop,Queue|0|0|||||||"],
+      [1790772589612, "Running|Stop,Queue|2|2|QUEUED · 2|ONE,TWO|||||"],
+      [1790772591126, "Running|Stop,Queue|1|1|QUEUED · 1|ONE,TWO*|||||"],
+      [1790772599143, "Running|Stop,Queue|1|1|QUEUED · 1|ONE|TWO:delivered||||below"],
+      [1790772642718, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:delivered||||below"],
+      [1790772643727, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:sent||||below"],
+      [1790772645710, "Running|Stop,Queue|0|0|||TWO:delivered,ONE:delivered||||below"],
+      [1790772646187, "Completed||0|0|||TWO:delivered,ONE:delivered||||below"]
+    ]
+  },
+  "clickedAt": 1790772590396,
+  "roomWidth": { "c": 520, "l": 460 },
+  "queue": [
+    ["c22 ONE keep", "delivered"],
+    ["c22 TWO: end", "delivered"]
+  ],
+  "rowCount": 25,
+  "attempts": ["a53ad1fd-31fc-43c2-bfb8-665e0fcad811"],
+  "promptRows": 1,
+  "operatorRows": [
+    [7, "c22 TWO: end y"],
+    [22, "c22 ONE keep t"]
+  ],
+  "ackInAgentText": 4,
+  "toolRowsAfterInjection": 8
+}

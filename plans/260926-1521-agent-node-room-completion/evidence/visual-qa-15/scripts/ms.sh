@@ -1,0 +1,2 @@
+#!/bin/bash
+python3 -c 'import time;print(int(time.time()*1000))'

@@ -36,7 +36,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const EVIDENCE_DIR = join(REPO_ROOT, 'plans', 'reports', 'evidence', 'issue-190');
 const NARROW = { width: 460, height: 900 } as const;
 const WIDE = { width: 1440, height: 900 } as const;
-const SEND_HINT = 'Cmd/Ctrl+Enter to send · this tab only';
+const SEND_HINT = 'Cmd/Ctrl+Enter to send · saved for you';
 
 function queuePathname(runId: string, nodeId: string): string {
   return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/queue`;
@@ -332,7 +332,10 @@ for (const surface of ['legacy', 'console'] as const) {
       await expect(room.getByText(disclosure, { exact: true })).toBeVisible({ timeout: T.medium });
       await expect(go).toBeVisible();
       await expect(queueList(room)).toContainText(queuedMessage);
-      await expect(queueList(room)).toContainText('sent');
+      // Delivery is never inferred from prose: a queued/sent item carries no
+      // per-item status suffix (only the ambiguous delivery_unknown state
+      // does); this is a regression guard, not a proof of delivery.
+      await expect(queueList(room)).not.toContainText('sent');
       await expect(guidanceField(room)).toHaveCount(0);
       await expect(room.getByText(SEND_HINT, { exact: true })).toHaveCount(0);
       await expect(room.getByRole('button', { name: /^Queue/ })).toHaveCount(0);
@@ -483,7 +486,9 @@ for (const surface of ['legacy', 'console'] as const) {
       'data-message-id',
       messageId
     );
-    await expect(neverSent.getByRole('listitem').first()).toHaveText(queuedMessage);
+    // The decorative 1-based position number is an aria-hidden sibling span,
+    // excluded from the accessible name but not from raw textContent.
+    await expect(neverSent.getByRole('listitem').first()).toContainText(queuedMessage);
     await expect(room.getByRole('alert')).toHaveText('node finished · none of this was sent');
 
     const messages = await listNodeMessages(page, run.runId, QUEUE_GUIDANCE_LOOP_NODE);
@@ -491,5 +496,59 @@ for (const surface of ['legacy', 'console'] as const) {
       .filter(message => message.kind === 'text' && message.metadata?.origin === 'operator')
       .map(message => message.metadata?.message_id);
     expect(operatorIds).not.toContain(messageId);
+  });
+
+  test(`[P1] [V:steer.follow-live-${surface}] the room follows the live execution across an iteration boundary, keeping the composer and focus on ${surface}`, async ({
+    page,
+    archon,
+  }) => {
+    test.setTimeout(T.xlong * 2);
+    const tag = randomUUID().replace(/-/g, '').slice(0, 12);
+    const draft = `draft-follow-live-${surface}-${tag}`;
+
+    const run = await archon.startWorkflowViaWeb(
+      E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME,
+      `e2e follow live ${tag}`
+    );
+    // Open the room WHILE iteration 1 is still generating — the reported
+    // mechanism only reproduces when the viewer was already on the live
+    // execution before the next iteration starts (opening after iteration 2
+    // has already started, as the sibling spec above does, cannot catch it).
+    await waitForLoopEvent(page, run.runId, 'loop_iteration_started', 1);
+    const room = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_LOOP_NODE);
+    // A node with only one execution renders no selector at all — nothing to
+    // assert there yet; the field itself proves the live composer is open.
+    const field = guidanceField(room);
+    await expect(field).toBeVisible({ timeout: T.medium });
+    await field.fill(draft);
+    const activeTag = (): Promise<string | null> =>
+      page.evaluate(() => document.activeElement?.tagName ?? null);
+    expect(await activeTag()).not.toBe('BODY');
+
+    await waitForLoopEvent(page, run.runId, 'loop_iteration_started', 2);
+
+    // The room followed to the live iteration automatically — no operator
+    // action, no finished-iteration disclosure, no dropped composer.
+    await expectSelectedIteration(page, 2);
+    await expect(room.getByRole('button', { name: /^Go to iteration/ })).toHaveCount(0);
+    await expect(room.getByText(/^reading a finished iteration/)).toHaveCount(0);
+    await expect(field).toBeVisible({ timeout: T.medium });
+    await expect
+      .poll(
+        async () => field.evaluate(element => element.ownerDocument.activeElement === element),
+        {
+          timeout: T.medium,
+          message: 'the draft field regains focus across the iteration boundary',
+        }
+      )
+      .toBe(true);
+    await expect(field).toHaveValue(draft);
+    expect(await activeTag()).not.toBe('BODY');
+
+    // Clean shutdown: let the loop actually finish instead of exhausting
+    // max_iterations and failing.
+    const completionDirective = `<<E2E_SCENARIO>>{"doneWhenPromptIncludes":"done-${tag}"}<</E2E_SCENARIO>>done-${tag}`;
+    await queueGuidance(page, room, run.runId, QUEUE_GUIDANCE_LOOP_NODE, completionDirective);
+    await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
   });
 }

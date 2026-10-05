@@ -1,0 +1,118 @@
+{
+  "R": "ff82dd30cc2d00a0952e680937c41fe1",
+  "post": 3,
+  "abandonAt": 1790747459965,
+  "res": { "success": true, "message": "Abandoned workflow: vq15-grok", "__status": 200 },
+  "raf": {
+    "c": [
+      [-3, "Running||Stop,Queue|TA|QUEUED · 1|2 messages queued||1|1|||TEXTAREA"],
+      [
+        723,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ],
+    "l": [
+      [5, "Running||Stop,Queue|TA|QUEUED · 1|agent generating||1|1|||TEXTAREA"],
+      [
+        771,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ]
+  },
+  "ns": {
+    "c": [
+      [39, "Running||Stop,Queue|TA|QUEUED · 1|2 messages queued||1|1|||TEXTAREA"],
+      [
+        732,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ],
+    "l": [
+      [39, "Running||Stop,Queue|TA|QUEUED · 1|agent generating||1|1|||TEXTAREA"],
+      [
+        809,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ]
+  },
+  "gets": [
+    {
+      "t": 712,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    {
+      "t": 724,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    { "t": 725, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    {
+      "t": 754,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    {
+      "t": 759,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    { "t": 770, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    {
+      "t": 772,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    {
+      "t": 810,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    { "t": 1680, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 1779, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2383, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 3888, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5393, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 6891, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8394, "s": "l", "k": "r", "http": 200, "st": "cancelled" }
+  ],
+  "rows0": {
+    "c": { "assistant": 4, "thinking": 3, "operator": 3 },
+    "l": { "assistant": 4, "thinking": 3, "operator": 3 }
+  },
+  "rows1": {
+    "c": { "assistant": 4, "thinking": 3, "operator": 3 },
+    "l": { "assistant": 4, "thinking": 3, "operator": 3 }
+  },
+  "status": "cancelled"
+}

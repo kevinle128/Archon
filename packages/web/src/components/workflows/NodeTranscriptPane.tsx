@@ -1,11 +1,11 @@
 /**
  * Query boundary for a selected node transcript: drain cursor pages, poll live
  * runs, abort on scope change, and restore container scroll. Owns the
- * consume-once focus handoff across keyed ComposerDock remounts for Story 2.10.
+ * consume-once focus handoff across keyed ComposerDock remounts.
  */
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
-import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
+import { buildAgentHistory, type AgentHistory, type AgentHistoryItem } from '@/lib/agent-history';
 import {
   getWorkflowNodeMessage,
   type AskAnswerBody,
@@ -23,15 +23,24 @@ import {
   type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
-import { collectWrittenOperatorMessageIds } from '@/lib/steering-dock';
-import type { FinishedIterationView } from '@/lib/execution-room-model';
-import { groupByOccurrence } from '@/lib/occurrence-groups';
+import {
+  bareNodeLabel,
+  resolveGapHoldStatus,
+  type FinishedIterationView,
+} from '@/lib/execution-room-model';
+import { groupByOccurrence, type OccurrenceGrouping } from '@/lib/occurrence-groups';
 import {
   createScrollFollow,
   jumpToLatest,
   jumpToOccurrence,
   onRoomScroll,
 } from '@/lib/room-scroll-follow';
+import type {
+  SteeringExecutionState,
+  SteeringNodeOutcome,
+  SteeringQueueItemState,
+} from '@/lib/steering-dock';
+import { projectTerminalTodoState } from '@/lib/todo-state';
 import type { WorkflowRunStatus } from '@/lib/types';
 
 import { AskCard, InvalidAskCard } from './AskCard';
@@ -89,6 +98,14 @@ export interface NodeTranscriptPaneProps {
   starterDisplayName: string | null;
   actionStates: AskActionStateByRequest;
   nodeState: WorkflowNodeStateResponse | undefined;
+  /**
+   * True while the room is following the live execution rather than pinned
+   * to an explicit pick (`RoomVisitSelection.followingLive`). Feeds the
+   * dock's own `rowStatus` only — see `resolveGapHoldStatus` — so the
+   * composer stays open through the gap between one loop iteration's row
+   * completing and the next iteration's row starting. Default false.
+   */
+  followingLive?: boolean;
   /** Matched definition node's `output_format`; absent or ineligible schemas leave text untouched. */
   outputFormat?: Record<string, unknown> | null;
   onSubmitAsk: (requestId: string, body: AskAnswerBody) => Promise<void>;
@@ -109,8 +126,19 @@ export interface NodeTranscriptPaneProps {
   idleAwaitExpired?: boolean;
   /** Logical execution key from ordered events. Default null. */
   nodeExecutionKey?: string | null;
-  /** Node-wide written operator ids for terminal reconciliation. Default null. */
-  writtenOperatorMessageIds?: ReadonlySet<string> | null;
+  /** Forwarded to the composer dock; see its own doc comment. */
+  onExecutionStateChange?: (state: SteeringExecutionState | null) => void;
+  /** Forwarded to the composer dock; see its own doc comment. */
+  onNodeOutcomeChange?: (outcome: SteeringNodeOutcome | null) => void;
+  /**
+   * Server-reported restart recovery for the selected row (owned by the
+   * parent room, which reads it from the dock's own `onExecutionStateChange`
+   * report) — a still-open tool call settles the same way a terminal row's
+   * does, since no live process backs either. Default false.
+   */
+  recoveryRequired?: boolean;
+  /** Forwarded to the composer dock; see its own doc comment. Default 0. */
+  terminalEdgeKick?: number;
 }
 
 function collectToolIds(messages: readonly WorkflowNodeMessageResponse[]): Set<string> {
@@ -134,6 +162,7 @@ export function NodeTranscriptPane({
   starterDisplayName,
   actionStates,
   nodeState,
+  followingLive = false,
   outputFormat,
   onSubmitAsk,
   events = [],
@@ -147,8 +176,11 @@ export function NodeTranscriptPane({
   nodeTerminal = false,
   idleAwaitExpired = false,
   nodeExecutionKey = null,
-  writtenOperatorMessageIds: _externalWrittenIds = null,
   onSelectLiveRow,
+  onExecutionStateChange,
+  onNodeOutcomeChange,
+  recoveryRequired = false,
+  terminalEdgeKick = 0,
 }: NodeTranscriptPaneProps): React.ReactElement {
   const resolvedScopeKey =
     scopeKey ??
@@ -158,13 +190,14 @@ export function NodeTranscriptPane({
   const [pageState, setPageState] = useState<NodeMessageState>(() =>
     createNodeMessageState(resolvedScopeKey)
   );
-  /** Node-wide written operator ids from the terminal reconcile drain. null until complete. */
-  const [reconcileWrittenIds, setReconcileWrittenIds] = useState<ReadonlySet<string> | null>(null);
   const [follow, setFollow] = useState(() =>
     createScrollFollow(row?.status ?? 'completed', initialScrollTop)
   );
   const [retryNonce, setRetryNonce] = useState(0);
   const [localAskDrafts, setLocalAskDrafts] = useState<AskDraftByRequest>({});
+  const [deliveryStates, setDeliveryStates] = useState<ReadonlyMap<string, SteeringQueueItemState>>(
+    () => new Map()
+  );
   const [navTarget, setNavTarget] = useState<string | null>(null);
   /** Consume-once autofocus after a Go-driven selection change. */
   const [autoFocusTarget, setAutoFocusTarget] = useState<'field' | 'go' | null>(null);
@@ -179,12 +212,42 @@ export function NodeTranscriptPane({
   const prevScopeRef = useRef(resolvedScopeKey);
   /** Intended live row id set on Go; cleared before focusing after commit. */
   const pendingGoTargetRef = useRef<{ fromRowId: string; toRowId: string } | null>(null);
+  /**
+   * The deepest element focused inside the transcript scroller, tracked on
+   * every focus so an iteration boundary that removes the ROW currently
+   * holding it (the old iteration's rows are replaced wholesale when the
+   * room follows a new live iteration — resolveFollowedRow) can be told
+   * apart from an unrelated blur. Never cleared on blur: `document.contains`
+   * below is what proves the specific tracked node is actually gone, not
+   * merely that focus moved elsewhere for the moment.
+   */
+  const lastFocusedTranscriptRowRef = useRef<Element | null>(null);
+  /**
+   * True only while the scroller itself holds focus because THIS
+   * mechanism's own redirect (below) parked it there for want of a real row
+   * at that moment. Distinguishes "reclaim once a row appears" from a
+   * DIFFERENT, deliberate final destination on the bare scroller — e.g. the
+   * occurrence navigator dropping to one group — which must never be
+   * overridden.
+   */
+  const parkedOnScrollerFallbackRef = useRef(false);
   pageStateRef.current = pageState;
   loadMessagesRef.current = loadMessages;
 
   const nodeId = row?.nodeId ?? null;
   const rowId = row?.id ?? null;
   const rowStatus = row?.status ?? 'completed';
+  // The dock's OWN input only: between one loop iteration's row completing
+  // and the next iteration's row starting, `resolveFollowedRow` is still
+  // following live but has nothing live to show yet, so `rowStatus` above
+  // reads the just-finished row's terminal status. Substituting the node's
+  // own live status there — never anywhere else `rowStatus` is read in this
+  // file — keeps the composer open through that gap instead of dropping it.
+  const composerRowStatus = resolveGapHoldStatus({
+    followingLive,
+    rowStatus,
+    nodeStatus: nodeState?.status,
+  });
   const occurrenceId = row?.selection.kind === 'occurrence' ? row.selection.occurrenceId : null;
   const attemptId = row?.selection.kind === 'occurrence' ? (row.selection.attemptId ?? null) : null;
 
@@ -297,57 +360,6 @@ export function NodeTranscriptPane({
     runStatus,
   ]);
 
-  // Separate node-wide reconcile drain — never feeds pageState/transcript.
-  // Starts only on real node-terminal evidence; publishes written ids only
-  // after a complete error-free drain. Retries transport/incomplete failures
-  // at 1s while mounted+terminal. Resets on run/node/key change or terminal drop.
-  useEffect(() => {
-    if (!nodeTerminal || nodeId === null) {
-      setReconcileWrittenIds(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const executionRowId = nodeExecutionKey ?? `run:${runId}|node:${nodeId}`;
-    const selection: NodeMessageSelection = { kind: 'node', rowId: executionRowId };
-
-    const runReconcileDrain = async (): Promise<void> => {
-      if (cancelled || controller.signal.aborted) return;
-      const next = await drainNodeMessages({
-        runId,
-        nodeId,
-        selection,
-        loader: loadMessagesRef.current,
-        signal: controller.signal,
-        state: createNodeMessageState(nodeMessageScopeKey(runId, nodeId, selection)),
-        onState: (): void => {
-          // Intentionally ignore intermediate pages — never touch transcript state.
-        },
-      });
-      if (cancelled || controller.signal.aborted) return;
-      if (next.complete && next.error === null) {
-        setReconcileWrittenIds(collectWrittenOperatorMessageIds(next.rows));
-        return;
-      }
-      // Incomplete or transport error: read-only retry while still terminal.
-      timer = setTimeout(() => {
-        void runReconcileDrain();
-      }, 1000);
-    };
-
-    setReconcileWrittenIds(null);
-    void runReconcileDrain();
-
-    return (): void => {
-      cancelled = true;
-      controller.abort();
-      if (timer !== undefined) clearTimeout(timer);
-      setReconcileWrittenIds(null);
-    };
-  }, [nodeExecutionKey, nodeId, nodeTerminal, runId]);
-
   useEffect(() => {
     const el = scrollRef.current;
     if (el === null) return;
@@ -359,6 +371,23 @@ export function NodeTranscriptPane({
       el.scrollTop = follow.scrollTop;
     }
   }, [follow, pageState.rows.length]);
+
+  // The scroller's own box can shrink or grow with no new row arriving — the
+  // queue band, todo strip, or dock changing height all resize it — so a
+  // pinned reader must re-pin on the scroller's own resize too, not only when
+  // a new row arrives.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el === null || !follow.pinToBottom) return;
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    });
+    observer.observe(el);
+    return (): void => {
+      observer.disconnect();
+    };
+  }, [follow.pinToBottom]);
 
   useEffect(() => {
     const heading = navigatedHeadingRef.current;
@@ -377,6 +406,12 @@ export function NodeTranscriptPane({
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
   const nowMs = Date.now();
+  // A restart-recovery row stays 'running' in its own lifecycle status — the
+  // server durably reports the process is gone, not the row's own status —
+  // so a still-open tool call there needs the same settle rule as a genuinely
+  // terminal row: no live process can ever complete it.
+  const noLiveProcessForRow =
+    (rowStatus !== 'running' && rowStatus !== 'awaiting') || recoveryRequired;
   const agentHistory: AgentHistory =
     row === null
       ? { items: [], todos: [] }
@@ -386,17 +421,60 @@ export function NodeTranscriptPane({
           nodeId: row.nodeId,
           outputFormat: outputFormat ?? undefined,
           nowMs,
+          nodeTerminal: noLiveProcessForRow,
+          deliveryStateByMessageId: deliveryStates,
         });
   const items = agentHistory.items;
+  // Every operator message id already rendered as a transcript row, so the
+  // dock can hide its own dispatching-band row for the same message the
+  // instant the transcript shows it — the two must never both display the
+  // same message at once. `items` is rebuilt fresh every render (not
+  // memoized), so this is too; the set itself is cheap for a room's message
+  // count and the dock only reads it during render, never as an effect
+  // dependency.
+  const deliveredMessageIds = new Set(
+    items
+      .filter(
+        (item): item is Extract<AgentHistoryItem, { kind: 'operator' }> => item.kind === 'operator'
+      )
+      .map(item => item.messageId)
+      .filter((messageId): messageId is string => messageId !== null)
+  );
   const occurrenceGrouping = groupByOccurrence(items);
+  // Raw lifecycle rows (`started`, `iteration_started 1`, the terminal
+  // `failed …` line) are engine state identifiers, not one of the room's
+  // approved row types — grouping still sees the full list first so its own
+  // `failed` detection (which reads a lifecycle item) is unaffected; only
+  // what actually renders is filtered, mirroring Console's System-off default.
+  // A status-only occurrence (e.g. a failed retry, or a nested-loop
+  // disambiguation group, with no model/tool output at all) legitimately has
+  // nothing left once lifecycle rows are stripped — its header is still
+  // load-bearing (it is the only signal that occurrence existed), so groups
+  // are never dropped for going empty here. `groupByOccurrence` never
+  // produces a zero-item group, so this filtering can only ever empty a
+  // group's body, never remove a group that had no content in the first
+  // place.
+  const displayItems = items.filter(item => item.kind !== 'lifecycle');
+  const displayGroups = occurrenceGrouping.groups.map(group => ({
+    ...group,
+    items: group.items.filter(item => item.kind !== 'lifecycle'),
+  }));
+  const displayGrouping: OccurrenceGrouping = {
+    prefixItems: occurrenceGrouping.prefixItems.filter(item => item.kind !== 'lifecycle'),
+    groups: displayGroups,
+    showHeaders: displayGroups.length >= 2,
+  };
   const navTargetIsRendered =
-    occurrenceGrouping.showHeaders &&
+    displayGrouping.showHeaders &&
     navTarget !== null &&
-    occurrenceGrouping.groups.some(group => group.key === navTarget);
+    displayGrouping.groups.some(group => group.key === navTarget);
   useEffect(() => {
     if (navTarget !== null && !navTargetIsRendered) setNavTarget(null);
   }, [navTarget, navTargetIsRendered]);
-  const todos = agentHistory.todos;
+  // The strip and the latest todo row's inline checklist share this one
+  // terminal-projected fold — a terminal node never keeps showing an
+  // `in_progress` item as still running (todo-fold-contract.md).
+  const todos = projectTerminalTodoState(agentHistory.todos, rowStatus);
   const visibleAsks =
     row === null
       ? []
@@ -558,22 +636,89 @@ export function NodeTranscriptPane({
     (lastRow ?? el).focus({ preventScroll: true });
   };
 
+  // A loop iteration boundary the operator did not drive through Go (the
+  // room follows a newly live iteration on its own — resolveFollowedRow)
+  // replaces the whole rendered row list. If the operator's focus was on a
+  // row in the OLD list, the browser has already blurred it to `<body>` by
+  // the time this runs (the DOM removal happens during commit, before any
+  // effect) — `lastFocusedTranscriptRowRef` is what lets this tell "that
+  // exact row is now gone" from "focus is at body for some unrelated
+  // reason". Layout, not passive: a passive effect's own DOM focus() call
+  // can still land after the browser paints the blurred frame.
+  //
+  // No dependency array: the row prop and the transcript content it
+  // resolves to (a separate query, keyed by scope) do not necessarily
+  // settle in the same commit — keying this on `rowId` alone can fire once,
+  // find the old row still present (content hasn't caught up yet), and
+  // never fire again once it actually gets removed a render later. Running
+  // after every commit is safe because every check here is idempotent: a
+  // still-connected tracked row, or any focus other than a bare `<body>`,
+  // is a no-op.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    // Self-heal, but only the fallback THIS effect itself created: reclaim
+    // focus into a just-appeared real row only while `parkedOnScrollerFallbackRef`
+    // is still true. A different focus destination since (including a
+    // DELIBERATE final landing on the bare scroller from elsewhere, e.g. the
+    // occurrence navigator dropping to one group) clears the flag instead of
+    // being overridden.
+    if (parkedOnScrollerFallbackRef.current) {
+      if (document.activeElement !== el) {
+        parkedOnScrollerFallbackRef.current = false;
+      } else {
+        const lastRow = el.querySelector<HTMLElement>('[data-last-row]');
+        if (lastRow !== null) {
+          parkedOnScrollerFallbackRef.current = false;
+          lastRow.focus({ preventScroll: true });
+          return;
+        }
+      }
+    }
+    const trackedRow = lastFocusedTranscriptRowRef.current;
+    if (trackedRow === null) return;
+    if (document.contains(trackedRow)) return;
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
+    lastFocusedTranscriptRowRef.current = null;
+    const lastRow = el.querySelector<HTMLElement>('[data-last-row]');
+    if (lastRow !== null) {
+      lastRow.focus({ preventScroll: true });
+    } else {
+      parkedOnScrollerFallbackRef.current = true;
+      el.focus({ preventScroll: true });
+    }
+  });
+
   const scroller = (
     <div
       ref={scrollRef}
       data-testid="node-transcript-scroll"
       tabIndex={-1}
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain"
+      onFocusCapture={(event): void => {
+        // Scoped to actual transcript rows (`[data-last-row]`, the only
+        // elements `focusLastRow` ever targets) — the scroller also hosts
+        // occurrence headings and other focusables with their own,
+        // unrelated focus-restoration paths that must not be overridden.
+        if (event.target.hasAttribute('data-last-row')) {
+          lastFocusedTranscriptRowRef.current = event.target;
+        }
+      }}
+      // The todo strip below stays flex-none at its full content height, so an
+      // expanded strip on a very short room can squeeze this flex-1 sibling
+      // toward zero. A tiny floor keeps the scroller present rather than
+      // fully collapsed, while it still absorbs almost all of the squeeze.
+      className="flex min-h-[4px] flex-1 flex-col overflow-y-auto overscroll-y-contain"
       style={{ overflowWrap: 'anywhere' }}
       onScroll={handleScroll}
     >
       <NodeRoom
         embedded
         nodeId={row?.nodeId ?? null}
-        items={items}
-        occurrenceGrouping={occurrenceGrouping}
+        items={displayItems}
+        occurrenceGrouping={displayGrouping}
         headingIdPrefix={headingIdPrefix}
         unknownScope={row?.unknownScope ?? false}
+        todos={todos}
         runId={runId}
         isPending={waitingForFirstPage}
         error={pageState.error}
@@ -594,7 +739,7 @@ export function NodeTranscriptPane({
     </div>
   );
   const navSelectValue = navTargetIsRendered ? navTarget : '';
-  const occurrenceNavigator = occurrenceGrouping.showHeaders ? (
+  const occurrenceNavigator = displayGrouping.showHeaders ? (
     <div className="flex min-w-0 items-center gap-1 px-3 py-2">
       <label htmlFor={navigatorSelectId} className="shrink-0 text-xs text-text-secondary">
         Jump to
@@ -610,9 +755,9 @@ export function NodeTranscriptPane({
         onChange={handleJumpToOccurrence}
       >
         <option value="" disabled>
-          {occurrenceGrouping.groups.length} occurrences
+          {displayGrouping.groups.length} occurrences
         </option>
-        {occurrenceGrouping.groups.map(group => (
+        {displayGrouping.groups.map(group => (
           <option key={group.key} value={group.key}>
             {group.label}
           </option>
@@ -645,15 +790,15 @@ export function NodeTranscriptPane({
 
   return (
     <RoomRegion nodeId={row.nodeId} scrollable={false}>
-      {todos.length > 0 ? <TodoStrip key={resolvedScopeKey} phases={todos} /> : null}
       {scroller}
+      {todos.length > 0 ? <TodoStrip key={resolvedScopeKey} phases={todos} /> : null}
       {controls}
       <ComposerDock
         key={`steering:run:${runId}|node:${row.nodeId}`}
         runId={runId}
         nodeId={row.nodeId}
-        nodeLabel={agentDisplayName || row.nodeId}
-        rowStatus={rowStatus}
+        nodeLabel={bareNodeLabel(agentDisplayName || row.nodeId)}
+        rowStatus={composerRowStatus}
         live={isLiveRunStatus(runStatus)}
         hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}
         subState={nodeState?.steeringSubState}
@@ -663,11 +808,15 @@ export function NodeTranscriptPane({
         onAutoFocusApplied={(): void => {
           setAutoFocusTarget(null);
         }}
+        onExecutionStateChange={onExecutionStateChange}
+        onNodeOutcomeChange={onNodeOutcomeChange}
+        onDeliveryStatesChange={setDeliveryStates}
         focusLastRow={focusLastRow}
         nodeTerminal={nodeTerminal}
         idleAwaitExpired={idleAwaitExpired}
         nodeExecutionKey={nodeExecutionKey}
-        writtenOperatorMessageIds={reconcileWrittenIds}
+        deliveredMessageIds={deliveredMessageIds}
+        terminalEdgeKick={terminalEdgeKick}
       />
     </RoomRegion>
   );

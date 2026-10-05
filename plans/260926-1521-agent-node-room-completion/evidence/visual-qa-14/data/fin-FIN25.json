@@ -1,0 +1,95 @@
+{
+  "R": "331c9224c654f7ed6577eb83cf04f6ba",
+  "sd": "l",
+  "dl": 0,
+  "send": {
+    "clicked": 1790729075143,
+    "sendResolved": 1790729075173,
+    "st": 200,
+    "url": "/api/workflows/runs/331c9224c654f7ed6577eb83cf04f6ba/nodes/fake-node/send",
+    "body": "{\"success\":true,\"message_id\":\"cfd0fb6b-8d5b-44d1-a47d-3d6aeb778f01\",\"state\":\"awaiting_send_now\"}"
+  },
+  "gets": [
+    { "s": "l", "t": -1998, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -1578, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -1049, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "l", "t": -993, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -867, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "c", "t": -575, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": 65, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 65, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "l", "t": 66, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "c", "t": 98, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 98, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "c", "t": 111, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "c", "t": 111, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "l", "t": 378, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 378, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 1879, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 1879, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 3387, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 3387, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 4885, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 4886, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 6390, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 6390, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 7887, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 7887, "k": "r", "st": "completed", "ns": "fake-node:completed" }
+  ],
+  "status": "completed",
+  "nodeDone": ["2026-09-30 00:44:35"],
+  "q": [
+    {
+      "message_id": "148605c7-045d-481c-807b-1c104950cf32",
+      "message": "FIN25-Q1 queued item",
+      "operator_user_id": "3a7535c4721e32049e37249603dc7807",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    },
+    {
+      "message_id": "cfd0fb6b-8d5b-44d1-a47d-3d6aeb778f01",
+      "message": "FIN25 typed redirect",
+      "operator_user_id": "3a7535c4721e32049e37249603dc7807",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    }
+  ],
+  "c": [
+    [-34, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [106, "QUEUED · 1|Completed||0"],
+    [120, "|Completed||0"]
+  ],
+  "l": [
+    [-25, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [-8, "SENDING · 2|Running|agent idle · Send now delivers|0"],
+    [9, "SENDING · 2|Running|agent generating|0"],
+    [92, "|Completed||0"]
+  ],
+  "tc": [
+    [-25, "Running||delete,Send|TA|WILL SEND · 1|agent idle · Send now delivers|0|-1"],
+    [106, "Completed||||QUEUED · 1||0|-1"],
+    [120, "Completed||||||0|-1"]
+  ],
+  "tl": [
+    [-25, "Running||delete,Send|TA|WILL SEND · 1|agent idle · Send now delivers|0|-1"],
+    [-8, "Running||Send|TA|SENDING · 2|agent idle · Send now delivers|0|-1"],
+    [9, "Running||Stop,Queue|TA|SENDING · 2|agent generating|0|-1"],
+    [92, "Completed||||||0|-1"]
+  ],
+  "es": {
+    "c": [
+      [-5672, "new"],
+      [-5664, "open"]
+    ],
+    "l": [
+      [-4057, "new"],
+      [-4057, "close"],
+      [-4057, "new"],
+      [-4045, "open"]
+    ]
+  }
+}

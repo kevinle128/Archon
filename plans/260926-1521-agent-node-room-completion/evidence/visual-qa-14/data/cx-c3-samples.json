@@ -1,0 +1,718 @@
+{
+  "out": {
+    "tag": "cx-c3",
+    "st": "l",
+    "sd": "c",
+    "ob": "l",
+    "stop": {
+      "post": 26,
+      "st": 200,
+      "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+    },
+    "send": {
+      "post": 43,
+      "st": 200,
+      "body": "{\"success\":true,\"message_id\":\"2c8e10bf-1532-4256-919f-f58770737c7b\",\"state\":\"sent\"}"
+    },
+    "probe": {
+      "clickedRel": 27,
+      "label": "delete · cx-c3-Q1 queued: reply with the word cx-c3ACK then continue with the remaining steps",
+      "deleteResp": [
+        "200 {\"success\":true,\"message_id\":\"40b97dc1-5430-43b7-859a-3630b748ac8f\"}"
+      ]
+    },
+    "C": {
+      "stoppingAt": null,
+      "sendNowAt": 170,
+      "stopAgainAt": 12,
+      "sendingAt": 12,
+      "flipBacks": 0,
+      "staleQueued": [],
+      "gaps": [],
+      "overlap": [],
+      "last": {
+        "bands": "",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "– shell sleep 25 && echo step-2 output unknown ·",
+          "✓ shell sleep 25 && echo step-2 exit 0 ·",
+          "– shell sleep 25 && echo step-3 output unknown ·",
+          "◐ shell sleep 25 && echo step-3 running · 6.9s message to long-codex"
+        ]
+      }
+    },
+    "L": {
+      "stoppingAt": null,
+      "sendNowAt": 171,
+      "stopAgainAt": 51,
+      "sendingAt": 51,
+      "flipBacks": 0,
+      "staleQueued": [],
+      "gaps": [[12602, 12722]],
+      "overlap": [],
+      "last": {
+        "bands": "",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "– shell sleep 25 && echo step-2 output unknown ·",
+          "✓ shell sleep 25 && echo step-2 exit 0 ·",
+          "– shell sleep 25 && echo step-3 output unknown ·",
+          "◐ shell sleep 25 && echo step-3 running · 6.6s message to long-codex"
+        ]
+      }
+    }
+  },
+  "lc": [
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · cx-c3-Q1 queued: reply with the word cx-c3ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "◐ shell sleep 25 && echo step-3 running · 1.7s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729156710
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · cx-c3-Q1 queued: reply with the word cx-c3ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "◐ shell sleep 25 && echo step-3 running · 2.7s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729156753
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · cx-c3-Q1 queued: reply with the word cx-c3ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "◐ shell sleep 25 && echo step-3 running · 2.8s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729156789
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · cx-c3-Q1 queued: reply with the word cx-c3ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729156830
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729157400
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729169635
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 283ms message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729170310
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 1.3s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729171310
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 2.3s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729172310
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 2.8s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729172840
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 3.9s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729173873
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 4.9s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729174909
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 5.9s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729175917
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 6.9s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729176913
+    }
+  ],
+  "ll": [
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · cx-c3-Q1 queued: reply with the word cx-c3ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "◐ shell sleep 25 && echo step-3 running · 2.7s WILL SEND · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790729156718
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · cx-c3-Q1 queued: reply with the word cx-c3ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "◐ shell sleep 25 && echo step-3 running · 3.0s WILL SEND · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790729157030
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "◐ shell sleep 25 && echo step-3 running · 3.4s SENDING · 1"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729157439
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "◐ shell sleep 25 && echo step-3 running · 3.5s SENDING · 1"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729157510
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729157990
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729169990
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729170110
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729171115
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 1.5s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729171531
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 2.5s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729172510
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 3.0s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729172990
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 3.5s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729173511
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 3.6s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729173590
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 4.5s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729174515
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 4.6s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729174589
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 5.5s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729175510
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 5.6s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729175590
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 6.0s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729175990
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 6.5s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729176510
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "✓ shell sleep 25 && echo step-2 exit 0 ·",
+        "– shell sleep 25 && echo step-3 output unknown ·",
+        "◐ shell sleep 25 && echo step-3 running · 6.6s message to long-codex"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729176591
+    }
+  ],
+  "T": 1790729157388,
+  "stop": {
+    "clicked": 1790729156669,
+    "resolved": 1790729156695,
+    "st": 200,
+    "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+  },
+  "send": {
+    "clicked": 1790729157345,
+    "sendResolved": 1790729157388,
+    "st": 200,
+    "url": "/api/workflows/runs/2be1baa69b46c1d0c54a895af48c9e37/nodes/long-codex/send",
+    "body": "{\"success\":true,\"message_id\":\"2c8e10bf-1532-4256-919f-f58770737c7b\",\"state\":\"sent\"}"
+  }
+}

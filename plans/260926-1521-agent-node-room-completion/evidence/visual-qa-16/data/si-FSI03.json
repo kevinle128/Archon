@@ -1,0 +1,56 @@
+{
+  "tag": "FSI03",
+  "sender": "c",
+  "observer": "l",
+  "R": "fd9d83b40ac5e06945b70b7cd236abdd",
+  "node": "fake-node",
+  "pre": {
+    "c": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||TEXTAREA|2",
+    "l": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||BODY|2"
+  },
+  "click": { "status": 200, "resolvedMs": 23 },
+  "coldOpenedAt": 1790794334302,
+  "status": "completed",
+  "frames": {
+    "c": [
+      [1790794320967, "Running|Stop,Queue|0|0||||||||TEXTAREA"],
+      [1790794320992, "Running|Stop,Queue|0|0||||||||BUTTON:Queue · Cmd/Ct"],
+      [1790794321001, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs||||||TEXTAREA"],
+      [1790794321017, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs||||||BUTTON:Queue · Cmd/Ct"],
+      [1790794321026, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||TEXTAREA"],
+      [1790794322243, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||BUTTON:Send now · FSI"],
+      [1790794322251, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790794346184, "Completed||0|0|QUEUED · 1|ONE,TWO*||||||BODY"],
+      [1790794346198, "Completed||0|0|||TWO:delivered,ONE:sent|||||BODY"]
+    ],
+    "l": [
+      [1790794320967, "Running|Stop,Queue|0|0||||||||BODY"],
+      [1790794321102, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||BODY"],
+      [1790794322601, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790794346180, "Completed||0|0|QUEUED · 1|ONE,TWO*||||||BODY"],
+      [1790794346198, "Completed||0|0|||TWO:delivered,ONE:sent|||||BODY"]
+    ],
+    "x": [
+      [1790794334568, "NOROOM"],
+      [1790794334765, "Running||0|0||||||||BODY"],
+      [1790794334818, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790794346179, "Completed||0|0|QUEUED · 1|ONE,TWO*||||||BODY"],
+      [1790794346197, "Completed||0|0|||TWO:delivered,ONE:sent|||||BODY"]
+    ]
+  },
+  "clickedAt": 1790794322222,
+  "roomWidth": { "c": 460, "l": 460 },
+  "queue": [
+    ["FSI03 ONE ke", "sent"],
+    ["FSI03 TWO: e", "delivered"]
+  ],
+  "rowCount": 10,
+  "attempts": ["27b6e207-e255-4c73-a0f8-b00e4b0a8599"],
+  "promptRows": 1,
+  "operatorRows": [
+    [6, "FSI03 TWO: end"],
+    [8, "FSI03 ONE keep"]
+  ],
+  "ackInAgentText": 1,
+  "toolRowsAfterInjection": 0
+}

@@ -1,0 +1,170 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793458789,
+  "end": 1790793468859,
+  "procs": [
+    {
+      "pid": 41729,
+      "cmd": "codex exec --experimental-json --model gpt-5.5 --sandbox dan",
+      "first": 1790793458789,
+      "last": 1790793461526
+    },
+    {
+      "pid": 41810,
+      "cmd": "node bin.js --profile acp",
+      "first": 1790793458789,
+      "last": 1790793459697
+    },
+    {
+      "pid": 42815,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793458789,
+      "last": 1790793468556
+    },
+    {
+      "pid": 43145,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793458789,
+      "last": 1790793468556
+    },
+    {
+      "pid": 43168,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793458789,
+      "last": 1790793468556
+    },
+    {
+      "pid": 43171,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793458789,
+      "last": 1790793468556
+    },
+    {
+      "pid": 43172,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793458789,
+      "last": 1790793468556
+    },
+    {
+      "pid": 43176,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793458789,
+      "last": 1790793468556
+    },
+    {
+      "pid": 43177,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793458789,
+      "last": 1790793468556
+    },
+    {
+      "pid": 43180,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793458789,
+      "last": 1790793468556
+    },
+    {
+      "pid": 44034,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793458789,
+      "last": 1790793468556
+    },
+    {
+      "pid": 44244,
+      "cmd": "node context7-mcp",
+      "first": 1790793458789,
+      "last": 1790793468556
+    },
+    {
+      "pid": 44283,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793458789,
+      "last": 1790793468556
+    },
+    {
+      "pid": 42034,
+      "cmd": "node_repl",
+      "first": 1790793458789,
+      "last": 1790793461526
+    },
+    {
+      "pid": 42035,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790793458789,
+      "last": 1790793461526
+    },
+    {
+      "pid": 42036,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790793458789,
+      "last": 1790793461526
+    },
+    {
+      "pid": 42054,
+      "cmd": "node_repl",
+      "first": 1790793458789,
+      "last": 1790793461526
+    },
+    {
+      "pid": 45215,
+      "cmd": "(sh)",
+      "first": 1790793459697,
+      "last": 1790793459697
+    },
+    {
+      "pid": 45216,
+      "cmd": "node session-init.cjs",
+      "first": 1790793459697,
+      "last": 1790793460002
+    },
+    {
+      "pid": 45217,
+      "cmd": "(node)",
+      "first": 1790793459697,
+      "last": 1790793459697
+    },
+    {
+      "pid": 45218,
+      "cmd": "(bash)",
+      "first": 1790793459697,
+      "last": 1790793459697
+    },
+    {
+      "pid": 45310,
+      "cmd": "node dev-rules-reminder.cjs",
+      "first": 1790793460305,
+      "last": 1790793460305
+    },
+    {
+      "pid": 45311,
+      "cmd": "node",
+      "first": 1790793460305,
+      "last": 1790793460305
+    },
+    {
+      "pid": 45313,
+      "cmd": "node usage-quota-cache-refresh.cjs",
+      "first": 1790793460305,
+      "last": 1790793460305
+    },
+    {
+      "pid": 45387,
+      "cmd": "node bin.js --profile acp",
+      "first": 1790793461213,
+      "last": 1790793468556
+    },
+    {
+      "pid": 45999,
+      "cmd": "bash -c sleep 25; echo s1",
+      "first": 1790793465521,
+      "last": 1790793468556
+    },
+    {
+      "pid": 46000,
+      "cmd": "sleep 25",
+      "first": 1790793465521,
+      "last": 1790793468556
+    }
+  ]
+}

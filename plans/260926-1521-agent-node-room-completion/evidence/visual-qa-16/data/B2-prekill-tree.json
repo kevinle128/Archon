@@ -1,0 +1,32 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790795659273,
+  "end": 1790795660501,
+  "procs": [
+    {
+      "pid": 30482,
+      "cmd": "omp --mode rpc --cwd thread-662908a5 --yolo --no-title --no-",
+      "first": 1790795659273,
+      "last": 1790795660200
+    },
+    {
+      "pid": 32213,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790795659273,
+      "last": 1790795660200
+    },
+    {
+      "pid": 39014,
+      "cmd": "zsh -c source snapshot-zsh-1790795578970-6gcfvr.sh 2>null ||",
+      "first": 1790795659273,
+      "last": 1790795660200
+    },
+    {
+      "pid": 39016,
+      "cmd": "sleep 6",
+      "first": 1790795659273,
+      "last": 1790795660200
+    }
+  ]
+}

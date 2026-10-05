@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  projectTerminalTodoState,
   projectTodoState,
   summarizeTodoState,
+  todoTerminalOutcome,
   TODO_STATUS_PRESENTATION,
   type TodoItem,
   type TodoPhase,
@@ -17,6 +19,11 @@ const BLOCKED: TodoStatus = 'blocked';
 
 function item(content: string, status: TodoStatus, blocker?: string): TodoItem {
   return blocker === undefined ? { content, status } : { content, status, blocker };
+}
+
+/** A Task-family item, identified by `taskId` the way `content` alone never is for this source. */
+function taskItem(content: string, status: TodoStatus, id: string): TodoItem {
+  return { content, status, id };
 }
 
 function phase(name: string, items: TodoItem[]): TodoPhase {
@@ -714,6 +721,106 @@ describe('projectTodoState — legacy {ops:[...]} batch', () => {
   });
 });
 
+describe('projectTodoState — Claude TaskCreate/TaskUpdate', () => {
+  test('a create establishes a pending item in the Tasks phase, identified by taskId', () => {
+    const result = projectTodoState([{ taskId: '1', subject: 'Scout the routes' }]);
+    expect(result).toEqual([phase('Tasks', [taskItem('Scout the routes', PENDING, '1')])]);
+  });
+
+  test('an update by taskId changes status without needing the content string', () => {
+    const result = projectTodoState([
+      { taskId: '1', subject: 'Scout the routes' },
+      { taskId: '1', status: 'in_progress' },
+    ]);
+    expect(result).toEqual([phase('Tasks', [taskItem('Scout the routes', IN_PROGRESS, '1')])]);
+  });
+
+  test('a rename (new subject) keeps the same identity and does not create a second row', () => {
+    const result = projectTodoState([
+      { taskId: '1', subject: 'Scout the routes' },
+      { taskId: '1', subject: 'Scout the routes (renamed)' },
+    ]);
+    expect(result).toEqual([
+      phase('Tasks', [taskItem('Scout the routes (renamed)', PENDING, '1')]),
+    ]);
+  });
+
+  test('deleted maps to abandoned — the nearest existing status, not a new one', () => {
+    const result = projectTodoState([
+      { taskId: '1', subject: 'Scout the routes' },
+      { taskId: '1', status: 'deleted' },
+    ]);
+    expect(result).toEqual([phase('Tasks', [taskItem('Scout the routes', ABANDONED, '1')])]);
+  });
+
+  test('activeForm, description, addBlocks/addBlockedBy, owner, and metadata never affect the checklist', () => {
+    const result = projectTodoState([
+      {
+        taskId: '1',
+        subject: 'Scout the routes',
+        description: 'long form',
+        activeForm: 'Scouting',
+      },
+      {
+        taskId: '1',
+        status: 'in_progress',
+        activeForm: 'Scouting harder',
+        addBlocks: ['2'],
+        owner: 'someone',
+        metadata: { note: 'x' },
+      },
+    ]);
+    expect(result).toEqual([phase('Tasks', [taskItem('Scout the routes', IN_PROGRESS, '1')])]);
+  });
+
+  test('an update to an id never created is rejected — no fabricated blank row', () => {
+    const result = projectTodoState([{ taskId: 'ghost', status: 'completed' }]);
+    expect(result).toEqual([]);
+  });
+
+  test('several tasks fold independently, each ranked by its own taskId', () => {
+    const result = projectTodoState([
+      { taskId: '1', subject: 'first' },
+      { taskId: '2', subject: 'second' },
+      { taskId: '1', status: 'completed' },
+      { taskId: '2', status: 'in_progress' },
+    ]);
+    expect(result).toEqual([
+      phase('Tasks', [taskItem('first', COMPLETED, '1'), taskItem('second', IN_PROGRESS, '2')]),
+    ]);
+  });
+
+  test('never auto-promotes a task the call did not name, unlike OMP', () => {
+    const result = projectTodoState([
+      { taskId: '1', subject: 'first' },
+      { taskId: '2', subject: 'second' },
+    ]);
+    // Neither call named a status, and creating a second pending task must
+    // not promote the first the way OMP's own auto-promotion would.
+    expect(result).toEqual([
+      phase('Tasks', [taskItem('first', PENDING, '1'), taskItem('second', PENDING, '2')]),
+    ]);
+  });
+
+  test('malformed status, empty subject, or empty taskId reject the whole call', () => {
+    const created = [{ taskId: '1', subject: 'first' }];
+    expect(projectTodoState([...created, { taskId: '1', status: 'unstarted' }])).toEqual([
+      phase('Tasks', [taskItem('first', PENDING, '1')]),
+    ]);
+    expect(projectTodoState([...created, { taskId: '1', subject: '' }])).toEqual([
+      phase('Tasks', [taskItem('first', PENDING, '1')]),
+    ]);
+    expect(projectTodoState([{ taskId: '', subject: 'nope' }])).toEqual([]);
+  });
+
+  test('a create-shaped call with no id at all (still-live TaskCreate) is skipped entirely', () => {
+    // agent-history.ts only merges `taskId` in once the tool's output
+    // assigns one; a call this fold receives with no `taskId` field never
+    // matches the Task-family branch and falls through as an unknown op.
+    expect(projectTodoState([{ subject: 'no id yet' }])).toEqual([]);
+  });
+});
+
 describe('projectTodoState — output hygiene and robustness', () => {
   test('never mutates inputs and returns fresh objects', () => {
     const inputs = [
@@ -915,5 +1022,81 @@ describe('TODO_STATUS_PRESENTATION', () => {
       pending: { glyph: '☐', label: 'pending' },
       abandoned: { glyph: '☐', label: 'abandoned' },
     });
+  });
+});
+
+describe('todoTerminalOutcome', () => {
+  test('completed maps to the completed outcome', () => {
+    expect(todoTerminalOutcome('completed')).toBe('completed');
+  });
+
+  test('failed, cancelled, and skipped map to the interrupted outcome', () => {
+    expect(todoTerminalOutcome('failed')).toBe('interrupted');
+    // `LogRow['status']` folds a cancelled row into `skipped`
+    // (build-log-rows.ts), so both must resolve the same way — `cancelled`
+    // for a caller holding the run-level status instead.
+    expect(todoTerminalOutcome('cancelled')).toBe('interrupted');
+    expect(todoTerminalOutcome('skipped')).toBe('interrupted');
+  });
+
+  test('pending, running, and awaiting are not terminal', () => {
+    expect(todoTerminalOutcome('pending')).toBeNull();
+    expect(todoTerminalOutcome('running')).toBeNull();
+    expect(todoTerminalOutcome('awaiting')).toBeNull();
+  });
+});
+
+describe('projectTerminalTodoState', () => {
+  const phases: TodoPhase[] = [
+    phase('P', [
+      item('done', COMPLETED),
+      item('running', IN_PROGRESS),
+      item('blocked', BLOCKED, 'waiting on ci'),
+      item('todo', PENDING),
+      item('dropped', ABANDONED),
+    ]),
+  ];
+
+  test('a live node status leaves the fold untouched', () => {
+    expect(projectTerminalTodoState(phases, 'running')).toEqual(phases);
+    expect(projectTerminalTodoState(phases, 'awaiting')).toEqual(phases);
+    expect(projectTerminalTodoState(phases, 'pending')).toEqual(phases);
+  });
+
+  test('a completed node marks every item done except one already abandoned', () => {
+    expect(projectTerminalTodoState(phases, 'completed')).toEqual([
+      phase('P', [
+        item('done', COMPLETED),
+        item('running', COMPLETED),
+        item('blocked', COMPLETED),
+        item('todo', COMPLETED),
+        item('dropped', ABANDONED),
+      ]),
+    ]);
+  });
+
+  test('a failed node demotes only the in-progress item to pending', () => {
+    expect(projectTerminalTodoState(phases, 'failed')).toEqual([
+      phase('P', [
+        item('done', COMPLETED),
+        item('running', PENDING),
+        item('blocked', BLOCKED, 'waiting on ci'),
+        item('todo', PENDING),
+        item('dropped', ABANDONED),
+      ]),
+    ]);
+  });
+
+  test('a cancelled node applies the same interrupted projection as failed', () => {
+    expect(projectTerminalTodoState(phases, 'cancelled')).toEqual(
+      projectTerminalTodoState(phases, 'failed')
+    );
+  });
+
+  test('never mutates the input phases', () => {
+    const before = JSON.parse(JSON.stringify(phases));
+    projectTerminalTodoState(phases, 'completed');
+    projectTerminalTodoState(phases, 'failed');
+    expect(phases).toEqual(before);
   });
 });

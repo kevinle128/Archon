@@ -1,0 +1,66 @@
+{
+  "post": 5,
+  "res": { "success": true, "message": "Abandoned workflow: vq12-deepseek" },
+  "C": {
+    "neverSentAt": 253,
+    "pillAt": 253,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ bash sleep 25 && echo step-4 25.0s THINKING",
+        "– bash sleep 25 && echo step-5 output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -266,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ds-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [253, "NEVER SENT · 1", "", "Failed", 1],
+      [1381, "NEVER SENT · 1", "", "Failed", 1]
+    ]
+  },
+  "L": {
+    "neverSentAt": 694,
+    "pillAt": 668,
+    "missing": [[668, 694]],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ bash sleep 25 && echo step-4 25.0s THINKING",
+        "– bash sleep 25 && echo step-5 output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -265,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ds-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        615,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ds-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [668, "", "", "Failed", 0],
+      [694, "NEVER SENT · 1", "", "Failed", 1],
+      [3656, "NEVER SENT · 1", "", "Failed", 1]
+    ]
+  }
+}

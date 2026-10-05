@@ -1,0 +1,70 @@
+{
+  "r": {
+    "post": 4,
+    "res": { "success": true, "message": "Abandoned workflow: vq12-fake" },
+    "C": {
+      "neverSentAt": 100,
+      "pillAt": 100,
+      "missing": [],
+      "last": {
+        "bands": "NEVER SENT · 1",
+        "btns": "",
+        "pill": "Failed",
+        "status": "node finished · none of this was sent",
+        "tools": ["– Read HITL_TOOL_INPUT.txt output unknown ·"],
+        "ta": false
+      },
+      "frames": [
+        [
+          -265,
+          "QUEUED · 1",
+          "QUEUED · 1\nsaved to server\n▾,delete · AB1-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+          "Running",
+          1
+        ],
+        [100, "NEVER SENT · 1", "", "Failed", 1],
+        [1825, "NEVER SENT · 1", "", "Failed", 1]
+      ]
+    },
+    "L": {
+      "neverSentAt": 736,
+      "pillAt": 736,
+      "missing": [],
+      "last": {
+        "bands": "NEVER SENT · 1",
+        "btns": "",
+        "pill": "Failed",
+        "status": "node finished · none of this was sent",
+        "tools": ["– Read HITL_TOOL_INPUT.txt output unknown ·"],
+        "ta": false
+      },
+      "frames": [
+        [
+          -264,
+          "QUEUED · 1",
+          "QUEUED · 1\nsaved to server\n▾,delete · AB1-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+          "Running",
+          1
+        ],
+        [
+          656,
+          "QUEUED · 1",
+          "QUEUED · 1\nsaved to server\n▾,delete · AB1-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+          "Running",
+          1
+        ],
+        [736, "NEVER SENT · 1", "", "Failed", 1],
+        [3736, "NEVER SENT · 1", "", "Failed", 1]
+      ]
+    }
+  },
+  "tc": [
+    [1790687625132, "Running||delete,Stop,Queue|TA|QUEUED · 1||0"],
+    [1790687625511, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1"]
+  ],
+  "tl": [
+    [1790687625132, "Running||delete,Stop,Queue|TA|QUEUED · 1||0"],
+    [1790687626138, "Running||||NEVER SENT · 1|node finished · none of this was sent|1"],
+    [1790687626158, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1"]
+  ]
+}

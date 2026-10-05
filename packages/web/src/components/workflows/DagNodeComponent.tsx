@@ -26,54 +26,14 @@ export interface DagNodeData extends DagNode {
 export type DagFlowNode = Node<DagNodeData>;
 
 const TYPE_CONFIG = {
-  command: {
-    badge: 'CMD',
-    stripeColor: 'bg-node-command',
-    badgeBg: 'bg-node-command/20',
-    badgeText: 'text-node-command',
-  },
-  prompt: {
-    badge: 'PROMPT',
-    stripeColor: 'bg-node-prompt',
-    badgeBg: 'bg-node-prompt/20',
-    badgeText: 'text-node-prompt',
-  },
-  bash: {
-    badge: 'BASH',
-    stripeColor: 'bg-node-bash',
-    badgeBg: 'bg-node-bash/20',
-    badgeText: 'text-node-bash',
-  },
-  loop: {
-    badge: 'LOOP',
-    stripeColor: 'bg-node-loop',
-    badgeBg: 'bg-node-loop/20',
-    badgeText: 'text-node-loop',
-  },
-  route_loop: {
-    badge: 'ROUTE',
-    stripeColor: 'bg-node-loop',
-    badgeBg: 'bg-node-loop/20',
-    badgeText: 'text-node-loop',
-  },
-  approval: {
-    badge: 'APPROVAL',
-    stripeColor: 'bg-node-approval',
-    badgeBg: 'bg-node-approval/20',
-    badgeText: 'text-node-approval',
-  },
-  plannotator_gate: {
-    badge: 'REVIEW',
-    stripeColor: 'bg-node-approval',
-    badgeBg: 'bg-node-approval/20',
-    badgeText: 'text-node-approval',
-  },
-  cancel: {
-    badge: 'CANCEL',
-    stripeColor: 'bg-error',
-    badgeBg: 'bg-error/20',
-    badgeText: 'text-error',
-  },
+  command: { kind: 'Command', dot: 'bg-node-command' },
+  prompt: { kind: 'Prompt', dot: 'bg-node-prompt' },
+  bash: { kind: 'Bash', dot: 'bg-node-bash' },
+  loop: { kind: 'Loop', dot: 'bg-node-loop' },
+  route_loop: { kind: 'Route', dot: 'bg-node-loop' },
+  approval: { kind: 'Approval', dot: 'bg-node-approval' },
+  plannotator_gate: { kind: 'Review', dot: 'bg-node-approval' },
+  cancel: { kind: 'Cancel', dot: 'bg-error' },
 } as const;
 
 export function getContentPreview(data: DagNodeData): string {
@@ -102,11 +62,15 @@ export function getContentPreview(data: DagNodeData): string {
 
 function MetadataPill({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-surface-inset text-text-secondary">
+    <span className="inline-flex items-center rounded-md bg-surface-inset px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">
       {children}
     </span>
   );
 }
+
+// Handles stay quiet: the React Flow tokens in index.css supply the fill and
+// ring in both themes, so only the size is set here.
+const HANDLE_CLASS = '!size-2.5';
 
 function DagNodeRender({ data, selected }: NodeProps<DagFlowNode>): React.ReactElement {
   const config = TYPE_CONFIG[data.nodeType];
@@ -122,58 +86,42 @@ function DagNodeRender({ data, selected }: NodeProps<DagFlowNode>): React.ReactE
   return (
     <div
       className={cn(
-        'w-[180px] bg-surface border border-border rounded-lg overflow-hidden cursor-pointer transition-all flex',
-        selected && 'border-primary ring-1 ring-primary'
+        'w-[180px] cursor-pointer rounded-xl border bg-surface px-3 py-2.5 transition-colors duration-200 motion-reduce:transition-none',
+        selected ? 'border-accent ring-1 ring-accent' : 'border-border hover:border-border-bright'
       )}
     >
-      <Handle type="target" position={Position.Top} className="!bg-accent !w-2 !h-2" />
+      <Handle type="target" position={Position.Top} className={HANDLE_CLASS} />
 
-      {/* Left color stripe */}
-      <div className={cn('w-[3px] shrink-0', config.stripeColor)} />
-
-      {/* Content area */}
-      <div className="flex-1 min-w-0 px-2.5 py-2">
-        {/* Header: badge + label */}
-        <div className="flex items-center gap-1.5 mb-1">
-          <span
-            className={cn(
-              'text-[9px] font-semibold px-1.5 py-0.5 rounded shrink-0',
-              config.badgeBg,
-              config.badgeText
-            )}
-          >
-            {config.badge}
-          </span>
-          <span className="text-xs font-medium text-text-primary truncate">{data.label}</span>
-        </div>
-
-        {/* Content preview */}
-        {preview && (
-          <div className="text-[10px] font-mono text-text-tertiary truncate mb-1">{preview}</div>
-        )}
-
-        {/* Metadata pills */}
-        {hasPills && (
-          <div className="flex flex-wrap gap-1">
-            {data.model && <MetadataPill>{data.model}</MetadataPill>}
-            {data.output_format && <MetadataPill>{'{}'} JSON</MetadataPill>}
-            {data.when && <MetadataPill>when</MetadataPill>}
-            {data.trigger_rule && data.trigger_rule !== 'all_success' && (
-              <MetadataPill>{data.trigger_rule}</MetadataPill>
-            )}
-            {data.skills && data.skills.length > 0 && <MetadataPill>skills</MetadataPill>}
-            {data.mcp && <MetadataPill>mcp</MetadataPill>}
-          </div>
-        )}
-
-        {data.nodeType === 'route_loop' && (
-          <div className="mt-1 grid grid-cols-3 gap-1 text-center text-[8px] font-medium uppercase text-text-tertiary">
-            <span className="text-success">pos</span>
-            <span className="text-accent">neg</span>
-            <span className="text-error">end</span>
-          </div>
-        )}
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-text-tertiary">
+        <span className={cn('size-1.5 shrink-0 rounded-full', config.dot)} aria-hidden="true" />
+        <span>{config.kind}</span>
       </div>
+      <div className="truncate text-sm font-medium text-text-primary">{data.label}</div>
+
+      {preview && (
+        <div className="mt-1 truncate font-mono text-[11px] text-text-tertiary">{preview}</div>
+      )}
+
+      {hasPills && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {data.model && <MetadataPill>{data.model}</MetadataPill>}
+          {data.output_format && <MetadataPill>{'{}'} JSON</MetadataPill>}
+          {data.when && <MetadataPill>when</MetadataPill>}
+          {data.trigger_rule && data.trigger_rule !== 'all_success' && (
+            <MetadataPill>{data.trigger_rule}</MetadataPill>
+          )}
+          {data.skills && data.skills.length > 0 && <MetadataPill>skills</MetadataPill>}
+          {data.mcp && <MetadataPill>mcp</MetadataPill>}
+        </div>
+      )}
+
+      {data.nodeType === 'route_loop' && (
+        <div className="mt-1.5 grid grid-cols-3 gap-1 text-center text-[10px] font-medium text-text-tertiary">
+          <span className="text-success">pos</span>
+          <span className="text-text-secondary">neg</span>
+          <span className="text-error">end</span>
+        </div>
+      )}
 
       {data.nodeType === 'route_loop' ? (
         <>
@@ -181,26 +129,26 @@ function DagNodeRender({ data, selected }: NodeProps<DagFlowNode>): React.ReactE
             id="positive"
             type="source"
             position={Position.Bottom}
-            className="!bg-success !w-2 !h-2"
+            className={cn(HANDLE_CLASS, '!bg-success')}
             style={{ left: '25%' }}
           />
           <Handle
             id="negative"
             type="source"
             position={Position.Bottom}
-            className="!bg-accent !w-2 !h-2"
+            className={cn(HANDLE_CLASS, '!bg-text-secondary')}
             style={{ left: '50%' }}
           />
           <Handle
             id="exhausted"
             type="source"
             position={Position.Bottom}
-            className="!bg-error !w-2 !h-2"
+            className={cn(HANDLE_CLASS, '!bg-error')}
             style={{ left: '75%' }}
           />
         </>
       ) : (
-        <Handle type="source" position={Position.Bottom} className="!bg-accent !w-2 !h-2" />
+        <Handle type="source" position={Position.Bottom} className={HANDLE_CLASS} />
       )}
     </div>
   );

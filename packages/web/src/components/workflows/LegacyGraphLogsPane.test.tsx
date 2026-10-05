@@ -592,7 +592,7 @@ describe('LegacyGraphLogsPane', () => {
     };
   }
 
-  test('opens a percentage room on demand and hides the main view in single mode', async () => {
+  test('opens a fixed-width room on demand and hides the main view in single mode', async () => {
     const closes: number[] = [];
     const onCloseRoom = (): void => {
       closes.push(1);
@@ -642,24 +642,21 @@ describe('LegacyGraphLogsPane', () => {
     expect(viewPanel).not.toBeNull();
     expect(roomPanel).not.toBeNull();
     expect(host.querySelector('[data-testid="legacy-node-room"]')).not.toBeNull();
-    expect(host.querySelector('[role="separator"]')).not.toBeNull();
-    expect(
-      viewPanel?.getAttribute('data-panel-size') ?? viewPanel?.getAttribute('style') ?? ''
-    ).toMatch(/60/);
-    expect(
-      roomPanel?.getAttribute('data-panel-size') ?? roomPanel?.getAttribute('style') ?? ''
-    ).toMatch(/40/);
-    // The right panel's content wrapper is a shrinkable overflow boundary —
-    // without it a long transcript stretches the document below the fixed run
-    // shell. react-resizable-panels puts className/style on the wrapper inside
-    // the #legacy-run-room panel element, and the inline overflow must win over
-    // the library's default `overflow: auto` so the transcript scroller stays
-    // the sole vertical scroll owner.
-    const roomContent = roomPanel?.firstElementChild as HTMLElement | null;
-    const roomContentClass = roomContent?.getAttribute('class') ?? '';
-    expect(roomContentClass).toContain('min-h-0');
-    expect(roomContentClass).toContain('overflow-hidden');
-    expect(roomContent?.style.overflow).toBe('hidden');
+    // The approved node panel is a fixed width, not a user-resizable share of
+    // the window, so it carries no drag handle.
+    expect(host.querySelector('[role="separator"]')).toBeNull();
+    expect((roomPanel as HTMLElement).style.width).toBe('460px');
+    expect((roomPanel as HTMLElement).style.flexShrink).toBe('0');
+    // The panel is a shrinkable overflow boundary — without it a long
+    // transcript stretches the document below the fixed run shell.
+    const roomPanelClass = roomPanel?.getAttribute('class') ?? '';
+    expect(roomPanelClass).toContain('min-h-0');
+    expect(roomPanelClass).toContain('overflow-hidden');
+    // A flex child defaults to min-width:auto, which lets its content (a long
+    // unwrapped tool row) grow the column past the viewport and push the
+    // fixed-width room off screen. min-w-0 caps the view pane at the space
+    // the flex layout actually gives it.
+    expect((viewPanel as HTMLElement).className).toContain('min-w-0');
 
     await act(async () => {
       root.render(
@@ -682,6 +679,7 @@ describe('LegacyGraphLogsPane', () => {
     const mainView = host.querySelector('#legacy-run-view');
     expect(mainView).toBe(viewPanel);
     expect((mainView as HTMLElement).hidden).toBe(true);
+    expect((mainView as HTMLElement).classList.contains('hidden')).toBe(true);
     const back = Array.from(host.querySelectorAll('button')).find(candidate =>
       (candidate.textContent ?? '').includes('Back')
     );
@@ -712,6 +710,7 @@ describe('LegacyGraphLogsPane', () => {
     const closedMain = host.querySelector('#legacy-run-view');
     expect(closedMain).not.toBeNull();
     expect((closedMain as HTMLElement).hidden).toBe(false);
+    expect((closedMain as HTMLElement).classList.contains('flex')).toBe(true);
     expect(host.querySelector('[data-testid="legacy-node-room"]')).toBeNull();
   });
 
@@ -1003,7 +1002,7 @@ describe('LegacyGraphLogsPane', () => {
       (host.textContent ?? '').includes('Open child run')
     );
 
-    expect(host.querySelector('a[href="/legacy/workflows/runs/child-run-1"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/workflows/runs/child-run-1"]')).not.toBeNull();
     expect(calls).toEqual([]);
     expect(host.querySelector('[aria-label="child room"]')).not.toBeNull();
     expect(host.textContent).not.toContain('AskHuman');
@@ -1048,7 +1047,7 @@ describe('LegacyGraphLogsPane', () => {
     await flushUntil(host, 'child run link', () =>
       (host.textContent ?? '').includes('Open child run')
     );
-    expect(host.querySelector('a[href="/legacy/workflows/runs/child-1"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/workflows/runs/child-1"]')).not.toBeNull();
     expect(calls).toEqual([]);
     expect(host.querySelector('[aria-label="child room"]')).not.toBeNull();
     expectNoAskHumanChrome(host);
@@ -2509,10 +2508,19 @@ describe('LegacyGraphLogsPane', () => {
         pathname = raw.split('?')[0] ?? raw;
       }
       if (method === 'GET' && pathname.endsWith('/queue')) {
-        return new Response(JSON.stringify({ success: true, queued: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            execution_state: 'live',
+            auto_send: false,
+            capabilities: { soft_injection: false, delivery_ack: false },
+            queued: [],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
       }
       if (method === 'GET' && pathname.includes('/messages')) {
         return new Response(JSON.stringify({ messages: [] }), {
@@ -2599,7 +2607,15 @@ describe('LegacyGraphLogsPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -2669,7 +2685,15 @@ describe('LegacyGraphLogsPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -2763,7 +2787,7 @@ describe('LegacyGraphLogsPane', () => {
     return null;
   }
 
-  test('T3.15 Legacy wrapper passes exact node terminal inputs; siblings ignored', async () => {
+  test('Legacy wrapper passes exact node terminal inputs; siblings ignored', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -2777,7 +2801,15 @@ describe('LegacyGraphLogsPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -2868,7 +2900,7 @@ describe('LegacyGraphLogsPane', () => {
     }
   });
 
-  test('T3.17 completed occurrence selection stays nonterminal with stable execution key', async () => {
+  test('completed occurrence selection stays nonterminal with stable execution key', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -2882,7 +2914,15 @@ describe('LegacyGraphLogsPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -3002,7 +3042,7 @@ describe('LegacyGraphLogsPane', () => {
     }
   });
 
-  test('T4.16 idleAwaitExpired reaches selected room including group.body', async () => {
+  test('idleAwaitExpired reaches selected room including group.body', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -3016,7 +3056,15 @@ describe('LegacyGraphLogsPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );

@@ -1,0 +1,152 @@
+[
+  { "seq": 1, "kind": "status", "payload": { "state": "started" }, "meta": {} },
+  {
+    "seq": 2,
+    "kind": "text",
+    "payload": {
+      "text": "Run these Bash steps one at a time, each as its own separate Bash call, in order: step N is \"for i in 1 2 3 4; do sleep "
+    },
+    "meta": {
+      "origin": "prompt",
+      "actor_user_id": "28e30db068a1108434da21177b61a520",
+      "prompt_source": "node_prompt"
+    }
+  },
+  {
+    "seq": 3,
+    "kind": "text",
+    "payload": {
+      "text": "The user is asking me to run Bash steps one at a time. They want me to execute 4 separate Bash calls, where each step N "
+    },
+    "meta": { "origin": "thinking" }
+  },
+  {
+    "seq": 4,
+    "kind": "tool",
+    "payload": { "name": "Bash", "id": "toolu_01SVbf1EtaZhAsKDGnSjJcrD", "has_output": false },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 5,
+    "kind": "tool",
+    "payload": { "name": "Bash", "id": "toolu_01SVbf1EtaZhAsKDGnSjJcrD", "has_output": true },
+    "meta": { "tool_phase": "result", "output_state": "full", "outcome": "interrupted" }
+  },
+  { "seq": 6, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 7,
+    "kind": "text",
+    "payload": {
+      "text": "OP cl-c1: reply with the token cl-c1ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "3d2aed45-0a6e-4437-98cf-34fb7b2d3066",
+      "origin": "operator",
+      "operator_user_id": "28e30db068a1108434da21177b61a520"
+    }
+  },
+  {
+    "seq": 8,
+    "kind": "text",
+    "payload": {
+      "text": "The operator message is asking me to:\n1. Reply with the token \"cl-c1ACK\"\n2. Continue with the remaining steps\n\nThe remai"
+    },
+    "meta": { "origin": "thinking" }
+  },
+  {
+    "seq": 9,
+    "kind": "text",
+    "payload": { "text": "cl-c1ACK" },
+    "meta": { "text_mode": "complete" }
+  },
+  {
+    "seq": 10,
+    "kind": "tool",
+    "payload": { "name": "Bash", "id": "toolu_01WYvtL2s4j7ZAtvjFndNZWx", "has_output": false },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 11,
+    "kind": "tool",
+    "payload": { "name": "Bash", "id": "toolu_01WYvtL2s4j7ZAtvjFndNZWx", "has_output": true },
+    "meta": { "tool_phase": "result", "output_state": "full", "outcome": "interrupted" }
+  },
+  { "seq": 12, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 13,
+    "kind": "text",
+    "payload": {
+      "text": "OP cl-c2: reply with the token cl-c2ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "23e19f5d-4988-44c4-a219-9884133f8b46",
+      "origin": "operator",
+      "operator_user_id": "28e30db068a1108434da21177b61a520"
+    }
+  },
+  {
+    "seq": 14,
+    "kind": "text",
+    "payload": {
+      "text": "The operator message is asking me to:\n1. Reply with the token \"cl-c2ACK\"\n2. Continue with the remaining steps\n\nThe remai"
+    },
+    "meta": { "origin": "thinking" }
+  },
+  {
+    "seq": 15,
+    "kind": "text",
+    "payload": { "text": "cl-c2ACK" },
+    "meta": { "text_mode": "complete" }
+  },
+  {
+    "seq": 16,
+    "kind": "tool",
+    "payload": { "name": "Bash", "id": "toolu_01KFAfpgJHUhXjhRAdV2jDe1", "has_output": false },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 17,
+    "kind": "tool",
+    "payload": { "name": "Bash", "id": "toolu_01KFAfpgJHUhXjhRAdV2jDe1", "has_output": true },
+    "meta": { "tool_phase": "result", "output_state": "full", "outcome": "interrupted" }
+  },
+  { "seq": 18, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 19,
+    "kind": "text",
+    "payload": {
+      "text": "OP cl-c3: reply with the token cl-c3ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "e4f665f4-ede1-4fb0-9fd2-346477855429",
+      "origin": "operator",
+      "operator_user_id": "28e30db068a1108434da21177b61a520"
+    }
+  },
+  {
+    "seq": 20,
+    "kind": "text",
+    "payload": {
+      "text": "The operator message is asking me to:\n1. Reply with the token \"cl-c3ACK\"\n2. Continue with the remaining steps\n\nThe remai"
+    },
+    "meta": { "origin": "thinking" }
+  },
+  {
+    "seq": 21,
+    "kind": "text",
+    "payload": { "text": "cl-c3ACK" },
+    "meta": { "text_mode": "complete" }
+  },
+  {
+    "seq": 22,
+    "kind": "tool",
+    "payload": { "name": "Bash", "id": "toolu_011SbDfVEfQxErGiKq3mUV7t", "has_output": false },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 23,
+    "kind": "status",
+    "payload": { "state": "failed", "detail": "Cancelled by user" },
+    "meta": {}
+  }
+]

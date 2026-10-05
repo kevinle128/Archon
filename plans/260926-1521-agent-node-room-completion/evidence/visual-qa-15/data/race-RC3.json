@@ -1,0 +1,23 @@
+{
+  "R": "5a3612fc2855cfbfbc64ad528f506313",
+  "delay": 5,
+  "send": { "clicked": 1790747358834, "sendResolved": 1790747358854, "st": 200 },
+  "delClick": 6,
+  "del": {
+    "http": 409,
+    "body": "{\"success\":false,\"error\":{\"code\":\"node_finished\",\"message\":\"Workflow run is finished\"}}"
+  },
+  "q": { "sub": null, "items": [["RC3-Q1 queued ", "sent"]] },
+  "tc": [
+    [2, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||BODY"],
+    [19, "Running||Send now|TA|SENDING · 1|agent idle · Send now delivers||1|0|||BUTTON"],
+    [31, "Completed|||||||0|0|||DIV[room]"],
+    [56, "Completed|||||||1|0|||DIV[room]"]
+  ],
+  "tl": [
+    [2, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||DIV[room]"],
+    [27, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||BUTTON"],
+    [66, "Completed||||QUEUED · 1|||1|0|||BODY"],
+    [77, "Completed|||||||1|0|||BODY"]
+  ]
+}

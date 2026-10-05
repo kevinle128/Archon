@@ -1,0 +1,21 @@
+{
+  "fwc": [
+    [0, "TEXTAREA#m0", true],
+    [30, "BUTTON#m1", "prevConnected=true"],
+    [91, "DIV[last-row]#m2", "prevConnected=false"],
+    [5013, "DIV#m3{console-node-room-scroll}", "prevConnected=false"],
+    [7051, "DIV[last-row]#m4", "prevConnected=true"]
+  ],
+  "fwl": [
+    [0, "BODY", true],
+    [661, "TEXTAREA#m0", "prevConnected=true"]
+  ],
+  "raf": {
+    "log": [
+      { "t": 1790715196564, "nc": 1, "sending": false, "k": "1|false" },
+      { "t": 1790715196587, "nc": 1, "sending": true, "k": "1|true" },
+      { "t": 1790715197888, "nc": 1, "sending": false, "k": "1|false" }
+    ],
+    "t0": 1790715196561
+  }
+}

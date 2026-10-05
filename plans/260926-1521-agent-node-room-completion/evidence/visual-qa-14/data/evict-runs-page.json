@@ -1,0 +1,27 @@
+{
+  "solo": [
+    [158, "new", "__dashboard__"],
+    [158, "close", "__dashboard__"],
+    [159, "new", "__dashboard__"],
+    [173, "open", "__dashboard__"]
+  ],
+  "both": {
+    "runs": [
+      [175, "error", "__dashboard__"],
+      [3182, "open", "__dashboard__"],
+      [6190, "error", "__dashboard__"],
+      [9193, "open", "__dashboard__"],
+      [12199, "error", "__dashboard__"]
+    ],
+    "legacy": [
+      [165, "new", "__dashboard__"],
+      [165, "close", "__dashboard__"],
+      [165, "new", "__dashboard__"],
+      [179, "open", "__dashboard__"],
+      [3182, "error", "__dashboard__"],
+      [6191, "open", "__dashboard__"],
+      [9194, "error", "__dashboard__"],
+      [12199, "open", "__dashboard__"]
+    ]
+  }
+}

@@ -1,0 +1,34 @@
+[VQ11-2] runId=1e6026b8c7204a0715cf9fc7c532641b
+[VQ11-2] legacySamples=180 sawFalseNeverSent=false
+[VQ11-2] legacy ends with terminal text: true
+[VQ11-3] runId=b222f6f29f23b86063f716edc6f64765
+[VQ11-3] first alert: automatic dispatch failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>> in the usage directive · Send now to retry
+[VQ11-3] second alert: Send now failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>> in the usage directive · Send now to retry
+VQ11-2/3 LIVE VERIFICATION: PASS
+
+Method: server on 3355 restarted with ARCHON_E2E_FAKE_PROVIDER=1 (config/
+credentials otherwise the same scratch home), web on 5223.
+
+VQ11-2: dispatched qa11-fake-steer (interruptible e2e-fake node, 15s tool
+window). Opened Console (sender) and Legacy (observer) on the same run.
+Console clicked Stop, typed plain text (no <<E2E_SCENARIO>> directive, so
+the redirect turn completes immediately) and clicked Send now. Legacy was
+polled for the full page body text every ~44ms from the instant Console's
+Send now click fired through 8s after — "NEVER SENT" / "none of this was
+sent" never appeared once, and Legacy's final state correctly reads
+Completed.
+
+VQ11-3: dispatched qa11-fake-steer-fast (interruptible e2e-fake node, 4s
+tool window so the first turn ends naturally without an operator Stop —
+auto-send only claims after a NATURAL boundary, never an interrupted one).
+Enabled auto-send via PUT .../auto-send, queued a malformed
+"<<E2E_USAGE>>malformed, never closes" message before the first turn ended.
+Auto-send claimed it on the natural boundary and the fake provider's
+directive parser threw; the dock's one assertive alert read exactly
+"automatic dispatch failed · e2e-fake: found <<E2E_USAGE>> without a
+closing <</E2E_USAGE>> in the usage directive · Send now to retry". Clicked
+Send now to manually retry (re-claims the same malformed entry, fails
+again); the alert updated to "Send now failed · e2e-fake: found
+<<E2E_USAGE>> without a closing <</E2E_USAGE>> in the usage directive ·
+Send now to retry" — the copy correctly named the manual attempt instead
+of repeating "automatic".

@@ -1,0 +1,11 @@
+[pre-outage-legacy] {"buttons":["Send now","will send · 1saved to server▾","✕","✕"],"field":true,"restored":false,"errorPage":false}
+[pre-outage-console] {"buttons":["Send now","will send · 1saved to server▾","✕","✕"],"field":true,"restored":false,"errorPage":false}
+[restart] killing server pid 94173
+[restart] new server pid 96613
+[restart] healthy at 1790743600856
+[frames-legacy] total=4 beforeRestore=3 unexpected=0
+[restored-at-frame-index-legacy] 3
+[frames-console] total=4 beforeRestore=2 unexpected=0
+[restored-at-frame-index-console] 2
+NEW_SERVER_PID=96613
+DONE

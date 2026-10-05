@@ -307,8 +307,14 @@ describe('NodeTranscriptPane', () => {
   let queryClient: InstanceType<typeof reactQuery.QueryClient>;
   let nodeTranscriptPane: typeof import('./NodeTranscriptPane');
   let queueFetchSpy: { mockRestore: () => void } | undefined;
+  // The stubbed GET .../queue response's sub_state — kept in sync with
+  // whatever `nodeState.steeringSubState` a test renders, matching the real
+  // server (both wire fields are read from the same live handle). Reset to
+  // null (queue-only/no live handle) before each test.
+  let queueSubStateStub: 'generating' | 'idle-after-interrupt' | null = null;
 
   beforeEach(async () => {
+    queueSubStateStub = null;
     notifyManager.setScheduler((cb: () => void): void => {
       cb();
     });
@@ -342,7 +348,25 @@ describe('NodeTranscriptPane', () => {
       }
       if (method === 'GET' && pathname.endsWith('/queue')) {
         return Promise.resolve(
-          new Response(JSON.stringify({ success: true, queued: [] }), {
+          new Response(
+            JSON.stringify({
+              success: true,
+              execution_state: 'live',
+              auto_send: false,
+              capabilities: { soft_injection: false, delivery_ack: false },
+              queued: [],
+              sub_state: queueSubStateStub,
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        );
+      }
+      if (method === 'GET' && pathname.endsWith('/draft')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ success: true, draft: null, auto_send: false }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           })
@@ -390,6 +414,7 @@ describe('NodeTranscriptPane', () => {
     onSelectLiveRow?: (liveRowId: string) => void;
     nodeTerminal?: boolean;
     nodeExecutionKey?: string | null;
+    recoveryRequired?: boolean;
   }): void {
     const row = args.row;
     const selection =
@@ -430,6 +455,7 @@ describe('NodeTranscriptPane', () => {
           onSelectLiveRow: args.onSelectLiveRow,
           nodeTerminal: args.nodeTerminal,
           nodeExecutionKey: args.nodeExecutionKey,
+          recoveryRequired: args.recoveryRequired,
         })
       )
     );
@@ -457,6 +483,30 @@ describe('NodeTranscriptPane', () => {
     expect(calls).toEqual([['run-1', 'review']]);
     expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
     expect(host.querySelector('[aria-label="review room"]')).not.toBeNull();
+  });
+
+  test('a still-open tool call settles once restart recovery is reported, even though the row status stays running', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [
+        {
+          id: 'm1',
+          seq: 1,
+          kind: 'tool',
+          payload: { name: 'sleep 120', id: 'call-1', input: {} },
+          created_at: CREATED_AT,
+        },
+      ],
+    });
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, loadMessages, recoveryRequired: true });
+    });
+    await flushUntil(host, 'settled row', () => (host.textContent ?? '').includes('sleep 120'));
+    // Recovery is reported without the row's own status ever leaving
+    // 'running' — the still-open call settles to unknown (glyph –) anyway,
+    // since no live process backs it either way, and never renders the
+    // running glyph (◐).
+    expect(host.textContent).toContain('–');
+    expect(host.textContent).not.toContain('◐');
   });
 
   test('unwraps an exact one-string envelope only when the definition schema is supplied', async () => {
@@ -505,9 +555,12 @@ describe('NodeTranscriptPane', () => {
     expect(calls[0]).toEqual(['run-1', 'review']);
     expect(calls.every(call => call[0] === 'run-1' && call[1] === 'review')).toBe(true);
     expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
+    // Iteration 2's own content is visible; iteration 1's is gone. The raw
+    // `iteration_started`/`iteration_failed` lifecycle rows never render —
+    // they are not one of the room's approved row types.
     expect(host.textContent).toContain('Read');
-    expect(host.textContent).toContain('iteration_started');
-    expect(host.textContent).toContain('iteration_failed');
+    expect(host.textContent).not.toContain('iteration_started');
+    expect(host.textContent).not.toContain('iteration_failed');
     expect(host.textContent).not.toContain('first');
   });
 
@@ -754,7 +807,10 @@ describe('NodeTranscriptPane', () => {
         pendingInteractions: [],
       });
     });
-    await flushUntil(host, 'status awaiting', () => (host.textContent ?? '').includes('awaiting'));
+    // 'awaiting' is a raw lifecycle status row, never rendered — 'first' is
+    // this data set's own text row and only appears once it has loaded.
+    await flushUntil(host, 'review row reloaded', () => (host.textContent ?? '').includes('first'));
+    expect(host.textContent).not.toContain('awaiting');
     expect(host.querySelector('form[aria-label="question from agent, 1 questions"]')).toBeNull();
     expect(host.textContent).not.toContain('Ship it?');
   });
@@ -1065,6 +1121,22 @@ describe('NodeTranscriptPane', () => {
     expect(host.textContent).toContain('live-two');
   });
 
+  test('the composer accessible name uses the bare node label, never the log stream’s ×N suffix', async () => {
+    const loadMessages: NodeMessageLoader = async () => ({ messages: [...FIXTURE] });
+    await act(async () => {
+      renderPane({
+        row: { ...ITERATION_TWO_ROW, status: 'running' },
+        runStatus: 'running',
+        loadMessages,
+      });
+    });
+    await flushUntil(host, 'live loop composer', () => host.querySelector('textarea') !== null);
+    const field = host.querySelector('textarea');
+    const label = field?.labels?.[0] ?? host.querySelector(`label[for="${field?.id ?? ''}"]`);
+    expect(label?.textContent).toBe('message to Review');
+    expect(label?.textContent).not.toContain('×');
+  });
+
   test('starts completed history at the top and follows running history until the reader scrolls away', async () => {
     const loadMessages: NodeMessageLoader = async () => ({
       messages: [textMessage('scroll-1', 1, 'scroll-one')],
@@ -1121,6 +1193,84 @@ describe('NodeTranscriptPane', () => {
       jump.click();
     });
     expect(liveScroller.scrollTop).toBe(200);
+  });
+
+  test('re-pins to the bottom when the scroller resizes with no new row (e.g. a sibling band growing)', async () => {
+    type ResizeCallback = () => void;
+    const observed: HTMLElement[] = [];
+    let triggerResize: ResizeCallback | undefined;
+    let disconnected = false;
+    class FakeResizeObserver {
+      constructor(callback: ResizeCallback) {
+        triggerResize = callback;
+      }
+      observe(el: HTMLElement): void {
+        observed.push(el);
+      }
+      unobserve(): void {
+        return;
+      }
+      disconnect(): void {
+        disconnected = true;
+      }
+    }
+    const originalResizeObserver = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      writable: true,
+      value: FakeResizeObserver,
+    });
+
+    try {
+      const loadMessages: NodeMessageLoader = async () => ({
+        messages: [textMessage('scroll-resize-1', 1, 'scroll-resize-one')],
+        hasMore: false,
+        nextCursor: '1',
+        highWatermark: 1,
+      });
+      await act(async () => {
+        renderPane({ row: REVIEW_ROW, runStatus: 'running', loadMessages });
+      });
+      await flushUntil(host, 'resize scroll', () =>
+        (host.textContent ?? '').includes('scroll-resize-one')
+      );
+      const scrollerNode = host.querySelector('[data-testid="node-transcript-scroll"]');
+      if (scrollerNode === null) throw new Error('missing scroller');
+      const scroller = scrollerNode as unknown as HTMLElement;
+      expect(observed).toContain(scroller);
+
+      // A sibling (queue band, todo strip, dock) growing shrinks the
+      // scroller's own box with no new row arriving: scrollHeight is
+      // unchanged, but clientHeight drops and a stale scrollTop would leave
+      // a gap at the bottom.
+      Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 400 });
+      Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 200 });
+      scroller.scrollTop = 200;
+      Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 136 });
+
+      if (triggerResize === undefined) throw new Error('resize observer never attached');
+      await act(async () => {
+        triggerResize?.();
+      });
+      // scrollHeight (400) - the shrunk clientHeight (136): the bottom stays
+      // flush against the fold instead of leaving a 64px gap.
+      expect(scroller.scrollTop).toBe(264);
+
+      await act(async () => {
+        root.unmount();
+      });
+      expect(disconnected).toBe(true);
+    } finally {
+      if (originalResizeObserver === undefined) {
+        Reflect.deleteProperty(globalThis, 'ResizeObserver');
+      } else {
+        Object.defineProperty(globalThis, 'ResizeObserver', {
+          configurable: true,
+          writable: true,
+          value: originalResizeObserver,
+        });
+      }
+    }
   });
 
   test('aborts the active request on unmount', async () => {
@@ -1211,7 +1361,7 @@ describe('NodeTranscriptPane', () => {
     return button;
   }
 
-  test('mounts the folded todo strip ahead of the scroller inside one room region', async () => {
+  test('mounts the folded todo strip below the scroller inside one room region', async () => {
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -1232,8 +1382,8 @@ describe('NodeTranscriptPane', () => {
     const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
     if (scroller === null) throw new Error('missing scroller');
     // The strip and the scroller are siblings inside the single region.
-    expect(region.firstElementChild).toBe(strip);
-    expect(strip?.nextElementSibling).toBe(scroller);
+    expect(region.firstElementChild).toBe(scroller);
+    expect(scroller.nextElementSibling).toBe(strip);
     expect(scroller.querySelectorAll('[role="region"]')).toHaveLength(0);
     // The scroller owns scrolling; the region does not scroll.
     const scrollerClass = scroller.getAttribute('class') ?? '';
@@ -1274,6 +1424,47 @@ describe('NodeTranscriptPane', () => {
         rowEl.querySelector('[data-testid="todo-list"], [data-testid="todo-meter"], ul')
       ).toBeNull();
     }
+  });
+
+  test('only the latest todo row exposes the folded checklist inline', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'completed',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...TODO_MESSAGES],
+        }),
+      });
+    });
+    await flushUntil(host, 'todo strip', () => stripSection() !== null);
+
+    const todoRows = Array.from(host.querySelectorAll('details[data-tool-id]'));
+    expect(todoRows).toHaveLength(4);
+    const [earliest, , , latest] = todoRows;
+    if (earliest === undefined || latest === undefined) {
+      throw new Error('missing todo rows');
+    }
+
+    function rowSummaryOf(row: Element): HTMLElement {
+      const summary = row.querySelector('summary');
+      if (!(summary instanceof HTMLElement)) throw new Error('missing row summary');
+      return summary;
+    }
+
+    await act(async () => {
+      rowSummaryOf(earliest).click();
+      rowSummaryOf(latest).click();
+    });
+
+    expect(earliest.querySelector('[data-testid="todo-list"], ul')).toBeNull();
+    const latestChecklists = latest.querySelectorAll('ul');
+    if (latestChecklists.length === 0)
+      throw new Error('missing inline checklist on the latest row');
+    expect(latest.textContent).toContain('Map the message path');
+    expect(latest.textContent).toContain('· blocked: CI has one build job');
+    expect(latest.textContent).toContain('· dropped');
+    const headings = Array.from(latest.querySelectorAll('h3')).map(h => h.textContent);
+    expect(headings).toEqual(['Research', 'Implement']);
   });
 
   test('renders no strip when the transcript has no foldable todo state', async () => {
@@ -1564,7 +1755,7 @@ describe('NodeTranscriptPane', () => {
     expect(children.includes(dockWell ?? scroller)).toBe(true);
     expect(children.indexOf(dockWell ?? scroller)).toBeGreaterThan(children.indexOf(scroller));
     expect(scroller.contains(dockWell)).toBe(false);
-    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · this tab only');
+    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · saved for you');
     expect(host.textContent).not.toContain('queued ·');
   });
 
@@ -1689,6 +1880,7 @@ describe('NodeTranscriptPane', () => {
   }
 
   test('a generating projection renders Stop in the live dock', async () => {
+    queueSubStateStub = 'generating';
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -1708,6 +1900,7 @@ describe('NodeTranscriptPane', () => {
   });
 
   test('an idle-after-interrupt projection renders Send now and the disclosure', async () => {
+    queueSubStateStub = 'idle-after-interrupt';
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -1734,6 +1927,7 @@ describe('NodeTranscriptPane', () => {
   });
 
   test('dock removal moves focus to the last transcript row, never body', async () => {
+    queueSubStateStub = 'generating';
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -1777,6 +1971,7 @@ describe('NodeTranscriptPane', () => {
   });
 
   test('with no transcript rows the scroller itself takes the fallback focus', async () => {
+    queueSubStateStub = 'generating';
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -1810,6 +2005,46 @@ describe('NodeTranscriptPane', () => {
     const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
     if (scroller === null) throw new Error('missing scroller');
     expect((win.document.activeElement as unknown) === scroller).toBe(true);
+  });
+
+  // The room follows a newly live loop iteration on its own — no Go click,
+  // no `pendingGoTargetRef` set — so the effects above are the only thing
+  // standing between the removed row and `<body>`. The browser has already
+  // blurred the removed row (a real DOM removal, not merely losing
+  // `data-last-row`) by the time either effect runs; only
+  // `lastFocusedTranscriptRowRef` proves it was THIS specific row. The
+  // scope-keyed transcript query briefly parks focus on the scroller itself
+  // while the new iteration's content loads (no row exists yet); once it
+  // settles, focus self-heals onto the real last row.
+  test('a loop iteration boundary the operator did not drive never drops focus to body', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...FIXTURE],
+    });
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, runStatus: 'running', loadMessages });
+    });
+    await flushUntil(host, 'iteration 1 content', () => (host.textContent ?? '').includes('first'));
+    const firstLastRow = host.querySelector('[data-last-row]');
+    if (firstLastRow === null) throw new Error('missing last-row marker');
+    await act(async () => {
+      (firstLastRow as unknown as HTMLElement).focus();
+    });
+    expect((win.document.activeElement as unknown) === firstLastRow).toBe(true);
+
+    await act(async () => {
+      renderPane({ row: ITERATION_TWO_ROW, runStatus: 'failed', loadMessages });
+    });
+    await flushUntil(
+      host,
+      'iteration 2 content settled onto a real last row',
+      () => !host.contains(firstLastRow) && host.querySelector('[data-last-row]') !== null
+    );
+
+    const newLastRow = host.querySelector('[data-last-row]');
+    expect(newLastRow).not.toBeNull();
+    expect((newLastRow as unknown) === firstLastRow).toBe(false);
+    expect(win.document.activeElement).not.toBe(win.document.body as unknown as HTMLElement);
+    expect((win.document.activeElement as unknown) === newLastRow).toBe(true);
   });
 
   describe('occurrence navigator', () => {
@@ -1972,6 +2207,32 @@ describe('NodeTranscriptPane', () => {
       });
       await flushUntil(host, 'single occurrence', () => (host.textContent ?? '').includes('solo'));
       expect(host.querySelector('select')).toBeNull();
+    });
+
+    test('a status-only occurrence (no model/tool output) still renders its own heading', async () => {
+      // Filtering raw lifecycle rows out of what renders must never drop the
+      // occurrence group itself: a failed retry with nothing but lifecycle
+      // content is exactly the "status-only" case, and its heading is the
+      // only signal that the attempt happened and failed.
+      await act(async () => {
+        renderPane({
+          row: REVIEW_ROW,
+          runStatus: 'completed',
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+            messages: [
+              ...TWO_OCCURRENCES,
+              occStatus(7, 'started', OCC_C, 2),
+              occStatus(8, 'failed', OCC_C, 2),
+            ],
+          }),
+        });
+      });
+      await flushUntil(host, 'three occurrences', () =>
+        (host.textContent ?? '').includes('run-two')
+      );
+      expect(occHeadings()).toHaveLength(3);
+      const statusOnlyHeading = occurrenceHeading(OCC_C);
+      expect(statusOnlyHeading.textContent).toContain('failed');
     });
 
     test('renders a labelled select whose options mirror the headings verbatim', async () => {
@@ -2412,582 +2673,6 @@ describe('NodeTranscriptPane', () => {
 
       expect((win.document.activeElement as unknown) === outside).toBe(true);
       outside.remove();
-    });
-  });
-
-  describe('T3.18–T3.26 node-wide reconciliation drain', () => {
-    const CREATED = '2026-09-06T00:00:00.000Z';
-
-    function completePage(
-      messages: WorkflowNodeMessageResponse[] = []
-    ): WorkflowNodeMessagesResponse {
-      const maxSeq = messages.reduce((max, row) => Math.max(max, row.seq), 0);
-      return {
-        messages: [...messages],
-        hasMore: false,
-        highWatermark: maxSeq,
-        nextCursor: String(maxSeq),
-      };
-    }
-
-    function operatorText(
-      seq: number,
-      messageId: string,
-      text: string
-    ): WorkflowNodeMessageResponse {
-      return {
-        id: `op-${String(seq)}`,
-        seq,
-        kind: 'text',
-        payload: { text },
-        metadata: { origin: 'operator', message_id: messageId },
-        created_at: CREATED,
-      };
-    }
-
-    function assistantText(
-      seq: number,
-      messageId: string,
-      text: string
-    ): WorkflowNodeMessageResponse {
-      return {
-        id: `as-${String(seq)}`,
-        seq,
-        kind: 'text',
-        payload: { text },
-        metadata: {
-          origin: 'assistant',
-          message_id: messageId,
-        } as unknown as WorkflowNodeMessageResponse['metadata'],
-        created_at: CREATED,
-      };
-    }
-
-    function toolRow(seq: number, id: string): WorkflowNodeMessageResponse {
-      return {
-        id: `tool-${String(seq)}`,
-        seq,
-        kind: 'tool',
-        payload: { name: 'Bash', id, input: {} },
-        metadata: { message_id: id },
-        created_at: CREATED,
-      };
-    }
-
-    const OCC_ROW: LogRow = {
-      id: 'occ-1',
-      nodeId: 'review',
-      label: 'Review ×1',
-      status: 'completed',
-      order: 0,
-      sourceIndex: 0,
-      selection: {
-        kind: 'occurrence',
-        occurrenceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        attemptId: '11111111-1111-4111-8111-111111111111',
-      },
-    };
-
-    const LIVE_OCC_ROW: LogRow = {
-      id: 'occ-2',
-      nodeId: 'review',
-      label: 'Review ×2',
-      status: 'running',
-      order: 1,
-      sourceIndex: 0,
-      selection: {
-        kind: 'occurrence',
-        occurrenceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-      },
-    };
-
-    function installQueued(queued: { message_id: string; message: string }[]): void {
-      queueFetchSpy?.mockRestore();
-      queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
-        input: RequestInfo | URL,
-        init?: RequestInit
-      ): Promise<Response> => {
-        const raw =
-          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        const method = (init?.method ?? 'GET').toUpperCase();
-        let pathname = raw;
-        try {
-          pathname = new URL(raw, 'http://localhost').pathname;
-        } catch {
-          pathname = raw.split('?')[0] ?? raw;
-        }
-        if (method === 'GET' && pathname.endsWith('/queue')) {
-          return Promise.resolve(
-            new Response(JSON.stringify({ success: true, queued }), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' },
-            })
-          );
-        }
-        return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
-      }) as typeof fetch);
-    }
-
-    async function waitForText(needle: string): Promise<void> {
-      await act(async () => {
-        for (let i = 0; i < 40; i += 1) {
-          await Promise.resolve();
-          if ((host.textContent ?? '').toLowerCase().includes(needle.toLowerCase())) break;
-          const { promise, resolve } = Promise.withResolvers<undefined>();
-          setTimeout(resolve, 25);
-          await promise;
-        }
-      });
-    }
-
-    test('T3.18 nodeTerminal false never starts or publishes reconciliation', async () => {
-      const nodeWide: Record<string, unknown>[] = [];
-      const loadMessages: NodeMessageLoader = async (_runId, _nodeId, options) => {
-        if (options.occurrenceId === undefined) {
-          nodeWide.push({ ...options });
-        }
-        return completePage([]);
-      };
-
-      await act(async () => {
-        renderPane({
-          row: OCC_ROW,
-          runStatus: 'cancelled',
-          loadMessages,
-          nodeTerminal: false,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await flush();
-
-      expect(nodeWide).toHaveLength(0);
-      expect(host.querySelector('[aria-label^="Never sent"]')).toBeNull();
-      expect(host.textContent ?? '').not.toContain('node finished · none of this was sent');
-
-      await act(async () => {
-        renderPane({
-          row: { ...OCC_ROW, status: 'completed' },
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: false,
-          nodeExecutionKey: 'logical-1',
-          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
-          onSelectLiveRow: (): void => undefined,
-        });
-      });
-      await flush();
-      expect(nodeWide).toHaveLength(0);
-      expect(host.querySelector('[aria-label^="Never sent"]')).toBeNull();
-    });
-
-    test('T3.19 terminal request is node-wide without occurrence/attempt', async () => {
-      const nodeWide: { occurrenceId?: string; attemptId?: string }[] = [];
-      const occLoads: { occurrenceId?: string; attemptId?: string }[] = [];
-      const displayRows = [
-        {
-          id: 'd1',
-          seq: 1,
-          kind: 'text' as const,
-          payload: { text: 'display-only' },
-          created_at: CREATED,
-        },
-      ];
-      const loadMessages: NodeMessageLoader = async (_runId, _nodeId, options) => {
-        if (options.occurrenceId !== undefined) {
-          occLoads.push({
-            occurrenceId: options.occurrenceId,
-            attemptId: options.attemptId,
-          });
-          return completePage(displayRows);
-        }
-        nodeWide.push({
-          occurrenceId: options.occurrenceId,
-          attemptId: options.attemptId,
-        });
-        return completePage([]);
-      };
-
-      await act(async () => {
-        renderPane({
-          row: OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: true,
-          nodeExecutionKey: 'logical-1',
-          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
-          onSelectLiveRow: (): void => undefined,
-        });
-      });
-      await flushUntil(host, 'display row', () =>
-        (host.textContent ?? '').includes('display-only')
-      );
-
-      expect(nodeWide.length).toBeGreaterThan(0);
-      for (const call of nodeWide) {
-        expect(call.occurrenceId).toBeUndefined();
-        expect(call.attemptId).toBeUndefined();
-      }
-      expect(occLoads.length).toBeGreaterThan(0);
-      expect(occLoads[0]?.occurrenceId).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
-      expect(occLoads[0]?.attemptId).toBe('11111111-1111-4111-8111-111111111111');
-      expect(host.textContent ?? '').toContain('display-only');
-    });
-
-    test('T3.20 complete absence restores observed receipt', async () => {
-      installQueued([{ message_id: 'id-a', message: 'alpha receipt' }]);
-      const loadMessages: NodeMessageLoader = async (_r, _n, options) => {
-        if (options.occurrenceId !== undefined) return completePage([]);
-        return completePage([]);
-      };
-
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: false,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await waitForText('alpha receipt');
-      expect((host.textContent ?? '').toLowerCase()).toContain('alpha receipt');
-
-      installQueued([]);
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: true,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await flushUntil(host, 'never sent', () =>
-        (host.textContent ?? '').includes('node finished · none of this was sent')
-      );
-      const list = host.querySelector('[aria-label="Never sent, 1"]');
-      expect(list).not.toBeNull();
-      expect(list?.textContent ?? '').toContain('alpha receipt');
-    });
-
-    test('T3.21 written operator row filters finished box', async () => {
-      installQueued([{ message_id: 'id-a', message: 'alpha receipt' }]);
-      const loadMessages: NodeMessageLoader = async (_r, _n, options) => {
-        if (options.occurrenceId !== undefined) return completePage([]);
-        return completePage([operatorText(1, 'id-a', 'alpha receipt')]);
-      };
-
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: false,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await waitForText('alpha receipt');
-
-      installQueued([]);
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: true,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await act(async () => {
-        for (let i = 0; i < 20; i += 1) {
-          await Promise.resolve();
-          const { promise, resolve } = Promise.withResolvers<undefined>();
-          setTimeout(resolve, 25);
-          await promise;
-        }
-      });
-      expect(host.querySelector('[aria-label^="Never sent"]')).toBeNull();
-      expect(host.textContent ?? '').not.toContain('node finished · none of this was sent');
-    });
-
-    test('T3.22 only operator ids count as delivery', async () => {
-      installQueued([{ message_id: 'id-a', message: 'alpha receipt' }]);
-      const loadMessages: NodeMessageLoader = async (_r, _n, options) => {
-        if (options.occurrenceId !== undefined) return completePage([]);
-        return completePage([
-          assistantText(1, 'id-a', 'assistant said id-a'),
-          toolRow(2, 'id-a'),
-          {
-            id: 'm3',
-            seq: 3,
-            kind: 'text',
-            payload: { text: 'malformed' },
-            metadata: { origin: 'operator', message_id: 123 as unknown as string },
-            created_at: CREATED,
-          },
-        ]);
-      };
-
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: false,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await waitForText('alpha receipt');
-
-      installQueued([]);
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: true,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await flushUntil(host, 'never sent despite decoys', () =>
-        (host.textContent ?? '').includes('node finished · none of this was sent')
-      );
-      expect(host.querySelector('[aria-label="Never sent, 1"]')).not.toBeNull();
-    });
-
-    test('T3.23 incomplete/error fails safe and retries', async () => {
-      jest.useFakeTimers({ now: Date.now() });
-      installQueued([{ message_id: 'id-a', message: 'alpha receipt' }]);
-      let nodeWideCalls = 0;
-      const loadMessages: NodeMessageLoader = async (_r, _n, options) => {
-        if (options.occurrenceId !== undefined) return completePage([]);
-        nodeWideCalls += 1;
-        if (nodeWideCalls === 1) {
-          throw new Error('transient transport');
-        }
-        return completePage([]);
-      };
-
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: false,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await waitForText('alpha receipt');
-
-      installQueued([]);
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: true,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await flush();
-      expect(nodeWideCalls).toBe(1);
-      expect(host.querySelector('[aria-label^="Never sent"]')).toBeNull();
-
-      await act(async () => {
-        jest.advanceTimersByTime(1000);
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-      await flushUntil(host, 'retry reconcile', () =>
-        (host.textContent ?? '').includes('node finished · none of this was sent')
-      );
-      expect(nodeWideCalls).toBeGreaterThanOrEqual(2);
-      jest.useRealTimers();
-    });
-
-    test('T3.24 reset aborts stale work; occurrence-only does not', async () => {
-      const pending = deferred<WorkflowNodeMessagesResponse>();
-      let nodeWideStarts = 0;
-      const loadMessages: NodeMessageLoader = async (_r, _n, options) => {
-        if (options.occurrenceId !== undefined) return completePage([]);
-        nodeWideStarts += 1;
-        if (nodeWideStarts === 1) return pending.promise;
-        return completePage([]);
-      };
-
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: true,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await flush();
-      expect(nodeWideStarts).toBe(1);
-
-      // Occurrence-only selection must not reset reconcile drain.
-      const startsBeforeOcc = nodeWideStarts;
-      await act(async () => {
-        renderPane({
-          row: OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: true,
-          nodeExecutionKey: 'logical-1',
-          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
-          onSelectLiveRow: (): void => undefined,
-        });
-      });
-      await flush();
-      expect(nodeWideStarts).toBe(startsBeforeOcc);
-
-      // Execution-key change aborts and starts fresh.
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: true,
-          nodeExecutionKey: 'logical-2',
-        });
-      });
-      await flush();
-      expect(nodeWideStarts).toBe(startsBeforeOcc + 1);
-
-      // Late completion of the aborted first drain must not publish.
-      await act(async () => {
-        pending.resolve(completePage([]));
-      });
-      await flush();
-
-      // Terminal drop clears written ids.
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: false,
-          nodeExecutionKey: 'logical-2',
-        });
-      });
-      await flush();
-      expect(host.querySelector('[aria-label^="Never sent"]')).toBeNull();
-      expect(host.textContent ?? '').not.toContain('node finished · none of this was sent');
-    });
-
-    test('T3.25 same-run/node retry/resume starts fresh on key change', async () => {
-      installQueued([{ message_id: 'id-a', message: 'alpha receipt' }]);
-      const loadMessages: NodeMessageLoader = async () => completePage([]);
-      win.sessionStorage.setItem(
-        'archon:steering-draft:run-1:review',
-        JSON.stringify({ draft: 'keep this draft', pendingRetry: null })
-      );
-
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: false,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await waitForText('alpha receipt');
-      const field = host.querySelector('textarea') as unknown as HTMLTextAreaElement | null;
-      expect(field?.value ?? '').toBe('keep this draft');
-
-      installQueued([]);
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: true,
-          nodeExecutionKey: 'logical-1',
-        });
-      });
-      await flushUntil(host, 'first never sent', () =>
-        (host.textContent ?? '').includes('node finished · none of this was sent')
-      );
-      expect(host.querySelector('[aria-label^="Never sent"]')?.textContent ?? '').toContain(
-        'alpha receipt'
-      );
-
-      // New logical key while already terminal: clears old receipt A.
-      installQueued([]);
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: true,
-          nodeExecutionKey: 'logical-2',
-        });
-      });
-      await flush();
-      await act(async () => {
-        for (let i = 0; i < 15; i += 1) {
-          await Promise.resolve();
-          const { promise, resolve } = Promise.withResolvers<undefined>();
-          setTimeout(resolve, 25);
-          await promise;
-        }
-      });
-      const afterKey = host.querySelector('[aria-label^="Never sent"]');
-      expect(afterKey?.textContent ?? '').not.toContain('alpha receipt');
-
-      // Off terminal: retained draft is editable again for a fresh submit id.
-      await act(async () => {
-        renderPane({
-          row: LIVE_OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: false,
-          nodeExecutionKey: 'logical-2',
-        });
-      });
-      await flush();
-      const draftField = host.querySelector('textarea') as unknown as HTMLTextAreaElement | null;
-      expect(draftField?.value ?? '').toBe('keep this draft');
-    });
-
-    test('T3.26 finished-iteration observer is recovered after overall node evidence', async () => {
-      installQueued([{ message_id: 'id-a', message: 'alpha from finished band' }]);
-      const loadMessages: NodeMessageLoader = async () => completePage([]);
-
-      await act(async () => {
-        renderPane({
-          row: OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: false,
-          nodeExecutionKey: 'logical-1',
-          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
-          onSelectLiveRow: (): void => undefined,
-        });
-      });
-      await waitForText('alpha from finished band');
-
-      installQueued([]);
-      await act(async () => {
-        renderPane({
-          row: OCC_ROW,
-          runStatus: 'running',
-          loadMessages,
-          nodeTerminal: true,
-          nodeExecutionKey: 'logical-1',
-          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
-          onSelectLiveRow: (): void => undefined,
-        });
-      });
-      await flushUntil(host, 'finished-iteration restore', () =>
-        (host.textContent ?? '').includes('node finished · none of this was sent')
-      );
-      const list = host.querySelector('[aria-label="Never sent, 1"]');
-      expect(list).not.toBeNull();
-      expect(list?.textContent ?? '').toContain('alpha from finished band');
     });
   });
 });

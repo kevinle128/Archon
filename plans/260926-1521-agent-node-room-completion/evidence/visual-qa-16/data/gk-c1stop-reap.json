@@ -1,0 +1,1178 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793555502,
+  "end": 1790793565584,
+  "procs": [
+    {
+      "pid": 46704,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793555502,
+      "last": 1790793563171
+    },
+    {
+      "pid": 55832,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793555502,
+      "last": 1790793559069
+    },
+    {
+      "pid": 56137,
+      "cmd": "(node)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 56138,
+      "cmd": "(node)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 56140,
+      "cmd": "(node)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 56142,
+      "cmd": "(node)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 56143,
+      "cmd": "(python3.12)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 56144,
+      "cmd": "(node)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 56145,
+      "cmd": "(uv)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 59658,
+      "cmd": "(bash)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 59659,
+      "cmd": "(git)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 59661,
+      "cmd": "(bash)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 56711,
+      "cmd": "(python3.14)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 57401,
+      "cmd": "(node)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 57345,
+      "cmd": "(node)",
+      "first": 1790793555502,
+      "last": 1790793555502
+    },
+    {
+      "pid": 47016,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793555502,
+      "last": 1790793559377
+    },
+    {
+      "pid": 47021,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793555502,
+      "last": 1790793559377
+    },
+    {
+      "pid": 47024,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793555502,
+      "last": 1790793559377
+    },
+    {
+      "pid": 47025,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793555502,
+      "last": 1790793559377
+    },
+    {
+      "pid": 47028,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793555502,
+      "last": 1790793559377
+    },
+    {
+      "pid": 47030,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793555502,
+      "last": 1790793559377
+    },
+    {
+      "pid": 47031,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793555502,
+      "last": 1790793559377
+    },
+    {
+      "pid": 59079,
+      "cmd": "zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>n",
+      "first": 1790793555502,
+      "last": 1790793555822
+    },
+    {
+      "pid": 59137,
+      "cmd": "sleep 9",
+      "first": 1790793555502,
+      "last": 1790793555822
+    },
+    {
+      "pid": 48515,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793555502,
+      "last": 1790793559377
+    },
+    {
+      "pid": 48235,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793555502,
+      "last": 1790793559377
+    },
+    {
+      "pid": 48467,
+      "cmd": "node context7-mcp",
+      "first": 1790793555502,
+      "last": 1790793559377
+    },
+    {
+      "pid": 59669,
+      "cmd": "<defunct>",
+      "first": 1790793555822,
+      "last": 1790793555822
+    },
+    {
+      "pid": 59672,
+      "cmd": "<defunct>",
+      "first": 1790793556197,
+      "last": 1790793556526
+    },
+    {
+      "pid": 59685,
+      "cmd": "(bash)",
+      "first": 1790793556197,
+      "last": 1790793556197
+    },
+    {
+      "pid": 59686,
+      "cmd": "(bash)",
+      "first": 1790793556197,
+      "last": 1790793556197
+    },
+    {
+      "pid": 59687,
+      "cmd": "(bash)",
+      "first": 1790793556197,
+      "last": 1790793556197
+    },
+    {
+      "pid": 59688,
+      "cmd": "(Python)",
+      "first": 1790793556197,
+      "last": 1790793556197
+    },
+    {
+      "pid": 59704,
+      "cmd": "<defunct>",
+      "first": 1790793556851,
+      "last": 1790793556851
+    },
+    {
+      "pid": 59749,
+      "cmd": "<defunct>",
+      "first": 1790793557165,
+      "last": 1790793557472
+    },
+    {
+      "pid": 59777,
+      "cmd": "<defunct>",
+      "first": 1790793557836,
+      "last": 1790793557836
+    },
+    {
+      "pid": 59867,
+      "cmd": "(bash)",
+      "first": 1790793559377,
+      "last": 1790793559377
+    },
+    {
+      "pid": 59945,
+      "cmd": "<defunct>",
+      "first": 1790793559693,
+      "last": 1790793559996
+    },
+    {
+      "pid": 59968,
+      "cmd": "<defunct>",
+      "first": 1790793560298,
+      "last": 1790793560596
+    },
+    {
+      "pid": 59986,
+      "cmd": "<defunct>",
+      "first": 1790793560901,
+      "last": 1790793560901
+    },
+    {
+      "pid": 60055,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793561213,
+      "last": 1790793565235
+    },
+    {
+      "pid": 60056,
+      "cmd": "<defunct>",
+      "first": 1790793561213,
+      "last": 1790793561520
+    },
+    {
+      "pid": 60061,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793561520,
+      "last": 1790793563171
+    },
+    {
+      "pid": 60062,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793561520,
+      "last": 1790793563171
+    },
+    {
+      "pid": 60101,
+      "cmd": "Python thefuck --alias",
+      "first": 1790793561520,
+      "last": 1790793561520
+    },
+    {
+      "pid": 60102,
+      "cmd": "Python thefuck --alias",
+      "first": 1790793561520,
+      "last": 1790793561520
+    },
+    {
+      "pid": 60108,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793561834,
+      "last": 1790793565235
+    },
+    {
+      "pid": 60109,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793561834,
+      "last": 1790793565235
+    },
+    {
+      "pid": 60110,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793561834,
+      "last": 1790793565235
+    },
+    {
+      "pid": 60111,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793561834,
+      "last": 1790793565235
+    },
+    {
+      "pid": 60112,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793561834,
+      "last": 1790793565235
+    },
+    {
+      "pid": 60114,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793561834,
+      "last": 1790793565235
+    },
+    {
+      "pid": 60115,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793561834,
+      "last": 1790793565235
+    },
+    {
+      "pid": 60143,
+      "cmd": "(bash)",
+      "first": 1790793561834,
+      "last": 1790793561834
+    },
+    {
+      "pid": 60235,
+      "cmd": "(bash)",
+      "first": 1790793561834,
+      "last": 1790793561834
+    },
+    {
+      "pid": 60238,
+      "cmd": "(bash)",
+      "first": 1790793561834,
+      "last": 1790793561834
+    },
+    {
+      "pid": 60240,
+      "cmd": "(sort)",
+      "first": 1790793561834,
+      "last": 1790793561834
+    },
+    {
+      "pid": 60242,
+      "cmd": "(uniq)",
+      "first": 1790793561834,
+      "last": 1790793561834
+    },
+    {
+      "pid": 60142,
+      "cmd": "(bash)",
+      "first": 1790793561834,
+      "last": 1790793561834
+    },
+    {
+      "pid": 60234,
+      "cmd": "(bash)",
+      "first": 1790793561834,
+      "last": 1790793561834
+    },
+    {
+      "pid": 60237,
+      "cmd": "(bash)",
+      "first": 1790793561834,
+      "last": 1790793561834
+    },
+    {
+      "pid": 60239,
+      "cmd": "(sort)",
+      "first": 1790793561834,
+      "last": 1790793561834
+    },
+    {
+      "pid": 60241,
+      "cmd": "(uniq)",
+      "first": 1790793561834,
+      "last": 1790793561834
+    },
+    {
+      "pid": 60122,
+      "cmd": "<defunct>",
+      "first": 1790793561834,
+      "last": 1790793562157
+    },
+    {
+      "pid": 60469,
+      "cmd": "kubectl completion zsh",
+      "first": 1790793562157,
+      "last": 1790793562157
+    },
+    {
+      "pid": 60470,
+      "cmd": "kubectl completion zsh",
+      "first": 1790793562157,
+      "last": 1790793562157
+    },
+    {
+      "pid": 60678,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793562462,
+      "last": 1790793565235
+    },
+    {
+      "pid": 60523,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60619,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60620,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60623,
+      "cmd": "tail -1",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60694,
+      "cmd": "(zsh)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60696,
+      "cmd": "(zsh)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60698,
+      "cmd": "(zsh)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60700,
+      "cmd": "(zsh)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60702,
+      "cmd": "(head)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60707,
+      "cmd": "(tail)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60716,
+      "cmd": "(zsh)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60723,
+      "cmd": "(printf)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60522,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60621,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60624,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60627,
+      "cmd": "tail -1",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60695,
+      "cmd": "(zsh)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60697,
+      "cmd": "(zsh)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60699,
+      "cmd": "(zsh)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60701,
+      "cmd": "(zsh)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60703,
+      "cmd": "(head)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60708,
+      "cmd": "(tail)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60717,
+      "cmd": "(zsh)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60724,
+      "cmd": "(printf)",
+      "first": 1790793562462,
+      "last": 1790793562462
+    },
+    {
+      "pid": 60874,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793562832,
+      "last": 1790793565235
+    },
+    {
+      "pid": 61089,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61114,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61136,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61156,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61175,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61196,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61213,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61232,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61249,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61268,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61286,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61307,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61325,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61344,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61363,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61382,
+      "cmd": "git rev-list --count 01846f4c7c708ec335941944c29272516a97ee2",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61407,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61444,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61464,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61483,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61505,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61525,
+      "cmd": "<defunct>",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61544,
+      "cmd": "(git)",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61562,
+      "cmd": "(git)",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61584,
+      "cmd": "(git)",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 60972,
+      "cmd": "node context7-mcp",
+      "first": 1790793562832,
+      "last": 1790793565235
+    },
+    {
+      "pid": 61022,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61032,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61034,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61037,
+      "cmd": "tail -1",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61378,
+      "cmd": "(zsh)",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61585,
+      "cmd": "(zsh)",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61589,
+      "cmd": "(printf)",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61027,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61040,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61041,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61044,
+      "cmd": "tail -1",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61406,
+      "cmd": "(zsh)",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61597,
+      "cmd": "(zsh)",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 61603,
+      "cmd": "(printf)",
+      "first": 1790793562832,
+      "last": 1790793562832
+    },
+    {
+      "pid": 62378,
+      "cmd": "(env)",
+      "first": 1790793563171,
+      "last": 1790793563171
+    },
+    {
+      "pid": 62399,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793563488,
+      "last": 1790793565235
+    },
+    {
+      "pid": 62412,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793563818,
+      "last": 1790793565235
+    },
+    {
+      "pid": 62413,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793563818,
+      "last": 1790793565235
+    },
+    {
+      "pid": 62487,
+      "cmd": "bash jenv-init -",
+      "first": 1790793563818,
+      "last": 1790793563818
+    },
+    {
+      "pid": 62544,
+      "cmd": "(bash)",
+      "first": 1790793563818,
+      "last": 1790793563818
+    },
+    {
+      "pid": 62486,
+      "cmd": "bash jenv-init -",
+      "first": 1790793563818,
+      "last": 1790793563818
+    },
+    {
+      "pid": 62541,
+      "cmd": "(bash)",
+      "first": 1790793563818,
+      "last": 1790793563818
+    },
+    {
+      "pid": 62543,
+      "cmd": "(bash)",
+      "first": 1790793563818,
+      "last": 1790793563818
+    },
+    {
+      "pid": 62545,
+      "cmd": "(bash)",
+      "first": 1790793563818,
+      "last": 1790793563818
+    },
+    {
+      "pid": 62560,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793564145,
+      "last": 1790793565235
+    },
+    {
+      "pid": 62564,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793564145,
+      "last": 1790793565235
+    },
+    {
+      "pid": 62565,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793564145,
+      "last": 1790793565235
+    },
+    {
+      "pid": 62568,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793564145,
+      "last": 1790793565235
+    },
+    {
+      "pid": 62569,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793564145,
+      "last": 1790793565235
+    },
+    {
+      "pid": 62571,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793564145,
+      "last": 1790793565235
+    },
+    {
+      "pid": 62577,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793564145,
+      "last": 1790793565235
+    },
+    {
+      "pid": 62667,
+      "cmd": "(bash)",
+      "first": 1790793564145,
+      "last": 1790793564145
+    },
+    {
+      "pid": 62669,
+      "cmd": "(bash)",
+      "first": 1790793564145,
+      "last": 1790793564145
+    },
+    {
+      "pid": 62731,
+      "cmd": "(bash)",
+      "first": 1790793564145,
+      "last": 1790793564145
+    },
+    {
+      "pid": 62920,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793564547,
+      "last": 1790793564909
+    },
+    {
+      "pid": 62921,
+      "cmd": "(zsh)",
+      "first": 1790793564547,
+      "last": 1790793564547
+    },
+    {
+      "pid": 63004,
+      "cmd": "(zsh)",
+      "first": 1790793564547,
+      "last": 1790793564547
+    },
+    {
+      "pid": 63005,
+      "cmd": "(zsh)",
+      "first": 1790793564547,
+      "last": 1790793564547
+    },
+    {
+      "pid": 63009,
+      "cmd": "(sed)",
+      "first": 1790793564547,
+      "last": 1790793564547
+    },
+    {
+      "pid": 63007,
+      "cmd": "(zsh)",
+      "first": 1790793564547,
+      "last": 1790793564547
+    },
+    {
+      "pid": 63010,
+      "cmd": "(printf)",
+      "first": 1790793564547,
+      "last": 1790793564547
+    },
+    {
+      "pid": 62935,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793564547,
+      "last": 1790793564909
+    },
+    {
+      "pid": 62936,
+      "cmd": "(zsh)",
+      "first": 1790793564547,
+      "last": 1790793564547
+    },
+    {
+      "pid": 63006,
+      "cmd": "(zsh)",
+      "first": 1790793564547,
+      "last": 1790793564547
+    },
+    {
+      "pid": 63008,
+      "cmd": "(printf)",
+      "first": 1790793564547,
+      "last": 1790793564547
+    },
+    {
+      "pid": 63390,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793564909,
+      "last": 1790793565235
+    },
+    {
+      "pid": 63067,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793564909,
+      "last": 1790793565235
+    },
+    {
+      "pid": 63026,
+      "cmd": "(zsh)",
+      "first": 1790793564909,
+      "last": 1790793564909
+    },
+    {
+      "pid": 63027,
+      "cmd": "(zsh)",
+      "first": 1790793564909,
+      "last": 1790793564909
+    },
+    {
+      "pid": 63028,
+      "cmd": "(tail)",
+      "first": 1790793564909,
+      "last": 1790793564909
+    },
+    {
+      "pid": 63321,
+      "cmd": "(node)",
+      "first": 1790793564909,
+      "last": 1790793564909
+    },
+    {
+      "pid": 63038,
+      "cmd": "(zsh)",
+      "first": 1790793564909,
+      "last": 1790793564909
+    },
+    {
+      "pid": 63040,
+      "cmd": "(zsh)",
+      "first": 1790793564909,
+      "last": 1790793564909
+    },
+    {
+      "pid": 63043,
+      "cmd": "(tail)",
+      "first": 1790793564909,
+      "last": 1790793564909
+    },
+    {
+      "pid": 63328,
+      "cmd": "(node)",
+      "first": 1790793564909,
+      "last": 1790793564909
+    },
+    {
+      "pid": 63456,
+      "cmd": "node context7-mcp",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64428,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64471,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64476,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01%s\\x01' \"$",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64483,
+      "cmd": "tail -1",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64608,
+      "cmd": "(zsh)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64609,
+      "cmd": "(zsh)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64610,
+      "cmd": "(zsh)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64611,
+      "cmd": "(zsh)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64613,
+      "cmd": "(head)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64614,
+      "cmd": "(tail)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64612,
+      "cmd": "(zsh)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64615,
+      "cmd": "(zsh)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64621,
+      "cmd": "(zsh)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64470,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64514,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64518,
+      "cmd": "zsh -lc source \"$HOME/.zshrc\" 2>null; printf '\\x01'; { built",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64526,
+      "cmd": "tail -1",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64616,
+      "cmd": "(zsh)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64618,
+      "cmd": "(zsh)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64619,
+      "cmd": "(zsh)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    },
+    {
+      "pid": 64620,
+      "cmd": "(zsh)",
+      "first": 1790793565235,
+      "last": 1790793565235
+    }
+  ]
+}

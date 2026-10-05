@@ -1,13 +1,22 @@
 /**
- * Sticky execution header for the legacy run room: node identity, execution
- * switcher, runtime fields, and Close. Null provider/model/start/duration stay
- * off the chrome so a missing field never renders a placeholder.
+ * Sticky execution header for the legacy run room: node identity on line 1,
+ * runtime facts on line 2, and the execution picker on line 3 when the node
+ * has more than one execution to choose from. Null provider/model/start,
+ * duration, and retry-count stay off the chrome so a missing field never
+ * renders a placeholder.
  */
-import type { ExecutionHeaderModel } from '@/lib/execution-room-model';
-import { formatDurationMs } from '@/lib/format';
-import { cn } from '@/lib/utils';
+import type { CSSProperties } from 'react';
 
-import { nodeStatusLabel } from './awaiting-chrome';
+import {
+  effectiveNodeRoomStatus,
+  headerMetaLine,
+  statusPill,
+  type ExecutionHeaderModel,
+  type NodeKindChip,
+  type RunOfTotal,
+} from '@/lib/execution-room-model';
+import type { SteeringNodeOutcome } from '@/lib/steering-dock';
+import { cn } from '@/lib/utils';
 
 export interface ExecutionHeaderOption {
   rowId: string;
@@ -21,26 +30,68 @@ export interface NodeRoomHeaderProps {
   onSelectRow: (rowId: string) => void;
   onClose: () => void;
   closeLabel?: 'Close' | 'Back';
+  /** Node-kind chip for line 1, or null when the kind has no established token. */
+  kindChip: NodeKindChip | null;
+  /** Uncapped execution total for this node, for the "of N" (and, on a loop, "· max N") caption. */
+  executionCount: number;
+  /** Retry position/count for the selected row, or null when it never retried. */
+  runOfTotal?: RunOfTotal | null;
+  /** Latest terminal execution failed for idle-await expiry. Default false. */
+  idleAwaitExpired?: boolean;
+  /** Set only when viewing a finished iteration while the node runs live elsewhere. */
+  iterationPrefix?: number | null;
+  /** Server-reported restart recovery for the selected row. Default false. */
+  recoveryRequired?: boolean;
+  /**
+   * The node's own settled outcome, from the steering dock's own terminal
+   * reconciliation — folded onto `model.status` before either the pill or
+   * the meta line reads it, so a still-`running`/`awaiting` row status never
+   * outlives the proven outcome. Null/undefined leaves `model.status`
+   * unchanged.
+   */
+  terminalOutcome?: SteeringNodeOutcome | null;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-accent/20 text-accent',
-  running: 'bg-accent/20 text-accent',
-  awaiting: 'bg-warning/20 text-warning',
-  completed: 'bg-success/20 text-success',
-  failed: 'bg-error/20 text-error',
-  skipped: 'bg-surface text-text-secondary',
-  cancelled: 'bg-surface text-text-secondary',
+interface StatusPillStyle {
+  className: string;
+  style: CSSProperties;
+}
+
+// `--running` has no Legacy equivalent in index.css (it is Console-only, in
+// theme.css) — `--accent-bright` is Legacy's own bright blue, already used
+// for this exact tone's border, and is the nearest existing token to it.
+// Every tone renders 10px/700 with no dot, matching the mockup room header
+// pill (measured against the live mockup, not the run-level page header
+// pill it was once confused with). `lineHeight: 'normal'` matches the
+// mockup's pill exactly: the mockup's own markup sets no line-height on the
+// pill, so the browser's own default for its font wins there (measured 18px
+// tall); without this override the inherited cascade left the app's pill at
+// 21px. The border colors are the mockup's own flat, per-tone literals — a
+// solid color, not an alpha-blend of the bright accent over the surface —
+// so they render exactly the same regardless of what's behind the pill.
+const STATUS_PILL_STYLE: Readonly<Record<string, StatusPillStyle>> = {
+  accent: {
+    className: 'text-[10px] font-bold text-accent-bright',
+    style: { borderColor: 'var(--status-pill-border-running)', lineHeight: 'normal' },
+  },
+  warning: {
+    className: 'text-[10px] font-bold text-warning',
+    style: { borderColor: 'var(--status-pill-border-warning)', lineHeight: 'normal' },
+  },
+  success: {
+    className: 'text-[10px] font-bold text-success',
+    style: { borderColor: 'var(--status-pill-border-success)', lineHeight: 'normal' },
+  },
+  error: {
+    className: 'text-[10px] font-bold text-error',
+    style: { borderColor: 'var(--status-pill-border-error)', lineHeight: 'normal' },
+  },
 };
 
-function headerStatusLabel(status: string): string {
-  return status === 'awaiting' ? nodeStatusLabel('awaiting') : status;
-}
-
-function startedOffsetLabel(startedOffsetMs: number | null): string | null {
-  if (startedOffsetMs === null) return null;
-  return `+${formatDurationMs(startedOffsetMs)}`;
-}
+const NEUTRAL_PILL_STYLE: StatusPillStyle = {
+  className: 'text-[10px] font-bold text-text-secondary',
+  style: { borderColor: 'var(--border)', lineHeight: 'normal' },
+};
 
 export function NodeRoomHeader({
   model,
@@ -49,58 +100,95 @@ export function NodeRoomHeader({
   onSelectRow,
   onClose,
   closeLabel = 'Close',
+  kindChip,
+  executionCount,
+  runOfTotal = null,
+  idleAwaitExpired = false,
+  iterationPrefix = null,
+  recoveryRequired = false,
+  terminalOutcome = null,
 }: NodeRoomHeaderProps): React.ReactElement {
-  const started = startedOffsetLabel(model.startedOffsetMs);
-  const duration = model.durationMs === null ? null : formatDurationMs(model.durationMs);
-  const statusClass = STATUS_COLORS[model.status] ?? 'bg-surface text-text-secondary';
+  const effectiveStatus = effectiveNodeRoomStatus(model.status, terminalOutcome);
+  const pill = statusPill(effectiveStatus, recoveryRequired);
+  const pillStyle = pill.tone === null ? NEUTRAL_PILL_STYLE : STATUS_PILL_STYLE[pill.tone];
+  const metaLine = headerMetaLine({
+    startedAt: model.startedAt,
+    status: effectiveStatus,
+    durationMs: model.durationMs,
+    runOfTotal,
+    provider: model.provider,
+    model: model.model,
+    idleAwaitExpired,
+    statusReason: model.statusReason,
+    waitingOnOperator: model.waitingOnOperator,
+    iterationPrefix,
+    recoveryRequired,
+  });
 
   return (
-    <header className="sticky top-0 z-10 min-w-0 overflow-hidden border-b border-border bg-surface">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2">
-        <div className="min-w-[8rem] flex-1 truncate text-sm font-medium text-text-primary">
-          {model.nodeLabel}
+    <header className="sticky top-0 z-10 min-w-0 overflow-hidden border-b border-border bg-background">
+      <div className="flex min-w-0 flex-col gap-2 px-8 py-4">
+        <div className="flex min-w-0 items-center gap-2">
+          {kindChip !== null ? (
+            <span className="shrink-0 font-mono text-xs font-normal text-text-tertiary">
+              {kindChip.label}
+            </span>
+          ) : null}
+          <div className="min-w-0 truncate text-xl font-medium text-text-primary">
+            {model.nodeLabel}
+          </div>
+          <span
+            className={cn(
+              'inline-flex shrink-0 items-center rounded-full border px-2 py-0.5',
+              pillStyle.className
+            )}
+            style={pillStyle.style}
+          >
+            {pill.label}
+          </span>
+          <button
+            type="button"
+            aria-label={closeLabel}
+            className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center rounded-[10px] text-[13px] text-text-tertiary transition-colors duration-150 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
+            onClick={onClose}
+          >
+            ✕
+          </button>
         </div>
-        <div className="shrink-0 text-xs text-text-secondary">{model.executionLabel}</div>
-        <select
-          aria-label="Execution"
-          className="min-w-0 max-w-[10rem] flex-[0_1_10rem] truncate rounded border border-border bg-surface-elevated px-2 py-0.5 text-xs text-text-primary"
-          value={selectedRowId}
-          onChange={(event): void => {
-            onSelectRow(event.currentTarget.value);
-          }}
-        >
-          {options.map(option => (
-            <option key={option.rowId} value={option.rowId}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <span className={cn('rounded-full px-2 py-0.5 text-xs', statusClass)}>
-          {headerStatusLabel(model.status)}
-        </span>
-        {started !== null ? (
-          <span className="shrink-0 text-xs text-text-secondary">{started}</span>
+        {metaLine !== null ? (
+          <div className="truncate text-xs text-text-tertiary">{metaLine}</div>
         ) : null}
-        {duration !== null ? (
-          <span className="shrink-0 text-xs text-text-secondary">{duration}</span>
+        {options.length > 1 || model.isLoopIteration ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="shrink-0 text-[10.5px] text-text-tertiary">execution</span>
+            {options.length > 1 ? (
+              <>
+                <select
+                  aria-label="Execution"
+                  className="min-w-0 max-w-[12rem] flex-[0_1_12rem] truncate rounded border border-border bg-surface-elevated px-1.5 py-0.5 text-xs text-text-primary"
+                  value={selectedRowId}
+                  onChange={(event): void => {
+                    onSelectRow(event.currentTarget.value);
+                  }}
+                >
+                  {options.map(option => (
+                    <option key={option.rowId} value={option.rowId}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="shrink-0 text-[10.5px] text-text-tertiary">
+                  of {executionCount}
+                  {model.loopMaxIterations !== null
+                    ? ` · max ${String(model.loopMaxIterations)}`
+                    : ''}
+                </span>
+              </>
+            ) : (
+              <span className="shrink-0 text-xs text-text-primary">{model.executionLabel}</span>
+            )}
+          </div>
         ) : null}
-        {model.provider !== null ? (
-          <span className="min-w-0 max-w-[10rem] truncate text-xs text-text-secondary">
-            {model.provider}
-          </span>
-        ) : null}
-        {model.model !== null ? (
-          <span className="min-w-0 max-w-[12rem] truncate text-xs text-text-secondary">
-            {model.model}
-          </span>
-        ) : null}
-        <button
-          type="button"
-          className="ml-auto shrink-0 text-xs text-primary hover:text-accent-bright"
-          onClick={onClose}
-        >
-          {closeLabel}
-        </button>
       </div>
     </header>
   );

@@ -12,6 +12,7 @@ import type {
   WorkflowNodeMessageResponse,
   WorkflowNodeMessagesResponse,
 } from '@/lib/api';
+import type { ExecutionHeaderModel } from '@/lib/execution-room-model';
 import * as toolPresentation from '@/lib/tool-presentation';
 import type { WorkflowRunStatus } from '@/lib/types';
 
@@ -512,7 +513,7 @@ describe('LegacyNodeRoom static rooms', () => {
       ],
     });
     expect(markup).toContain('Open child run');
-    expect(markup).toContain('href="/legacy/workflows/runs/child-1"');
+    expect(markup).toContain('href="/workflows/runs/child-1"');
     expect(markup).not.toContain('child-old');
     expect(markup).toContain('Workflow');
     expect(markup.match(/role="region"/g)?.length).toBe(1);
@@ -736,9 +737,15 @@ describe('LegacyNodeRoom dispatcher', () => {
     nodeTerminal?: boolean;
     idleAwaitExpired?: boolean;
     nodeExecutionKey?: string | null;
-    writtenOperatorMessageIds?: ReadonlySet<string> | null;
     scopeKey?: string;
     finishedIteration?: { liveRowId: string; liveIteration: number } | null;
+    /** Rendering the real `NodeRoomHeader` (with the recovery pill) needs
+     * all three of `headerModel`/`onSelectRow`/`onClose`; omitting
+     * `headerModel` keeps the fallback plain header used by every other
+     * test in this file. */
+    headerModel?: ExecutionHeaderModel;
+    onClose?: () => void;
+    onRunSettleHint?: () => void;
   }): void {
     root.render(
       createElement(
@@ -765,16 +772,39 @@ describe('LegacyNodeRoom dispatcher', () => {
           nodeTerminal: args.nodeTerminal,
           idleAwaitExpired: args.idleAwaitExpired,
           nodeExecutionKey: args.nodeExecutionKey,
-          writtenOperatorMessageIds: args.writtenOperatorMessageIds,
           scopeKey: args.scopeKey,
           finishedIteration: args.finishedIteration,
+          headerModel: args.headerModel,
+          onClose:
+            args.onClose ?? (args.headerModel === undefined ? undefined : (): void => undefined),
+          onRunSettleHint: args.onRunSettleHint,
           onSelectRow:
-            args.finishedIteration === undefined || args.finishedIteration === null
-              ? undefined
-              : (): void => undefined,
+            args.headerModel !== undefined ||
+            (args.finishedIteration !== undefined && args.finishedIteration !== null)
+              ? (): void => undefined
+              : undefined,
         })
       )
     );
+  }
+
+  function headerModelFor(status: string): ExecutionHeaderModel {
+    return {
+      nodeId: 'review',
+      nodeLabel: 'Review',
+      executionLabel: 'Review',
+      status,
+      statusReason: null,
+      waitingOnOperator: false,
+      startedOffsetMs: null,
+      startedAt: null,
+      durationMs: null,
+      provider: null,
+      model: null,
+      unknownScope: false,
+      isLoopIteration: false,
+      loopMaxIterations: null,
+    };
   }
 
   const bashEvents: readonly WorkflowEventResponse[] = [
@@ -1165,8 +1195,8 @@ describe('LegacyNodeRoom dispatcher', () => {
     const strip = host.querySelector('section[aria-label="Todo"]');
     const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
     if (scroller === null) throw new Error('missing transcript scroller');
-    expect(region.firstElementChild).toBe(strip);
-    expect(strip?.nextElementSibling).toBe(scroller);
+    expect(region.firstElementChild).toBe(scroller);
+    expect(scroller.nextElementSibling).toBe(strip);
     expect(scroller.getAttribute('class')).toContain('overflow-y-auto');
     expect(scroller.querySelectorAll('[role="region"]')).toHaveLength(0);
     expect(strip?.textContent).toContain('0/4');
@@ -1253,7 +1283,7 @@ describe('LegacyNodeRoom dispatcher', () => {
     return null;
   }
 
-  test('T3.15 pass-through pins nodeTerminal and nodeExecutionKey on the dock', async () => {
+  test('pass-through pins nodeTerminal and nodeExecutionKey on the dock', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -1267,7 +1297,15 @@ describe('LegacyNodeRoom dispatcher', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -1292,9 +1330,11 @@ describe('LegacyNodeRoom dispatcher', () => {
         await Promise.resolve();
       });
 
-      const field = host.querySelector('textarea');
-      // Terminal + no written ids yet keeps composer until reconcile; still pin dock props.
-      const start = field ?? host;
+      // Terminal with nothing undelivered hides the composer outright — search
+      // from the room's own wrapper, which renders regardless of dock mode,
+      // to confirm the props still reached the dock.
+      const start = host.querySelector('[aria-label="command room"]');
+      if (start === null) throw new Error('command room wrapper missing');
       const props = findPropsWithKey(start, 'nodeTerminal');
       expect(props).not.toBeNull();
       expect(props?.nodeTerminal).toBe(true);
@@ -1304,7 +1344,7 @@ describe('LegacyNodeRoom dispatcher', () => {
     }
   });
 
-  test('T4.16 pass-through pins idleAwaitExpired on the dock', async () => {
+  test('pass-through pins idleAwaitExpired on the dock', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -1318,7 +1358,15 @@ describe('LegacyNodeRoom dispatcher', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -1344,8 +1392,8 @@ describe('LegacyNodeRoom dispatcher', () => {
         await Promise.resolve();
       });
 
-      const field = host.querySelector('textarea');
-      const start = field ?? host;
+      const start = host.querySelector('[aria-label="command room"]');
+      if (start === null) throw new Error('command room wrapper missing');
       const props = findPropsWithKey(start, 'idleAwaitExpired');
       expect(props).not.toBeNull();
       expect(props?.idleAwaitExpired).toBe(true);
@@ -1356,9 +1404,210 @@ describe('LegacyNodeRoom dispatcher', () => {
     }
   });
 
-  test('T3.17 occurrence switch keeps observed receipt under stable run/node dock key', async () => {
-    let queued: { message_id: string; message: string }[] = [
-      { message_id: 'id-a', message: 'alpha receipt' },
+  // A node ending naturally (or via Abandon) settles this room's own dock
+  // to `finished` routinely BEFORE the cached run entity (refreshed by SSE
+  // or a slower heartbeat) catches up to a terminal status — the ordinary
+  // case on every clean completion, not only a restart-recovered node. The
+  // server never reports `recovery_required` for an already-finished node,
+  // so this gap must never be misread as recovery: the pill stays silent on
+  // that claim, and the composer that has nothing left to send hides instead
+  // of staying live. The room still signals its host to refetch the run on
+  // that same edge, so the header can settle to the durable outcome the
+  // instant that refetch lands.
+  test('a dock read reporting finished never claims recovery and signals a run settle hint', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'finished',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                  sub_state: null,
+                }
+              : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const { loadMessages } = createLoadMessages();
+      let settleHints = 0;
+      // The run entity is still `running` at the exact moment this room's own
+      // dock learns the node settled — mirroring the real gap.
+      await act(async () => {
+        renderRoom({
+          row: COMMAND_ROW,
+          loadMessages,
+          definitionNodes: [{ id: 'command', command: 'review' }],
+          runStatus: 'running',
+          headerModel: headerModelFor('running'),
+          onRunSettleHint: (): void => {
+            settleHints += 1;
+          },
+        });
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(host.textContent).not.toContain('Recovery required');
+      expect(host.querySelector('textarea')).toBeNull();
+      expect(settleHints).toBeGreaterThan(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  // Same gap as the settle-hint test above, but this time the header's own
+  // `status` prop (fed by a separately-cadenced run/row poll) has not
+  // caught up to a terminal value AT ALL — it still reads `running`. The
+  // dock's own queue read now also carries the node's settled outcome
+  // (`node_outcome`), and the pill must show that real outcome instead of
+  // `Running`, the instant this dock's own read reports it — never waiting
+  // on the run settle hint's own refetch to land first.
+  test('the pill never shows Running once this dock reports the node terminal, even while row status is stale', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'finished',
+                  node_outcome: 'failed',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                  sub_state: null,
+                }
+              : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const { loadMessages } = createLoadMessages();
+      await act(async () => {
+        renderRoom({
+          row: COMMAND_ROW,
+          loadMessages,
+          definitionNodes: [{ id: 'command', command: 'review' }],
+          // The row's own status and the run's own status both stay
+          // `running` for this whole test — only the dock's own queue read
+          // ever reports the node as terminal.
+          runStatus: 'running',
+          headerModel: headerModelFor('running'),
+        });
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(host.textContent).not.toContain('Running');
+      expect(host.textContent).toContain('Failed');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  // The literal server-reported `recovery_required` signal (a restart with
+  // no live process behind this node) is the one and only source for the
+  // pill — never inferred from any gap between two independently-cadenced
+  // reads.
+  test('the pill claims recovery only for the literal server-reported signal', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'recovery_required',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                  sub_state: null,
+                }
+              : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const { loadMessages } = createLoadMessages();
+      await act(async () => {
+        renderRoom({
+          row: COMMAND_ROW,
+          loadMessages,
+          definitionNodes: [{ id: 'command', command: 'review' }],
+          runStatus: 'running',
+          headerModel: headerModelFor('running'),
+        });
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(host.textContent).toContain('Recovery required');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('occurrence switch keeps observed receipt under stable run/node dock key', async () => {
+    let queued: {
+      message_id: string;
+      message: string;
+      operator_user_id: string | null;
+      state: string;
+    }[] = [
+      { message_id: 'id-a', message: 'alpha receipt', operator_user_id: null, state: 'queued' },
     ];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -1371,10 +1620,19 @@ describe('LegacyNodeRoom dispatcher', () => {
         pathname = raw.split('?')[0] ?? raw;
       }
       if (method === 'GET' && pathname.endsWith('/queue')) {
-        return new Response(JSON.stringify({ success: true, queued }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            execution_state: 'live',
+            auto_send: false,
+            capabilities: { soft_injection: false, delivery_ack: false },
+            queued,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
       }
       if (method === 'GET' && pathname.includes('/messages')) {
         return new Response(JSON.stringify({ messages: [] }), {
@@ -1432,8 +1690,17 @@ describe('LegacyNodeRoom dispatcher', () => {
       });
       expect((host.textContent ?? '').toLowerCase()).toContain('alpha receipt');
 
-      // Switch to the finished occurrence; empty later snapshot must not erase A.
-      queued = [];
+      // Switch to the finished occurrence. The executor's own terminal
+      // reconcile is what flips a durable row to `never_sent` server-side —
+      // simulate that here rather than expecting the client to remember.
+      queued = [
+        {
+          message_id: 'id-a',
+          message: 'alpha receipt',
+          operator_user_id: null,
+          state: 'never_sent',
+        },
+      ];
       await act(async () => {
         renderRoom({
           row: occ1Row,

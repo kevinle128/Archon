@@ -1,0 +1,113 @@
+{
+  "R": "857c86ca6d6e1f8ea0cb1d1239a8b0c3",
+  "sd": "l",
+  "dl": 100,
+  "send": {
+    "clicked": 1790728979674,
+    "sendResolved": 1790728979701,
+    "st": 200,
+    "url": "/api/workflows/runs/857c86ca6d6e1f8ea0cb1d1239a8b0c3/nodes/fake-node/send",
+    "body": "{\"success\":true,\"message_id\":\"791ea98b-69f1-4d1c-9791-465c5ae6d956\",\"state\":\"awaiting_send_now\"}"
+  },
+  "gets": [
+    { "s": "l", "t": -1817, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "l", "t": -1817, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "l", "t": -1814, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -1620, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -866, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "l", "t": -810, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -617, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -320, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "l", "t": -320, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "l", "t": -309, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": 3, "k": "q", "es": "live", "no": null, "n": 2 },
+    { "s": "c", "t": 161, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "l", "t": 172, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 179, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 179, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "l", "t": 198, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "l", "t": 198, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "c", "t": 271, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "c", "t": 284, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "l", "t": 1192, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 1193, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 1193, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 1193, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 2692, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 2692, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 2692, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 2692, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 4194, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 4194, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 4194, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 4195, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 5695, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 5695, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 5695, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 5696, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 7193, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 7194, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 7194, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 7194, "k": "r", "st": "completed", "ns": "fake-node:completed" }
+  ],
+  "status": "completed",
+  "nodeDone": ["2026-09-30 00:42:59"],
+  "q": [
+    {
+      "message_id": "ab3c5265-2dc1-4b5b-8d01-7d285fc77c69",
+      "message": "FIN20-Q1 queued item",
+      "operator_user_id": "3a7535c4721e32049e37249603dc7807",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    },
+    {
+      "message_id": "791ea98b-69f1-4d1c-9791-465c5ae6d956",
+      "message": "FIN20 typed redirect <<E2E_SCENARIO>>{\"delayMs\":100}<</E2E_SCENARIO>>",
+      "operator_user_id": "3a7535c4721e32049e37249603dc7807",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    }
+  ],
+  "c": [
+    [-28, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [173, "SENDING · 1|Running|agent generating|0"],
+    [181, "|Running|agent generating|0"],
+    [278, "|Completed||0"]
+  ],
+  "l": [
+    [-27, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [-3, "SENDING · 2|Running|agent idle · Send now delivers|0"],
+    [8, "SENDING · 2|Running|agent generating|0"],
+    [196, "SENDING · 2|Completed||0"],
+    [206, "|Completed||0"]
+  ],
+  "tc": [
+    [-28, "Running||delete,Send|TA|WILL SEND · 1|agent idle · Send now delivers|0|-1"],
+    [173, "Running||Stop,Queue|TA|SENDING · 1|agent generating|0|-1"],
+    [181, "Running||Stop,Queue|TA||agent generating|0|-1"],
+    [278, "Completed||||||0|-1"]
+  ],
+  "tl": [
+    [-26, "Running||delete,Send|TA|WILL SEND · 1|agent idle · Send now delivers|0|-1"],
+    [-3, "Running||Send|TA|SENDING · 2|agent idle · Send now delivers|0|-1"],
+    [8, "Running||Stop,Queue|TA|SENDING · 2|agent generating|0|-1"],
+    [196, "Completed||||SENDING · 2||0|-1"],
+    [206, "Completed||||||0|-1"]
+  ],
+  "es": {
+    "c": [
+      [-5698, "new"],
+      [-5678, "open"]
+    ],
+    "l": [
+      [-4066, "new"],
+      [-4066, "close"],
+      [-4066, "new"],
+      [-4061, "open"]
+    ]
+  }
+}

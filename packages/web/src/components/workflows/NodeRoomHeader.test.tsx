@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Root } from 'react-dom/client';
 
 import type { ExecutionHeaderModel } from '@/lib/execution-room-model';
-import { installHappyDom, restoreHappyDom } from '@/experiments/console/test/install-happy-dom';
+import { installHappyDom, restoreHappyDom } from '@/test/install-happy-dom';
 
 const react = await import('react');
 const reactDomClient = await import('react-dom/client');
@@ -18,12 +18,23 @@ const ITERATION_TWO: ExecutionHeaderModel = {
   nodeLabel: 'Review',
   executionLabel: 'Iteration 2',
   status: 'running',
+  statusReason: null,
+  waitingOnOperator: false,
   startedOffsetMs: 1500,
+  startedAt: '2026-09-08T04:52:00.000Z',
   durationMs: null,
   provider: 'openai',
   model: 'gpt-5',
   unknownScope: false,
+  isLoopIteration: false,
+  loopMaxIterations: null,
 };
+
+function closeButton(host: Element): Element {
+  const button = host.querySelector('button[aria-label="Close"]');
+  if (button === null) throw new Error('missing Close button');
+  return button;
+}
 
 describe('NodeRoomHeader', () => {
   let win: ReturnType<typeof installHappyDom>;
@@ -48,14 +59,14 @@ describe('NodeRoomHeader', () => {
     restoreHappyDom();
   });
 
-  test('renders iteration header fields and reports select plus close', async () => {
+  test('renders the node-kind chip, name, status pill, meta line, and execution picker', async () => {
     const selected: string[] = [];
     const closes: number[] = [];
 
     await act(async () => {
       root.render(
         createElement(nodeRoomHeader.NodeRoomHeader, {
-          model: ITERATION_TWO,
+          model: { ...ITERATION_TWO, loopMaxIterations: 8 },
           options: [
             { rowId: 'iter-1', label: 'Iteration 1' },
             { rowId: 'iter-2', label: 'Iteration 2' },
@@ -67,19 +78,25 @@ describe('NodeRoomHeader', () => {
           onClose: (): void => {
             closes.push(1);
           },
+          kindChip: { label: 'loop', tone: 'node-loop' },
+          executionCount: 3,
+          runOfTotal: { run: 2, total: 2 },
         })
       );
     });
 
     const text = host.textContent ?? '';
+    expect(text).toContain('loop');
     expect(text).toContain('Review');
-    expect(text).toContain('Iteration 2');
-    expect(text).toContain('running');
-    expect(text).toContain('+1.5s');
+    expect(text).toContain('Running');
+    expect(text).toContain('started');
+    expect(text).toContain('running…');
+    expect(text).toContain('run 2 of 2');
+    expect(text).toContain('execution');
+    expect(text).toContain('of 3 · max 8');
     expect(text).toContain('openai');
     expect(text).toContain('gpt-5');
     expect(text).not.toContain('—');
-    expect(text).not.toContain('duration');
     expect(host.querySelector('header')).not.toBeNull();
 
     const select = host.querySelector('select[aria-label="Execution"]');
@@ -95,25 +112,97 @@ describe('NodeRoomHeader', () => {
     });
     expect(selected).toEqual(['iter-1']);
 
-    const close = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Close')
-    );
-    if (close === undefined) {
-      throw new Error('missing Close button');
-    }
     await act(async () => {
-      close.click();
+      closeButton(host).dispatchEvent(
+        new win.Event('click', { bubbles: true }) as unknown as Event
+      );
     });
     expect(closes).toEqual([1]);
   });
 
-  test('omits provider, model, start, and duration when those fields are null', async () => {
+  test('the running pill carries the bright-blue accent token, not text-accent, and no dot', async () => {
+    await act(async () => {
+      root.render(
+        createElement(nodeRoomHeader.NodeRoomHeader, {
+          model: { ...ITERATION_TWO, status: 'running' },
+          options: [],
+          selectedRowId: 'iter-2',
+          onSelectRow: (): void => undefined,
+          onClose: (): void => undefined,
+          kindChip: null,
+          executionCount: 1,
+        })
+      );
+    });
+
+    const pill = Array.from(host.querySelectorAll('span')).find(
+      el => el.textContent?.trim() === 'Running'
+    );
+    if (pill === undefined) throw new Error('missing Running pill');
+    expect(pill.className).toContain('text-accent-bright');
+    expect(pill.className).not.toContain('text-accent ');
+    expect(pill.className).toContain('text-[10px]');
+    expect(pill.className).toContain('font-bold');
+    expect(pill.querySelector('span[aria-hidden]')).toBeNull();
+    // Matches the mockup pill exactly: no explicit line-height override, so
+    // the browser's own default wins (measured 18px total live) instead of
+    // the inherited cascade the app previously left in place (measured
+    // 21px). The flat, per-tone border color (vs. an alpha-blend of the
+    // bright accent) is verified against a live browser in the round's
+    // visual QA evidence — happy-dom's CSSOM does not parse `oklch()`, so it
+    // cannot assert that value here.
+    const style = pill.getAttribute('style') ?? '';
+    expect(style).toContain('line-height: normal');
+  });
+
+  test('meta appends waiting on operator for an idle-after-interrupt agent', async () => {
+    await act(async () => {
+      root.render(
+        createElement(nodeRoomHeader.NodeRoomHeader, {
+          model: { ...ITERATION_TWO, status: 'running', waitingOnOperator: true },
+          options: [],
+          selectedRowId: 'iter-2',
+          onSelectRow: (): void => undefined,
+          onClose: (): void => undefined,
+          kindChip: null,
+          executionCount: 1,
+        })
+      );
+    });
+    expect(host.textContent).toContain('running… · waiting on operator');
+  });
+
+  test('a non-loop node with multiple runs shows "of N" with no max caption', async () => {
+    await act(async () => {
+      root.render(
+        createElement(nodeRoomHeader.NodeRoomHeader, {
+          model: { ...ITERATION_TWO, loopMaxIterations: null },
+          options: [
+            { rowId: 'run-1', label: 'Run 1' },
+            { rowId: 'run-2', label: 'Run 2' },
+          ],
+          selectedRowId: 'run-2',
+          onSelectRow: (): void => undefined,
+          onClose: (): void => undefined,
+          kindChip: null,
+          executionCount: 2,
+        })
+      );
+    });
+
+    const text = host.textContent ?? '';
+    expect(text).toContain('of 2');
+    expect(text).not.toContain('max');
+  });
+
+  test('omits the kind chip, meta line, and picker when their own data is absent', async () => {
     await act(async () => {
       root.render(
         createElement(nodeRoomHeader.NodeRoomHeader, {
           model: {
             ...ITERATION_TWO,
             status: 'completed',
+            startedAt: null,
             startedOffsetMs: null,
             durationMs: null,
             provider: null,
@@ -123,17 +212,41 @@ describe('NodeRoomHeader', () => {
           selectedRowId: 'iter-2',
           onSelectRow: (): void => undefined,
           onClose: (): void => undefined,
+          kindChip: null,
+          executionCount: 1,
         })
       );
     });
 
     const text = host.textContent ?? '';
     expect(text).toContain('Review');
-    expect(text).toContain('Iteration 2');
-    expect(text).toContain('completed');
-    expect(text).not.toContain('+');
+    expect(text).toContain('Completed');
     expect(text).not.toContain('openai');
     expect(text).not.toContain('gpt-5');
-    expect(text).not.toContain('1.5s');
+    expect(text).not.toContain('started');
+    expect(host.querySelector('select[aria-label="Execution"]')).toBeNull();
+  });
+
+  test('a recovery-required signal overrides the pill and drops the running… meta segment', async () => {
+    await act(async () => {
+      root.render(
+        createElement(nodeRoomHeader.NodeRoomHeader, {
+          model: ITERATION_TWO,
+          options: [{ rowId: 'iter-2', label: 'Iteration 2' }],
+          selectedRowId: 'iter-2',
+          onSelectRow: (): void => undefined,
+          onClose: (): void => undefined,
+          kindChip: null,
+          executionCount: 1,
+          recoveryRequired: true,
+        })
+      );
+    });
+
+    const text = host.textContent ?? '';
+    expect(text).toContain('Recovery required');
+    expect(text).toContain('restored after server restart');
+    expect(text).not.toContain('running…');
+    expect(text).not.toContain('Running');
   });
 });

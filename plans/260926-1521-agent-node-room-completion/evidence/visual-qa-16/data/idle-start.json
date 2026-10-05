@@ -1,0 +1,18 @@
+{
+  "I1": {
+    "R": "41e1df1db502885e7849e176db138289",
+    "k0": "Running||Stop,Queue|TA||||-1|0|||BODY|0",
+    "q": { "clicked": 1790792187567, "resolved": 1790792187590, "st": 200 },
+    "stop": { "clicked": 1790792188393, "resolved": 1790792188723, "st": 200 },
+    "stopIso": "2026-09-30T18:16:28.393Z",
+    "after": "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||-1|1|||DIV[room]|0"
+  },
+  "I2": {
+    "R": "7c3b58ab27f1d378259043341aa5b17c",
+    "k0": "Running||Stop,Queue|TA||||-1|0|||BODY|0",
+    "q": { "clicked": 1790792191256, "resolved": 1790792191281, "st": 200 },
+    "stop": { "clicked": 1790792192083, "resolved": 1790792192142, "st": 200 },
+    "stopIso": "2026-09-30T18:16:32.083Z",
+    "after": "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||-1|1|||DIV[room]|0"
+  }
+}

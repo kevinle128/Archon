@@ -1,0 +1,137 @@
+{
+  "mode": "focus 3",
+  "n": "1",
+  "runId": "104f13959d2abfdc6ac418beda71fe79",
+  "tag": "Umuoibuqn",
+  "events": [
+    {
+      "name": "after-send-now-two",
+      "t": 2893.300000190735,
+      "last": {
+        "t": 2887.800000190735,
+        "focus": "BUTTON:Send now · Umuoibuqn-ONE",
+        "header": "queued · 1",
+        "rows": ["1 Umuoibuqn-ONE Send now ✕", "2 Umuoibuqn-TWO sending…"],
+        "ops": []
+      }
+    },
+    {
+      "name": "stop-clicked",
+      "t": 2922.600000143051,
+      "last": {
+        "t": 2920.4000000953674,
+        "focus": "BUTTON:",
+        "header": "queued · 1",
+        "rows": ["1 Umuoibuqn-ONE ✕", "2 Umuoibuqn-TWO sending…"],
+        "ops": []
+      }
+    },
+    {
+      "name": "after-stop",
+      "t": 8932.700000047684,
+      "last": {
+        "t": 8926.400000095367,
+        "focus": "DIV:",
+        "header": "will send · 2",
+        "rows": ["1 Umuoibuqn-ONE ✕", "2 Umuoibuqn-TWO ✕"],
+        "ops": []
+      }
+    }
+  ],
+  "analysis": {
+    "frames": 1012,
+    "bodyFrames": 4,
+    "neitherFrames": {
+      "Umuoibuqn-ONE": {
+        "gap": 0,
+        "seenOp": false
+      },
+      "Umuoibuqn-TWO": {
+        "gap": 0,
+        "seenOp": false
+      },
+      "Umuoibuqn-THREE": {
+        "gap": 0,
+        "seenOp": false
+      }
+    },
+    "bothFrames": [0, 0, 0]
+  },
+  "timeline": [
+    {
+      "t": 0,
+      "focus": "BODY",
+      "header": null,
+      "rows": [],
+      "ops": []
+    },
+    {
+      "t": 37,
+      "focus": "TEXTAREA:_r_52_",
+      "header": null,
+      "rows": [],
+      "ops": []
+    },
+    {
+      "t": 62,
+      "focus": "BUTTON:Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "header": null,
+      "rows": [],
+      "ops": []
+    },
+    {
+      "t": 89,
+      "focus": "TEXTAREA:_r_52_",
+      "header": "queued · 1",
+      "rows": ["1 Umuoibuqn-ONE Send now ✕"],
+      "ops": []
+    },
+    {
+      "t": 487,
+      "focus": "BUTTON:Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "header": "queued · 1",
+      "rows": ["1 Umuoibuqn-ONE Send now ✕"],
+      "ops": []
+    },
+    {
+      "t": 496,
+      "focus": "TEXTAREA:_r_52_",
+      "header": "queued · 2",
+      "rows": ["1 Umuoibuqn-ONE Send now ✕", "2 Umuoibuqn-TWO Send now ✕"],
+      "ops": []
+    },
+    {
+      "t": 911,
+      "focus": "BUTTON:Send now · Umuoibuqn-TWO",
+      "header": "queued · 2",
+      "rows": ["1 Umuoibuqn-ONE Send now ✕", "2 Umuoibuqn-TWO Send now ✕"],
+      "ops": []
+    },
+    {
+      "t": 920,
+      "focus": "BUTTON:Send now · Umuoibuqn-ONE",
+      "header": "queued · 1",
+      "rows": ["1 Umuoibuqn-ONE Send now ✕", "2 Umuoibuqn-TWO sending…"],
+      "ops": []
+    },
+    {
+      "t": 2444,
+      "focus": "BUTTON:",
+      "header": "queued · 1",
+      "rows": ["1 Umuoibuqn-ONE ✕", "2 Umuoibuqn-TWO sending…"],
+      "ops": []
+    },
+    {
+      "t": 2452,
+      "focus": "DIV:",
+      "header": "will send · 2",
+      "rows": ["1 Umuoibuqn-ONE ✕", "2 Umuoibuqn-TWO ✕"],
+      "ops": []
+    }
+  ],
+  "focusAfter": [
+    ["after-send-now-two", "BUTTON:Send now · Umuoibuqn-ONE"],
+    ["stop-clicked", "BUTTON:"],
+    ["after-stop", "DIV:"]
+  ]
+}

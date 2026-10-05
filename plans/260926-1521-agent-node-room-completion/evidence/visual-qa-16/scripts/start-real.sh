@@ -1,0 +1,4 @@
+#!/bin/bash
+cd /Users/dale/orca/workspaces/Archon/develop-2/packages/server
+nohup env ARCHON_HOME=/private/tmp/claude-501/-Users-dale-orca-workspaces-Archon-develop-2/c3af2ea9-daf2-4dac-a244-7679f5cdbb02/scratchpad/vq16-1790791870/home TELEGRAM_BOT_TOKEN= SLACK_BOT_TOKEN= DISCORD_BOT_TOKEN= WORKFLOW_RUN_RETENTION_DAYS=36500 SESSION_RETENTION_DAYS=36500 PORT=3455  bun src/index.ts >> /private/tmp/claude-501/-Users-dale-orca-workspaces-Archon-develop-2/c3af2ea9-daf2-4dac-a244-7679f5cdbb02/scratchpad/vq16-1790791870/server-real.log 2>&1 < /dev/null &
+echo $! > /private/tmp/claude-501/-Users-dale-orca-workspaces-Archon-develop-2/c3af2ea9-daf2-4dac-a244-7679f5cdbb02/scratchpad/vq16-1790791870/real.pid; echo "real $! $(date +%H:%M:%S)" >> /private/tmp/claude-501/-Users-dale-orca-workspaces-Archon-develop-2/c3af2ea9-daf2-4dac-a244-7679f5cdbb02/scratchpad/vq16-1790791870/pids.txt

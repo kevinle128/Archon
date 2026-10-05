@@ -1,0 +1,77 @@
+{
+  "r": {
+    "post": 3,
+    "res": { "success": true, "message": "Abandoned workflow: vq12-fake" },
+    "C": {
+      "neverSentAt": 104,
+      "pillAt": 104,
+      "missing": [],
+      "last": {
+        "bands": "NEVER SENT · 1",
+        "btns": "",
+        "pill": "Failed",
+        "status": "node finished · none of this was sent",
+        "tools": ["– Read HITL_TOOL_INPUT.txt output unknown ·"],
+        "ta": false
+      },
+      "frames": [
+        [
+          -264,
+          "QUEUED · 1",
+          "QUEUED · 1\nsaved to server\n▾,delete · AB7-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+          "Running",
+          1
+        ],
+        [104, "NEVER SENT · 1", "", "Failed", 1],
+        [1938, "NEVER SENT · 1", "", "Failed", 1]
+      ]
+    },
+    "L": {
+      "neverSentAt": 738,
+      "pillAt": 738,
+      "missing": [],
+      "last": {
+        "bands": "NEVER SENT · 1",
+        "btns": "",
+        "pill": "Failed",
+        "status": "node finished · none of this was sent",
+        "tools": ["– Read HITL_TOOL_INPUT.txt output unknown ·"],
+        "ta": false
+      },
+      "frames": [
+        [
+          -262,
+          "QUEUED · 1",
+          "QUEUED · 1\nsaved to server\n▾,delete · AB7-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+          "Running",
+          1
+        ],
+        [
+          657,
+          "QUEUED · 1",
+          "QUEUED · 1\nsaved to server\n▾,delete · AB7-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+          "Running",
+          1
+        ],
+        [
+          699,
+          "QUEUED · 1",
+          "QUEUED · 1\nsaved to server\n▾,delete · AB7-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+          "Running",
+          1
+        ],
+        [738, "NEVER SENT · 1", "", "Failed", 1],
+        [3738, "NEVER SENT · 1", "", "Failed", 1]
+      ]
+    }
+  },
+  "tc": [
+    [1790687737478, "Running||delete,Stop,Queue|TA|QUEUED · 1||0"],
+    [1790687737877, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1"]
+  ],
+  "tl": [
+    [1790687737478, "Running||delete,Stop,Queue|TA|QUEUED · 1||0"],
+    [1790687738480, "Running||||NEVER SENT · 1|node finished · none of this was sent|1"],
+    [1790687738503, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1"]
+  ]
+}

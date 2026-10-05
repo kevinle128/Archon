@@ -1,0 +1,51 @@
+real 53226 12:08:42
+fake 53283 12:08:42
+vite5293 54142 12:09:06
+vite5294 54145 12:09:06
+mock8797 54148 12:09:06
+vite5293node 54271; vite5294node 54264
+drvReal 60928 12:11:48
+drvFake 60931 12:11:48
+drvreal 63792 12:12:42
+drvfake 63806 12:12:42
+drvfake 66792 12:13:36
+drvreal 74418 12:15:14
+keystroke 75630 12:15:50
+idlewatch 75632 12:15:50
+finbatch1 98546 12:23:24
+out15-O1 24813 12:28:17
+fake 27366 12:28:47
+out15-O2 30181 12:30:32
+fake 33323 12:31:21
+outbatch 36546 12:33:06
+fake 39189 12:33:36
+fake 44575 12:35:40
+fake 49606 12:37:31
+fake 55973 12:39:55
+prov-cl 59737 12:41:41
+fakebatch2 67366 12:43:20
+realbatch1 67368 12:43:20
+drvreal 86923 12:47:30
+stopped realbatch1 67368/67372/83597 (codex stuck after withdraw race); restarted real driver
+realbatch1b 87586 12:47:41
+fakebatch3 99841 12:49:11
+fabbatch 26681 12:51:55
+realbatch2 31380 12:52:37
+realbatch3 66297 12:58:40
+finbatch2 68363 12:58:46
+fake 85954 13:01:04
+stopped realbatch3 chain 66297 before B2 (disk low)
+stopped drivers 86923 66792 to lower memory
+stopped vite5293 54142/54271 to lower memory
+vite5293 23835 14:04:30
+vite5294 23838 14:04:30
+drvreal 24072 14:04:36
+drvfake 24083 14:04:36
+vite nodes 23959 23977
+vite5293node 23959 vite5294node 23977
+fake 27148 14:05:21
+b2 28088 14:05:44
+real 38371 14:07:26
+realbatch4 41279 14:09:03
+rfl 65662 14:13:35
+final stop: 24072 24083 23959 23977 23835 23838 54148 38371 27148

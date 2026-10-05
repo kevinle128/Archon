@@ -75,6 +75,63 @@ describe('projectToolTranscript', () => {
     expect(projected[1]).toMatchObject({ kind: 'tool-card', output: 'other', call: null });
   });
 
+  test('a call whose turn was cut off never steals a later turn reusing its id', () => {
+    // Turn 1 starts a tool call that is interrupted — its provider never
+    // produced a result row for it (only the settle event landed, not a
+    // transcript row). Turn 2 reuses the same raw id (a provider that
+    // restarts its own numbering per turn, e.g. Codex `item_1`) for a
+    // genuinely different, successful call.
+    const turn1Call = {
+      id: 'c1',
+      seq: 1,
+      kind: 'tool' as const,
+      payload: { name: 'Bash', id: 'item_1', input: { command: 'step-1' } },
+      metadata: {
+        execution: { occurrence_id: OCC, attempt_id: ATT },
+        tool_phase: 'call' as const,
+      },
+    };
+    const operatorRedirect = {
+      id: 'op1',
+      seq: 2,
+      kind: 'text' as const,
+      payload: { text: 'wrong command, try again' },
+    };
+    const turn2Call = {
+      id: 'c2',
+      seq: 3,
+      kind: 'tool' as const,
+      payload: { name: 'Bash', id: 'item_1', input: { command: 'step-1' } },
+      metadata: {
+        execution: { occurrence_id: OCC, attempt_id: ATT },
+        tool_phase: 'call' as const,
+      },
+    };
+    const turn2Result = {
+      id: 'r2',
+      seq: 4,
+      kind: 'tool' as const,
+      payload: { name: 'Bash', id: 'item_1', output: 'step-1\n' },
+      metadata: {
+        execution: { occurrence_id: OCC, attempt_id: ATT },
+        tool_phase: 'result' as const,
+        outcome: 'success' as const,
+      },
+    };
+    const projected = projectToolTranscript([turn1Call, operatorRedirect, turn2Call, turn2Result]);
+    expect(projected).toHaveLength(3);
+    // Turn 1's call never claims turn 2's result.
+    expect(projected[0]).toMatchObject({ kind: 'tool-card', pending: true, output: undefined });
+    expect(projected[1]).toEqual({ kind: 'message', message: operatorRedirect });
+    // Turn 2's call is paired with its OWN result, not left pending.
+    expect(projected[2]).toMatchObject({
+      kind: 'tool-card',
+      pending: false,
+      output: 'step-1\n',
+      outcome: 'success',
+    });
+  });
+
   test('a result without a call is a standalone result card', () => {
     const result = {
       id: 'r1',

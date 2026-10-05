@@ -39,11 +39,11 @@
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/SPEC.md",
-      "sha256": "89cf15455fe4491f5a03a050264839184deebec0f9ea895e662705cc559ad32b"
+      "sha256": "cf4bc516b30f244f840c0f27be89e3adb6d4ff757bdf108c52eed92ecc9d29bc"
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md",
-      "sha256": "cf8f391c502c42717e4ee3fb1205bf2e4fca502b939ed82cbe40c8964bbecb1a"
+      "sha256": "bfad1fd363e44aedf6acb4a4a34775334e765a3845bc76e5cf7319a5113644b1"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md",
@@ -83,15 +83,11 @@
     },
     {
       "path": "packages/docs-web/src/content/docs/brand/index.md",
-      "sha256": "6cbef294819fe38ac308d41c9c85dbbb4216626abb9babe0596ecd974d4b18cc"
+      "sha256": "16537cfa117c513592c28cd4d8836d14335945d1ac0dcf6428d65b99faff827e"
     },
     {
       "path": "packages/web/src/index.css",
-      "sha256": "d91dd61ff791a67718c5654450c1095058b9259a1f78b22670c892840a636b92"
-    },
-    {
-      "path": "packages/web/src/experiments/console/theme.css",
-      "sha256": "543f29044c5c3fb455c19013a3a226fa03c15808e1c660e66ff463d4f8036bdf"
+      "sha256": "66f67d3ac1a68bc8689655033d84dad2f337c13518564dd8f3ab3259fad930fc"
     }
   ],
   "criteria": [
@@ -140,8 +136,8 @@
       "states": [
         "queue-waiting"
       ],
-      "source": "claude-design/design_handoff_node_room_transcript_steering/README.md#queue-band--restructured",
-      "expected": "A full-width waiting queue band has an interactive expanded header with caret and count, one-based ordinals, a visible next-item inset marker, and sans-serif human message text. A waiting row does not show the transcript-delivery word sent. Ignore provider-specific per-item Send now controls."
+      "source": "claude-design/design_handoff_node_room_transcript_steering/README.md#durable-draft-and-queue-behavior",
+      "expected": "A full-width waiting queue band has an interactive expanded header with caret and count, one-based ordinals, a visible next-item inset marker, and monospace human message text. A waiting row does not show the transcript-delivery word sent. Ignore provider-specific per-item Send now controls."
     },
     {
       "id": "layout-and-focus",
@@ -156,7 +152,6 @@
     }
   ],
   "surfaces": [
-    "console",
     "legacy"
   ],
   "states": [

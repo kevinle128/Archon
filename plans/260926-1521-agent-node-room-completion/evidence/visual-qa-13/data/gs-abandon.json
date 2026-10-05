@@ -1,0 +1,99 @@
+{
+  "post": 5,
+  "res": { "success": true, "message": "Abandoned workflow: vq13-grok-structured" },
+  "C": {
+    "neverSentAt": 298,
+    "pillAt": 298,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ run_terminal_command sleep 60 && echo a 1.0m ASSISTANT",
+        "– run_terminal_command sleep 60 && echo b output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -265,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · gs-Q must survive abandon,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [298, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "L": {
+    "neverSentAt": 585,
+    "pillAt": 585,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ run_terminal_command sleep 60 && echo a 1.0m ASSISTANT",
+        "– run_terminal_command sleep 60 && echo b output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -263,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · gs-Q must survive abandon,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        217,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · gs-Q must survive abandon,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        336,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · gs-Q must survive abandon,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [585, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "raf": {
+    "c": [
+      [-305, "Running||delete,Queue|TA|QUEUED · 1||0|1"],
+      [284, "Failed||||QUEUED · 1||0|1"],
+      [294, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ],
+    "l": [
+      [-297, "Running||delete,Queue|TA|QUEUED · 1||0|1"],
+      [558, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ]
+  },
+  "gets": [
+    { "s": "l", "t": -1697, "k": "r", "st": "running", "ns": "grok-structured:running" },
+    { "s": "l", "t": -1459, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -1063, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -454, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -61, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": 271, "k": "r", "st": "cancelled", "ns": "grok-structured:failed" },
+    { "s": "c", "t": 285, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 285, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 550, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 559, "k": "r", "st": "cancelled", "ns": "grok-structured:failed" },
+    { "s": "l", "t": 559, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 587, "k": "q", "es": "finished", "no": "failed", "n": 1 }
+  ]
+}

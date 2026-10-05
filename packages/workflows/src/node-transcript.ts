@@ -7,9 +7,9 @@
  */
 import { createLogger } from '@archon/paths';
 import type { AppendNodeMessageInput } from './schemas/node-message';
-import type { TranscriptExecutionScope } from './schemas/node-execution';
+import type { PromptTranscriptSource, TranscriptExecutionScope } from './schemas/node-execution';
 import type { IWorkflowNodeMessageStore } from './store';
-import type { QueuedOperatorMessage } from './steering-registry';
+import type { ClaimedSteeringMessage } from './schemas/steering';
 import { transcriptMetadata } from './transcript-execution-scope';
 
 const log = createLogger('workflows.node-transcript');
@@ -72,7 +72,7 @@ export async function appendOperatorTranscript(
     workflow_run_id: string;
     node_id: string;
     scope: TranscriptExecutionScope;
-    messages: readonly QueuedOperatorMessage[];
+    messages: readonly ClaimedSteeringMessage[];
   }
 ): Promise<void> {
   for (const message of input.messages) {
@@ -83,9 +83,100 @@ export async function appendOperatorTranscript(
       payload: { text: message.message },
       metadata: transcriptMetadata(input.scope, {
         origin: 'operator',
-        operator_user_id: message.operatorUserId,
-        message_id: message.messageId,
+        operator_user_id: message.operator_user_id,
+        message_id: message.message_id,
       }),
     });
   }
+}
+
+/**
+ * Append displayable provider thinking as a `thinking`-origin text row.
+ * Callers must pass only content the provider explicitly marked safe to
+ * show — hidden or redacted reasoning is never a valid input here.
+ * `textMode`/`streamId`/`blockId` mirror the assistant transcript's own
+ * delta-folding fields, undefined when the provider emits only complete
+ * thinking blocks.
+ */
+export async function appendThinkingTranscript(
+  store: IWorkflowNodeMessageStore,
+  input: {
+    workflow_run_id: string;
+    node_id: string;
+    scope: TranscriptExecutionScope;
+    text: string;
+    textMode?: 'complete' | 'delta' | 'snapshot';
+    streamId?: string;
+    blockId?: string;
+  }
+): Promise<void> {
+  await appendNodeTranscript(store, {
+    workflow_run_id: input.workflow_run_id,
+    node_id: input.node_id,
+    kind: 'text',
+    payload: { text: input.text },
+    metadata: transcriptMetadata(input.scope, {
+      origin: 'thinking',
+      ...(input.textMode !== undefined ? { text_mode: input.textMode } : {}),
+      ...(input.streamId !== undefined ? { stream_id: input.streamId } : {}),
+      ...(input.blockId !== undefined ? { block_id: input.blockId } : {}),
+    }),
+  });
+}
+
+/**
+ * Append the exact text that triggered one agent turn as a `prompt`-origin
+ * text row. Callers must skip this for a redirect turn's first pass — that
+ * text is already persisted as the caused operator row; see
+ * `promptTranscriptSourceSchema` for the cases this covers.
+ */
+export async function appendPromptTranscript(
+  store: IWorkflowNodeMessageStore,
+  input: {
+    workflow_run_id: string;
+    node_id: string;
+    scope: TranscriptExecutionScope;
+    text: string;
+    actorUserId: string | null;
+    source: PromptTranscriptSource;
+  }
+): Promise<void> {
+  await appendNodeTranscript(store, {
+    workflow_run_id: input.workflow_run_id,
+    node_id: input.node_id,
+    kind: 'text',
+    payload: { text: input.text },
+    metadata: transcriptMetadata(input.scope, {
+      origin: 'prompt',
+      actor_user_id: input.actorUserId,
+      prompt_source: input.source,
+    }),
+  });
+}
+
+/**
+ * Append one advisor notification as an `advisor`-origin text row.
+ * `advisorModel` is the model Archon configured (`assistants.claude.advisorModel`),
+ * omitted when Archon did not set it and the provider does not echo it back.
+ */
+export async function appendAdvisorTranscript(
+  store: IWorkflowNodeMessageStore,
+  input: {
+    workflow_run_id: string;
+    node_id: string;
+    scope: TranscriptExecutionScope;
+    text: string;
+    advisorModel?: string;
+  }
+): Promise<void> {
+  await appendNodeTranscript(store, {
+    workflow_run_id: input.workflow_run_id,
+    node_id: input.node_id,
+    kind: 'text',
+    payload: { text: input.text },
+    metadata: transcriptMetadata(input.scope, {
+      origin: 'advisor',
+      ...(input.advisorModel !== undefined ? { advisor_model: input.advisorModel } : {}),
+    }),
+  });
 }

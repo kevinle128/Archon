@@ -1,0 +1,434 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790794026786,
+  "end": 1790794036842,
+  "procs": [
+    {
+      "pid": 37693,
+      "cmd": "codex exec --experimental-json --config skills.include_instr",
+      "first": 1790794026786,
+      "last": 1790794028663
+    },
+    {
+      "pid": 41591,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790794026786,
+      "last": 1790794033792
+    },
+    {
+      "pid": 37834,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790794026786,
+      "last": 1790794028663
+    },
+    {
+      "pid": 37838,
+      "cmd": "node_repl",
+      "first": 1790794026786,
+      "last": 1790794028663
+    },
+    {
+      "pid": 37839,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790794026786,
+      "last": 1790794028663
+    },
+    {
+      "pid": 41109,
+      "cmd": "zsh -c sleep 90; echo again2",
+      "first": 1790794026786,
+      "last": 1790794028663
+    },
+    {
+      "pid": 41110,
+      "cmd": "sleep 90",
+      "first": 1790794026786,
+      "last": 1790794028663
+    },
+    {
+      "pid": 38100,
+      "cmd": "node_repl",
+      "first": 1790794026786,
+      "last": 1790794028663
+    },
+    {
+      "pid": 42869,
+      "cmd": "codex exec --experimental-json --model gpt-5.5 --sandbox dan",
+      "first": 1790794031504,
+      "last": 1790794036545
+    },
+    {
+      "pid": 42903,
+      "cmd": "(git)",
+      "first": 1790794031504,
+      "last": 1790794031504
+    },
+    {
+      "pid": 42898,
+      "cmd": "git ls-remote https:/codex-warp.git HEAD",
+      "first": 1790794031504,
+      "last": 1790794032466
+    },
+    {
+      "pid": 42899,
+      "cmd": "git remote-https https:/codex-warp.git https:/codex-warp.git",
+      "first": 1790794031504,
+      "last": 1790794032466
+    },
+    {
+      "pid": 42901,
+      "cmd": "git-remote-https https:/codex-warp.git https:/codex-warp.git",
+      "first": 1790794031504,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43004,
+      "cmd": "<defunct>",
+      "first": 1790794031814,
+      "last": 1790794031814
+    },
+    {
+      "pid": 42908,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790794031814,
+      "last": 1790794033118
+    },
+    {
+      "pid": 42994,
+      "cmd": "bash jenv-init -",
+      "first": 1790794031814,
+      "last": 1790794031814
+    },
+    {
+      "pid": 42997,
+      "cmd": "(bash)",
+      "first": 1790794031814,
+      "last": 1790794031814
+    },
+    {
+      "pid": 43006,
+      "cmd": "(bash)",
+      "first": 1790794031814,
+      "last": 1790794031814
+    },
+    {
+      "pid": 43013,
+      "cmd": "(greadlink)",
+      "first": 1790794031814,
+      "last": 1790794031814
+    },
+    {
+      "pid": 43005,
+      "cmd": "node privacy-block.cjs",
+      "first": 1790794031814,
+      "last": 1790794031814
+    },
+    {
+      "pid": 43008,
+      "cmd": "(cc-status)",
+      "first": 1790794031814,
+      "last": 1790794031814
+    },
+    {
+      "pid": 43010,
+      "cmd": "(bash)",
+      "first": 1790794031814,
+      "last": 1790794031814
+    },
+    {
+      "pid": 43014,
+      "cmd": "(bash)",
+      "first": 1790794031814,
+      "last": 1790794031814
+    },
+    {
+      "pid": 43081,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790794032148,
+      "last": 1790794036545
+    },
+    {
+      "pid": 43210,
+      "cmd": "(kubectl)",
+      "first": 1790794032148,
+      "last": 1790794032148
+    },
+    {
+      "pid": 43297,
+      "cmd": "node session-init.cjs",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43248,
+      "cmd": "node_repl",
+      "first": 1790794032466,
+      "last": 1790794036545
+    },
+    {
+      "pid": 43249,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790794032466,
+      "last": 1790794036545
+    },
+    {
+      "pid": 43251,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790794032466,
+      "last": 1790794036545
+    },
+    {
+      "pid": 43279,
+      "cmd": "node_repl",
+      "first": 1790794032466,
+      "last": 1790794036545
+    },
+    {
+      "pid": 43236,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43303,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43304,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43306,
+      "cmd": "tail -1",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43378,
+      "cmd": "(zsh)",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43379,
+      "cmd": "(zsh)",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43381,
+      "cmd": "(zsh)",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43384,
+      "cmd": "(zsh)",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43385,
+      "cmd": "(head)",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43387,
+      "cmd": "(tail)",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43386,
+      "cmd": "(zsh)",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43388,
+      "cmd": "(zsh)",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43390,
+      "cmd": "(tr)",
+      "first": 1790794032466,
+      "last": 1790794032466
+    },
+    {
+      "pid": 43575,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43580,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43581,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43582,
+      "cmd": "tail -1",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43629,
+      "cmd": "(zsh)",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43630,
+      "cmd": "(zsh)",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43631,
+      "cmd": "(zsh)",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43632,
+      "cmd": "(zsh)",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43633,
+      "cmd": "(head)",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43635,
+      "cmd": "(tail)",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43640,
+      "cmd": "(zsh)",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43644,
+      "cmd": "(printf)",
+      "first": 1790794032790,
+      "last": 1790794032790
+    },
+    {
+      "pid": 43846,
+      "cmd": "(zsh)",
+      "first": 1790794033118,
+      "last": 1790794033118
+    },
+    {
+      "pid": 43851,
+      "cmd": "(zsh)",
+      "first": 1790794033118,
+      "last": 1790794033118
+    },
+    {
+      "pid": 43852,
+      "cmd": "(grep)",
+      "first": 1790794033118,
+      "last": 1790794033118
+    },
+    {
+      "pid": 43853,
+      "cmd": "<defunct>",
+      "first": 1790794033118,
+      "last": 1790794033118
+    },
+    {
+      "pid": 43826,
+      "cmd": "(node)",
+      "first": 1790794033118,
+      "last": 1790794033118
+    },
+    {
+      "pid": 43827,
+      "cmd": "(node)",
+      "first": 1790794033118,
+      "last": 1790794033118
+    },
+    {
+      "pid": 43832,
+      "cmd": "(node)",
+      "first": 1790794033118,
+      "last": 1790794033118
+    },
+    {
+      "pid": 43854,
+      "cmd": "(ak)",
+      "first": 1790794033118,
+      "last": 1790794033118
+    },
+    {
+      "pid": 43850,
+      "cmd": "(ak)",
+      "first": 1790794033118,
+      "last": 1790794033118
+    },
+    {
+      "pid": 44317,
+      "cmd": "node privacy-block.cjs",
+      "first": 1790794035936,
+      "last": 1790794035936
+    },
+    {
+      "pid": 44319,
+      "cmd": "node scout-block.cjs",
+      "first": 1790794035936,
+      "last": 1790794035936
+    },
+    {
+      "pid": 44320,
+      "cmd": "(cc-status)",
+      "first": 1790794035936,
+      "last": 1790794035936
+    },
+    {
+      "pid": 44321,
+      "cmd": "(bash)",
+      "first": 1790794035936,
+      "last": 1790794035936
+    },
+    {
+      "pid": 44357,
+      "cmd": "zsh -c -l SNAPSHOT_FILE=snapshot-zsh-1790794036011-rb7qdn.sh",
+      "first": 1790794036249,
+      "last": 1790794036545
+    },
+    {
+      "pid": 44395,
+      "cmd": "bash jenv-init -",
+      "first": 1790794036249,
+      "last": 1790794036249
+    },
+    {
+      "pid": 44555,
+      "cmd": "(zsh)",
+      "first": 1790794036545,
+      "last": 1790794036545
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+[
+  { "seq": 1, "kind": "status", "payload": { "state": "started" }, "meta": {} },
+  {
+    "seq": 2,
+    "kind": "text",
+    "payload": {
+      "text": "Run these bash steps one at a time, each as its own separate tool call, in order: \"sleep 25; echo s1\", \"sleep 25; echo s"
+    },
+    "meta": {
+      "origin": "prompt",
+      "actor_user_id": "2e21b6d931f357f07399cbbd8ec11273",
+      "prompt_source": "node_prompt"
+    }
+  },
+  {
+    "seq": 3,
+    "kind": "text",
+    "payload": {
+      "text": "I will run the four bash commands sequentially, each as a separate tool call.\n\n"
+    },
+    "meta": { "origin": "thinking" }
+  },
+  {
+    "seq": 4,
+    "kind": "text",
+    "payload": { "text": "Running the four sleep commands one at a time, in order." },
+    "meta": {}
+  },
+  {
+    "seq": 5,
+    "kind": "tool",
+    "payload": {
+      "name": "bash",
+      "id": "call-1f8752dc-8d2d-47f7-8840-8735c559c480-0|fc_55937d37-879f-94bc-8c05-e97b9af39503_0",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 6,
+    "kind": "tool",
+    "payload": {
+      "name": "bash",
+      "id": "call-1f8752dc-8d2d-47f7-8840-8735c559c480-0|fc_55937d37-879f-94bc-8c05-e97b9af39503_0",
+      "has_output": true
+    },
+    "meta": { "tool_phase": "result", "output_state": "full", "outcome": "interrupted" }
+  },
+  { "seq": 7, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 8,
+    "kind": "text",
+    "payload": {
+      "text": "OP omp-c1: reply with the token omp-c1ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "b4817339-fab0-4a2c-81b8-f3a893818a8d",
+      "origin": "operator",
+      "operator_user_id": "2e21b6d931f357f07399cbbd8ec11273"
+    }
+  },
+  {
+    "seq": 9,
+    "kind": "text",
+    "payload": { "text": "OP omp-c1b: also include the token omp-c1bACK." },
+    "meta": {
+      "message_id": "0cbcc673-4cf1-4fdc-939f-c708e7a30c2a",
+      "origin": "operator",
+      "operator_user_id": "2e21b6d931f357f07399cbbd8ec11273"
+    }
+  },
+  {
+    "seq": 10,
+    "kind": "text",
+    "payload": {
+      "text": "The operator message requires replying with the token omp-c1ACK before continuing with the remaining steps.\n\n"
+    },
+    "meta": { "origin": "thinking" }
+  },
+  {
+    "seq": 11,
+    "kind": "text",
+    "payload": { "text": "omp-c1ACK omp-c1bACK — continuing remaining steps." },
+    "meta": {}
+  },
+  {
+    "seq": 12,
+    "kind": "tool",
+    "payload": {
+      "name": "bash",
+      "id": "call-ca84b00b-b832-4353-adb9-2bf714f6b8dd-1|fc_545ee9d6-a51d-93e9-ad1f-a7e534528c5c_0",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 13,
+    "kind": "tool",
+    "payload": {
+      "name": "bash",
+      "id": "call-ca84b00b-b832-4353-adb9-2bf714f6b8dd-1|fc_545ee9d6-a51d-93e9-ad1f-a7e534528c5c_0",
+      "has_output": true
+    },
+    "meta": { "tool_phase": "result", "output_state": "full", "outcome": "interrupted" }
+  },
+  { "seq": 14, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 15,
+    "kind": "text",
+    "payload": {
+      "text": "OP omp-c2: reply with the token omp-c2ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "f66dfc80-5727-48c6-8c4c-df1cad14665d",
+      "origin": "operator",
+      "operator_user_id": "2e21b6d931f357f07399cbbd8ec11273"
+    }
+  },
+  { "seq": 16, "kind": "text", "payload": { "text": "omp-c2ACK" }, "meta": {} },
+  {
+    "seq": 17,
+    "kind": "tool",
+    "payload": {
+      "name": "bash",
+      "id": "call-6911fa92-62f8-4f3d-9e63-f98684e1b8e8-2|fc_79973db7-d700-9f47-a2a7-f60c4beaf04b_0",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 18,
+    "kind": "tool",
+    "payload": {
+      "name": "bash",
+      "id": "call-6911fa92-62f8-4f3d-9e63-f98684e1b8e8-2|fc_79973db7-d700-9f47-a2a7-f60c4beaf04b_0",
+      "has_output": true
+    },
+    "meta": { "tool_phase": "result", "output_state": "full", "outcome": "interrupted" }
+  },
+  { "seq": 19, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 20,
+    "kind": "text",
+    "payload": {
+      "text": "OP omp-c3: reply with the token omp-c3ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "54dadf28-5e50-4eb9-b9f5-493fb2984e98",
+      "origin": "operator",
+      "operator_user_id": "2e21b6d931f357f07399cbbd8ec11273"
+    }
+  },
+  { "seq": 21, "kind": "text", "payload": { "text": "omp-c3ACK" }, "meta": {} },
+  {
+    "seq": 22,
+    "kind": "tool",
+    "payload": {
+      "name": "bash",
+      "id": "call-5f22aba9-8318-40df-b9cc-43c2a9af109b-3|fc_bf81d024-9ef6-9f05-b653-4f1237b0e0f8_0",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 23,
+    "kind": "status",
+    "payload": { "state": "failed", "detail": "Cancelled by user" },
+    "meta": {}
+  }
+]

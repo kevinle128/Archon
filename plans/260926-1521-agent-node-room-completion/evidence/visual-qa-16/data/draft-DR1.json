@@ -1,0 +1,19 @@
+{
+  "R": "c49aca0ae162a16a6aa096d6bea70027",
+  "a": {
+    "put": [[1790792802080, 200]],
+    "srv": "{\"message\":\"DR1 saved draft text\",\"updated_at\":\"2026-09-30 18:26:42\"}",
+    "v1440": "DR1 saved draft text",
+    "v1000": "DR1 saved draft text",
+    "k1000": "Running||Stop,Queue|TA||||-1|0|||TEXTAREA|0",
+    "vBack": "DR1 saved draft text",
+    "kBack": "Running||Stop,Queue|TA||||-1|0|||TEXTAREA|0"
+  },
+  "b": {
+    "putsBeforeResize": 0,
+    "v1000": "DR1 quick",
+    "srv": "{\"message\":\"DR1 quick\",\"updated_at\":\"2026-09-30 18:26:49\"}",
+    "puts": [[1790792809556, 200]],
+    "vBack": "DR1 quick"
+  }
+}

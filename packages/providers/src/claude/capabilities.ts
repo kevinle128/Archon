@@ -68,4 +68,31 @@ export const CLAUDE_CAPABILITIES: ProviderCapabilities = {
   containerExec: true, // spawns the CLI in-container via spawnClaudeCodeProcess
   askHuman: true,
   interrupt: 'native', // Query.interrupt() over streaming input
+  // The SDK's PostToolUseFailure hook carries `is_interrupt`, tied to the
+  // exact tool_use id that was cut short — a real per-tool proof, not a
+  // guess from turn-level timing.
+  interruptedToolStatus: true,
+  // Verified TRUE against the real SDK (spike:softinject:claude, 0.3.209,
+  // haiku, three runs): a `SDKUserMessage` pushed onto the live streaming
+  // input while the model is between tool calls is folded into the SAME turn -
+  // exactly one `result`, the first result contains the injected instruction,
+  // tokens were still streaming after the push, and the terminal reason is
+  // `completed`. An earlier spike reported a second `result` only because it
+  // capped the run at `maxTurns: 1`, which cut the first turn off before the
+  // injected message could join it. Through the Archon executor, 13 of 13
+  // per-item sends landed inside the running turn: the model acknowledged the
+  // token in its very next message, before the drained follow-up turn.
+  softInjection: true,
+  // Verified TRUE against the real SDK (spike:softinject:claude, 0.3.209):
+  // starting the CLI with `--replay-user-messages` (via `extraArgs`, wired
+  // in provider.ts when `operatorMessageId` is set or a soft-injection
+  // channel is offered) makes it re-emit
+  // the stdin-delivered user message on stdout (`type: 'user', isReplay:
+  // true`) carrying the exact caller-stamped `uuid`. Scoped to a SINGLE
+  // durable operator message (dag-executor sets `operatorMessageId` only
+  // when exactly one queue entry is being delivered; a soft-injected item
+  // carries its own id) — a combined
+  // multi-message prompt has no one id to attribute an echo to and gets no
+  // ack, which is an accurate `sent` rather than a false `delivered`.
+  deliveryAck: true,
 };

@@ -1,0 +1,10 @@
+{
+  "runId": "86a67e71786baab46da6fc455448079f",
+  "legacyIdleMs": 29,
+  "consoleObserverIdleMs": 76,
+  "sendNowStatus": 200,
+  "consoleSenderElapsedMs": 1,
+  "legacyObserverElapsedMs": 1287,
+  "legacyStatusText": "agent generating",
+  "consoleStatusText": "agent generating"
+}

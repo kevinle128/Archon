@@ -16,6 +16,7 @@ import type { LoadCommandResult } from './schemas';
 import { INPUT_NAME_SOURCE } from './schemas/dag-node';
 import { similarNodeIds } from './output-ref';
 import { getPackagedResourceDirectory, parsePackagedResourceReference } from './packaged-workflow';
+import { getSteeringRegistry, type NodeSteeringHandle } from './steering-registry';
 
 /**
  * Runtime `$INPUTS.<name>` reference — the sub-run twin of the include-expander's
@@ -881,4 +882,51 @@ export async function safeSendMessage(
     // Transient errors (and below-threshold unknown errors) suppressed to allow workflow to continue
     return false;
   }
+}
+
+/**
+ * Registers a node's live steering handle and, in the same call, stamps the
+ * durable `remote_agent_steering_node_settings` row with the resolved
+ * provider id. The stamp is what lets a server that restarts mid-turn
+ * classify the node as `recovery_required` (durable settings exist, no live
+ * handle) instead of `not_steerable_here` (never registered) — see
+ * `classifySteeringLifecycle` in `@archon/server`'s workflow-run routes.
+ *
+ * The prompt-node and loop-node execution paths both register a handle for
+ * every provider whose capabilities allow session resume; sharing this one
+ * function is what keeps the durable stamp from drifting out of sync between
+ * them again.
+ */
+export function registerSteeringHandle(
+  deps: WorkflowDeps,
+  params: {
+    workflowRunId: string;
+    stepName: string;
+    nodeId: string;
+    provider: string;
+    sessionResume: boolean;
+    interruptible: boolean;
+  }
+): NodeSteeringHandle | undefined {
+  const { workflowRunId, stepName, nodeId, provider, sessionResume, interruptible } = params;
+  if (!sessionResume) return undefined;
+  const handle = getSteeringRegistry().register(workflowRunId, stepName, { interruptible });
+  // Durable trace that this node IS steerable, stamped with its resolved
+  // provider, so a route can tell "recovery required" (durable settings
+  // exist, no live handle — e.g. after a restart) from a node that never
+  // supported steering. Best-effort: a write failure here degrades only
+  // post-restart recovery reporting, never this run.
+  deps.store
+    .upsertSteeringNodeSettings({
+      workflow_run_id: workflowRunId,
+      node_id: stepName,
+      provider_id: provider,
+    })
+    .catch((err: unknown) => {
+      getLog().warn(
+        { err: err as Error, workflowRunId, nodeId },
+        'dag.steering_node_settings_upsert_failed'
+      );
+    });
+  return handle;
 }

@@ -3,14 +3,15 @@ import { expect, type Page } from '@playwright/test';
 import { T } from './timeouts';
 
 /**
- * Open the Cost console scoped to a single run. Every spec scopes to its own
+ * Open the Settings usage and cost section scoped to a single run. Every spec scopes to its own
  * runId because all specs in a worker share one Archon instance (one DB) — the
  * runId filter is what keeps each spec's assertions independent of the others'
  * accumulated ledger rows.
  */
 export async function openCostForRun(page: Page, runId: string): Promise<void> {
-  await page.goto('/console/cost');
-  await page.getByLabel('Run id', { exact: true }).fill(runId);
+  await page.goto('/settings');
+  await page.locator('#set-usage').scrollIntoViewIfNeeded();
+  await page.getByLabel('Run ID', { exact: true }).fill(runId);
   await applyFilters(page);
   // The caller's own `expect(...).toBeVisible()` waits for this run's rows.
 }

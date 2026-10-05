@@ -1,0 +1,68 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790794002312,
+  "end": 1790794010389,
+  "procs": [
+    {
+      "pid": 14408,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790794002312,
+      "last": 1790794008878
+    },
+    {
+      "pid": 33995,
+      "cmd": "codex exec --experimental-json --config skills.include_instr",
+      "first": 1790794002312,
+      "last": 1790794003600
+    },
+    {
+      "pid": 34286,
+      "cmd": "node_repl",
+      "first": 1790794002312,
+      "last": 1790794003600
+    },
+    {
+      "pid": 34297,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790794002312,
+      "last": 1790794003600
+    },
+    {
+      "pid": 34298,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790794002312,
+      "last": 1790794003600
+    },
+    {
+      "pid": 36168,
+      "cmd": "zsh -c sleep 90; echo again1",
+      "first": 1790794002312,
+      "last": 1790794003600
+    },
+    {
+      "pid": 36198,
+      "cmd": "sleep 90",
+      "first": 1790794002312,
+      "last": 1790794003600
+    },
+    {
+      "pid": 34309,
+      "cmd": "node_repl",
+      "first": 1790794002312,
+      "last": 1790794003600
+    },
+    {
+      "pid": 33761,
+      "cmd": "zsh -c source snapshot-zsh-1790793870590-8q2u1v.sh 2>null ||",
+      "first": 1790794002312,
+      "last": 1790794005860
+    },
+    {
+      "pid": 36589,
+      "cmd": "sleep 6",
+      "first": 1790794002312,
+      "last": 1790794005860
+    }
+  ]
+}

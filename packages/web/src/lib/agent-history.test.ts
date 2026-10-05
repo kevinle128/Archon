@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test';
 
 import type { components } from './api.generated';
 import type { NodeMessageRow } from './node-message-pages';
-import { buildAgentHistory, toolRuntime, type AgentHistoryItem } from './agent-history';
+import {
+  buildAgentHistory,
+  operatorDeliveryPresentation,
+  promptActorLabel,
+  promptSourceLabel,
+  toolRuntime,
+  type AgentHistoryItem,
+} from './agent-history';
 import { toolRawPayloadJson } from './tool-presentation';
 
 const CREATED_AT = '2026-09-08T00:00:00.000Z';
@@ -97,30 +104,30 @@ function kinds(items: readonly AgentHistoryItem[]): Array<AgentHistoryItem['kind
 }
 
 describe('toolRuntime', () => {
-  test('joins duration only when exactly one matching completion event has a finite nonnegative duration', () => {
+  test('joins the ordinal-th matching completion event with a finite nonnegative duration', () => {
     const match = event({
       id: 'e-match',
       eventType: 'tool_completed',
       stepName: NODE_ID,
       data: { tool_call_id: 'tool-1', duration_ms: 42 },
     });
-    expect(toolRuntime([match], NODE_ID, 'tool-1')).toEqual({ durationMs: 42 });
-    expect(toolRuntime([], NODE_ID, 'tool-1')).toEqual({ durationMs: null });
-    expect(
-      toolRuntime(
-        [
-          match,
-          event({
-            id: 'e-again',
-            eventType: 'tool_completed',
-            stepName: NODE_ID,
-            data: { tool_call_id: 'tool-1', duration_ms: 99 },
-          }),
-        ],
-        NODE_ID,
-        'tool-1'
-      )
-    ).toEqual({ durationMs: null });
+    expect(toolRuntime([match], NODE_ID, 'tool-1', 0)).toEqual({ durationMs: 42 });
+    expect(toolRuntime([], NODE_ID, 'tool-1', 0)).toEqual({ durationMs: null });
+    // An id reused across two turns of the same node execution (a provider
+    // that restarts its own numbering, e.g. Codex) is disambiguated by
+    // occurrence order rather than refused as ambiguous — the ordinal-th
+    // call gets the ordinal-th completion event, in event order.
+    const again = event({
+      id: 'e-again',
+      eventType: 'tool_completed',
+      stepName: NODE_ID,
+      data: { tool_call_id: 'tool-1', duration_ms: 99 },
+    });
+    expect(toolRuntime([match, again], NODE_ID, 'tool-1', 0)).toEqual({ durationMs: 42 });
+    expect(toolRuntime([match, again], NODE_ID, 'tool-1', 1)).toEqual({ durationMs: 99 });
+    // An ordinal past the end of the matches is honestly missing, not a
+    // wraparound guess.
+    expect(toolRuntime([match, again], NODE_ID, 'tool-1', 2)).toEqual({ durationMs: null });
   });
 
   test('ignores other nodes, other tools, other event types, and invalid durations', () => {
@@ -153,9 +160,50 @@ describe('toolRuntime', () => {
           }),
         ],
         NODE_ID,
-        'tool-1'
+        'tool-1',
+        0
       )
     ).toEqual({ durationMs: null });
+  });
+});
+
+describe('operatorDeliveryPresentation', () => {
+  test('the word alone distinguishes the three states; tone is added on top', () => {
+    expect(operatorDeliveryPresentation('sent')).toEqual({ label: 'sent', tone: 'neutral' });
+    expect(operatorDeliveryPresentation('delivered')).toEqual({
+      label: 'delivered',
+      tone: 'success',
+    });
+    expect(operatorDeliveryPresentation('delivery_unknown')).toEqual({
+      label: 'delivery unknown',
+      tone: 'warning',
+    });
+  });
+});
+
+describe('promptActorLabel', () => {
+  test('is the resolved display name, trimmed, for a real actor', () => {
+    expect(promptActorLabel('user-1', '  Kevin  ')).toBe('Kevin');
+  });
+
+  test('falls back to a neutral label, never the raw id, when no name resolved', () => {
+    expect(promptActorLabel('user-1', null)).toBe('unknown user');
+    expect(promptActorLabel('5dea152bfc00', null)).not.toContain('5dea152b');
+  });
+
+  test('is "run" only when there is no actor at all', () => {
+    expect(promptActorLabel(null, null)).toBe('run');
+  });
+});
+
+describe('promptSourceLabel', () => {
+  test('is null for node_prompt, so the row never repeats its own "prompt" label', () => {
+    expect(promptSourceLabel('node_prompt')).toBeNull();
+  });
+
+  test('names the reason for command_file and reask', () => {
+    expect(promptSourceLabel('command_file')).toBe('command');
+    expect(promptSourceLabel('reask')).toBe('retry');
   });
 });
 
@@ -539,7 +587,7 @@ describe('buildAgentHistory', () => {
     ]);
   });
 
-  test('produces no elapsed guess when the tool_called start is missing, ambiguous, or invalid', () => {
+  test('produces no elapsed guess when the tool_called start is missing or invalid; resolves a duplicate by ordinal', () => {
     const rows = [
       toolRow({
         id: 'call-run',
@@ -565,7 +613,11 @@ describe('buildAgentHistory', () => {
     };
 
     expect(stateTexts([])).toEqual(['running']);
-    expect(stateTexts([called('e1'), called('e2')])).toEqual(['running']);
+    // Two `tool_called` events sharing this id is the single-card-ordinal-0
+    // case of a reused id — it resolves to the first (event-order) one
+    // rather than refusing, the same ordinal rule that gives each card of a
+    // genuine cross-turn collision its own start event.
+    expect(stateTexts([called('e1'), called('e2')])).toEqual(['running · 30.0s']);
     expect(stateTexts([called('e1', 'not-a-timestamp')])).toEqual(['running']);
     expect(
       stateTexts([
@@ -579,6 +631,88 @@ describe('buildAgentHistory', () => {
     ).toEqual(['running']);
     // The future start still renders a badge, clamped to zero elapsed.
     expect(stateTexts([called('e1')], Date.parse(CREATED_AT) - 5)).toEqual(['running · 0ms']);
+  });
+
+  test('resolves each turn of a reused tool-use id to its own outcome and duration', () => {
+    // A provider that restarts its own id numbering per turn (e.g. Codex's
+    // `item_1`) reuses the same raw id for turn 1's interrupted call and
+    // turn 2's successful re-run. Turn 1 never gets its own transcript
+    // result row (only the settle event); turn 2 does. Both the pairing
+    // (turn 2's card must not be left `pending`) and the ordinal-matched
+    // event lookups (each card's own duration/outcome, not the other's)
+    // must hold.
+    const T1 = CREATED_AT;
+    const T2 = new Date(Date.parse(CREATED_AT) + 5_000).toISOString();
+    const T3 = new Date(Date.parse(CREATED_AT) + 6_000).toISOString();
+    const T4 = new Date(Date.parse(CREATED_AT) + 15_000).toISOString();
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      nodeTerminal: true,
+      events: [
+        event({
+          id: 'e-called-1',
+          eventType: 'tool_called',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'item_1' },
+          createdAt: T1,
+        }),
+        event({
+          id: 'e-completed-1',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'item_1', tool_outcome: 'unknown', duration_ms: 5_000 },
+          createdAt: T2,
+        }),
+        event({
+          id: 'e-called-2',
+          eventType: 'tool_called',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'item_1' },
+          createdAt: T3,
+        }),
+        event({
+          id: 'e-completed-2',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'item_1', tool_outcome: 'success', duration_ms: 9_000 },
+          createdAt: T4,
+        }),
+      ],
+      rows: [
+        toolRow({
+          id: 'c1',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'item_1',
+          input: { command: 'step-1' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'c2',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'item_1',
+          input: { command: 'step-1' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'r2',
+          seq: 3,
+          name: 'Bash',
+          toolUseId: 'item_1',
+          output: 'step-1\n',
+          metadata: { tool_phase: 'result', outcome: 'success' },
+        }),
+      ],
+    });
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ outcome: 'unknown', durationMs: 5_000, output: undefined });
+    expect(items[1]).toMatchObject({
+      outcome: 'succeeded',
+      durationMs: 9_000,
+      output: 'step-1\n',
+    });
   });
 
   test('keeps a direct-result interrupted outcome and presentation without a status row', () => {
@@ -619,7 +753,7 @@ describe('buildAgentHistory', () => {
     });
   });
 
-  test('folds an immediately following interrupted status into the tool row', () => {
+  test('a completed call keeps its own recorded outcome next to an interrupted status row, never overridden', () => {
     const { items } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
@@ -639,7 +773,7 @@ describe('buildAgentHistory', () => {
           name: 'Bash',
           toolUseId: 'fold-1',
           output: 'partial',
-          metadata: { tool_phase: 'result', outcome: 'success', exit_code: 2 },
+          metadata: { tool_phase: 'result', outcome: 'error', exit_code: 2 },
         }),
         statusRow('s-interrupt', 3, 'interrupted'),
         statusRow('s-next', 4, 'iteration_started', '2'),
@@ -654,24 +788,23 @@ describe('buildAgentHistory', () => {
         statusRow('s-interrupt-2', 6, 'interrupted'),
       ],
     });
-    expect(kinds(items)).toEqual(['tool', 'lifecycle', 'tool']);
-    const [folded, lifecycle, pendingFolded] = items;
-    // The interrupted override beats the recorded failure for display while the
-    // exit fact survives; the folded status row leaves no lifecycle item.
-    expect(folded).toMatchObject({ id: 'call-f', seq: 1, outcome: 'interrupted', exitCode: 2 });
-    if (folded?.kind !== 'tool') throw new Error('expected a tool item');
-    expect(folded.presentation).toMatchObject({ glyph: '⚠', statusLabel: 'interrupted' });
-    expect(folded.presentation.badges).toContainEqual({
-      kind: 'state',
-      text: 'interrupted',
-      tone: 'warning',
-    });
-    expect(folded.presentation.badges).toContainEqual({
+    // The call genuinely failed (recorded error, exit 2) before Stop landed
+    // right after it — that is unproven either way, so the fold leaves it as
+    // recorded rather than guessing; the status row it sits next to still
+    // reads as its own lifecycle item, same as the next status row after it.
+    expect(kinds(items)).toEqual(['tool', 'lifecycle', 'lifecycle', 'tool', 'lifecycle']);
+    const [failed, interruptLifecycle, iterationLifecycle, pending, secondInterruptLifecycle] =
+      items;
+    expect(failed).toMatchObject({ id: 'call-f', seq: 1, outcome: 'failed', exitCode: 2 });
+    if (failed?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(failed.presentation).toMatchObject({ glyph: '✕', statusLabel: 'failed' });
+    expect(failed.presentation.badges).toContainEqual({
       kind: 'exit',
       text: 'exit 2',
       tone: 'danger',
     });
-    expect(lifecycle).toEqual({
+    expect(interruptLifecycle).toMatchObject({ kind: 'lifecycle', state: 'interrupted' });
+    expect(iterationLifecycle).toEqual({
       kind: 'lifecycle',
       id: 's-next',
       seq: 4,
@@ -679,7 +812,209 @@ describe('buildAgentHistory', () => {
       detail: '2',
       execution: null,
     });
-    expect(pendingFolded).toMatchObject({ id: 'call-p', seq: 5, outcome: 'interrupted' });
+    // The second call never settled at all (no result row, no matching
+    // tool_completed event) — with no proof either way it stays 'running',
+    // never a guessed 'interrupted', so the status row after it is not
+    // consumed either.
+    expect(pending).toMatchObject({ id: 'call-p', seq: 5, outcome: 'running' });
+    expect(secondInterruptLifecycle).toMatchObject({ kind: 'lifecycle', state: 'interrupted' });
+  });
+
+  test('a pending tool settled unknown by its recorded event folds to unknown, not the interrupted glyph', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [
+        event({
+          id: 'evt-1',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'no-proof', tool_outcome: 'unknown' },
+        }),
+      ],
+      rows: [
+        toolRow({
+          id: 'call-np',
+          seq: 1,
+          name: 'sleep 30',
+          toolUseId: 'no-proof',
+          metadata: { tool_phase: 'call' },
+        }),
+        statusRow('s-interrupt', 2, 'interrupted'),
+      ],
+    });
+    // The status row is NOT consumed: an 'unknown' tool glyph carries no
+    // interruption fact on its own, so the lifecycle row stays visible as
+    // the only readable record that Stop landed here.
+    expect(kinds(items)).toEqual(['tool', 'lifecycle']);
+    const [settled, lifecycle] = items;
+    expect(settled).toMatchObject({ id: 'call-np', outcome: 'unknown' });
+    if (settled?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(settled.presentation).toMatchObject({ glyph: '–', statusLabel: 'unknown' });
+    expect(lifecycle).toMatchObject({ kind: 'lifecycle', state: 'interrupted' });
+  });
+
+  test('a pending tool settled interrupted by its recorded event folds to the interrupted glyph', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [
+        event({
+          id: 'evt-1',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'proven', tool_outcome: 'interrupted' },
+        }),
+      ],
+      rows: [
+        toolRow({
+          id: 'call-pv',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'proven',
+          metadata: { tool_phase: 'call' },
+        }),
+        statusRow('s-interrupt', 2, 'interrupted'),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool']);
+    const [settled] = items;
+    expect(settled).toMatchObject({ id: 'call-pv', outcome: 'interrupted' });
+    if (settled?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(settled.presentation).toMatchObject({ glyph: '⚠', statusLabel: 'interrupted' });
+  });
+
+  test.each([
+    ['omp', 'success', 'succeeded'],
+    ['grok', 'success', 'succeeded'],
+    ['codex', 'success', 'succeeded'],
+    ['codex', 'error', 'failed'],
+    ['claude', 'interrupted', 'interrupted'],
+  ] as const)(
+    '%s: a completed call recorded %j settles to %j, never inferred from the adjacent status row',
+    (_provider, recordedOutcome, expectedOutcome) => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [
+          event({
+            id: 'evt-1',
+            eventType: 'tool_completed',
+            stepName: NODE_ID,
+            data: { tool_call_id: 'finished-before-stop', tool_outcome: recordedOutcome },
+          }),
+        ],
+        rows: [
+          toolRow({
+            id: 'call-finished',
+            seq: 1,
+            name: 'Bash',
+            toolUseId: 'finished-before-stop',
+            input: { cmd: 'sleep 25 && echo done' },
+            metadata: { tool_phase: 'call' },
+          }),
+          toolRow({
+            id: 'result-finished',
+            seq: 2,
+            name: 'Bash',
+            toolUseId: 'finished-before-stop',
+            output: 'done',
+            metadata: { tool_phase: 'result', outcome: recordedOutcome },
+          }),
+          statusRow('s-interrupt', 3, 'interrupted'),
+        ],
+      });
+      const [settled] = items;
+      expect(settled).toMatchObject({ id: 'call-finished', outcome: expectedOutcome });
+      if (expectedOutcome === 'interrupted') {
+        // The call's own recorded outcome already IS the interrupted glyph
+        // (a provider that proves the tie, persisting it directly, per
+        // Claude's own PostToolUseFailure classification) — the adjacent
+        // status row would only repeat that fact, so it is consumed.
+        expect(kinds(items)).toEqual(['tool']);
+      } else {
+        // Every other recorded outcome — including Codex's own genuine
+        // 'error', which Codex can never prove is interrupt-caused — is
+        // trusted as recorded. The adjacent status row still recorded that
+        // Stop landed in this turn, so it stays visible as its own
+        // lifecycle item rather than being silently dropped.
+        expect(kinds(items)).toEqual(['tool', 'lifecycle']);
+      }
+    }
+  );
+
+  test('a still-open tool call settles to unknown when the execution is terminal', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      nodeTerminal: true,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-abandoned',
+          seq: 1,
+          name: 'sleep 30',
+          toolUseId: 'never-completed',
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool']);
+    const [settled] = items;
+    expect(settled).toMatchObject({ id: 'call-abandoned', outcome: 'unknown' });
+    if (settled?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(settled.presentation).toMatchObject({ glyph: '–', statusLabel: 'unknown' });
+    // A settled call never carries a live elapsed-time badge.
+    expect(settled.durationMs).toBeNull();
+  });
+
+  test('a still-open tool call stays running while the execution is not terminal', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      nodeTerminal: false,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-live',
+          seq: 1,
+          name: 'sleep 30',
+          toolUseId: 'still-going',
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    const [settled] = items;
+    expect(settled).toMatchObject({ id: 'call-live', outcome: 'running' });
+  });
+
+  test('a proven interrupt still wins the glyph over the terminal fallback', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      nodeTerminal: true,
+      events: [
+        event({
+          id: 'evt-1',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'proven-terminal', tool_outcome: 'interrupted' },
+        }),
+      ],
+      rows: [
+        toolRow({
+          id: 'call-proven-terminal',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'proven-terminal',
+          metadata: { tool_phase: 'call' },
+        }),
+        statusRow('s-interrupt', 2, 'interrupted'),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool']);
+    const [settled] = items;
+    expect(settled).toMatchObject({ id: 'call-proven-terminal', outcome: 'interrupted' });
   });
 
   test('does not fold across intervening items, detail text, or non-exact states', () => {
@@ -914,7 +1249,10 @@ describe('buildAgentHistory', () => {
       ],
     });
     expect(tool.presentation.bodyFacts).toEqual(['batch', '2 subtasks']);
-    expect(tool.presentation.bodyBarText).toBe('task · batch · 2 subtasks · 40ms');
+    expect(tool.presentation.bodyBar).toEqual({
+      label: 'task · batch · 2 subtasks',
+      badges: '40ms',
+    });
     expect(tool.presentation.badges).toContainEqual({
       kind: 'count',
       text: '2 subagents',
@@ -987,6 +1325,51 @@ describe('buildAgentHistory', () => {
           execution: EXECUTION,
         },
       ]);
+    });
+
+    test('joins the proven delivery state onto an operator row by its stamped message id', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          operatorRow('op-delivered', 1, 'wrong suite', { messageId: 'msg-delivered' }),
+          operatorRow('op-unknown', 2, 'skip doctests', { messageId: 'msg-unknown' }),
+          operatorRow('op-still-sent', 3, 'and retry', { messageId: 'msg-still-sent' }),
+        ],
+        deliveryStateByMessageId: new Map([
+          ['msg-delivered', 'delivered'],
+          ['msg-unknown', 'delivery_unknown'],
+          // 'msg-still-sent' is deliberately absent — no evidence yet.
+        ]),
+      });
+      expect(items.map(item => (item.kind === 'operator' ? item.delivery : null))).toEqual([
+        'delivered',
+        'delivery_unknown',
+        'sent',
+      ]);
+    });
+
+    test('a never_sent/withdrawn/queued state on the map still renders sent — only delivered/delivery_unknown are distinguished', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [operatorRow('op-1', 1, 'go', { messageId: 'msg-1' })],
+        deliveryStateByMessageId: new Map([['msg-1', 'queued']]),
+      });
+      expect(items[0]).toMatchObject({ kind: 'operator', delivery: 'sent' });
+    });
+
+    test('no message id on the row (older data) always renders sent, even with a map present', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [operatorRow('op-no-id', 1, 'go')],
+        deliveryStateByMessageId: new Map([['some-other-id', 'delivered']]),
+      });
+      expect(items[0]).toMatchObject({ kind: 'operator', messageId: null, delivery: 'sent' });
     });
 
     test('keeps a one-property output_format envelope serialized for operator while unwrapping assistant', () => {
@@ -1105,6 +1488,184 @@ describe('buildAgentHistory', () => {
     });
   });
 
+  describe('thinking, prompt, and advisor rows', () => {
+    function thinkingRow(id: string, seq: number, body: string): NodeMessageRow {
+      return textRow(id, seq, body, { origin: 'thinking' });
+    }
+
+    function promptRow(
+      id: string,
+      seq: number,
+      body: string,
+      extras: {
+        actorUserId?: string | null;
+        source?: 'node_prompt' | 'command_file' | 'reask';
+        actorDisplayName?: string | null;
+      } = {}
+    ): Extract<NodeMessageRow, { kind: 'text' }> {
+      return {
+        id,
+        seq,
+        kind: 'text',
+        payload: { text: body },
+        created_at: CREATED_AT,
+        metadata: {
+          origin: 'prompt',
+          actor_user_id: extras.actorUserId === undefined ? 'user-starter-1' : extras.actorUserId,
+          prompt_source: extras.source ?? 'node_prompt',
+        },
+        ...('actorDisplayName' in extras ? { prompt_display_name: extras.actorDisplayName } : {}),
+      };
+    }
+
+    function advisorRow(
+      id: string,
+      seq: number,
+      body: string,
+      advisorModel?: string
+    ): NodeMessageRow {
+      return textRow(id, seq, body, {
+        origin: 'advisor',
+        ...(advisorModel === undefined ? {} : { advisor_model: advisorModel }),
+      });
+    }
+
+    test('projects displayable thinking as a distinct role, verbatim', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [thinkingRow('think-1', 1, 'weighing two approaches before acting')],
+      });
+      expect(items).toEqual([
+        {
+          kind: 'thinking',
+          id: 'think-1',
+          seq: 1,
+          role: 'thinking',
+          text: 'weighing two approaches before acting',
+          execution: null,
+        },
+      ]);
+    });
+
+    test('projects the triggering prompt with its actor, resolved display name, and source, unedited', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          promptRow('prompt-1', 1, '  Review this PR for regressions.  ', {
+            actorUserId: 'user-starter-1',
+            actorDisplayName: 'Kevin',
+            source: 'command_file',
+          }),
+        ],
+      });
+      expect(items).toEqual([
+        {
+          kind: 'prompt',
+          id: 'prompt-1',
+          seq: 1,
+          role: 'prompt',
+          text: '  Review this PR for regressions.  ',
+          actorUserId: 'user-starter-1',
+          actorDisplayName: 'Kevin',
+          source: 'command_file',
+          execution: null,
+        },
+      ]);
+    });
+
+    test('keeps a null display name when the server sent none for a real actor', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [promptRow('prompt-noname', 1, 'go', { actorUserId: 'user-starter-1' })],
+      });
+      expect(items[0]).toMatchObject({ actorUserId: 'user-starter-1', actorDisplayName: null });
+    });
+
+    test('keeps a null actor and defaults a missing source to node_prompt', () => {
+      const row = textRow('prompt-2', 1, 'go', { origin: 'prompt', actor_user_id: null });
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [row],
+      });
+      expect(items[0]).toMatchObject({
+        kind: 'prompt',
+        actorUserId: null,
+        source: 'node_prompt',
+      });
+    });
+
+    test('projects an advisor notification with its configured model', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [advisorRow('advisor-1', 1, 'use a channel-based shutdown', 'claude-opus-4-8')],
+      });
+      expect(items).toEqual([
+        {
+          kind: 'advisor',
+          id: 'advisor-1',
+          seq: 1,
+          role: 'advisor',
+          text: 'use a channel-based shutdown',
+          advisorModel: 'claude-opus-4-8',
+          execution: null,
+        },
+      ]);
+    });
+
+    test('projects an advisor notification with no model when Archon did not configure one', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [advisorRow('advisor-2', 1, 'consider retries')],
+      });
+      expect(items[0]).toMatchObject({ kind: 'advisor', advisorModel: null });
+    });
+
+    test('keeps thinking, prompt, advisor, and assistant rows in server sequence order', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          promptRow('p-1', 1, 'do the task'),
+          thinkingRow('t-1', 2, 'thinking first'),
+          advisorRow('a-1', 3, 'advice here', 'claude-opus-4-8'),
+          textRow('as-1', 4, 'done'),
+        ],
+      });
+      expect(kinds(items)).toEqual(['prompt', 'thinking', 'advisor', 'assistant']);
+      expect(items.map(item => item.seq)).toEqual([1, 2, 3, 4]);
+    });
+
+    test('never renders an unrecognized origin as agent text', () => {
+      const row = textRow('unknown-1', 1, 'looks like agent prose but is not', {
+        // A value outside the schema's enum — simulates an older client
+        // reading a row written by a newer, unrecognized origin.
+        origin: 'assistant' as never,
+      });
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [row],
+      });
+      expect(items).toHaveLength(1);
+      expect(items[0]?.kind).not.toBe('assistant');
+      expect(items[0]).toMatchObject({ kind: 'lifecycle', state: 'unrecognized-origin' });
+    });
+  });
+
   test('returns empty todos when no tool resolves to the todo family', () => {
     const { items, todos } = buildAgentHistory({
       nodeId: NODE_ID,
@@ -1206,6 +1767,65 @@ describe('buildAgentHistory', () => {
         ],
       },
     ]);
+  });
+
+  test('TaskCreate folds by the id its own output assigns, then TaskUpdate advances it by that id', () => {
+    const { items, todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-create',
+          seq: 1,
+          name: 'TaskCreate',
+          toolUseId: 'tc-1',
+          input: { subject: 'Scout the routes', description: 'Map the send/interrupt path' },
+          // The real SDK sends the output as a JSON-encoded string, not an object.
+          output: '{"task":{"id":"1","subject":"Scout the routes"}}',
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'call-update',
+          seq: 2,
+          name: 'TaskUpdate',
+          toolUseId: 'tu-1',
+          input: { taskId: '1', status: 'in_progress' },
+          output: '{"success":true,"taskId":"1","updatedFields":["status"]}',
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool', 'tool']);
+    expect(items.map(item => (item.kind === 'tool' ? item.presentation.family : null))).toEqual([
+      'todo',
+      'todo',
+    ]);
+    expect(todos).toEqual([
+      {
+        phase: 'Tasks',
+        items: [{ content: 'Scout the routes', status: 'in_progress', id: '1' }],
+      },
+    ]);
+  });
+
+  test('a still-live TaskCreate (no output yet) never folds a blank row', () => {
+    const { todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-create',
+          seq: 1,
+          name: 'TaskCreate',
+          toolUseId: 'tc-1',
+          input: { subject: 'Scout the routes', description: 'still running' },
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    expect(todos).toEqual([]);
   });
 
   test('non-todo tools carrying op-shaped inputs and lifecycle rows do not fold', () => {
@@ -1311,7 +1931,14 @@ describe('buildAgentHistory', () => {
     const { items, todos } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
-      events: [],
+      events: [
+        event({
+          id: 'evt-1',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'todo-block', tool_outcome: 'interrupted' },
+        }),
+      ],
       rows: [
         toolRow({
           id: 'call-init',
@@ -1332,8 +1959,12 @@ describe('buildAgentHistory', () => {
         statusRow('s-interrupt', 3, 'interrupted'),
       ],
     });
-    // The interrupted status folds into the second tool row, leaving no lifecycle item.
+    // The first call never settled (no result row, no matching event) and
+    // stays 'running' — the second call's own `tool_completed` event proves
+    // it was cut off, so the interrupted status folds into it, leaving no
+    // lifecycle item.
     expect(kinds(items)).toEqual(['tool', 'tool']);
+    expect(items[0]).toMatchObject({ outcome: 'running' });
     expect(items[1]).toMatchObject({ outcome: 'interrupted' });
     expect(todos).toEqual([
       {

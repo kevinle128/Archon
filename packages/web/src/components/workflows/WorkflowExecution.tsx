@@ -15,13 +15,16 @@ import { buildLogRows } from './build-log-rows';
 import { StepLogs } from './StepLogs';
 import { WorkflowLogs } from './WorkflowLogs';
 import { WorkflowDagViewer } from './WorkflowDagViewer';
-import { ArtifactSummary } from './ArtifactSummary';
+import { RunArtifactsPanel } from '@/components/run-artifacts/RunArtifactsPanel';
 import { WorkflowNodeRetryAction } from './WorkflowNodeRetryAction';
 import { DagRunTabs, type WorkflowRunView } from './source-control/dag-run-tabs';
 import { SourceControlTab } from './source-control/source-control-tab';
+import { FilesChangedTab } from './source-control/files-changed-tab';
 import { TerminalTab } from './terminal/terminal-tab';
 import { useWorkflowStore } from '@/stores/workflow-store';
+import { useRunTerminalEdge } from '@/hooks/useRunTerminalEdge';
 import {
+  abandonWorkflowRun,
   answerAskHuman,
   approveWorkflowRun,
   getConversation,
@@ -32,6 +35,7 @@ import {
   getWorkflow,
   getWorkflowNodeMessages,
   rejectWorkflowRun,
+  resumeWorkflowRun,
   sendMessage,
   type NodeExecution,
   type PendingInteraction,
@@ -40,21 +44,37 @@ import {
 import {
   applyRoomDeepLink,
   buildExecutionHeader,
+  capExecutionOptions,
+  selectableExecutionRows,
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
+  computeLoopIterationCount,
+  computeRunOfTotal,
+  disambiguateExecutionOptions,
+  isLiveRowStatus,
+  loopMaxIterationsForNode,
   openRoom,
   openExplicitRoom,
   askCardId,
   rememberRoomScroll,
   resetRoomVisit,
   resolveRunDetailRefetchIntervalMs,
+  resolveFollowedRow,
   roomOpenerId,
   type RoomVisitState,
 } from '@/lib/execution-room-model';
 import { nodeMessageScopeKey, type NodeMessageSelection } from '@/lib/node-message-pages';
 import type { AskDraft, AskDraftByRequest } from './parse-ask-envelope';
-import { ensureUtc, formatDurationMs } from '@/lib/format';
+import { ensureUtc, formatDurationMs, formatStarted } from '@/lib/format';
+import { ChevronRight, FileText } from 'lucide-react';
+import { parseRunEnvOverlay } from '@/lib/run-usage/parse-run-env-overlay';
+import { readLegacyRunCost } from '@/lib/run-usage/run-usage';
+import type { RunEnvOverlay } from '@/components/workflow-envs/WorkflowEnvResolvedTable';
+import { RunEnvOverlayMeta } from '@/components/run-usage/RunEnvOverlayMeta';
+import type { RunDetailUsage } from '@/lib/settings/usage';
+import { RunCostMeta } from '@/components/run-usage/RunCostMeta';
+import { runUsageContext, type RunUsageValue } from '@/components/run-usage/run-usage-context';
 import { readRoomRatio, writeRoomRatio } from '@/lib/room-split-layout';
 import { settleRunningDagNodesForTerminalStatus } from '@/lib/workflow-utils';
 import type {
@@ -110,6 +130,11 @@ export interface WorkflowRunQueryData {
   viewerIsStarter: boolean;
   starterDisplayName: string | null;
   runError: string | null;
+  /** Direct-run usage grouped by node; null when the usage query failed. */
+  usage: RunDetailUsage;
+  legacyCostUsd: number | null;
+  /** Strictly parsed `metadata.envOverlay`; null when absent or malformed. */
+  envOverlay: RunEnvOverlay | null;
 }
 
 export function mapWorkflowRunDetail(
@@ -156,6 +181,9 @@ export function mapWorkflowRunDetail(
     viewerIsStarter: data.viewer_is_starter,
     starterDisplayName: data.starter_display_name,
     runError: typeof metadataError === 'string' ? metadataError : null,
+    usage: data.usage,
+    legacyCostUsd: readLegacyRunCost(data.run.metadata),
+    envOverlay: parseRunEnvOverlay(data.run.metadata),
   };
 }
 
@@ -319,6 +347,7 @@ export function buildWorkflowDagNodeStates(
 export type WorkflowExecutionBody =
   | 'graph-logs-pane'
   | 'source-control'
+  | 'files-changed'
   | 'terminal'
   | 'sequential';
 
@@ -328,6 +357,7 @@ export function resolveWorkflowExecutionBody(input: {
 }): WorkflowExecutionBody {
   if (!input.isDag) return 'sequential';
   if (input.activeView === 'source-control') return 'source-control';
+  if (input.activeView === 'files-changed') return 'files-changed';
   if (input.activeView === 'terminal') return 'terminal';
   return 'graph-logs-pane';
 }
@@ -338,20 +368,24 @@ interface WorkflowExecutionProps {
 
 function StatusBadge({ status }: { status: string }): React.ReactElement {
   const colors: Record<string, string> = {
-    pending: 'bg-accent/20 text-accent',
-    running: 'bg-accent/20 text-accent',
-    completed: 'bg-success/20 text-success',
-    failed: 'bg-error/20 text-error',
-    cancelled: 'bg-surface text-text-secondary',
+    pending: 'border-accent text-accent',
+    running: 'border-accent text-accent',
+    completed: 'border-success text-success',
+    failed: 'border-error text-error',
+    cancelled: 'border-border text-text-secondary',
+    paused: 'border-warning text-warning',
   };
   return (
     <span
-      className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] ?? 'bg-surface text-text-secondary'}`}
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${colors[status] ?? 'border-border text-text-secondary'}`}
     >
       {status}
     </span>
   );
 }
+
+const HEADER_BUTTON_CLASS =
+  'inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-border bg-background px-4 text-sm font-medium text-text-primary transition-colors duration-150 hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none';
 
 function nodeMessageSelectionFromRow(row: {
   id: string;
@@ -383,6 +417,11 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   const [codebaseCwd, setCodebaseCwd] = useState<string | null>(null);
   const [workerRunId, setWorkerRunId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<WorkflowRunView>('graph');
+  const [showArtifacts, setShowArtifacts] = useState(false);
+  const closeArtifacts = useCallback((): void => {
+    setShowArtifacts(false);
+  }, []);
+  const [actionError, setActionError] = useState<string | null>(null);
   // Increments on every user-initiated node click to trigger scroll in WorkflowLogs
   const [nodeScrollTrigger, setNodeScrollTrigger] = useState(0);
   // Track which codebaseId we've already fetched to avoid stale re-fetches during runId transitions
@@ -418,6 +457,30 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
       queryClient.invalidateQueries({ queryKey: ['workflowNodeMessages', runId] }),
     ]);
   }, [queryClient, runId]);
+
+  // The Legacy node room's own dock learns a node settled (via its
+  // faster-cadenced queue read) before this run entity's own poll/SSE
+  // catches up — force the cached run entity stale on that exact edge
+  // instead of waiting out the slower refresh. See
+  // `shouldRefetchRunOnDockFinished`.
+  const handleRunSettleHint = useCallback((): void => {
+    void queryClient.invalidateQueries({ queryKey: ['workflowRun', runId] });
+  }, [queryClient, runId]);
+
+  // The opposite edge from `handleRunSettleHint` above: a near-instant
+  // `__dashboard__` SSE signal (not this page's own 3s run-detail poll)
+  // reports the run's node/status changed on the server, before the dock's
+  // own ~1s queue poll has had a chance to notice on its own. Refresh the
+  // run entity AND kick the dock's own read on that exact edge, instead of
+  // leaving Stop/Queue visible until the dock's next regular tick.
+  // Deliberately does not touch `useWorkflowStore` — this is a targeted
+  // refresh trigger, not a live-data feed.
+  const [terminalEdgeKick, setTerminalEdgeKick] = useState(0);
+  const handleTerminalEdge = useCallback((): void => {
+    void queryClient.invalidateQueries({ queryKey: ['workflowRun', runId] });
+    setTerminalEdgeKick(tick => tick + 1);
+  }, [queryClient, runId]);
+  useRunTerminalEdge(runId, handleTerminalEdge);
 
   const askController = useMemo(
     () =>
@@ -746,13 +809,19 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
 
   const handleOpenRoom = useCallback(
     (rowId: string, nodeId: string, openerId: string | null, rememberExplicit: boolean): void => {
-      const selection = { nodeId, rowId, openerId };
+      const row = executionRows.find(candidate => candidate.id === rowId);
+      const selection = {
+        nodeId,
+        rowId,
+        openerId,
+        followingLive: row !== undefined && isLiveRowStatus(row.status),
+      };
       setRoom(previous =>
         rememberExplicit ? openExplicitRoom(previous, selection) : openRoom(previous, selection)
       );
       setNodeScrollTrigger(prev => prev + 1);
     },
-    []
+    [executionRows]
   );
 
   const handleCloseRoom = useCallback((): void => {
@@ -763,9 +832,23 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     });
   }, [room.selection?.openerId]);
 
-  const selectedExecutionRow =
-    executionRows.find(candidate => candidate.id === room.selection?.rowId) ?? null;
+  const selectedExecutionRow = resolveFollowedRow(room.selection, executionRows);
   const runStartedAtIso = workflow === null ? '' : new Date(workflow.startedAt).toISOString();
+  const executionRowsForSelectedNode =
+    selectedExecutionRow === null
+      ? []
+      : selectableExecutionRows(
+          executionRows.filter(candidate => candidate.nodeId === selectedExecutionRow.nodeId),
+          selectedExecutionRow.id
+        );
+  const selectedDefinitionNode =
+    selectedExecutionRow === null
+      ? undefined
+      : dagDefinitionNodes?.find(candidate => candidate.id === selectedExecutionRow.nodeId);
+  const selectedRoomNodeState =
+    selectedExecutionRow === null
+      ? undefined
+      : queryData?.nodeStates?.find(state => state.nodeId === selectedExecutionRow.nodeId);
   const headerModel =
     selectedExecutionRow === null
       ? undefined
@@ -773,20 +856,40 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           row: selectedExecutionRow,
           events: queryData?.events ?? [],
           runStartedAt: runStartedAtIso,
+          siblingRows: executionRowsForSelectedNode,
+          loopMaxIterations: loopMaxIterationsForNode(selectedDefinitionNode),
+          nodeStatus: selectedRoomNodeState?.status,
+          nodeError: selectedRoomNodeState?.error,
+          nodeSteeringSubState: selectedRoomNodeState?.steeringSubState,
+          runStatus: workflow?.status,
         });
   const headerOptions =
     selectedExecutionRow === null
       ? []
-      : executionRows
-          .filter(candidate => candidate.nodeId === selectedExecutionRow.nodeId)
-          .map(candidate => ({
-            rowId: candidate.id,
+      : disambiguateExecutionOptions(
+          capExecutionOptions(executionRowsForSelectedNode).map(candidate => ({
+            id: candidate.id,
             label: buildExecutionHeader({
               row: candidate,
               events: queryData?.events ?? [],
               runStartedAt: runStartedAtIso,
+              siblingRows: executionRowsForSelectedNode,
             }).executionLabel,
-          }));
+            status: candidate.status,
+          }))
+        ).map(option => ({ rowId: option.id, label: option.label }));
+  // A loop node's "of N" pairs with its own "· max M" cap in the header, so
+  // both must describe the same run — count iterations within the selected
+  // row's own run rather than every node execution across every retry.
+  const loopIterationCount =
+    selectedExecutionRow === null
+      ? null
+      : computeLoopIterationCount(executionRowsForSelectedNode, selectedExecutionRow.id);
+  const executionCount = loopIterationCount ?? executionRowsForSelectedNode.length;
+  const runOfTotal =
+    selectedExecutionRow === null
+      ? null
+      : computeRunOfTotal(executionRowsForSelectedNode, selectedExecutionRow.id);
   const handleSelectExecution = useCallback(
     (rowId: string): void => {
       const next = executionRows.find(candidate => candidate.id === rowId);
@@ -796,6 +899,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           nodeId: next.nodeId,
           rowId: next.id,
           openerId: previous.selection?.openerId ?? null,
+          followingLive: isLiveRowStatus(next.status),
         })
       );
     },
@@ -836,6 +940,10 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
             nodeId,
             rowId: `node:${nodeId}`,
             openerId: roomOpenerId('legacy', 'graph', nodeId),
+            // No row exists yet for this node — nothing to follow now, but
+            // the first row it does produce should be followed rather than
+            // pinned, matching the intent of clicking a not-yet-started node.
+            followingLive: true,
           })
         );
       } else {
@@ -844,6 +952,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
             nodeId,
             rowId: row.id,
             openerId: roomOpenerId('legacy', 'graph', nodeId),
+            followingLive: isLiveRowStatus(row.status),
           })
         );
       }
@@ -859,6 +968,26 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     void queryClient.invalidateQueries({ queryKey: ['workflow-runs-status'] });
   }, [queryClient, runId]);
 
+  const handleRunAction = useCallback(
+    async (action: 'resume' | 'abandon'): Promise<void> => {
+      setActionError(null);
+      try {
+        if (action === 'resume') await resumeWorkflowRun(runId);
+        else await abandonWorkflowRun(runId);
+        await queryClient.invalidateQueries({ queryKey: ['workflowRun', runId] });
+        void queryClient.invalidateQueries({ queryKey: ['workflowRuns'] });
+      } catch (err) {
+        console.error('[WorkflowExecution] Run action failed', {
+          runId,
+          action,
+          error: err instanceof Error ? err.message : err,
+        });
+        setActionError(err instanceof Error ? err.message : `Failed to ${action} the run`);
+      }
+    },
+    [queryClient, runId]
+  );
+
   const handleGateApprove = useCallback(async (): Promise<void> => {
     await approveWorkflowRun(runId);
     await queryClient.invalidateQueries({ queryKey: ['workflowRun', runId] });
@@ -872,7 +1001,13 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     [queryClient, runId]
   );
 
-  if (error) {
+  // react-query keeps the last successful `data` on a background refetch
+  // failure (it never clears it just because `error` is now set), so a
+  // failed re-read after the run has already loaded once must not swap the
+  // whole room for this error page — only a first load that never succeeded
+  // does. The non-blocking "Failed to load — retrying" hint below the header
+  // covers the "last read failed" case instead.
+  if (error && !workflow) {
     return (
       <div className="flex items-center justify-center h-full text-error">
         <p>Failed to load workflow run: {error}</p>
@@ -900,6 +1035,10 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   const elapsed = startedAt ? Math.max(0, completedAt - startedAt) : 0;
 
   const isRunning = workflow.status === 'running' || workflow.status === 'pending';
+  const runUsageValue: RunUsageValue | undefined =
+    queryData === undefined
+      ? undefined
+      : { usage: queryData.usage, legacyCostUsd: queryData.legacyCostUsd };
 
   // Pick the platform ID for logs: worker takes precedence over conversation.
   const logsPlatformId = workerPlatformId ?? conversationPlatformId;
@@ -1013,7 +1152,12 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           activeView={activeView === 'chat' ? 'chat' : activeView === 'graph' ? 'graph' : 'logs'}
           renderGraph={renderGraph}
           selectedNodeId={selectedDagNode}
-          selectedLogRowId={room.selection?.rowId ?? null}
+          // The RESOLVED row — while `room.selection.followingLive` holds,
+          // this can be a newer row than `room.selection.rowId` itself once
+          // the room advances to a live iteration; the pane must render the
+          // same row the header above it describes, never the raw pinned id.
+          selectedLogRowId={selectedExecutionRow?.id ?? null}
+          followingLive={room.selection?.followingLive ?? false}
           lastExplicitRowByNode={room.lastExplicitRowByNode}
           onOpenRoom={handleOpenRoom}
           onCloseRoom={handleCloseRoom}
@@ -1042,17 +1186,24 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           onSubmitAsk={askController.submit}
           headerModel={headerModel}
           headerOptions={headerOptions}
+          executionCount={executionCount}
+          runOfTotal={runOfTotal}
           onSelectExecution={handleSelectExecution}
           scopeKey={transcriptScopeKey}
           initialScrollTop={initialScrollTop}
           onScrollTopChange={handleScrollTopChange}
           askDrafts={askDrafts}
           onAskDraftChange={updateAskDraft}
+          onRunSettleHint={handleRunSettleHint}
+          terminalEdgeKick={terminalEdgeKick}
         />
       );
     }
     if (body === 'source-control') {
       return <SourceControlTab key={runId} runId={runId} />;
+    }
+    if (body === 'files-changed') {
+      return <FilesChangedTab key={runId} runId={runId} />;
     }
     if (body === 'terminal') {
       return <TerminalTab key={runId} runId={runId} />;
@@ -1072,92 +1223,184 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   };
 
   return (
-    <div className="legacy-run-view flex flex-col h-full min-h-0 overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-        <button
-          onClick={(): void => {
-            if (window.history.length > 1) {
-              navigate(-1);
-            } else {
-              navigate('/legacy/workflows');
-            }
-          }}
-          className="text-text-secondary hover:text-text-primary transition-colors text-sm"
-          title="Back"
-        >
-          &larr;
-        </button>
-        <div className="flex items-center gap-2 min-w-0">
-          <h2 className="font-semibold text-text-primary truncate">{workflow.workflowName}</h2>
-          <StatusBadge status={workflow.status} />
-          <WorkflowAskChrome
-            status={workflow.status}
-            pendingInteractions={queryData?.pendingInteractions ?? []}
-            nodeStates={queryData?.nodeStates ?? []}
-            runError={queryData?.runError ?? null}
-            onSelectAwaitingNode={(nodeId, interaction): void => {
-              const row = chooseExecutionForInteraction(executionRows, interaction);
-              if (row === null) return;
-              handleOpenRoom(row.id, nodeId, null, false);
-              const requestId = interaction.tool_use_id;
-              let attempts = 0;
-              const focusAsk = (): void => {
-                const card = document.getElementById(askCardId(requestId, 'room'));
-                if (card === null) {
-                  if (attempts < 30) {
-                    attempts += 1;
-                    requestAnimationFrame(focusAsk);
-                  }
-                  return;
-                }
-                card.focus();
-                const control = card.querySelector(
-                  'input:not([disabled]), textarea:not([disabled]), button:not([disabled])'
-                );
-                if (control instanceof HTMLElement) control.focus();
-              };
-              requestAnimationFrame(focusAsk);
-            }}
-            onRequestGraphView={(): void => undefined}
-          />
-        </div>
-        <div className="flex items-center gap-2 ml-auto shrink-0">
-          {codebaseName && <span className="text-xs text-text-secondary">{codebaseName}</span>}
-          {workerRunId && (
+    <runUsageContext.Provider value={runUsageValue}>
+      <div className="legacy-run-view flex flex-col h-full min-h-0 overflow-hidden">
+        {/* Header */}
+        <div className="grid gap-2 border-b border-border px-8 pt-4">
+          <nav
+            aria-label="Breadcrumb"
+            className="flex flex-wrap items-center gap-1 text-sm text-text-secondary"
+          >
             <button
+              type="button"
               onClick={(): void => {
-                navigate(`/legacy/workflows/runs/${workerRunId}`);
+                navigate('/dashboard');
               }}
-              className="flex items-center gap-1 text-xs text-primary hover:text-accent-bright transition-colors"
-              title="View workflow run details"
+              className="-ml-2 inline-flex min-h-11 cursor-pointer items-center rounded-[10px] px-2 transition-colors duration-150 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
             >
-              <span>Run Details</span>
+              Dashboard
             </button>
-          )}
-          <span className="text-xs text-text-secondary">{formatDurationMs(elapsed)}</span>
-        </div>
-      </div>
-
-      {/* View tabs — only for DAG workflows */}
-      {isDag && (
-        <div className="flex items-center px-4 py-1.5 border-b border-border">
-          <DagRunTabs
-            activeView={activeView}
-            parentPlatformId={parentPlatformId}
-            onValueChange={setActiveView}
-          />
-        </div>
-      )}
-      <div data-testid="legacy-run-shell-chrome">
-        {retryActionPanel}
-        {!isRunning && workflow.artifacts.length > 0 ? (
-          <div className="border-t border-border p-3">
-            <ArtifactSummary artifacts={workflow.artifacts} runId={runId} />
+            <ChevronRight
+              aria-hidden="true"
+              strokeWidth={2}
+              className="h-4 w-4 text-text-tertiary"
+            />
+            <span>{workflow.workflowName}</span>
+            <ChevronRight
+              aria-hidden="true"
+              strokeWidth={2}
+              className="h-4 w-4 text-text-tertiary"
+            />
+            <span className="font-mono">{runId.slice(0, 8)}</span>
+          </nav>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex min-w-0 flex-wrap items-center gap-4">
+              <h1 className="min-w-0 truncate font-mono text-xl font-medium text-text-primary">
+                {workflow.workflowName}
+              </h1>
+              <StatusBadge status={workflow.status} />
+              <WorkflowAskChrome
+                status={workflow.status}
+                pendingInteractions={queryData?.pendingInteractions ?? []}
+                nodeStates={queryData?.nodeStates ?? []}
+                runError={queryData?.runError ?? null}
+                onSelectAwaitingNode={(nodeId, interaction): void => {
+                  const row = chooseExecutionForInteraction(executionRows, interaction);
+                  if (row === null) return;
+                  handleOpenRoom(row.id, nodeId, null, false);
+                  const requestId = interaction.tool_use_id;
+                  let attempts = 0;
+                  const focusAsk = (): void => {
+                    const card = document.getElementById(askCardId(requestId, 'room'));
+                    if (card === null) {
+                      if (attempts < 30) {
+                        attempts += 1;
+                        requestAnimationFrame(focusAsk);
+                      }
+                      return;
+                    }
+                    card.focus();
+                    const control = card.querySelector(
+                      'input:not([disabled]), textarea:not([disabled]), button:not([disabled])'
+                    );
+                    if (control instanceof HTMLElement) control.focus();
+                  };
+                  requestAnimationFrame(focusAsk);
+                }}
+                onRequestGraphView={(): void => undefined}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {workerRunId && (
+                <button
+                  type="button"
+                  onClick={(): void => {
+                    navigate(`/workflows/runs/${workerRunId}`);
+                  }}
+                  className={HEADER_BUTTON_CLASS}
+                  title="View workflow run details"
+                >
+                  Run Details
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={workflow.status !== 'failed' && workflow.status !== 'paused'}
+                title={
+                  workflow.status === 'failed' || workflow.status === 'paused'
+                    ? 'Resume from the last completed node'
+                    : 'Only a failed or paused run can resume'
+                }
+                onClick={(): void => {
+                  void handleRunAction('resume');
+                }}
+                className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-accent px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-background disabled:text-text-tertiary motion-reduce:transition-none"
+              >
+                Resume
+              </button>
+              <button
+                type="button"
+                aria-pressed={showArtifacts}
+                onClick={(): void => {
+                  setShowArtifacts(value => !value);
+                }}
+                className={HEADER_BUTTON_CLASS}
+              >
+                <FileText aria-hidden="true" strokeWidth={2} className="h-4 w-4" />
+                Artifacts
+              </button>
+              <button
+                type="button"
+                disabled={isTerminal(workflow.status)}
+                onClick={(): void => {
+                  if (window.confirm('Abandon this run? It will be marked cancelled.')) {
+                    void handleRunAction('abandon');
+                  }
+                }}
+                className={`${HEADER_BUTTON_CLASS} text-error`}
+              >
+                Abandon
+              </button>
+            </div>
           </div>
-        ) : null}
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-text-tertiary">
+            <span>
+              run <b className="font-mono font-normal text-text-primary">{runId}</b>
+            </span>
+            {codebaseName && (
+              <span>
+                project <b className="font-mono font-normal text-text-primary">{codebaseName}</b>
+              </span>
+            )}
+            {startedAt > 0 && (
+              <span>
+                started{' '}
+                <b className="font-mono font-normal text-text-primary">
+                  {formatStarted(new Date(startedAt).toISOString())}
+                </b>
+              </span>
+            )}
+            <span>
+              active{' '}
+              <b className="font-mono font-normal text-text-primary">{formatDurationMs(elapsed)}</b>
+            </span>
+            <RunCostMeta />
+            {queryData?.envOverlay != null ? (
+              <RunEnvOverlayMeta overlay={queryData.envOverlay} />
+            ) : null}
+          </div>
+          {actionError !== null ? (
+            <p role="alert" className="text-xs text-error">
+              {actionError}
+            </p>
+          ) : null}
+          {isDag && (
+            <div className="-mx-3">
+              <DagRunTabs
+                activeView={activeView}
+                parentPlatformId={parentPlatformId}
+                onValueChange={setActiveView}
+              />
+            </div>
+          )}
+        </div>
+
+        {error ? <p className="px-8 py-1 text-xs text-error">Failed to load — retrying</p> : null}
+
+        <div data-testid="legacy-run-shell-chrome">{retryActionPanel}</div>
+        {/* The panel sits beside the body so an open node room stays usable. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{renderBody()}</div>
+          {showArtifacts ? (
+            <RunArtifactsPanel
+              key={runId}
+              runId={runId}
+              reportedArtifacts={workflow.artifacts}
+              onClose={closeArtifacts}
+            />
+          ) : null}
+        </div>
       </div>
-      {renderBody()}
-    </div>
+    </runUsageContext.Provider>
   );
 }

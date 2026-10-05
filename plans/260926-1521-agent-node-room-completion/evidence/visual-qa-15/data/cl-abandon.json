@@ -1,0 +1,131 @@
+{
+  "R": "7e62ee50e23970279cb446e7dcff58d3",
+  "post": 16,
+  "abandonAt": 1790746933257,
+  "res": { "success": true, "message": "Abandoned workflow: vq15-claude-steer", "__status": 200 },
+  "raf": {
+    "c": [
+      [0, "Running||Stop,Queue|TA|QUEUED · 1|1 message queued||1|1|||TEXTAREA"],
+      [
+        492,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ],
+    "l": [
+      [0, "Running||Stop,Queue|TA|QUEUED · 1|agent generating||1|1|||TEXTAREA"],
+      [
+        84,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ]
+  },
+  "ns": {
+    "c": [
+      [37, "Running||Stop,Queue|TA|QUEUED · 1|1 message queued||1|1|||TEXTAREA"],
+      [
+        519,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ],
+    "l": [
+      [38, "Running||Stop,Queue|TA|QUEUED · 1|agent generating||1|1|||TEXTAREA"],
+      [
+        94,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ]
+  },
+  "gets": [
+    {
+      "t": 63,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    { "t": 85, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    {
+      "t": 85,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    {
+      "t": 119,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    {
+      "t": 483,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    { "t": 492, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 491, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    {
+      "t": 492,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    {
+      "t": 520,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "failed",
+      "ss": null,
+      "nq": 4
+    },
+    { "t": 530, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 530, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 530, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 585, "s": "c", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2035, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2036, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 2038, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 3536, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 3536, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 3536, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5042, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5042, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 5043, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 6544, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 6545, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 6545, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8049, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8049, "s": "l", "k": "r", "http": 200, "st": "cancelled" },
+    { "t": 8049, "s": "l", "k": "r", "http": 200, "st": "cancelled" }
+  ],
+  "rows0": {
+    "c": { "assistant": 3, "thinking": 4, "operator": 3 },
+    "l": { "assistant": 3, "thinking": 4, "operator": 3 }
+  },
+  "rows1": {
+    "c": { "assistant": 3, "thinking": 4, "operator": 3 },
+    "l": { "assistant": 3, "thinking": 4, "operator": 3 }
+  },
+  "status": "cancelled"
+}

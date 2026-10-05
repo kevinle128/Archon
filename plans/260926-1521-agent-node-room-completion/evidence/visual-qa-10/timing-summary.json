@@ -1,0 +1,1407 @@
+{
+  "cycles": {
+    "cl-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPostMs": 63,
+      "sendPostMs": 73,
+      "sendState": "sent",
+      "probeClickRelMs": null,
+      "raf": {
+        "firstSendingMs": 55,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [-1, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [89, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 66,
+        "stopAgainAt": 104,
+        "sendingAt": 104,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 900,
+        "stopAgainAt": 5,
+        "sendingAt": 5,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "cl-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPostMs": 74,
+      "sendPostMs": 41,
+      "sendState": "sent",
+      "probeClickRelMs": 16,
+      "raf": {
+        "firstSendingMs": 24,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [0, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [107, "DIV[last-row]#m2", "prevConnected=false"],
+        [758, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 170,
+        "stopAgainAt": 5,
+        "sendingAt": 5,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 171,
+        "stopAgainAt": 46,
+        "sendingAt": 46,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "cl-c3": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPostMs": 74,
+      "sendPostMs": 44,
+      "sendState": "sent",
+      "probeClickRelMs": 32,
+      "raf": {
+        "firstSendingMs": 24,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [0, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [106, "DIV[last-row]#m2", "prevConnected=false"],
+        [841, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 215,
+        "stopAgainAt": 38,
+        "sendingAt": 38,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 42,
+        "sendNowAt": 216,
+        "stopAgainAt": 78,
+        "sendingAt": 78,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "cx-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPostMs": 25,
+      "sendPostMs": 26,
+      "sendState": "sent",
+      "probeClickRelMs": null,
+      "raf": {
+        "firstSendingMs": 24,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [0, "TEXTAREA#m0", true],
+        [31, "DIV[last-row]#m1", "prevConnected=true"]
+      ],
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 28,
+        "stopAgainAt": 128,
+        "sendingAt": 128,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 544,
+        "stopAgainAt": 8,
+        "sendingAt": 8,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "cx-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPostMs": 27,
+      "sendPostMs": 33,
+      "sendState": "sent",
+      "probeClickRelMs": 16,
+      "raf": {
+        "firstSendingMs": 24,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [0, "TEXTAREA#m0", true],
+        [32, "DIV[last-row]#m1", "prevConnected=true"],
+        [751, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 168,
+        "stopAgainAt": 15,
+        "sendingAt": 15,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 168,
+        "stopAgainAt": 56,
+        "sendingAt": 56,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "cx-c3": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPostMs": 22,
+      "sendPostMs": 33,
+      "sendState": "sent",
+      "probeClickRelMs": null,
+      "raf": {
+        "firstSendingMs": 20,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [0, "TEXTAREA#m0", true],
+        [30, "DIV[last-row]#m1", "prevConnected=true"]
+      ],
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 111,
+        "stopAgainAt": 32,
+        "sendingAt": 32,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 111,
+        "stopAgainAt": 32,
+        "sendingAt": 32,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "ds-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPostMs": 1264,
+      "sendPostMs": 34,
+      "sendState": "sent",
+      "probeClickRelMs": null,
+      "raf": {
+        "firstSendingMs": 24,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [-1, "TEXTAREA#m0", true],
+        [32, "BUTTON#m1", "prevConnected=true"],
+        [1290, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 1266,
+        "stopAgainAt": 117,
+        "sendingAt": 117,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 1437,
+        "stopAgainAt": 28,
+        "sendingAt": 28,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "ds-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPostMs": 1293,
+      "sendPostMs": 38,
+      "sendState": "sent",
+      "probeClickRelMs": 14,
+      "raf": {
+        "firstSendingMs": 28,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [0, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [1321, "DIV[last-row]#m2", "prevConnected=false"],
+        [2011, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 1425,
+        "stopAgainAt": 33,
+        "sendingAt": 33,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 1426,
+        "stopAgainAt": 42,
+        "sendingAt": 42,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "ds-c3": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPostMs": 1310,
+      "sendPostMs": 37,
+      "sendState": "sent",
+      "probeClickRelMs": 22,
+      "raf": {
+        "firstSendingMs": 26,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [0, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [1322, "DIV[last-row]#m2", "prevConnected=false"],
+        [2012, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 1442,
+        "stopAgainAt": 20,
+        "sendingAt": 20,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 1443,
+        "stopAgainAt": 59,
+        "sendingAt": 59,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "gk-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPostMs": 2792,
+      "sendPostMs": 37,
+      "sendState": "sent",
+      "probeClickRelMs": null,
+      "raf": {
+        "firstSendingMs": 25,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [-1, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [2820, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 2794,
+        "stopAgainAt": 124,
+        "sendingAt": 124,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 3296,
+        "stopAgainAt": 5,
+        "sendingAt": 5,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "gk-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPostMs": 3703,
+      "sendPostMs": 35,
+      "sendState": "sent",
+      "probeClickRelMs": 15,
+      "raf": {
+        "firstSendingMs": 25,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [0, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [3727, "DIV[last-row]#m2", "prevConnected=false"],
+        [4410, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 3845,
+        "stopAgainAt": 23,
+        "sendingAt": 23,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 40,
+        "sendNowAt": 3846,
+        "stopAgainAt": 55,
+        "sendingAt": 55,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "gk-c3": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPostMs": 5422,
+      "sendPostMs": 35,
+      "sendState": "sent",
+      "probeClickRelMs": 22,
+      "raf": {
+        "firstSendingMs": 23,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [0, "TEXTAREA#m0", true],
+        [61, "BUTTON#m1", "prevConnected=true"],
+        [5432, "DIV[last-row]#m2", "prevConnected=false"],
+        [6150, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 5564,
+        "stopAgainAt": 20,
+        "sendingAt": 20,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 5565,
+        "stopAgainAt": 61,
+        "sendingAt": 61,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "omp-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPostMs": 56,
+      "sendPostMs": 25,
+      "sendState": "sent",
+      "probeClickRelMs": null,
+      "raf": {
+        "firstSendingMs": 23,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [-1, "TEXTAREA#m0", true],
+        [29, "BUTTON#m1", "prevConnected=true"],
+        [60, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "C": {
+        "stoppingAt": 42,
+        "sendNowAt": 59,
+        "stopAgainAt": 127,
+        "sendingAt": 127,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 187,
+        "stopAgainAt": 7,
+        "sendingAt": 7,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "omp-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPostMs": 55,
+      "sendPostMs": 47,
+      "sendState": "sent",
+      "probeClickRelMs": 18,
+      "raf": {
+        "firstSendingMs": 26,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [0, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [61, "DIV[last-row]#m2", "prevConnected=false"],
+        [752, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 167,
+        "stopAgainAt": 0,
+        "sendingAt": 0,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 40,
+        "sendNowAt": 169,
+        "stopAgainAt": 52,
+        "sendingAt": 52,
+        "flipBacks": 0,
+        "staleQueued": [
+          [
+            10,
+            "WILL SEND \u00b7 1",
+            "delete \u00b7 omp-c2-Q1 queued: reply with the word omp-c2ACK then continue with the remaining steps,Send now \u00b7 Cmd/Ctrl+Enter to send \u00b7 1 message will send"
+          ]
+        ],
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "omp-c3": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPostMs": 50,
+      "sendPostMs": 36,
+      "sendState": "sent",
+      "probeClickRelMs": 20,
+      "raf": {
+        "firstSendingMs": 24,
+        "blankFrames": []
+      },
+      "focusStopShell": [
+        [0, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [61, "DIV[last-row]#m2", "prevConnected=false"],
+        [751, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 159,
+        "stopAgainAt": 20,
+        "sendingAt": 20,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 160,
+        "stopAgainAt": 62,
+        "sendingAt": 62,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      }
+    }
+  },
+  "abandons": {
+    "cl": {
+      "postMs": 7,
+      "C": {
+        "neverSentAt": 265,
+        "pillAt": 1914,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 821,
+        "pillAt": 1612,
+        "missing": []
+      }
+    },
+    "cx": {
+      "postMs": 13,
+      "C": {
+        "neverSentAt": 224,
+        "pillAt": 224,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 103,
+        "pillAt": 103,
+        "missing": []
+      }
+    },
+    "cxl": {
+      "postMs": 25,
+      "C": {
+        "neverSentAt": 594,
+        "pillAt": 1181,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 251,
+        "pillAt": 2100,
+        "missing": []
+      }
+    },
+    "ds": {
+      "postMs": 3,
+      "C": {
+        "neverSentAt": 834,
+        "pillAt": 2096,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 434,
+        "pillAt": 1234,
+        "missing": []
+      }
+    },
+    "gk": {
+      "postMs": 8,
+      "C": {
+        "neverSentAt": 409,
+        "pillAt": 1032,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 210,
+        "pillAt": 2947,
+        "missing": []
+      }
+    },
+    "gs": {
+      "postMs": 7,
+      "C": {
+        "neverSentAt": 292,
+        "pillAt": 292,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 30,
+        "pillAt": 30,
+        "missing": []
+      }
+    },
+    "ls": {
+      "postMs": 47,
+      "C": {
+        "neverSentAt": 811,
+        "pillAt": 1129,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 413,
+        "pillAt": 2293,
+        "missing": []
+      }
+    },
+    "omp2": {
+      "postMs": 3,
+      "C": {
+        "neverSentAt": 537,
+        "pillAt": 537,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 659,
+        "pillAt": 1497,
+        "missing": []
+      }
+    }
+  },
+  "reap": {
+    "cl-reap": {
+      "dead_ms": {
+        "5995": 4377,
+        "2934": 4892
+      },
+      "still_alive": [34592]
+    },
+    "cx-reap": {
+      "dead_ms": {
+        "32545": 530,
+        "32691": 530,
+        "32692": 530,
+        "32693": 530,
+        "34546": 530,
+        "34547": 530,
+        "32963": 530
+      },
+      "still_alive": [34592]
+    },
+    "cxl-reap": {
+      "dead_ms": {
+        "10772": 1543,
+        "11050": 1543,
+        "11051": 1543,
+        "11055": 1543,
+        "12547": 1543,
+        "12548": 1543,
+        "11297": 1543
+      },
+      "still_alive": []
+    },
+    "cxl-stop1-stop-reap": {
+      "dead_ms": {
+        "83954": 277,
+        "84516": 277,
+        "84521": 277,
+        "84522": 277,
+        "91775": 277,
+        "91776": 277,
+        "84783": 277
+      },
+      "still_alive": []
+    },
+    "cxl-stop2-stop-reap": {
+      "dead_ms": {
+        "93276": 312,
+        "7631": 312,
+        "93670": 312,
+        "93672": 312,
+        "93681": 312,
+        "93687": 312,
+        "7657": 312
+      },
+      "still_alive": []
+    },
+    "ds-reap": {
+      "dead_ms": {
+        "30979": 2299,
+        "30980": 2299,
+        "26585": 6369
+      },
+      "still_alive": []
+    },
+    "gk-reap": {
+      "dead_ms": {
+        "79829": 1299,
+        "79834": 1299,
+        "79837": 1299,
+        "79840": 1299,
+        "79847": 1299,
+        "79852": 1299,
+        "86433": 1299,
+        "86473": 1299,
+        "80836": 1299,
+        "81457": 1299,
+        "79578": 4643
+      },
+      "still_alive": [34592]
+    },
+    "gs-reap": {
+      "dead_ms": {
+        "42144": 273,
+        "47262": 273,
+        "47266": 273,
+        "47269": 273,
+        "58493": 273,
+        "47289": 273,
+        "50039": 1548,
+        "50042": 1548,
+        "50043": 1548,
+        "50045": 1548,
+        "50046": 1548,
+        "50047": 1548,
+        "58411": 1548,
+        "51528": 1548,
+        "51716": 1548,
+        "49007": 1806,
+        "58418": 17466
+      },
+      "still_alive": [34592]
+    },
+    "ls-reap": {
+      "dead_ms": {
+        "73755": 3355,
+        "70788": 4115
+      },
+      "still_alive": []
+    },
+    "omp2-reap": {
+      "dead_ms": {
+        "35832": 784
+      },
+      "still_alive": [34592]
+    },
+    "srcl-stop-reap": {
+      "dead_ms": {
+        "44652": 284,
+        "51579": 284
+      },
+      "still_alive": []
+    },
+    "srds-stop-reap": {
+      "dead_ms": {
+        "31019": 272,
+        "31020": 272,
+        "28500": 1302
+      },
+      "still_alive": []
+    },
+    "srgk-stop-reap": {
+      "dead_ms": {
+        "32799": 281,
+        "32801": 281,
+        "32803": 281,
+        "32805": 281,
+        "32807": 281,
+        "32809": 281,
+        "37631": 281,
+        "37701": 281,
+        "35479": 281,
+        "34537": 281,
+        "32580": 3878
+      },
+      "still_alive": []
+    },
+    "sromp-stop-reap": {
+      "dead_ms": {},
+      "still_alive": [39967]
+    }
+  },
+  "reapTrees": {
+    "cl-tree-before.txt": [
+      [
+        "2934",
+        "/Users/dale/orca/workspaces/Archon/develop-2/node_modules/.bun/@anthropic-ai+claude-agent-"
+      ],
+      [
+        "34592",
+        "/Users/dale/.bun/bin/omp --mode rpc --cwd /private/tmp/claude-501/-Users-dale-orca-workspa"
+      ],
+      [
+        "5995",
+        "/bin/zsh -c source /Users/dale/.claude/shell-snapshots/snapshot-zsh-1790659170382-ag6ncy.s"
+      ]
+    ],
+    "cx-tree-before.txt": [
+      [
+        "32545",
+        "/Users/dale/orca/workspaces/Archon/develop-2/node_modules/.bun/@openai+codex@0.144.5-darwi"
+      ],
+      [
+        "34592",
+        "/Users/dale/.bun/bin/omp --mode rpc --cwd /private/tmp/claude-501/-Users-dale-orca-workspa"
+      ],
+      ["32691", "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"],
+      ["32692", "ak codex-agent-runtime serve"],
+      [
+        "32693",
+        "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node /Applications/ChatGPT.app/C"
+      ],
+      ["34546", "/bin/zsh -c sleep 25 && echo step-2"],
+      ["34547", "sleep 25"],
+      ["32963", "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"]
+    ],
+    "cxl-stop1-tree-stop.txt": [
+      [
+        "83954",
+        "/Users/dale/orca/workspaces/Archon/develop-2/node_modules/.bun/@openai+codex@0.144.5-darwi"
+      ],
+      [
+        "84516",
+        "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node /Applications/ChatGPT.app/C"
+      ],
+      ["84521", "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"],
+      ["84522", "ak codex-agent-runtime serve"],
+      ["91775", "/bin/zsh -c sleep 90 && echo step-2"],
+      ["91776", "sleep 90"],
+      ["84783", "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"]
+    ],
+    "cxl-stop2-tree-stop.txt": [
+      [
+        "93276",
+        "/Users/dale/orca/workspaces/Archon/develop-2/node_modules/.bun/@openai+codex@0.144.5-darwi"
+      ],
+      ["7631", "/bin/zsh -c sleep 90 && echo step-3"],
+      ["93670", "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"],
+      ["93672", "ak codex-agent-runtime serve"],
+      [
+        "93681",
+        "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node /Applications/ChatGPT.app/C"
+      ],
+      ["93687", "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"],
+      ["7657", "sleep 90"]
+    ],
+    "cxl-tree-before.txt": [
+      [
+        "10772",
+        "/Users/dale/orca/workspaces/Archon/develop-2/node_modules/.bun/@openai+codex@0.144.5-darwi"
+      ],
+      [
+        "11050",
+        "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node /Applications/ChatGPT.app/C"
+      ],
+      ["11051", "ak codex-agent-runtime serve"],
+      ["11055", "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"],
+      ["12547", "/bin/zsh -c sleep 90 && echo step-3"],
+      ["12548", "sleep 90"],
+      ["11297", "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"]
+    ],
+    "ds-tree-before.txt": [
+      [
+        "26585",
+        "/Users/dale/.local/bin/node /Users/dale/orca/workspaces/Archon/develop-2/node_modules/.bun"
+      ],
+      ["30979", "bash -c sleep 25 && echo step-5"],
+      ["30980", "sleep 25"]
+    ],
+    "gk-tree-before.txt": [
+      [
+        "34592",
+        "/Users/dale/.bun/bin/omp --mode rpc --cwd /private/tmp/claude-501/-Users-dale-orca-workspa"
+      ],
+      ["79578", "/Users/dale/.local/bin/grok agent --always-approve --no-leader stdio"],
+      ["79829", "node /Users/dale/.ccs/mcp/ccs-image-analysis-server.cjs"],
+      ["79834", "node /Users/dale/.ccs/mcp/ccs-websearch-server.cjs"],
+      ["79837", "/Users/dale/.local/bin/uv tool uvx nanobanana-mcp-server@latest"],
+      ["79840", "npm exec @upstash/context7-mcp --api-key ***"],
+      [
+        "79847",
+        "/Users/dale/.local/share/uv/tools/notebooklm-mcp-cli/bin/python3 /Users/dale/.local/bin/no"
+      ],
+      ["79852", "node /Users/dale/.nvm/versions/node/v22.22.2/bin/gitnexus mcp"],
+      [
+        "86433",
+        "/bin/zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>/dev/null; builtin eval \"$"
+      ],
+      ["86473", "sleep 25"],
+      [
+        "80836",
+        "node /Users/dale/.npm/_npx/eea2bd7412d4593b/node_modules/.bin/context7-mcp --api-key ***"
+      ],
+      [
+        "81457",
+        "/Users/dale/.cache/uv/archive-v0/DBA2OIV9t2cr2oMOEo21o/bin/python /Users/dale/.cache/uv/ar"
+      ]
+    ],
+    "gs-tree-before.txt": [
+      [
+        "34592",
+        "/Users/dale/.bun/bin/omp --mode rpc --cwd /private/tmp/claude-501/-Users-dale-orca-workspa"
+      ],
+      [
+        "42144",
+        "/Users/dale/orca/workspaces/Archon/develop-2/node_modules/.bun/@openai+codex@0.144.5-darwi"
+      ],
+      [
+        "49007",
+        "/Users/dale/.local/bin/grok --single Run these shell commands ONE AT A TIME in the foregro"
+      ],
+      ["50039", "node /Users/dale/.ccs/mcp/ccs-image-analysis-server.cjs"],
+      ["50042", "npm exec @upstash/context7-mcp --api-key ***"],
+      ["50043", "node /Users/dale/.ccs/mcp/ccs-websearch-server.cjs"],
+      ["50045", "/Users/dale/.local/bin/uv tool uvx nanobanana-mcp-server@latest"],
+      ["50046", "node /Users/dale/.nvm/versions/node/v22.22.2/bin/gitnexus mcp"],
+      [
+        "50047",
+        "/Users/dale/.local/share/uv/tools/notebooklm-mcp-cli/bin/python3 /Users/dale/.local/bin/no"
+      ],
+      [
+        "58411",
+        "/bin/zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>/dev/null; builtin eval \"$"
+      ],
+      ["58418", "sleep 20"],
+      [
+        "51528",
+        "/Users/dale/.cache/uv/archive-v0/DBA2OIV9t2cr2oMOEo21o/bin/python /Users/dale/.cache/uv/ar"
+      ],
+      [
+        "51716",
+        "node /Users/dale/.npm/_npx/eea2bd7412d4593b/node_modules/.bin/context7-mcp --api-key ***"
+      ],
+      [
+        "47262",
+        "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node /Applications/ChatGPT.app/C"
+      ],
+      ["47266", "ak codex-agent-runtime serve"],
+      ["47269", "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"],
+      ["58493", "/Users/dale/.local/bin/plannotator"],
+      ["47289", "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"]
+    ],
+    "gs2-tree-before.txt": [
+      [
+        "61151",
+        "/Users/dale/.local/bin/grok --single Run these shell commands ONE AT A TIME in the foregro"
+      ],
+      ["61228", "node /Users/dale/.ccs/mcp/ccs-image-analysis-server.cjs"],
+      ["61229", "node /Users/dale/.ccs/mcp/ccs-websearch-server.cjs"],
+      ["61230", "npm exec @upstash/context7-mcp --api-key ***"],
+      ["61232", "node /Users/dale/.nvm/versions/node/v22.22.2/bin/gitnexus mcp"],
+      ["61233", "/Users/dale/.local/bin/uv tool uvx nanobanana-mcp-server@latest"],
+      [
+        "61234",
+        "/Users/dale/.local/share/uv/tools/notebooklm-mcp-cli/bin/python3 /Users/dale/.local/bin/no"
+      ],
+      [
+        "64700",
+        "/bin/zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>/dev/null; builtin eval \"$"
+      ],
+      ["64731", "sleep 20"],
+      [
+        "61950",
+        "/Users/dale/.cache/uv/archive-v0/DBA2OIV9t2cr2oMOEo21o/bin/python /Users/dale/.cache/uv/ar"
+      ],
+      [
+        "61834",
+        "node /Users/dale/.npm/_npx/eea2bd7412d4593b/node_modules/.bin/context7-mcp --api-key ***"
+      ]
+    ],
+    "ls-tree-before.txt": [
+      [
+        "70788",
+        "/Users/dale/orca/workspaces/Archon/develop-2/node_modules/.bun/@anthropic-ai+claude-agent-"
+      ],
+      [
+        "73755",
+        "/bin/zsh -c source /Users/dale/.claude/shell-snapshots/snapshot-zsh-1790659858290-2ymydz.s"
+      ]
+    ],
+    "omp2-tree-before.txt": [
+      [
+        "34592",
+        "/Users/dale/.bun/bin/omp --mode rpc --cwd /private/tmp/claude-501/-Users-dale-orca-workspa"
+      ],
+      [
+        "35832",
+        "/Users/dale/.bun/bin/omp --mode rpc --cwd /private/tmp/claude-501/-Users-dale-orca-workspa"
+      ]
+    ],
+    "srcl-tree-stop.txt": [
+      [
+        "44652",
+        "/Users/dale/orca/workspaces/Archon/develop-2/node_modules/.bun/@anthropic-ai+claude-agent-"
+      ],
+      [
+        "51579",
+        "/bin/zsh -c source /Users/dale/.claude/shell-snapshots/snapshot-zsh-1790660687069-alzy0k.s"
+      ]
+    ],
+    "srds-tree-stop.txt": [
+      [
+        "28500",
+        "/Users/dale/.local/bin/node /Users/dale/orca/workspaces/Archon/develop-2/node_modules/.bun"
+      ],
+      ["31019", "bash -c sleep 25 && echo step-2"],
+      ["31020", "sleep 25"]
+    ],
+    "srgk-tree-stop.txt": [
+      ["32580", "/Users/dale/.local/bin/grok agent --always-approve --no-leader stdio"],
+      ["32799", "node /Users/dale/.ccs/mcp/ccs-image-analysis-server.cjs"],
+      ["32801", "npm exec @upstash/context7-mcp --api-key ***"],
+      ["32803", "node /Users/dale/.ccs/mcp/ccs-websearch-server.cjs"],
+      [
+        "32805",
+        "/Users/dale/.local/share/uv/tools/notebooklm-mcp-cli/bin/python3 /Users/dale/.local/bin/no"
+      ],
+      ["32807", "/Users/dale/.local/bin/uv tool uvx nanobanana-mcp-server@latest"],
+      ["32809", "node /Users/dale/.nvm/versions/node/v22.22.2/bin/gitnexus mcp"],
+      [
+        "37631",
+        "/bin/zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>/dev/null; builtin eval \"$"
+      ],
+      ["37701", "sleep 25"],
+      [
+        "35479",
+        "/Users/dale/.cache/uv/archive-v0/DBA2OIV9t2cr2oMOEo21o/bin/python /Users/dale/.cache/uv/ar"
+      ],
+      [
+        "34537",
+        "node /Users/dale/.npm/_npx/eea2bd7412d4593b/node_modules/.bin/context7-mcp --api-key ***"
+      ]
+    ],
+    "sromp-tree-stop.txt": [
+      [
+        "39967",
+        "/Users/dale/.bun/bin/omp --mode rpc --cwd /private/tmp/claude-501/-Users-dale-orca-workspa"
+      ]
+    ]
+  },
+  "recoveredAbandon": {
+    "F": {
+      "post": 31,
+      "res": {
+        "success": true,
+        "message": "Abandoned workflow: vq10-claude"
+      },
+      "survC": [
+        [
+          -491,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [108, "Running|NEVER SENT \u00b7 2|node finished \u00b7 none of this was sent"],
+        [147, "Failed|NEVER SENT \u00b7 2|node finished \u00b7 none of this was sent"]
+      ],
+      "survCFailedAt": 147,
+      "survL": [
+        [
+          -491,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [434, "Running|NEVER SENT \u00b7 2|node finished \u00b7 none of this was sent"],
+        [3002, "Failed|NEVER SENT \u00b7 2|node finished \u00b7 none of this was sent"]
+      ],
+      "survLFailedAt": 3002,
+      "freshC": [
+        [
+          -491,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [429, "Running|NEVER SENT \u00b7 2|node finished \u00b7 none of this was sent"],
+        [26350, "Failed|NEVER SENT \u00b7 2|node finished \u00b7 none of this was sent"]
+      ],
+      "freshCFailedAt": 26350,
+      "freshL": [
+        [
+          -491,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [30, "Running|NEVER SENT \u00b7 2|node finished \u00b7 none of this was sent"],
+        [990, "Failed|NEVER SENT \u00b7 2|node finished \u00b7 none of this was sent"]
+      ],
+      "freshLFailedAt": 990,
+      "status": "cancelled",
+      "ev": [
+        ["workflow_started", null, null, "2026-09-29 05:34:23"],
+        ["node_failed", "long-claude", "Cancelled by user", "2026-09-29 05:37:53"]
+      ]
+    },
+    "LF": {
+      "post": 3,
+      "res": {
+        "success": true,
+        "message": "Abandoned workflow: vq10-loop-steer"
+      },
+      "survC": [
+        [
+          -466,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [142, "Failed|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"]
+      ],
+      "survCFailedAt": 142,
+      "survL": [
+        [
+          -466,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [15, "Running|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"],
+        [2591, "Failed|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"]
+      ],
+      "survLFailedAt": 2591,
+      "freshC": [
+        [
+          -464,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [456, "Running|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"],
+        [26376, "Failed|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"]
+      ],
+      "freshCFailedAt": 26376,
+      "freshL": [
+        [
+          -464,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [56, "Running|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"],
+        [1016, "Failed|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"]
+      ],
+      "freshLFailedAt": 1016,
+      "status": "cancelled",
+      "ev": [
+        ["workflow_started", null, null, "2026-09-29 05:34:24"],
+        ["node_failed", "steer-loop", "Cancelled by user", "2026-09-29 05:38:36"]
+      ]
+    },
+    "R2": {
+      "post": 2,
+      "res": {
+        "success": true,
+        "message": "Abandoned workflow: vq10-omp"
+      },
+      "survC": [
+        [
+          -465,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [136, "Failed|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"]
+      ],
+      "survCFailedAt": 136,
+      "survL": [
+        [
+          -465,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [174, "Running|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"],
+        [1196, "Failed|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"]
+      ],
+      "survLFailedAt": 1196,
+      "freshC": [
+        [
+          -465,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [455, "Running|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"],
+        [26389, "Failed|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"]
+      ],
+      "freshCFailedAt": 26389,
+      "freshL": [
+        [
+          -463,
+          "Recovery required|QUEUED \u00b7 1|restored after server restart \u00b7 Resume the workflow to continue"
+        ],
+        [59, "Running|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"],
+        [1016, "Failed|NEVER SENT \u00b7 1|node finished \u00b7 none of this was sent"]
+      ],
+      "freshLFailedAt": 1016,
+      "status": "cancelled",
+      "ev": [
+        ["workflow_started", null, null, "2026-09-29 05:34:25"],
+        ["node_failed", "long-omp", "Cancelled by user", "2026-09-29 05:39:10"]
+      ]
+    }
+  },
+  "loop_boundaries": {
+    "LP-b2": {
+      "c": [
+        {
+          "sel": "Iteration 2 \u00b7 running",
+          "ta": true,
+          "val": "half-typed VQ10 console draft",
+          "act": "TEXTAREA",
+          "go": "",
+          "status": "",
+          "t": 1790659422977
+        },
+        {
+          "sel": "Iteration 3 \u00b7 running",
+          "ta": true,
+          "val": "half-typed VQ10 console draft",
+          "act": "TEXTAREA",
+          "go": "",
+          "status": "",
+          "t": 1790659437979
+        }
+      ],
+      "l": [
+        {
+          "sel": "Iteration 2 \u00b7 running",
+          "ta": true,
+          "val": "half-typed VQ10 legacy draft",
+          "act": "TEXTAREA",
+          "go": "",
+          "status": "",
+          "t": 1790659422977
+        },
+        {
+          "sel": "Iteration 3 \u00b7 running",
+          "ta": true,
+          "val": "half-typed VQ10 legacy draft",
+          "act": "TEXTAREA",
+          "go": "",
+          "status": "",
+          "t": 1790659438417
+        }
+      ]
+    },
+    "LP7-b1": {
+      "c": [
+        {
+          "sel": "-",
+          "ta": true,
+          "val": "half-typed VQ10 console draft",
+          "act": "TEXTAREA",
+          "go": "",
+          "status": "",
+          "t": 1790659748887
+        },
+        {
+          "sel": "Iteration 2 \u00b7 running",
+          "ta": true,
+          "val": "half-typed VQ10 console draft",
+          "act": "TEXTAREA",
+          "go": "",
+          "status": "",
+          "t": 1790659778249
+        }
+      ],
+      "l": [
+        {
+          "sel": "-",
+          "ta": true,
+          "val": "",
+          "act": "TEXTAREA",
+          "go": "",
+          "status": "",
+          "t": 1790659748887
+        },
+        {
+          "sel": "Iteration 2 \u00b7 running",
+          "ta": true,
+          "val": "",
+          "act": "TEXTAREA",
+          "go": "",
+          "status": "",
+          "t": 1790659780248
+        }
+      ]
+    },
+    "LP7-b2": {
+      "c": [
+        {
+          "sel": "Iteration 1",
+          "ta": false,
+          "val": null,
+          "act": "SELECT",
+          "go": "Go to iteration 2",
+          "status": "reading a finished iteration \u00b7 the agent is working in iteration 2",
+          "t": 1790659793334
+        },
+        {
+          "sel": "Iteration 1",
+          "ta": false,
+          "val": null,
+          "act": "SELECT",
+          "go": "Go to iteration 3",
+          "status": "reading a finished iteration \u00b7 the agent is working in iteration 3",
+          "t": 1790659809338
+        }
+      ],
+      "l": [
+        {
+          "sel": "Iteration 2 \u00b7 running",
+          "ta": true,
+          "val": "half-typed VQ10 legacy draft",
+          "act": "TEXTAREA",
+          "go": "",
+          "status": "",
+          "t": 1790659793334
+        },
+        {
+          "sel": "Iteration 3 \u00b7 running",
+          "ta": true,
+          "val": "half-typed VQ10 legacy draft",
+          "act": "TEXTAREA",
+          "go": "",
+          "status": "",
+          "t": 1790659810293
+        }
+      ]
+    }
+  },
+  "keyboardStop": {
+    "FX-c": {
+      "t0": 1790659122532,
+      "tSend": 1790659123498,
+      "fc": [
+        [-1, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [59, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "fl": [
+        [-1, "BODY", true],
+        [1004, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m0", "prevConnected=true"],
+        [1021, "TEXTAREA#m1", "prevConnected=true"]
+      ]
+    },
+    "FX-l": {
+      "t0": 1790659165696,
+      "tSend": 1790659166480,
+      "fc": [
+        [0, "DIV#m0", true],
+        [821, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+        [840, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "fl": [
+        [0, "TEXTAREA#m0", true],
+        [32, "BUTTON#m1", "prevConnected=true"],
+        [61, "DIV[last-row]#m2", "prevConnected=false"]
+      ]
+    }
+  },
+  "idle": {
+    "I1": {
+      "stopResolved": "2026-09-29T04:38:50.089Z",
+      "nodeFailed": "2026-09-29 05:08:50"
+    },
+    "I2": {
+      "stopResolved": "2026-09-29T04:38:57.635Z",
+      "keystroke": "{\"typedAt\":\"2026-09-29T05:05:01.672Z\",\"net\":[\"2026-09-29T05:05:01.679Z POST /workflows/runs/5b065b1add5b179457649ec643ac290d/nodes/long-claude/keepalive 200\",\"2026-09-29T05:05:02.283Z PUT /workflows/runs/5b065b1add5b179457649ec643ac290d/nodes/long-claude/draft 200\"]}",
+      "nodeFailed": "2026-09-29 05:35:01"
+    }
+  },
+  "gs2_orphan_ps": {
+    "pid": 64731,
+    "cmd": "sleep 20",
+    "ppid_at_plus3s": 1,
+    "ppid_at_plus8s": 1,
+    "etime_plus8s": "00:10",
+    "gone_by_plus40s": true
+  }
+}

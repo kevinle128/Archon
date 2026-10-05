@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDown, Sparkles, ArrowRight, MessageSquare } from 'lucide-react';
+import { ArrowDown, ArrowRight, MessageSquare } from 'lucide-react';
+import { PixelLogo } from '@/components/brand/PixelLogo';
 import { Button } from '@/components/ui/button';
 import { MessageBubble } from './MessageBubble';
 import { ToolCallCard } from './ToolCallCard';
@@ -205,7 +206,7 @@ function WorkflowResultCard({
 
   return (
     <>
-      <div className="rounded-lg border border-border bg-surface overflow-hidden max-w-3xl">
+      <div className="rounded-xl border border-border bg-surface overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-surface-elevated">
           <span className="shrink-0">
             <StatusIcon status={fetchFailed ? 'completed' : status} />
@@ -225,7 +226,7 @@ function WorkflowResultCard({
           )}
           <button
             onClick={(): void => {
-              navigate(`/legacy/workflows/runs/${runId}`);
+              navigate(`/workflows/runs/${runId}`);
             }}
             className="text-[10px] text-primary hover:text-accent-bright transition-colors shrink-0"
           >
@@ -282,6 +283,8 @@ interface MessageListProps {
   isNewChat?: boolean;
   /** Project name to display as context in the welcoming view. */
   projectName?: string;
+  /** Provider or model label shown in each agent message byline. */
+  assistantLabel?: string;
   /** Called when user clicks a quick action: receives a message string to send or 'focus'. */
   onQuickAction?: (action: string) => void;
 }
@@ -294,6 +297,7 @@ function MessageListRaw({
   scrollToTrigger,
   isNewChat,
   projectName,
+  assistantLabel,
   onQuickAction,
 }: MessageListProps): React.ReactElement {
   const navigate = useNavigate();
@@ -330,34 +334,41 @@ function MessageListRaw({
     if (isNewChat) {
       return (
         <div className="flex flex-1 items-center justify-center">
-          <div className="flex flex-col items-center gap-4 max-w-sm w-full px-4">
-            <div className="flex flex-col items-center gap-2 text-center">
-              <Sparkles className="h-8 w-8 text-primary" />
-              <h2 className="text-base font-semibold text-text-primary">
+          <div className="flex w-full max-w-md flex-col items-center gap-6 px-8">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <PixelLogo label="" className="h-10 w-10 text-text-primary" />
+              <h2 className="text-xl font-semibold text-text-primary">
                 What would you like to do?
               </h2>
             </div>
             <div className="flex flex-wrap justify-center gap-2">
               <Button
                 variant="outline"
-                size="sm"
                 onClick={(): void => {
-                  navigate('/legacy/workflows');
+                  navigate('/workflows');
                 }}
-                className="flex items-center gap-1.5"
+                className="min-h-11 gap-1.5 rounded-[10px]"
               >
                 Run a workflow
-                <ArrowRight className="h-3.5 w-3.5" />
+                <ArrowRight className="h-4 w-4" strokeWidth={1.5} />
               </Button>
-              <Button variant="outline" size="sm" onClick={(): void => onQuickAction?.('focus')}>
+              <Button
+                variant="outline"
+                onClick={(): void => onQuickAction?.('focus')}
+                className="min-h-11 rounded-[10px]"
+              >
                 Ask a question
               </Button>
-              <Button variant="outline" size="sm" onClick={(): void => onQuickAction?.('/status')}>
+              <Button
+                variant="outline"
+                onClick={(): void => onQuickAction?.('/status')}
+                className="min-h-11 rounded-[10px] font-mono"
+              >
                 /status
               </Button>
             </div>
             {projectName && (
-              <p className="text-xs text-text-tertiary text-center">Project: {projectName}</p>
+              <p className="text-center text-xs text-text-tertiary">Project: {projectName}</p>
             )}
           </div>
         </div>
@@ -375,8 +386,8 @@ function MessageListRaw({
 
   return (
     <div className="relative flex-1 overflow-hidden">
-      <div ref={containerRef} className="h-full overflow-y-auto px-4 py-4">
-        <div className="mx-auto flex max-w-3xl flex-col gap-3 pb-6">
+      <div ref={containerRef} className="h-full overflow-y-auto">
+        <div className="mx-auto flex max-w-[760px] flex-col gap-4 px-8 py-4">
           {messages.map(msg =>
             msg.role === 'system' ? (
               <div
@@ -392,7 +403,7 @@ function MessageListRaw({
               <div
                 key={msg.id}
                 data-timestamp={String(msg.timestamp)}
-                className="flex flex-col gap-1.5"
+                className="flex flex-col gap-3"
               >
                 {msg.workflowResult ? (
                   <WorkflowResultCard
@@ -402,7 +413,7 @@ function MessageListRaw({
                   />
                 ) : (
                   <>
-                    <MessageBubble message={msg} />
+                    <MessageBubble message={msg} assistantLabel={assistantLabel} />
                     {msg.toolCalls?.map(tool => (
                       <ToolCallCard key={tool.id} tool={tool} />
                     ))}
@@ -428,7 +439,7 @@ function MessageListRaw({
             onClick={scrollToBottom}
             size="sm"
             variant="secondary"
-            className="rounded-full bg-surface-elevated shadow-lg"
+            className="rounded-full border border-border bg-surface-elevated"
           >
             <ArrowDown className="mr-1 h-3 w-3" />
             Jump to bottom

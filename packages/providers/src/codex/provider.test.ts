@@ -102,7 +102,10 @@ describe('CodexProvider', () => {
         nativeTools: false,
         containerExec: false,
         askHuman: false,
-        interrupt: false,
+        interrupt: 'stream-abort',
+        interruptedToolStatus: false,
+        softInjection: false,
+        deliveryAck: false,
       });
     });
   });
@@ -425,12 +428,16 @@ describe('CodexProvider', () => {
         chunks.push(chunk);
       }
 
-      expect(chunks[0]).toEqual({ type: 'tool', toolName: 'npm test', toolCallId: 'cmd-1' });
+      expect(chunks[0]).toEqual({
+        type: 'tool',
+        toolName: 'npm test',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:cmd-1$/),
+      });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: 'npm test',
         toolOutput: 'tests passed\n',
-        toolCallId: 'cmd-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:cmd-1$/),
         toolOutcome: 'success',
         exitCode: 0,
         outputState: 'full',
@@ -467,7 +474,7 @@ describe('CodexProvider', () => {
         type: 'tool_result',
         toolName: 'npm test',
         toolOutput: 'failure\n\n[exit code: 1]',
-        toolCallId: 'cmd-2',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:cmd-2$/),
         toolOutcome: 'error',
         exitCode: 1,
         outputState: 'full',
@@ -500,7 +507,7 @@ describe('CodexProvider', () => {
         type: 'tool_result',
         toolName: 'npm test',
         toolOutput: 'partial output',
-        toolCallId: 'cmd-unknown',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:cmd-unknown$/),
         toolOutcome: 'unknown',
         outputState: 'full',
       });
@@ -548,13 +555,13 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: '\u{1F50D} Searching: codex sdk',
-        toolCallId: 'search-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:search-1$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50D} Searching: codex sdk',
         toolOutput: '',
-        toolCallId: 'search-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:search-1$/),
         toolOutcome: 'unknown',
         outputState: 'missing',
       });
@@ -629,12 +636,13 @@ describe('CodexProvider', () => {
       });
     });
 
-    test('yields file change summary for file_change items', async () => {
+    test('successful file_change yields one tool/tool_result pair per path, in order (#4.1)', async () => {
       mockRunStreamed.mockResolvedValue({
         events: (async function* () {
           yield {
             type: 'item.completed',
             item: {
+              id: 'fc-1',
               type: 'file_change',
               status: 'completed',
               changes: [
@@ -653,10 +661,80 @@ describe('CodexProvider', () => {
         chunks.push(chunk);
       }
 
-      expect(chunks[0]).toEqual({
-        type: 'system',
-        content: '\u2705 File changes:\n\u2795 src/new.ts\n\u{1F4DD} src/app.ts\n\u2796 src/old.ts',
-      });
+      // No summary system chunk on the success path \u2014 the structured rows
+      // below are the readable evidence.
+      expect(chunks.filter(c => c.type === 'system')).toHaveLength(0);
+
+      const toolChunks = chunks.filter(c => c.type === 'tool');
+      const resultChunks = chunks.filter(c => c.type === 'tool_result');
+      expect(toolChunks).toEqual([
+        {
+          type: 'tool',
+          toolName: 'apply_patch',
+          toolInput: { path: 'src/new.ts', kind: 'add' },
+          toolCallId: expect.stringMatching(/^codex-[^:]+:fc-1:0$/),
+        },
+        {
+          type: 'tool',
+          toolName: 'apply_patch',
+          toolInput: { path: 'src/app.ts', kind: 'update' },
+          toolCallId: expect.stringMatching(/^codex-[^:]+:fc-1:1$/),
+        },
+        {
+          type: 'tool',
+          toolName: 'apply_patch',
+          toolInput: { path: 'src/old.ts', kind: 'delete' },
+          toolCallId: expect.stringMatching(/^codex-[^:]+:fc-1:2$/),
+        },
+      ]);
+      // Non-existent files in this fixture's cwd \u2014 a real event, honestly
+      // reported as unreadable rather than a fabricated preview.
+      for (const r of resultChunks) {
+        expect(r).toMatchObject({ type: 'tool_result', toolOutcome: 'success', toolOutput: '' });
+      }
+      expect(resultChunks.map(r => (r as { outputState?: string }).outputState)).toEqual([
+        'missing',
+        'missing',
+        'missing',
+      ]);
+      // A deleted path is never read back \u2014 there is nothing left to preview.
+    });
+
+    test("successful file_change reads the changed file's current content as bounded preview evidence", async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'codex-file-change-'));
+      try {
+        await writeFile(join(dir, 'touched.ts'), 'export const x = 1;\n');
+        mockRunStreamed.mockResolvedValue({
+          events: (async function* () {
+            yield {
+              type: 'item.completed',
+              item: {
+                id: 'fc-2',
+                type: 'file_change',
+                status: 'completed',
+                changes: [{ kind: 'update', path: 'touched.ts' }],
+              },
+            };
+            yield { type: 'turn.completed', usage: defaultUsage };
+          })(),
+        });
+
+        const chunks = [];
+        for await (const chunk of client.sendQuery('test', dir)) {
+          chunks.push(chunk);
+        }
+
+        const result = chunks.find(c => c.type === 'tool_result');
+        expect(result).toMatchObject({
+          type: 'tool_result',
+          toolName: 'apply_patch',
+          toolOutput: 'export const x = 1;\n',
+          toolOutcome: 'success',
+          outputState: 'full',
+        });
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
     });
 
     test('yields failed file change with error message', async () => {
@@ -794,26 +872,26 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: fs/readFile',
-        toolCallId: 'mcp-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-1$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: fs/readFile',
         toolOutput: '',
-        toolCallId: 'mcp-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-1$/),
         toolOutcome: 'success',
         outputState: 'full',
       });
       expect(chunks[2]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: fs/readFile',
-        toolCallId: 'mcp-2',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-2$/),
       });
       expect(chunks[3]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: fs/readFile',
         toolOutput: '\u274C Error: Permission denied',
-        toolCallId: 'mcp-2',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-2$/),
         toolOutcome: 'error',
         outputState: 'full',
       });
@@ -862,39 +940,39 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: readFile',
-        toolCallId: 'mcp-tool',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-tool$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: readFile',
         toolOutput: '',
-        toolCallId: 'mcp-tool',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-tool$/),
         toolOutcome: 'success',
         outputState: 'full',
       });
       expect(chunks[2]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: fs',
-        toolCallId: 'mcp-server',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-server$/),
       });
       expect(chunks[3]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: fs',
         toolOutput: '',
-        toolCallId: 'mcp-server',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-server$/),
         toolOutcome: 'success',
         outputState: 'full',
       });
       expect(chunks[4]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: MCP tool',
-        toolCallId: 'mcp-unknown',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-unknown$/),
       });
       expect(chunks[5]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: MCP tool',
         toolOutput: '',
-        toolCallId: 'mcp-unknown',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-unknown$/),
         toolOutcome: 'success',
         outputState: 'full',
       });
@@ -929,13 +1007,13 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: db/query',
-        toolCallId: 'mcp-failure',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-failure$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: db/query',
         toolOutput: '\u274C Error: MCP tool failed',
-        toolCallId: 'mcp-failure',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-failure$/),
         toolOutcome: 'error',
         outputState: 'full',
       });
@@ -972,13 +1050,13 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: fs/readFile',
-        toolCallId: 'mcp-completed',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-completed$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: fs/readFile',
         toolOutput: JSON.stringify([{ type: 'text', text: 'file contents' }]),
-        toolCallId: 'mcp-completed',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-completed$/),
         toolOutcome: 'success',
         outputState: 'full',
       });
@@ -1629,7 +1707,11 @@ describe('CodexProvider', () => {
       }
 
       expect(mockLogger.debug).toHaveBeenCalledWith(
-        { eventType: 'item.started', itemType: 'command_execution', itemId: 'item-1' },
+        {
+          eventType: 'item.started',
+          itemType: 'command_execution',
+          itemId: expect.stringMatching(/^codex-[^:]+:item-1$/),
+        },
         'item_started'
       );
 
@@ -1637,7 +1719,7 @@ describe('CodexProvider', () => {
         {
           eventType: 'item.completed',
           itemType: 'command_execution',
-          itemId: 'item-1',
+          itemId: expect.stringMatching(/^codex-[^:]+:item-1$/),
           command: 'npm test',
         },
         'item_completed'
@@ -1645,13 +1727,13 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: 'npm test',
-        toolCallId: 'item-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:item-1$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: 'npm test',
         toolOutput: '',
-        toolCallId: 'item-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:item-1$/),
         toolOutcome: 'unknown',
         outputState: 'full',
       });
@@ -1690,7 +1772,10 @@ describe('CodexProvider', () => {
       expect(chunks.filter(chunk => chunk.type === 'tool')).toHaveLength(1);
       expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        { itemId: 'cmd-duplicate', itemType: 'command_execution' },
+        {
+          itemId: expect.stringMatching(/^codex-[^:]+:cmd-duplicate$/),
+          itemType: 'command_execution',
+        },
         'tool_item_duplicate_completion'
       );
     });
@@ -1722,13 +1807,16 @@ describe('CodexProvider', () => {
         type: 'tool_result',
         toolName: 'npm test',
         toolOutput: 'done',
-        toolCallId: 'cmd-completed-only',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:cmd-completed-only$/),
         toolOutcome: 'success',
         exitCode: 0,
         outputState: 'full',
       });
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        { itemId: 'cmd-completed-only', itemType: 'command_execution' },
+        {
+          itemId: expect.stringMatching(/^codex-[^:]+:cmd-completed-only$/),
+          itemType: 'command_execution',
+        },
         'tool_item_completed_without_start'
       );
     });
@@ -2660,6 +2748,436 @@ describe('sendQuery decomposition behaviors', () => {
       process.removeListener('uncaughtException', handler);
     }
   }, 5_000);
+});
+
+describe('operator interrupt (Stop, #8.4)', () => {
+  let client: CodexProvider;
+
+  beforeEach(() => {
+    resetCodexSingleton();
+    client = new CodexProvider({ retryBaseDelayMs: 1, interruptThreadIdWaitMs: 20 });
+    mockStartThread.mockClear();
+    mockResumeThread.mockClear();
+    mockRunStreamed.mockClear();
+    mockLogger.info.mockClear();
+    mockLogger.warn.mockClear();
+    mockLogger.error.mockClear();
+    mockLogger.debug.mockClear();
+    mockStartThread.mockReturnValue(createMockThread('new-thread-id'));
+    mockResumeThread.mockReturnValue(createMockThread('resumed-thread-id'));
+  });
+
+  test('mid-generation interrupt yields a stream_aborted result instead of throwing', async () => {
+    const interruptController = new AbortController();
+
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'partial', id: '1' },
+        };
+        interruptController.abort();
+        // Mirrors the measured SDK behavior: aborting the turn signal throws
+        // rather than closing cleanly.
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    const result = chunks.at(-1);
+    expect(result).toEqual({
+      type: 'result',
+      sessionId: 'new-thread-id',
+      terminalReason: 'stream_aborted',
+      isError: true,
+      errorSubtype: 'stream_aborted',
+    });
+  });
+
+  test('mid-tool interrupt still surfaces the sessionId for resumption', async () => {
+    const interruptController = new AbortController();
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.started',
+          item: { type: 'command_execution', command: 'sleep 30', id: 't1' },
+        };
+        interruptController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(
+      chunks.some(
+        c => c.type === 'tool' && typeof c.toolCallId === 'string' && c.toolCallId.endsWith(':t1')
+      )
+    ).toBe(true);
+    const result = chunks.at(-1);
+    expect(result).toMatchObject({
+      type: 'result',
+      sessionId: 'new-thread-id',
+      terminalReason: 'stream_aborted',
+    });
+  });
+
+  test('a resumed thread already knows its id, so the interrupted result resumes the same session', async () => {
+    const interruptController = new AbortController();
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'redirected', id: '1' },
+        };
+        interruptController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', 'resumed-thread-id', {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'result',
+      sessionId: 'resumed-thread-id',
+      terminalReason: 'stream_aborted',
+    });
+    // Same-thread continuation: resumeThread was used, never a fresh startThread.
+    expect(mockResumeThread).toHaveBeenCalledWith('resumed-thread-id', expect.anything());
+    expect(mockStartThread).not.toHaveBeenCalled();
+  });
+
+  test('node-level Cancel dominates when it races an operator interrupt', async () => {
+    const cancelController = new AbortController();
+    const interruptController = new AbortController();
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'partial', id: '1' },
+        };
+        interruptController.abort();
+        cancelController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    const consumeGenerator = async (): Promise<void> => {
+      for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+        abortSignal: cancelController.signal,
+        interruptSignal: interruptController.signal,
+      })) {
+        // consume
+      }
+    };
+
+    await expect(consumeGenerator()).rejects.toThrow('Query aborted');
+  });
+
+  test('an interrupted turn never retries even though the throw looks abort-shaped', async () => {
+    const interruptController = new AbortController();
+    mockRunStreamed.mockImplementation(() =>
+      Promise.resolve({
+        events: (async function* () {
+          interruptController.abort();
+          throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+        })(),
+      })
+    );
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(mockRunStreamed).toHaveBeenCalledTimes(1);
+    expect(chunks.at(-1)).toMatchObject({ terminalReason: 'stream_aborted' });
+  });
+
+  test('an interrupt before thread.started defers the abort until the id is retained', async () => {
+    const fakeThread: { id: string | null; runStreamed: typeof mockRunStreamed } = {
+      id: null,
+      runStreamed: mockRunStreamed,
+    };
+    mockStartThread.mockReturnValue(fakeThread);
+    const interruptController = new AbortController();
+
+    mockRunStreamed.mockImplementation((_prompt, opts: { signal?: AbortSignal }) => {
+      return Promise.resolve({
+        events: (async function* () {
+          // Operator intent arrives before the SDK has assigned an id.
+          interruptController.abort();
+          // The provider must NOT have aborted the per-attempt signal yet —
+          // it defers until the id is known.
+          expect(opts.signal?.aborted).toBe(false);
+          // Simulate the SDK's own internal assignment on `thread.started`
+          // (a live getter in the real SDK, mutated before the event yields).
+          fakeThread.id = 'late-thread-id';
+          yield { type: 'thread.started', thread_id: 'late-thread-id' };
+          // The deferred abort now fires because the id is known; the next
+          // await naturally lands after the timer's abort() call.
+          await new Promise(resolve => setTimeout(resolve, 40));
+          throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+        })(),
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.at(-1)).toEqual({
+      type: 'result',
+      sessionId: 'late-thread-id',
+      terminalReason: 'stream_aborted',
+      isError: true,
+      errorSubtype: 'stream_aborted',
+    });
+  });
+
+  test('an interrupt that fires before any thread id is ever retained still applies after the wait', async () => {
+    const fakeThread: { id: string | null; runStreamed: typeof mockRunStreamed } = {
+      id: null,
+      runStreamed: mockRunStreamed,
+    };
+    mockStartThread.mockReturnValue(fakeThread);
+    const interruptController = new AbortController();
+
+    mockRunStreamed.mockImplementation((_prompt, opts: { signal?: AbortSignal }) => {
+      return Promise.resolve({
+        events: (async function* () {
+          interruptController.abort();
+          // Wait past the injected defer window without ever assigning an id
+          // (pathological: the thread never starts). The abort must still
+          // apply so Stop cannot hang.
+          await new Promise(resolve => setTimeout(resolve, 60));
+          if (opts.signal?.aborted) {
+            throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+          }
+        })(),
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.at(-1)).toEqual({
+      type: 'result',
+      terminalReason: 'stream_aborted',
+      isError: true,
+      errorSubtype: 'stream_aborted',
+    });
+  });
+});
+
+describe('process-tree reap of an orphaned tool-call child on abort', () => {
+  const OUR_PID = process.pid;
+
+  beforeEach(() => {
+    resetCodexSingleton();
+    mockStartThread.mockClear();
+    mockResumeThread.mockClear();
+    mockRunStreamed.mockClear();
+    mockLogger.info.mockClear();
+    mockLogger.warn.mockClear();
+    mockLogger.error.mockClear();
+    mockLogger.debug.mockClear();
+    mockStartThread.mockReturnValue(createMockThread('new-thread-id'));
+    mockResumeThread.mockReturnValue(createMockThread('resumed-thread-id'));
+  });
+
+  /** A fake process tree + kill recorder, matching `ProcessTreeOps`. */
+  function fakeProcessTreeOps(
+    processes: { pid: number; ppid: number; command: string }[],
+    initiallyAlive: readonly number[]
+  ): {
+    ops: import('../shared/process-tree-reap').ProcessTreeOps;
+    killed: { pid: number; signal: NodeJS.Signals }[];
+  } {
+    const alive = new Set(initiallyAlive);
+    const killed: { pid: number; signal: NodeJS.Signals }[] = [];
+    return {
+      killed,
+      ops: {
+        listProcesses: () => Promise.resolve(processes),
+        isAlive: (pid: number) => alive.has(pid),
+        kill: (pid: number, signal: NodeJS.Signals) => {
+          killed.push({ pid, signal });
+          if (signal === 'SIGTERM') alive.delete(pid); // tool child dies promptly on SIGTERM
+        },
+      },
+    };
+  }
+
+  async function waitUntil(check: () => boolean, timeoutMs = 500): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!check() && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    expect(check()).toBe(true);
+  }
+
+  /**
+   * The snapshot is captured on the `item.started` event (while `codex exec`
+   * is provably alive), not at abort time — so every fake turn below yields
+   * that event, waits a tick for the fake (already-resolved)
+   * `listProcesses()` to settle, and only THEN aborts, mirroring how a real
+   * tool call runs for seconds (plenty of time for a real `ps` round-trip)
+   * before any Stop/Cancel could arrive.
+   */
+  async function letSnapshotSettle(): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+
+  test('operator Stop mid-tool reaps the orphaned tool-call child, and same-thread continuation still works', async () => {
+    const { ops, killed } = fakeProcessTreeOps(
+      [
+        { pid: 9001, ppid: OUR_PID, command: 'codex exec --experimental-json --cd /workspace' },
+        { pid: 9002, ppid: 9001, command: '/bin/zsh -c sleep 25 && echo step-1' },
+      ],
+      [9002] // codex exec (9001) is never in this set: the SDK's own SIGTERM already ended it by abort time, in every real case.
+    );
+    const interruptController = new AbortController();
+    const client = new CodexProvider({
+      retryBaseDelayMs: 1,
+      interruptThreadIdWaitMs: 5,
+      processTreeOps: ops,
+      treeReapTerminateGraceMs: 5,
+    });
+
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.started',
+          item: { type: 'command_execution', command: 'sleep 25', id: 't1' },
+        };
+        await letSnapshotSettle();
+        interruptController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'result',
+      sessionId: 'new-thread-id',
+      terminalReason: 'stream_aborted',
+    });
+    await waitUntil(() => killed.some(k => k.pid === 9002));
+    expect(killed).toEqual([{ pid: 9002, signal: 'SIGTERM' }]);
+  });
+
+  test('node-level Cancel also reaps the orphaned tool-call child', async () => {
+    const { ops, killed } = fakeProcessTreeOps(
+      [
+        { pid: 9101, ppid: OUR_PID, command: 'codex exec --experimental-json --cd /workspace' },
+        { pid: 9102, ppid: 9101, command: '/bin/zsh -c sleep 25' },
+      ],
+      [9102]
+    );
+    const cancelController = new AbortController();
+    const client = new CodexProvider({
+      retryBaseDelayMs: 1,
+      processTreeOps: ops,
+      treeReapTerminateGraceMs: 5,
+    });
+
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.started',
+          item: { type: 'command_execution', command: 'sleep 25', id: 't1' },
+        };
+        await letSnapshotSettle();
+        cancelController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    await expect(
+      (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+          abortSignal: cancelController.signal,
+        })) {
+          // consume
+        }
+      })()
+    ).rejects.toThrow('Query aborted');
+
+    await waitUntil(() => killed.some(k => k.pid === 9102));
+    expect(killed[0]).toEqual({ pid: 9102, signal: 'SIGTERM' });
+  });
+
+  test('two same-cwd exec candidates with no known thread id are logged as ambiguous, never killed', async () => {
+    const { ops, killed } = fakeProcessTreeOps(
+      [
+        { pid: 9201, ppid: OUR_PID, command: 'codex exec --experimental-json --cd /workspace' },
+        { pid: 9202, ppid: OUR_PID, command: 'codex exec --experimental-json --cd /workspace' },
+        { pid: 9203, ppid: 9201, command: 'sleep 25' },
+      ],
+      [9203]
+    );
+    const interruptController = new AbortController();
+    const client = new CodexProvider({
+      retryBaseDelayMs: 1,
+      interruptThreadIdWaitMs: 5,
+      processTreeOps: ops,
+      treeReapTerminateGraceMs: 5,
+    });
+
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.started',
+          item: { type: 'command_execution', command: 'sleep 25', id: 't1' },
+        };
+        await letSnapshotSettle();
+        interruptController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      // consume
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(killed).toEqual([]);
+    expect(mockLogger.warn).toHaveBeenCalledWith('codex.tree_reap_root_ambiguous');
+  });
 });
 
 describe('usageBreakdown normalization (US-002)', () => {

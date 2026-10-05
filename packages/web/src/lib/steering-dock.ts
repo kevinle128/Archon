@@ -2,18 +2,101 @@
  * Framework-free steering-dock logic shared by the Legacy and Console
  * composer renderers: visibility/blocked predicates, the guarded submit
  * transitions with stable retry ids, the interrupt/Send-now turn model,
- * live queue polling/withdraw reconciliation, sessionStorage draft
- * persistence, and the nested steering error surface both API helpers
+ * live queue polling/withdraw reconciliation, server-persisted draft
+ * save/restore, and the nested steering error surface both API helpers
  * normalize onto.
  */
 import type { FinishedIterationView } from './execution-room-model';
-import type { NodeMessageRow } from './node-message-pages';
+
+/**
+ * Durable delivery state for one queue entry, mirrored from the engine's
+ * `STEERING_QUEUE_VISIBLE_STATES` (`packages/workflows/src/schemas/steering.ts`).
+ * Web must not import `@archon/workflows`; this is the intentional
+ * package-boundary mirror. `withdrawn` is never wire-visible — a withdrawn
+ * entry is dropped like a delete, so it is excluded here too.
+ */
+export type SteeringQueueItemState =
+  | 'queued'
+  | 'awaiting_send_now'
+  | 'dispatching'
+  | 'sent'
+  | 'delivered'
+  | 'delivery_unknown'
+  | 'never_sent';
+
+/** States still eligible for withdraw or per-item Send now (server-enforced). */
+const STEERING_QUEUE_CLAIMABLE_STATES: readonly SteeringQueueItemState[] = [
+  'queued',
+  'awaiting_send_now',
+];
+
+/**
+ * Which attempt claimed a queue entry that a retryable dispatch failure then
+ * reverted to `queued`, mirrored from the engine's
+ * `STEERING_DISPATCH_FAILURE_KINDS` (`packages/workflows/src/schemas/steering.ts`).
+ * `automatic` is the executor's own wake-and-claim after a natural turn
+ * boundary; `send_now` is an operator-triggered claim (blank or typed).
+ */
+export type SteeringDispatchFailureKind = 'automatic' | 'send_now';
+
+/** States a mounted dock still tracks as pending (not yet resolved). */
+const STEERING_QUEUE_PENDING_STATES: readonly SteeringQueueItemState[] = [
+  'queued',
+  'awaiting_send_now',
+  'dispatching',
+  'delivery_unknown',
+];
+
+/**
+ * States meaning a claimed message is moving toward the transcript: the
+ * server already committed the claim (`dispatching`), or already sent it to
+ * the provider (`sent`/`delivered`), whether or not the transcript's own,
+ * independently-cadenced read has rendered the matching operator row yet.
+ * None of these are still waiting, and none are withdrawable
+ * (`STEERING_QUEUE_CLAIMABLE_STATES` already excludes all three) — the band
+ * header, the per-row status label, and the queued count all treat every
+ * one of these states identically.
+ */
+const STEERING_QUEUE_IN_FLIGHT_STATES: readonly SteeringQueueItemState[] = [
+  'dispatching',
+  'sent',
+  'delivered',
+];
+
+/** Whether a locally-tracked row has already been claimed and dispatched. */
+export function isQueueItemInFlight(state: SteeringQueueItemState): boolean {
+  return STEERING_QUEUE_IN_FLIGHT_STATES.includes(state);
+}
 
 export interface LocalSentReceipt {
   readonly messageId: string;
   readonly message: string;
-  /** Wire-compatible display state (`queued | awaiting_send_now`). */
-  readonly state: 'queued' | 'awaiting_send_now';
+  readonly state: SteeringQueueItemState;
+  /** Author of the message; null for an unauthenticated/no-identity caller. */
+  readonly operatorUserId: string | null;
+  /**
+   * Failure evidence for an entry a retryable automatic-dispatch failure
+   * reverted to `queued` (still at the front, not a distinct terminal
+   * state), or that terminal reconciliation marked `never_sent`; null for
+   * an entry that never failed. Server-authoritative, read fresh on every
+   * queue snapshot.
+   */
+  readonly lastError: string | null;
+  /** Count of retryable automatic-dispatch failures this entry has been reverted from. */
+  readonly dispatchFailureCount: number;
+  /**
+   * Which attempt claimed this entry behind the most recent `lastError`:
+   * `automatic` (the executor's own wake-and-claim) or `send_now` (an
+   * operator-triggered retry). Null until the first failure.
+   */
+  readonly lastFailureKind: SteeringDispatchFailureKind | null;
+  /**
+   * A soft-injected entry the transport accepted that the model has not read
+   * yet (no operator row exists). When a Stop lands on a provider that
+   * acknowledges deliveries, the server returns it to the queue, so the dock
+   * shows it as queued at once.
+   */
+  readonly unreadSoftInjection?: boolean;
 }
 
 export interface PendingSubmission {
@@ -36,21 +119,30 @@ export interface NeverSentEntry {
   readonly message: string;
 }
 
+/** Durable capability + settings snapshot carried on every queue read. */
+export type SteeringExecutionState = 'live' | 'recovery_required' | 'finished';
+
 export interface SteeringDockState {
   /** Projected agent sub-state; null means a live queue-only handle. */
   readonly subState: SteeringSubState | null;
+  /** Durable pending entries (`queued`/`awaiting_send_now`/`dispatching`/`delivery_unknown`). */
   readonly sent: readonly LocalSentReceipt[];
   /**
-   * Every receipt this mounted attempt has observed, ordered by first
-   * observation and deduplicated by messageId. Later snapshot omission never
-   * erases entries; only this tab's confirmed withdraw removes one.
-   */
-  readonly observedLedger: readonly LocalSentReceipt[];
-  /**
-   * One-shot terminal reconciliation result. `null` until
-   * `reconcileNeverSent` runs; `[]` means everything observed was written.
+   * Durable `never_sent` rows read straight from the server. `null` until a
+   * queue snapshot has been observed at least once; `[]` means the server
+   * confirmed there are none. The operator's own current draft is folded in
+   * at render time (see the finished-mode render path) — it is never stored
+   * here, because the field is a live value, not a snapshot.
    */
   readonly neverSent: readonly NeverSentEntry[] | null;
+  /** Last observed queue-read execution state; null until the first snapshot. */
+  readonly executionState: SteeringExecutionState | null;
+  /** Durable auto-send setting, from the last observed queue snapshot. */
+  readonly autoSend: boolean;
+  /** Verified soft-injection capability of the live provider, if known. */
+  readonly softInjection: boolean;
+  /** Whether the live provider echoes a delivery acknowledgement, from the last queue snapshot. */
+  readonly deliveryAck: boolean;
   /** A send (Queue or Send now) request is in flight. */
   readonly sendInFlight: boolean;
   /** UI-local Stop press in flight; never projected or persisted. */
@@ -73,6 +165,12 @@ export interface SteeringDockState {
    */
   readonly withdrawingMessageId: string | null;
   /**
+   * The one in-flight per-item Send now. Same one-active-id
+   * rationale as `withdrawingMessageId`, and mutually exclusive with it in
+   * practice since both act on the same queued row.
+   */
+  readonly sendingNowMessageId: string | null;
+  /**
    * Local queue-mutation counter, starting at 0. Every resolved send or
    * withdraw bumps it; a queue snapshot carries the generation captured when
    * its request fired, so a snapshot that predates this tab's latest mutation
@@ -80,15 +178,56 @@ export interface SteeringDockState {
    * withdrew or dropping one they just sent.
    */
   readonly queueGeneration: number;
+  /**
+   * Every message id's last-observed delivery state from the durable queue
+   * read, covering every row the server returned for this node — not just
+   * the pending band `sent` tracks, since a `sent`/`delivered` row is
+   * exactly the evidence a transcript operator row's delivery label needs.
+   * Empty until the first snapshot.
+   */
+  readonly deliveryByMessageId: ReadonlyMap<string, SteeringQueueItemState>;
+  /**
+   * The node's own settled outcome, read straight from the durable queue
+   * snapshot the instant the node is known terminal — null until then, and
+   * still null for a queue-only/never-registered node the read learned
+   * nothing about. This is the ONE signal a room header can trust to skip
+   * straight past a stale `running`/`awaiting` row status without waiting
+   * on that status's own, separately-cadenced poll: the server computed it
+   * from the same durable projection `GET /runs/:id` itself settles onto,
+   * never guessed from `execution_state: 'finished'` alone (that value only
+   * proves the node stopped, not how).
+   */
+  readonly nodeOutcome: SteeringNodeOutcome | null;
+  /**
+   * True while this dock's own queue read could not reach the server (a
+   * transport or 5xx failure — see `markQueueReadFailed`). `syncProjectedSubState`
+   * checks this before applying a fresh projection: a host page's own,
+   * separately-cadenced run read can recover first and report an optimistic
+   * sub-state (e.g. a restart-recovered node briefly read back as still
+   * generating) before this dock's own next read has had a chance to learn
+   * the true one. `applyQueueSnapshot` clears it the moment a read succeeds.
+   */
+  readonly lastReadFailed: boolean;
 }
 
 export type SteeringDockMode =
   | 'hidden'
   | 'blocked'
   | 'detached'
+  | 'recovery-required'
   | 'composer'
   | 'finished-iteration'
-  | 'finished';
+  | 'finished'
+  | 'settling';
+
+/**
+ * A finished node's own outcome, read once from the durable event
+ * projection the instant the node is known terminal — mirrored from the
+ * engine's terminal `NodeState` subset (`packages/workflows/src/schemas/workflow-run.ts`).
+ * Web must not import `@archon/workflows`; this is the intentional
+ * package-boundary mirror (same pattern as `SteeringQueueItemState`).
+ */
+export type SteeringNodeOutcome = 'completed' | 'failed' | 'skipped';
 
 /** The agent sub-state the dock renders — interrupting is UI-local only. */
 export type SteeringAgentMode = 'queue-only' | 'generating' | 'interrupting' | 'idle';
@@ -96,7 +235,7 @@ export type SteeringAgentMode = 'queue-only' | 'generating' | 'interrupting' | '
 export const STEERING_ASK_BLOCKED_REASON = "answer the agent's question first";
 export const STEERING_DETACHED_DISCLOSURE =
   'not steerable here · this run was started detached, so its live session is not in this process';
-export const STEERING_SEND_HINT = 'Cmd/Ctrl+Enter to send · this tab only';
+export const STEERING_SEND_HINT = 'Cmd/Ctrl+Enter to send · saved for you';
 export const STEERING_SEND_FAILED_MESSAGE = "couldn't send · back in the queue";
 export const STEERING_INTERRUPT_FAILED_MESSAGE = "couldn't interrupt · try again";
 export const STEERING_INTERRUPT_DISCLOSURE =
@@ -105,12 +244,12 @@ export const STEERING_AGENT_INTERRUPTING = 'agent interrupting';
 export const STEERING_AGENT_IDLE = 'agent idle · Send now delivers';
 export const STEERING_AGENT_GENERATING = 'agent generating';
 export const STEERING_NEVER_SENT_DISCLOSURE = 'node finished · none of this was sent';
-/** Idle-after-interrupt inactivity bound disclosure (Story 2.12). */
+/** Idle-after-interrupt inactivity bound disclosure. */
 export const STEERING_IDLE_AWAIT_DISCLOSURE =
   'no redirect ends this node after 30 min of inactivity · typing keeps it open';
 /**
  * Terminal never-sent alert when the node failed for idle-await expiry
- * (Story 2.12). Other terminal causes keep STEERING_NEVER_SENT_DISCLOSURE.
+ * Other terminal causes keep STEERING_NEVER_SENT_DISCLOSURE.
  */
 export const STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE =
   'node failed · interrupted with no redirect · none of this was sent';
@@ -129,6 +268,41 @@ export function neverSentDisclosure(idleAwaitExpired: boolean): string {
     : STEERING_NEVER_SENT_DISCLOSURE;
 }
 
+/**
+ * The one queue entry to show a dispatch-failure alert for, if any. A
+ * retryable automatic-dispatch failure reverts an entry to the front of the
+ * queue with failure evidence and parks the node idle-after-interrupt — this
+ * is the head-most row still carrying that evidence, so the dock renders
+ * exactly one assertive error rather than one per queue poll or one per row.
+ *
+ * `lastError` is never cleared by a later successful claim — the server
+ * keeps it as durable history once an entry has failed at least once — so
+ * this also requires `state === 'queued'`: the one state a revert actually
+ * leaves an entry in. A re-claimed entry moves to `dispatching`/`sent`/
+ * `delivered` without clearing `lastError`, and must not keep showing a
+ * stale alert for a retry that is in flight or already succeeded.
+ */
+export function dispatchFailedEntry(sent: readonly LocalSentReceipt[]): LocalSentReceipt | null {
+  return sent.find(entry => entry.state === 'queued' && entry.lastError !== null) ?? null;
+}
+
+/**
+ * Exact dispatch-failure alert copy, naming the reverted entry's evidence
+ * AND the attempt that actually failed — an operator Send now retry that
+ * fails again must never be reported as "automatic", and vice versa.
+ * `lastFailureKind` is the server's own record of which attempt claimed the
+ * entry (see `LocalSentReceipt.lastFailureKind`); `null` only for data from
+ * before this field existed, treated as automatic (the only kind that could
+ * have failed before Send now retry was itself trackable).
+ */
+export function dispatchFailureDisclosure(
+  lastError: string,
+  lastFailureKind: SteeringDispatchFailureKind | null
+): string {
+  const attempt = lastFailureKind === 'send_now' ? 'Send now' : 'automatic dispatch';
+  return `${attempt} failed · ${lastError} · Send now to retry`;
+}
+
 /** Exact finished-iteration disclosure; N is the proven live iteration. */
 export function finishedIterationDisclosure(liveIteration: number): string {
   return `reading a finished iteration · the agent is working in iteration ${String(liveIteration)}`;
@@ -140,24 +314,88 @@ export function goToIterationLabel(liveIteration: number): string {
 }
 
 const STEERING_NOT_STEERABLE_CODE = 'not_steerable_here';
-const STEERING_STORAGE_PREFIX = 'archon:steering-draft:';
+
+/**
+ * Restart-recovery band copy. A live provider process does not
+ * survive a server restart; the durable draft and queue do, read-only, until
+ * the operator invokes the existing workflow Resume action.
+ */
+export const STEERING_RECOVERY_DISCLOSURE =
+  'restored after server restart · Resume the workflow to continue';
 
 /**
  * Visibility/block precedence: a nonempty never-sent result with explicit
- * node-terminal evidence selects finished first (so Cancel that flips the run
- * non-live after observation still surfaces recovery); otherwise a non-live
- * run hides the dock entirely; a proven finished-iteration descriptor wins
- * before the terminal-row hide check so a completed occurrence on a still-live
- * loop can surface the read-only dock; otherwise a non-generating row hides the
- * dock (historical/cold executions must never issue a request); a real pending
- * ask keeps its blocked reason even when a refusal is stored — no request
- * should have been made from that state; only then does a stored 422
- * `not_steerable_here` flip the dock to the detached disclosure.
+ * node-terminal evidence, OR the run itself no longer live, selects finished
+ * first (so Cancel that flips the run non-live after observation still
+ * surfaces recovery); otherwise a non-live run hides the dock entirely; a
+ * proven finished-iteration descriptor wins before the terminal-row hide
+ * check so a completed occurrence on a still-live loop can surface the
+ * read-only dock; a node already proven terminal (with nothing undelivered
+ * to show) hides outright rather than falling through to the row-status
+ * check below — a terminal node never keeps a live composer up just because
+ * a slower-cadenced `rowStatus`/`live` prop has not caught up to the same
+ * fact yet; otherwise a non-generating row hides the dock (historical/cold
+ * executions must never issue a request); a real pending ask keeps its
+ * blocked reason even when a refusal is stored — no request should have been
+ * made from that state; only then does a stored 422 `not_steerable_here`
+ * flip the dock to the detached disclosure.
  *
- * Reconcile still never *triggers* on `!live` alone — finished requires both
- * nonempty neverSent and nodeTerminal. Cold opens of terminal runs stay hidden
- * because they never observed a ledger.
+ * `neverSent` is the caller's render-time union of the server's durable
+ * `never_sent` rows, the operator's own still-unsent draft text, and — only
+ * when this dock's OWN queue read is what reported the node finished, never
+ * from a faster external signal — the still-pending local queue (see
+ * `isPossiblyNeverSent`'s doc comment). `finished` still requires nonempty
+ * `neverSent`, so a terminal (or non-live) node with
+ * nothing undelivered and a blank draft correctly falls through to hidden —
+ * matching "no dock at all" once nothing survives to show. A cold-opened
+ * terminal run reaches this mode as soon as its one-shot queue/draft reads
+ * land, not only when a live session was mounted throughout.
+ *
+ * The run going non-live (Cancel/Abandon) qualifies for `finished` the same
+ * way `nodeTerminal` does, because sending is impossible either way: an
+ * abandoned run's still-queued item is exactly as undeliverable as a proven
+ * `never_sent` row, and the read-only band must not vanish for the window
+ * between the run leaving `live` and the node's own terminal event landing.
+ *
+ * An explicit `recoveryRequired` signal (server restart) is checked
+ * before the terminal and liveness checks: it comes from the server telling
+ * the client the live process is gone, not from a guess this code makes, so
+ * it overrides what `live`/`rowStatus` would otherwise imply.
+ *
+ * `pendingSettlement` covers the gap the checks above leave open: the
+ * terminal signal (`nodeTerminal`/`!live`) can land before THIS dock's own
+ * queue read has reconciled toward `finished`, and at that instant
+ * `neverSent` is still empty (it is only ever populated from this dock's own
+ * read — see `isPossiblyNeverSent`'s doc comment) even though a queued item
+ * is still sitting, unreconciled, in `dock.sent`. Hiding here would drop
+ * that item for a frame between two non-empty renders, exactly the gap
+ * VQ6-3 and VQ9-3 already ruled out for the pre-reconcile withdraw/abandon
+ * races. `settling` keeps the same band up, still labelled `queued`/`will
+ * send` (never relabeled `never sent` before the server actually says so),
+ * until the reconciled read lands and this function is called again — at
+ * that point `neverSent`/`nodeTerminal` (via `effectiveNodeTerminal`) settle
+ * the outcome for real. Gated on no `finishedIteration` so a completed
+ * occurrence on a genuinely still-live loop keeps winning that read-only
+ * view instead.
  */
+/**
+ * A node counts as terminal for the dock's own read-only transitions the
+ * instant EITHER signal says so: the host's own terminal projection
+ * (`nodeTerminal`), or this dock's own queue read observing
+ * `execution_state: 'finished'`. The queue read is this dock's own,
+ * faster-arriving signal in the window between a Cancel/Abandon landing and
+ * the host's slower terminal-status poll catching up — folding it in lets
+ * the terminal one-shot fetch (and `steeringDockMode`) react without
+ * waiting on that external poll. Shared by both shells so neither drifts
+ * from the other.
+ */
+export function effectiveNodeTerminal(
+  nodeTerminal: boolean,
+  executionState: SteeringExecutionState | null
+): boolean {
+  return nodeTerminal || executionState === 'finished';
+}
+
 export function steeringDockMode(input: {
   rowStatus: string;
   live: boolean;
@@ -166,20 +404,53 @@ export function steeringDockMode(input: {
   finishedIteration?: FinishedIterationView | null;
   neverSent?: readonly NeverSentEntry[] | null;
   nodeTerminal?: boolean;
+  recoveryRequired?: boolean;
+  /** See this function's own doc comment. Default false/undefined: no gap to bridge. */
+  pendingSettlement?: boolean;
+  /**
+   * True until this dock's own first queue read has resolved
+   * (`executionState` still null) — before that read, `recoveryRequired`
+   * cannot yet be known, so a row that is actually a restart-recovered node
+   * would otherwise flash a live composer for the gap. Hides the composer/
+   * blocked/detached controls for that gap instead of guessing; nothing here
+   * relabels or removes an already-shown band (this only ever applies before
+   * this dock has shown anything), so an undelivered item still never
+   * disappears once shown. Default false/undefined: no gap to bridge
+   * (matches every caller that doesn't poll a queue at all, e.g. tests
+   * exercising the pure state machine).
+   */
+  firstReadPending?: boolean;
 }): SteeringDockMode {
+  if (input.recoveryRequired === true) return 'recovery-required';
   if (
-    input.nodeTerminal === true &&
+    (input.nodeTerminal === true || !input.live) &&
     input.neverSent !== null &&
     input.neverSent !== undefined &&
     input.neverSent.length > 0
   ) {
     return 'finished';
   }
+  if (
+    (input.nodeTerminal === true || !input.live) &&
+    input.pendingSettlement === true &&
+    (input.finishedIteration === null || input.finishedIteration === undefined)
+  ) {
+    return 'settling';
+  }
   if (!input.live) return 'hidden';
   if (input.finishedIteration !== null && input.finishedIteration !== undefined) {
     return 'finished-iteration';
   }
+  // Proven terminal with nothing undelivered to show (the branch above
+  // already claimed the nonempty-neverSent case): hide outright instead of
+  // falling through to the rowStatus check, which reads a separately
+  // cadenced prop that can still say `running`/`awaiting` for a short
+  // window after this dock's own queue read already learned the node is
+  // done — a finished node must never keep a live composer up while that
+  // other signal catches up.
+  if (input.nodeTerminal === true) return 'hidden';
   if (input.rowStatus !== 'running' && input.rowStatus !== 'awaiting') return 'hidden';
+  if (input.firstReadPending === true) return 'hidden';
   if (steeringBlockedReason(input) !== null) return 'blocked';
   if (input.refusal?.code === STEERING_NOT_STEERABLE_CODE) return 'detached';
   return 'composer';
@@ -209,15 +480,22 @@ export function steeringAgentMode(input: {
 
 /**
  * The single guard shared by Queue, Send now, and the keyboard shortcut:
- * non-blank draft, no send in flight, composer mode. `interrupting` does
- * NOT block Queue — a message sent in the race waits for Send now.
+ * no send in flight, composer mode, and either a non-blank draft or (Send
+ * now only, `agentMode === 'idle'`) at least one already-claimable queued
+ * item — a blank Send now still delivers everything waiting (CAP-10).
+ * `interrupting` does NOT block Queue — a message sent in the race waits
+ * for Send now.
  */
 export function canSubmitGuidance(input: {
   mode: SteeringDockMode;
   sendInFlight: boolean;
   draft: string;
+  agentMode: SteeringAgentMode;
+  willSendCount: number;
 }): boolean {
-  return input.mode === 'composer' && !input.sendInFlight && input.draft.trim().length > 0;
+  if (input.mode !== 'composer' || input.sendInFlight) return false;
+  if (input.draft.trim().length > 0) return true;
+  return input.agentMode === 'idle' && input.willSendCount > 0;
 }
 
 export interface SteeringShortcutEvent {
@@ -250,9 +528,14 @@ export function isKeepaliveActivityKey(event: SteeringShortcutEvent): boolean {
   return !isQueueShortcut(event);
 }
 
-/** sessionStorage key for the unsent draft + ambiguous retry id. */
-export function steeringDraftStorageKey(runId: string, nodeId: string): string {
-  return `${STEERING_STORAGE_PREFIX}${runId}:${nodeId}`;
+/**
+ * Scope key identifying one (run, node) draft/queue pair. The draft and
+ * queue are both durable and server-scoped by `(runId, nodeId)` only — never
+ * per execution attempt — so this key drives attempt-reset detection but no
+ * longer names a storage slot.
+ */
+export function steeringScopeKey(runId: string, nodeId: string): string {
+  return `${runId}:${nodeId}`;
 }
 
 export function queuedCountPhrase(count: number): string {
@@ -280,6 +563,57 @@ export function willSendListLabel(count: number): string {
   return `Will send, ${count.toString()}`;
 }
 
+/** Lowercase DOM text; the renderer applies CSS uppercase + phase tracking. */
+export function sendingBandHeader(count: number): string {
+  return `sending · ${count.toString()}`;
+}
+
+export function sendingListLabel(count: number): string {
+  return `Sending, ${count.toString()}`;
+}
+
+/**
+ * Drop a pending row the moment its message id is already a delivered
+ * transcript row, so the dispatching band and the transcript never both
+ * show the same message at once. The dock's own `dock.sent` still carries
+ * the row for the short window between the transcript's (faster, ~1s-poll)
+ * confirmation and this tab's own send-resolve or next queue poll — this
+ * filter is purely presentational and must be applied everywhere `sent`
+ * feeds the band (row list, count, "all dispatching" header selection,
+ * accessible names), never to the state machine itself, or the header and
+ * the rows beneath it would disagree about how many messages remain.
+ */
+export function visiblePendingReceipts(
+  sent: readonly LocalSentReceipt[],
+  deliveredMessageIds: ReadonlySet<string>
+): readonly LocalSentReceipt[] {
+  if (deliveredMessageIds.size === 0) return sent;
+  return sent.filter(receipt => !deliveredMessageIds.has(receipt.messageId));
+}
+
+/**
+ * True when every visible pending row is in flight (claimed and moving
+ * toward the transcript — `dispatching`, `sent`, or `delivered`), never a
+ * claimable queued row. The band header must never contradict the rows
+ * listed under it: `queued · 0` above a visible `sending…` row claims
+ * nothing is happening while something plainly is. `pendingQueueCount`
+ * already excludes every in-flight state from its count for the same
+ * reason — this is the header-selection counterpart of that exclusion.
+ */
+export function allPendingDispatching(sent: readonly LocalSentReceipt[]): boolean {
+  return sent.length > 0 && sent.every(receipt => isQueueItemInFlight(receipt.state));
+}
+
+/**
+ * The live queue band's persistence line: the draft and queue
+ * are server-persisted, so this always renders while the band is live.
+ * `Auto-send on` reports the durable per-node setting from the last observed
+ * queue snapshot; it appends only when the caller confirms it is on.
+ */
+export function savedToServerLine(autoSendEnabled: boolean): string {
+  return autoSendEnabled ? 'saved to server · Auto-send on' : 'saved to server';
+}
+
 /** Lowercase DOM source heading; the renderer applies CSS uppercase tracking. */
 export function neverSentBandHeader(count: number): string {
   return `never sent · ${count.toString()}`;
@@ -297,12 +631,71 @@ export function sendNowButtonAccessibleName(count: number): string {
   return `Send now · Cmd/Ctrl+Enter to send · ${willSendCountPhrase(count)}`;
 }
 
+/** A queue item can be withdrawn or soft-injected only while still claimable. */
+export function isQueueItemClaimable(state: SteeringQueueItemState): boolean {
+  return STEERING_QUEUE_CLAIMABLE_STATES.includes(state);
+}
+
+/**
+ * Whether a still-locally-tracked row is a genuine "might never have been
+ * sent" candidate for a finished node's never-sent band, before the durable
+ * `never_sent` rows the executor wrote are known. An in-flight row
+ * (`dispatching`, `sent`, `delivered`) already left the queue for the
+ * transcript — the opposite of undelivered — so it must never render as
+ * never-sent ahead of the terminal reconciliation result (server truth).
+ * Callers gate this on `dock.executionState === 'finished'` — the one
+ * signal that is this dock's OWN queue read, not a faster external prop —
+ * before trusting the local row at all; see `finishedEntries` in
+ * ComposerDock.tsx / ConsoleComposerDock.tsx.
+ */
+export function isPossiblyNeverSent(state: SteeringQueueItemState): boolean {
+  return !isQueueItemInFlight(state);
+}
+
+/**
+ * The count a "queued · N" / "will send · N" band header states — every
+ * pending entry except one already in flight (`dispatching`, `sent`, or
+ * `delivered`). control-states.md lists `queued` and `dispatching` as
+ * distinct states: a message already being delivered is not waiting, so
+ * counting it as queued misreports what is actually happening (a provider
+ * whose delivery takes several seconds, not the sub-second case this once
+ * assumed, made that reading visible). An in-flight entry still renders in
+ * the list, labelled by `queueItemStatusLabel`, so nothing disappears — it
+ * just is not counted twice as "queued" and "in flight" at once.
+ */
+export function pendingQueueCount(sent: readonly LocalSentReceipt[]): number {
+  return sent.filter(receipt => !isQueueItemInFlight(receipt.state)).length;
+}
+
+/**
+ * Per-item delivery label for a pending queue row. `queued`/`awaiting_send_now`
+ * render with no label at all, matching the approved mockup's plain rows.
+ * Every in-flight state (`dispatching`, `sent`, `delivered`) and
+ * `delivery_unknown` must never render silently as a plain queued row —
+ * control-states.md lists `dispatching` as its own state, and a verified
+ * provider can take several real seconds to accept a dispatched message,
+ * not the sub-second window this once assumed. A `sent`/`delivered` row
+ * only briefly reaches this helper — `visiblePendingReceipts` removes it
+ * the moment the transcript confirms the matching operator row — so it
+ * keeps showing the same "sending…" label right up to that hand-off,
+ * never flickering to some other text first. `never_sent` never reaches
+ * this helper: it uses its own band.
+ */
+export function queueItemStatusLabel(state: SteeringQueueItemState): string | null {
+  if (state === 'delivery_unknown') return 'delivery unknown';
+  if (isQueueItemInFlight(state)) return 'sending…';
+  return null;
+}
+
 export function createSteeringDockState(subState?: SteeringSubState): SteeringDockState {
   return {
     subState: subState ?? null,
     sent: [],
-    observedLedger: [],
     neverSent: null,
+    executionState: null,
+    autoSend: false,
+    softInjection: false,
+    deliveryAck: false,
     sendInFlight: false,
     interruptInFlight: false,
     inFlightBatch: null,
@@ -310,23 +703,25 @@ export function createSteeringDockState(subState?: SteeringSubState): SteeringDo
     refusal: null,
     notice: null,
     withdrawingMessageId: null,
+    sendingNowMessageId: null,
     queueGeneration: 0,
+    deliveryByMessageId: new Map(),
+    nodeOutcome: null,
+    lastReadFailed: false,
   };
 }
 
-/** Append receipts the first time each messageId is observed; preserve order. */
-function appendObservedIfNew(
-  ledger: readonly LocalSentReceipt[],
-  entries: readonly LocalSentReceipt[]
-): readonly LocalSentReceipt[] {
-  let next: LocalSentReceipt[] | null = null;
-  for (const entry of entries) {
-    const exists = (next ?? ledger).some(row => row.messageId === entry.messageId);
-    if (exists) continue;
-    if (next === null) next = [...ledger];
-    next.push(entry);
-  }
-  return next ?? ledger;
+/**
+ * Marks this dock's own queue read as unable to reach the server just now.
+ * `syncProjectedSubState` checks `state.lastReadFailed` before applying a
+ * fresh projection — see that field's own doc comment. `applyQueueSnapshot`
+ * clears the flag the instant a read succeeds again; nothing else does, so
+ * a persistent outage keeps every later projection frozen for as long as
+ * this dock's own reads keep failing. Idempotent: repeated failures collapse
+ * to one flag, so callers never need to check before calling.
+ */
+export function markQueueReadFailed(state: SteeringDockState): SteeringDockState {
+  return state.lastReadFailed ? state : { ...state, lastReadFailed: true };
 }
 
 /**
@@ -334,15 +729,46 @@ function appendObservedIfNew(
  * authoritative and supersedes the local interrupting transient; an absent
  * projection only means queue-only — never a detached verdict — so the
  * transient survives until the caller's own interrupt response lands.
+ *
+ * An `idle-after-interrupt` → `generating` transition only ever happens
+ * after the executor's own wake-and-claim already committed every
+ * then-claimable row to `dispatching` server-side (the durable claim
+ * always precedes the turn actually starting — see `claimSteeringQueue`
+ * ahead of `beginTurn` in the engine). A tab that observes this transition
+ * through a faster, separately-cadenced channel than its own `/queue` poll
+ * (an observer watching a different tab's Send now) can otherwise still
+ * show a now-claimed row as plain `queued`/`awaiting_send_now` — offering
+ * a withdraw that can no longer take effect — until its own next queue
+ * snapshot catches up. Mirror the claim here immediately: the same
+ * optimistic-then-reconciled pattern `resolveSendNowSuccess` already uses
+ * for the sending tab itself, applied to every row this tab already knew
+ * about. The next queue snapshot still replaces `sent` wholesale, so this
+ * never diverges from server truth for longer than one poll.
+ *
+ * A read failure freezes this entirely (see `SteeringDockState.lastReadFailed`'s
+ * own doc comment): a host page's own, separately-cadenced run read can
+ * recover from an outage before this dock's own next queue read does, and
+ * projecting its optimistic sub-state in that gap would show live controls
+ * this dock has not itself confirmed. `applyQueueSnapshot` is the only path
+ * that lifts the freeze, by reconciling `subState` directly from a read this
+ * dock actually made.
  */
 export function syncProjectedSubState(
   state: SteeringDockState,
   projected: SteeringSubState | undefined
 ): SteeringDockState {
+  if (state.lastReadFailed) return state;
   const next = projected ?? null;
   if (state.subState === next) return state;
+  const sent =
+    state.subState === 'idle-after-interrupt' && next === 'generating'
+      ? state.sent.map(entry =>
+          isQueueItemClaimable(entry.state) ? { ...entry, state: 'dispatching' as const } : entry
+        )
+      : foldUnreadSoftInjections(state, next);
   return {
     ...state,
+    sent,
     subState: next,
     interruptInFlight: projected === undefined ? state.interruptInFlight : false,
     notice:
@@ -376,10 +802,12 @@ export function beginGuidanceSubmission(
 /**
  * 200 appends once by `message_id`, in acceptance order — a replayed success
  * never duplicates the row. Clears the pending retry and any stored refusal.
+ * The next queue poll reconciles the exact server state; this optimistic
+ * entry only bridges the gap until it does.
  */
 export function resolveGuidanceSuccess(
   state: SteeringDockState,
-  receipt: { message_id: string; state?: 'queued' | 'awaiting_send_now' }
+  receipt: { message_id: string; state?: SteeringQueueItemState }
 ): SteeringDockState {
   // A replayed success never duplicates the row but still bumps
   // `queueGeneration`, because the server accepted the mutation either way.
@@ -393,13 +821,16 @@ export function resolveGuidanceSuccess(
       refusal: null,
       withdrawingMessageId: state.withdrawingMessageId,
       queueGeneration: state.queueGeneration + 1,
-      observedLedger: appendObservedIfNew(state.observedLedger, [existing]),
     };
   }
   const accepted: LocalSentReceipt = {
     messageId: receipt.message_id,
     message: state.pendingRetry?.message ?? '',
     state: receipt.state ?? 'queued',
+    operatorUserId: null,
+    lastError: null,
+    dispatchFailureCount: 0,
+    lastFailureKind: null,
   };
   const sent = [...state.sent, accepted];
   return {
@@ -411,7 +842,6 @@ export function resolveGuidanceSuccess(
     withdrawingMessageId: state.withdrawingMessageId,
     queueGeneration: state.queueGeneration + 1,
     notice: queuedCountPhrase(sent.length),
-    observedLedger: appendObservedIfNew(state.observedLedger, [accepted]),
   };
 }
 
@@ -427,7 +857,18 @@ export function resolveGuidanceFailure(
  * Send now: snapshot the displayed accepted receipts plus the new draft into
  * the batch and clear the visible band optimistically, so nothing looks
  * pickable twice. Only the new draft posts (with its stable retry UUID);
- * earlier items already exist in the server registry.
+ * earlier items already exist in the server registry. A blank draft (CAP-10:
+ * deliver everything already queued, with nothing newly typed) carries a
+ * retry id for response correlation but adds no placeholder row — there is
+ * no new message to display.
+ *
+ * The band renders the batch as an optimistic `dispatching` row in this SAME
+ * state update, rather than leaving `sent` empty until the response resolves
+ * a moment later — that gap used to show neither the queued item nor a
+ * "sending" row for one render. `resolveSendNowSuccess` re-asserts the same
+ * `dispatching` mapping once the response lands (idempotent — a defensive
+ * re-sync, not a second source of truth) and `resolveSendNowFailure` reverts
+ * it back to the pre-send entries.
  */
 export function beginSendNow(
   state: SteeringDockState,
@@ -446,22 +887,28 @@ export function beginSendNow(
     previousPending !== null && previousPending.message !== draft
       ? state.sent.filter(entry => entry.messageId !== previousPending.messageId)
       : state.sent;
-  const inFlightBatch = displayedReceipts.some(entry => entry.messageId === pendingRetry.messageId)
-    ? displayedReceipts
-    : [
-        ...displayedReceipts,
-        {
-          messageId: pendingRetry.messageId,
-          message: pendingRetry.message,
-          state: 'awaiting_send_now' as const,
-        },
-      ];
+  const isBlankDraft = draft.trim().length === 0;
+  const inFlightBatch =
+    isBlankDraft || displayedReceipts.some(entry => entry.messageId === pendingRetry.messageId)
+      ? displayedReceipts
+      : [
+          ...displayedReceipts,
+          {
+            messageId: pendingRetry.messageId,
+            message: pendingRetry.message,
+            state: 'awaiting_send_now' as const,
+            operatorUserId: null,
+            lastError: null,
+            dispatchFailureCount: 0,
+            lastFailureKind: null,
+          },
+        ];
   return {
     state: {
       ...state,
       sendInFlight: true,
       inFlightBatch,
-      sent: [],
+      sent: inFlightBatch.map(entry => ({ ...entry, state: 'dispatching' as const })),
       pendingRetry,
       refusal: null,
     },
@@ -473,14 +920,20 @@ export function beginSendNow(
  * Send-now success: the batch is discarded (server drained it), the sub-state
  * derives generating, and one composite announcement lands. A replayed
  * success after settlement is a no-op — the band never reappears.
+ *
+ * The generating branch re-asserts the batch as `dispatching` — `beginSendNow`
+ * already rendered this same mapping synchronously with the click, so this is
+ * a defensive re-sync (covers a snapshot that landed mid-flight and changed
+ * `sent`), not the first paint of it. `applyQueueSnapshot` replaces `sent`
+ * wholesale by id once the next queue poll (~1s) lands, so neither this nor
+ * the earlier optimistic render ever duplicates a row.
  */
 export function resolveSendNowSuccess(
   state: SteeringDockState,
-  receipt: { message_id: string; state: 'queued' | 'awaiting_send_now' }
+  receipt: { message_id: string; state: SteeringQueueItemState }
 ): SteeringDockState {
   if (!state.sendInFlight || state.inFlightBatch === null) return state;
   if (state.pendingRetry?.messageId !== receipt.message_id) return state;
-  const observedLedger = appendObservedIfNew(state.observedLedger, state.inFlightBatch);
   // A Queue request with an ambiguous response may be retried after the node
   // becomes idle. Idempotency replays its original `queued` receipt and cannot
   // release the idle waiter. Keep the resolved message in Will send and require
@@ -496,11 +949,11 @@ export function resolveSendNowSuccess(
       refusal: null,
       queueGeneration: state.queueGeneration + 1,
       notice: willSendCountPhrase(state.inFlightBatch.length),
-      observedLedger,
     };
   }
   return {
     ...state,
+    sent: state.inFlightBatch.map(entry => ({ ...entry, state: 'dispatching' })),
     sendInFlight: false,
     inFlightBatch: null,
     pendingRetry: null,
@@ -508,27 +961,51 @@ export function resolveSendNowSuccess(
     subState: 'generating',
     queueGeneration: state.queueGeneration + 1,
     notice: STEERING_AGENT_GENERATING,
-    observedLedger,
   };
 }
 
 /**
  * Ambiguous Send-now failure: snapshotted receipts return to the front in
- * original order (including the new message), the new message keeps its retry
- * id, and the dock stays idle — an alert, not the polite region, carries the
- * failure.
+ * original order (including the new message) with their pre-send states —
+ * reverting the `dispatching` row `beginSendNow` optimistically rendered —
+ * and the dock stays idle. An alert, not the polite region, carries the
+ * failure. `state.sent` already equals the batch (see `beginSendNow`) unless
+ * a snapshot landed mid-flight and added an id the batch never had; that
+ * extra id is kept, deduplicated by message id rather than concatenated, so
+ * a batch entry is never shown twice.
  */
 export function resolveSendNowFailure(
   state: SteeringDockState,
   refusal: SteeringRefusal
 ): SteeringDockState {
+  const batch = state.inFlightBatch ?? [];
+  const batchIds = new Set(batch.map(entry => entry.messageId));
   return {
     ...state,
     sendInFlight: false,
-    sent: [...(state.inFlightBatch ?? []), ...state.sent],
+    sent: [...batch, ...state.sent.filter(entry => !batchIds.has(entry.messageId))],
     inFlightBatch: null,
     refusal,
   };
+}
+
+/**
+ * A Stop landed on a provider that acknowledges deliveries: every accepted
+ * soft injection the model never read returns to the queue, so show it as
+ * queued now instead of waiting for the next queue read. Returns the same
+ * array when nothing folds.
+ */
+function foldUnreadSoftInjections(
+  state: SteeringDockState,
+  subState: SteeringSubState | null
+): readonly LocalSentReceipt[] {
+  if (subState !== 'idle-after-interrupt' || !state.deliveryAck) return state.sent;
+  if (!state.sent.some(entry => entry.unreadSoftInjection === true)) return state.sent;
+  return state.sent.map(entry =>
+    entry.unreadSoftInjection === true
+      ? { ...entry, state: 'queued' as const, unreadSoftInjection: false }
+      : entry
+  );
 }
 
 /** One Stop press: local interrupting + exactly one polite announcement. */
@@ -547,6 +1024,7 @@ export function resolveInterruptOutcome(
 ): SteeringDockState {
   return {
     ...state,
+    sent: foldUnreadSoftInjections(state, outcome),
     interruptInFlight: false,
     subState: outcome,
     notice:
@@ -585,6 +1063,15 @@ export function beginWithdraw(state: SteeringDockState, messageId: string): Stee
  * preserved) and clears the active id plus any stored refusal. The generation
  * bumps even when a snapshot already removed the row — the server confirmed
  * the mutation either way. A stale or mismatched completion is a no-op.
+ *
+ * The response never says whether the row actually left the queue (it is a
+ * no-op either way if a concurrent dispatch already claimed it) — a
+ * corrective re-read follows on the bumped generation. Removing the row when
+ * it is the only one left would blank the band before that re-read lands, so
+ * this keeps the row exactly as it was instead: the corrective snapshot
+ * resolves it either way (dropped if truly withdrawn, restored with its true
+ * state otherwise), so the band goes from one non-empty rendering straight to
+ * the next with no empty frame in between.
  */
 export function resolveWithdrawSuccess(
   state: SteeringDockState,
@@ -592,11 +1079,18 @@ export function resolveWithdrawSuccess(
 ): SteeringDockState {
   if (state.withdrawingMessageId !== messageId) return state;
   const sent = state.sent.filter(entry => entry.messageId !== messageId);
-  const observedLedger = state.observedLedger.filter(entry => entry.messageId !== messageId);
+  const keepLastRowUntilConfirmed = sent.length === 0 && state.sent.length > 0;
+  if (keepLastRowUntilConfirmed) {
+    return {
+      ...state,
+      withdrawingMessageId: null,
+      refusal: null,
+      queueGeneration: state.queueGeneration + 1,
+    };
+  }
   return {
     ...state,
     sent,
-    observedLedger,
     withdrawingMessageId: null,
     refusal: null,
     queueGeneration: state.queueGeneration + 1,
@@ -626,7 +1120,56 @@ export function resolveWithdrawFailure(
   return { ...state, withdrawingMessageId: null, refusal };
 }
 
-export const STEERING_DELETE_LABEL = 'delete';
+/**
+ * Begin the single allowed per-item Send now. Same shape as
+ * `beginWithdraw` — sets the id only when the row is present and no other
+ * per-item send is active.
+ */
+export function beginSendNowItem(state: SteeringDockState, messageId: string): SteeringDockState {
+  if (state.sendingNowMessageId !== null) return state;
+  if (!state.sent.some(entry => entry.messageId === messageId)) return state;
+  return { ...state, sendingNowMessageId: messageId };
+}
+
+/**
+ * A per-item Send now 200 moves the row from waiting to in flight: the server
+ * already claimed it and the live turn accepted it, so it stays visible as
+ * `sending…` until the transcript renders its operator row (the same handoff
+ * a typed Send now uses), and it no longer counts as queued. Dropping it here
+ * would show the message nowhere until the transcript's next read. Stop is
+ * never invoked and no interrupt/idle transition happens on this path.
+ */
+export function resolveSendNowItemSuccess(
+  state: SteeringDockState,
+  messageId: string
+): SteeringDockState {
+  if (state.sendingNowMessageId !== messageId) return state;
+  return {
+    ...state,
+    sent: state.sent.map(entry =>
+      entry.messageId === messageId
+        ? { ...entry, state: 'dispatching', unreadSoftInjection: true }
+        : entry
+    ),
+    sendingNowMessageId: null,
+    refusal: null,
+    queueGeneration: state.queueGeneration + 1,
+  };
+}
+
+/** A failed per-item Send now retains the row and stores the refusal. */
+export function resolveSendNowItemFailure(
+  state: SteeringDockState,
+  messageId: string,
+  refusal: SteeringRefusal
+): SteeringDockState {
+  if (state.sendingNowMessageId !== messageId) return state;
+  return { ...state, sendingNowMessageId: null, refusal };
+}
+
+export const STEERING_DELETE_LABEL = '✕';
+/** Visible label for the per-item soft-injection control. */
+export const STEERING_SEND_NOW_ITEM_LABEL = 'Send now';
 
 /**
  * Accessible name for the per-row delete control. The visible text stays
@@ -637,137 +1180,248 @@ export function deleteButtonAccessibleName(message: string): string {
   return `delete · ${message.trim()}`;
 }
 
+/**
+ * Accessible name for the per-item Send now control. Present only on a
+ * queued item, only while a verified soft-injection transport can accept it
+ * mid-turn — a queue-only provider never renders this control at all.
+ */
+export function sendNowItemAccessibleName(message: string): string {
+  return `Send now · ${message.trim()}`;
+}
+
 export type RemovalFocusTarget =
-  | { readonly kind: 'delete'; readonly messageId: string }
+  | { readonly kind: 'delete' | 'send-now'; readonly messageId: string }
   | { readonly kind: 'field' };
 
 /**
- * Where focus goes after a queued row is removed: the next row's delete
- * button in the activation-time order, otherwise the previous row's,
- * otherwise the composer field. An unknown id resolves to the field.
+ * Where focus goes after a queued row is removed or leaves the queue: the
+ * same control (`delete` by default, or the per-item `send-now`) on the next
+ * row in the activation-time order, otherwise on the previous row, otherwise
+ * the composer field. An unknown id resolves to the field.
  */
 export function nextFocusAfterRemoval(
   orderedIds: readonly string[],
-  removedId: string
+  removedId: string,
+  control: 'delete' | 'send-now' = 'delete'
 ): RemovalFocusTarget {
   const index = orderedIds.indexOf(removedId);
   if (index === -1) return { kind: 'field' };
   const sibling = orderedIds[index + 1] ?? orderedIds[index - 1];
-  return sibling === undefined ? { kind: 'field' } : { kind: 'delete', messageId: sibling };
+  return sibling === undefined ? { kind: 'field' } : { kind: control, messageId: sibling };
 }
 
 /** One queued-guidance row exactly as the GET queue route returns it. */
 export interface QueuedGuidanceRow {
   readonly message_id: string;
   readonly message: string;
+  /** Author of the message; null for an unauthenticated/no-identity caller. */
+  readonly operator_user_id: string | null;
+  readonly state: SteeringQueueItemState;
+  /** Failure evidence for a reverted-to-queued or never_sent row; null otherwise. */
+  readonly last_error: string | null;
+  /** Count of retryable automatic-dispatch failures this row has been reverted from. */
+  readonly dispatch_failure_count: number;
+  /** Which attempt claimed this row behind the most recent `last_error`; null until the first failure. */
+  readonly last_failure_kind: SteeringDispatchFailureKind | null;
 }
 
-/** The queue-read wire payload: only still-pending rows in receipt order. */
+/** The queue-read wire payload — the durable node queue in server FIFO order. */
 export interface QueueSnapshot {
+  readonly execution_state: SteeringExecutionState;
+  readonly auto_send: boolean;
+  readonly capabilities: { readonly soft_injection: boolean; readonly delivery_ack: boolean };
   readonly queued: readonly QueuedGuidanceRow[];
+  /**
+   * Server-authoritative projected sub-state for a live interruptible
+   * handle, read fresh on every poll — null for a queue-only or non-live
+   * node. Reconciled into the dock unconditionally on every accepted
+   * snapshot (see `applyQueueSnapshot`), independent of the separate
+   * `subState` prop a host may also thread in from its own, slower poll.
+   */
+  readonly sub_state: SteeringSubState | null;
+  /**
+   * The node's own settled outcome — see `SteeringDockState.nodeOutcome`.
+   * Null while the node is not yet known terminal by this read.
+   */
+  readonly node_outcome: SteeringNodeOutcome | null;
 }
+
+const NO_RENDERED_MESSAGE_IDS: ReadonlySet<string> = new Set<string>();
 
 /**
  * Reconcile the rendered queue with the server's authoritative order. A
  * generation mismatch returns the identical state object — the snapshot
  * predates this tab's latest resolved mutation and must not resurrect or
- * drop rows. On match, `sent` is replaced wholesale with the server-ordered
- * queued receipts; `sendInFlight`, `pendingRetry`, `refusal`,
- * `withdrawingMessageId`, and `queueGeneration` are preserved exactly.
- * Identical ids, text, and order return the identical state object so React
- * skips a render. The draft, sessionStorage, and a stored refusal are never
- * touched — the server has no opinion on any of them.
+ * drop rows. On match:
+ *
+ * - `sent` is replaced wholesale with the durable pending rows (`queued`,
+ *   `awaiting_send_now`, `dispatching`, `delivery_unknown`) in server order,
+ *   PLUS any `sent`/`delivered` row this same tab was already tracking in a
+ *   still-open state on the immediately preceding snapshot — one extra poll
+ *   of grace so the band keeps showing "sending…" for exactly as long as it
+ *   takes the transcript's own, independently-cadenced read to render the
+ *   matching operator row (`visiblePendingReceipts` is the only thing
+ *   allowed to hide it once that happens, never this reconcile). A row this
+ *   tab never tracked as open — a cold load, or a message a different live
+ *   iteration dispatched — is never resurrected once it reads `sent`; the
+ *   grace window bridges a hand-off this tab watched happen, not a general
+ *   amnesty for every `sent` row the server has ever recorded.
+ * - `neverSent` is replaced wholesale with the durable `never_sent` rows.
+ *   This is the sole source: a node opened cold, well after it
+ *   went terminal, still learns exactly what was never delivered, because
+ *   the server — not this tab's history — is what remembers.
+ * - `executionState`, `autoSend`, and `softInjection` mirror the snapshot.
+ * - `subState` reconciles to `snapshot.sub_state` on EVERY accepted
+ *   snapshot, not only when it differs from the value last observed. A host
+ *   that also threads a `subState` prop from a separate, slower poll can
+ *   miss a transition entirely when the prop's own sampled value happens to
+ *   read the same before and after (another shell flipped it and back
+ *   between two of the prop's polls) — this dock-owned poll is the
+ *   self-healing path that never depends on the prop noticing a change.
+ *   `interruptInFlight` clears only on `idle-after-interrupt` (proof a
+ *   Stop actually landed server-side) or a lost projection (`null`); a
+ *   snapshot that still reads `generating` while a Stop is mid-flight
+ *   leaves it untouched, so "Stopping…" never flips back to "Stop" before
+ *   the interrupt response itself resolves the transient.
+ *
+ * `sendInFlight`, `pendingRetry`, `refusal`, `withdrawingMessageId`,
+ * `sendingNowMessageId`, and `queueGeneration` are preserved exactly.
+ * `lastReadFailed` always clears to `false` — reaching this function at all
+ * means this dock's own read just succeeded, even when every other field
+ * happens to be unchanged from before the failure.
+ * Identical content returns the identical state object so React skips a
+ * render. The draft and a stored refusal are never touched — the server has
+ * no opinion on either.
  */
 export function applyQueueSnapshot(
   state: SteeringDockState,
   snapshot: QueueSnapshot,
-  generationAtRequest: number
+  generationAtRequest: number,
+  renderedMessageIds: ReadonlySet<string> = NO_RENDERED_MESSAGE_IDS
 ): SteeringDockState {
   if (generationAtRequest !== state.queueGeneration) return state;
-  const nextSent: LocalSentReceipt[] = snapshot.queued.map(row => ({
-    messageId: row.message_id,
-    message: row.message,
-    state: 'queued',
-  }));
-  const observedLedger = appendObservedIfNew(state.observedLedger, nextSent);
+  // Bridges the `dispatching` → `sent`/`delivered` hand-off: a row counts only
+  // when the PRIOR local snapshot already tracked it, and it stays until the
+  // transcript has rendered its operator row (`renderedMessageIds`) — never
+  // for a fixed number of polls, so no frame shows it in neither place. A
+  // finished node ends the hand-off (its rows are read-only records).
+  const trackedIds = new Set(state.sent.map(entry => entry.messageId));
+  const priorUnreadIds = new Set(
+    state.sent.filter(entry => entry.unreadSoftInjection === true).map(entry => entry.messageId)
+  );
+  const liveSoftInjection =
+    snapshot.capabilities.soft_injection && snapshot.sub_state === 'generating';
+  // A Stop landed on a provider that acknowledges deliveries: a `sent` entry
+  // the model never read is about to return to the queue, so it is shown as
+  // queued now instead of a moment later.
+  const stopReturnsUnread =
+    snapshot.capabilities.delivery_ack && snapshot.sub_state === 'idle-after-interrupt';
+  const handOffOpen = snapshot.execution_state !== 'finished';
+  const nextSent: LocalSentReceipt[] = snapshot.queued
+    .filter(
+      row =>
+        STEERING_QUEUE_PENDING_STATES.includes(row.state) ||
+        // On a live turn of a soft-injection provider a `sent` entry is
+        // accepted by the transport but not yet read by the model (it waits
+        // for the next tool boundary or echo), so it stays visible until its
+        // transcript row replaces it.
+        (row.state === 'sent' && liveSoftInjection) ||
+        (row.state === 'sent' && stopReturnsUnread && !renderedMessageIds.has(row.message_id)) ||
+        ((row.state === 'sent' || row.state === 'delivered') &&
+          handOffOpen &&
+          trackedIds.has(row.message_id) &&
+          !renderedMessageIds.has(row.message_id))
+    )
+    .map(row => ({
+      messageId: row.message_id,
+      message: row.message,
+      state: row.state === 'sent' && stopReturnsUnread ? ('queued' as const) : row.state,
+      operatorUserId: row.operator_user_id,
+      lastError: row.last_error,
+      dispatchFailureCount: row.dispatch_failure_count,
+      lastFailureKind: row.last_failure_kind,
+      ...(row.state === 'sent' &&
+      !stopReturnsUnread &&
+      (liveSoftInjection || priorUnreadIds.has(row.message_id))
+        ? { unreadSoftInjection: true }
+        : {}),
+    }));
+  const nextNeverSent: NeverSentEntry[] = snapshot.queued
+    .filter(row => row.state === 'never_sent')
+    .map(row => ({ messageId: row.message_id, message: row.message }));
+  const nextDeliveryByMessageId = new Map(
+    snapshot.queued.map(row => [row.message_id, row.state] as const)
+  );
+
   const sentUnchanged =
     nextSent.length === state.sent.length &&
     nextSent.every(
-      (row, i) => row.messageId === state.sent[i].messageId && row.message === state.sent[i].message
+      (row, i) =>
+        row.messageId === state.sent[i].messageId &&
+        row.message === state.sent[i].message &&
+        row.state === state.sent[i].state &&
+        row.operatorUserId === state.sent[i].operatorUserId &&
+        row.lastError === state.sent[i].lastError &&
+        row.dispatchFailureCount === state.sent[i].dispatchFailureCount &&
+        row.lastFailureKind === state.sent[i].lastFailureKind
     );
-  if (sentUnchanged && observedLedger === state.observedLedger) return state;
-  return { ...state, sent: nextSent, observedLedger };
-}
-
-/**
- * One-shot terminal reconciliation: restore every observed-but-unwritten
- * receipt, then an unmatched pending submission, then a different nonblank
- * raw draft. Pure — mutates no other state field. Writes `[]` when nothing
- * qualifies (never leaves `neverSent` null after a call).
- */
-export function reconcileNeverSent(
-  state: SteeringDockState,
-  input: {
-    readonly writtenMessageIds: ReadonlySet<string>;
-    readonly draft: string;
-  }
-): SteeringDockState {
-  const neverSent: NeverSentEntry[] = [];
-  const listedIds = new Set<string>();
-
-  for (const entry of state.observedLedger) {
-    if (input.writtenMessageIds.has(entry.messageId) || listedIds.has(entry.messageId)) continue;
-    listedIds.add(entry.messageId);
-    neverSent.push({ messageId: entry.messageId, message: entry.message });
-  }
-
-  const pending = state.pendingRetry;
-  if (
-    pending !== null &&
-    !input.writtenMessageIds.has(pending.messageId) &&
-    !listedIds.has(pending.messageId)
-  ) {
-    listedIds.add(pending.messageId);
-    neverSent.push({ messageId: pending.messageId, message: pending.message });
-  }
-
-  const draft = input.draft;
-  if (draft.trim().length > 0 && draft !== pending?.message) {
-    neverSent.push({ messageId: null, message: draft });
-  }
-
-  if (
+  const neverSentUnchanged =
     state.neverSent !== null &&
-    state.neverSent.length === neverSent.length &&
-    state.neverSent.every(
-      (entry, index) =>
-        entry.messageId === neverSent[index]?.messageId &&
-        entry.message === neverSent[index]?.message
-    )
-  ) {
-    return state;
-  }
+    nextNeverSent.length === state.neverSent.length &&
+    nextNeverSent.every(
+      (row, i) =>
+        row.messageId === state.neverSent?.[i]?.messageId &&
+        row.message === state.neverSent[i]?.message
+    );
+  const deliveryUnchanged =
+    nextDeliveryByMessageId.size === state.deliveryByMessageId.size &&
+    [...nextDeliveryByMessageId].every(
+      ([messageId, deliveryState]) => state.deliveryByMessageId.get(messageId) === deliveryState
+    );
+  const subStateUnchanged = state.subState === snapshot.sub_state;
+  // Normalized against a stub snapshot that predates this field (every
+  // pre-existing test fixture) reading as `undefined` rather than the wire
+  // contract's own `null` — without this, the identity short-circuit above
+  // could never fire on those fixtures, forcing an unnecessary re-render on
+  // every accepted poll.
+  const nextNodeOutcome = snapshot.node_outcome ?? null;
+  const unchanged =
+    sentUnchanged &&
+    neverSentUnchanged &&
+    deliveryUnchanged &&
+    subStateUnchanged &&
+    state.executionState === snapshot.execution_state &&
+    state.autoSend === snapshot.auto_send &&
+    state.softInjection === snapshot.capabilities.soft_injection &&
+    state.deliveryAck === snapshot.capabilities.delivery_ack &&
+    state.nodeOutcome === nextNodeOutcome &&
+    !state.lastReadFailed;
+  if (unchanged) return state;
 
-  return { ...state, neverSent };
-}
-
-/**
- * Collect message ids that the node-wide operator transcript actually wrote.
- * Only text rows with `metadata.origin === 'operator'` and a non-empty
- * `metadata.message_id` count — assistant/tool/malformed rows are ignored.
- */
-export function collectWrittenOperatorMessageIds(rows: readonly NodeMessageRow[]): Set<string> {
-  const ids = new Set<string>();
-  for (const row of rows) {
-    if (row.kind !== 'text') continue;
-    const metadata = row.metadata;
-    if (metadata?.origin !== 'operator') continue;
-    const messageId = metadata.message_id;
-    if (typeof messageId === 'string' && messageId.length > 0) {
-      ids.add(messageId);
-    }
-  }
-  return ids;
+  return {
+    ...state,
+    sent: sentUnchanged ? state.sent : nextSent,
+    neverSent: neverSentUnchanged ? state.neverSent : nextNeverSent,
+    deliveryByMessageId: deliveryUnchanged ? state.deliveryByMessageId : nextDeliveryByMessageId,
+    executionState: snapshot.execution_state,
+    autoSend: snapshot.auto_send,
+    softInjection: snapshot.capabilities.soft_injection,
+    deliveryAck: snapshot.capabilities.delivery_ack,
+    nodeOutcome: nextNodeOutcome,
+    lastReadFailed: false,
+    ...(subStateUnchanged
+      ? null
+      : {
+          subState: snapshot.sub_state,
+          interruptInFlight: snapshot.sub_state === 'generating' ? state.interruptInFlight : false,
+          notice:
+            snapshot.sub_state === 'idle-after-interrupt'
+              ? STEERING_AGENT_IDLE
+              : snapshot.sub_state === 'generating'
+                ? STEERING_AGENT_GENERATING
+                : state.notice,
+        }),
+  };
 }
 
 /**
@@ -820,6 +1474,23 @@ export interface QueuePollingOptions {
 }
 
 /**
+ * `startQueuePolling`'s return value: calling it directly stops the loop
+ * (same as today), and `.kick()` forces the next read to fire now instead
+ * of waiting out the rest of `intervalMs` — used to close the gap between a
+ * resolved local mutation and this tab's own next scheduled poll. A
+ * callable-with-a-method keeps every existing `return startQueuePolling(...)`
+ * call site and every `stop()`-calling test unchanged.
+ */
+export interface QueuePollingHandle {
+  (): void;
+  /**
+   * Abort any in-flight request and pending timer, then fire a fresh read
+   * immediately. A no-op after the handle has been stopped.
+   */
+  kick(): void;
+}
+
+/**
  * Framework-free queue reconcile loop: fires one read immediately, then
  * schedules the next read only after the current promise settles — requests
  * never overlap. Each request samples `currentGeneration` at fire time and
@@ -827,11 +1498,14 @@ export interface QueuePollingOptions {
  * Synchronous throws and rejections both normalize through
  * `toSteeringRequestError`; optional `onError` receives that error once before
  * the retry/stop decision. 422, transport (0), and 5xx reschedule; any other
- * 4xx stops the loop without a snapshot callback. The returned cleanup aborts
- * the in-flight request, clears the pending timer, and suppresses every late
- * settle — an abort caused by stop() never schedules a retry.
+ * 4xx stops the loop without a snapshot callback. The returned handle's call
+ * form aborts the in-flight request, clears the pending timer, and
+ * suppresses every late settle — an abort caused by stop() never schedules a
+ * retry. `.kick()` cancels any pending timer/in-flight request the same way,
+ * then fires immediately, so a caller-triggered read is never stacked on top
+ * of the interval's own next tick.
  */
-export function startQueuePolling(options: QueuePollingOptions): () => void {
+export function startQueuePolling(options: QueuePollingOptions): QueuePollingHandle {
   const setTimer = options.setTimer ?? setTimeout;
   const clearTimer = options.clearTimer ?? clearTimeout;
   let stopped = false;
@@ -885,10 +1559,7 @@ export function startQueuePolling(options: QueuePollingOptions): () => void {
     );
   };
 
-  tick();
-
-  return () => {
-    stopped = true;
+  const cancelPending = (): void => {
     epoch++;
     controller?.abort();
     controller = null;
@@ -897,6 +1568,21 @@ export function startQueuePolling(options: QueuePollingOptions): () => void {
       timer = null;
     }
   };
+
+  const stop = (): void => {
+    stopped = true;
+    cancelPending();
+  };
+  const handle = stop as QueuePollingHandle;
+  handle.kick = (): void => {
+    if (stopped) return;
+    cancelPending();
+    tick();
+  };
+
+  tick();
+
+  return handle;
 }
 
 export interface KeepaliveCoalescerOptions {
@@ -1002,60 +1688,6 @@ export function createKeepaliveCoalescer(options: KeepaliveCoalescerOptions): Ke
       clearPendingTimer();
     },
   };
-}
-
-export interface SteeringDraftRecord {
-  readonly draft: string;
-  readonly pendingRetry: PendingSubmission | null;
-}
-
-/** Parse the persisted draft record; malformed or foreign content resets. */
-export function loadSteeringDraft(storage: Storage | undefined, key: string): SteeringDraftRecord {
-  const empty: SteeringDraftRecord = { draft: '', pendingRetry: null };
-  if (storage === undefined) return empty;
-  let raw: string | null;
-  try {
-    raw = storage.getItem(key);
-  } catch {
-    return empty;
-  }
-  if (raw === null) return empty;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return empty;
-    const draft = 'draft' in parsed && typeof parsed.draft === 'string' ? parsed.draft : '';
-    const retry = 'pendingRetry' in parsed ? parsed.pendingRetry : null;
-    const pendingRetry =
-      typeof retry === 'object' &&
-      retry !== null &&
-      'messageId' in retry &&
-      typeof retry.messageId === 'string' &&
-      'message' in retry &&
-      typeof retry.message === 'string'
-        ? { messageId: retry.messageId, message: retry.message }
-        : null;
-    return { draft, pendingRetry };
-  } catch {
-    return empty;
-  }
-}
-
-/** Persist the draft/retry pair; an entirely empty record removes the key. */
-export function saveSteeringDraft(
-  storage: Storage | undefined,
-  key: string,
-  record: SteeringDraftRecord
-): void {
-  if (storage === undefined) return;
-  try {
-    if (record.draft === '' && record.pendingRetry === null) {
-      storage.removeItem(key);
-    } else {
-      storage.setItem(key, JSON.stringify(record));
-    }
-  } catch {
-    // Storage full or blocked — the in-memory draft still works this session.
-  }
 }
 
 /**

@@ -1,0 +1,36 @@
+{
+  "fr": [
+    [8, "TEXTAREA|1/10|Iteration 4 · running"],
+    [26, "BUTTON|1/10|Iteration 4 · running"],
+    [92, "DIV[last-row]|1/10|Iteration 4 · running"],
+    [377, "DIV[last-row]|1/12|Iteration 4 · running"],
+    [1893, "DIV|1/15|Iteration 4 · running"],
+    [3900, "DIV|1/19|Iteration 4 · running"],
+    [4891, "DIV{node-transcript-scroll}|0/1|Iteration 5 · running"],
+    [5900, "DIV[last-row]|1/2|Iteration 5 · running"],
+    [7917, "DIV|1/4|Iteration 5 · running"],
+    [8916, "DIV|1/10|Iteration 5 · running"]
+  ],
+  "i": 4,
+  "st": "l",
+  "sd": "c",
+  "sendAt": 695,
+  "actStop": "DIV[data-last-row]",
+  "iters": [
+    [4, -20617],
+    [5, 4383]
+  ],
+  "sel": { "c": "Iteration 5 · running", "l": "Iteration 5 · running" },
+  "C": [
+    [-1, "DIV#m0", true],
+    [720, "TEXTAREA#m0", "prevConnected=true"]
+  ],
+  "L": [
+    [0, "TEXTAREA#m0", true],
+    [31, "BUTTON#m1", "prevConnected=true"],
+    [91, "DIV[last-row]#m2", "prevConnected=false"],
+    [4892, "DIV#m3{node-transcript-scroll}", "prevConnected=false"],
+    [5911, "DIV[last-row]#m4", "prevConnected=true"]
+  ],
+  "body": { "c": 0, "l": 0 }
+}

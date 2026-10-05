@@ -1,0 +1,29 @@
+{
+  "cycle": "claude-1",
+  "runId": "8a04311de943b8ccfbfd89ec380589eb",
+  "tag": "Qmuoi68p9",
+  "killedAt": 1790796797903,
+  "downMs": 6414,
+  "injectStatus": 200,
+  "injectState": "sent",
+  "qBefore": [
+    [" keep queued", "queued"],
+    ["9-TWO inject", "sent"]
+  ],
+  "opRowsBefore": 0,
+  "qAfter": [
+    [" keep queued", "queued"],
+    ["9-TWO inject", "queued"]
+  ],
+  "execAfter": "recovery_required",
+  "bandRestored": "PROMPT · QA16-OPERATOR Run these Bash steps one at a time, each as its own separate Bash call, in order: step N is \"sleep 9; echo sN\" for N = 1..5. Then reply with one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for in your final line. Qmuoi68p9 run QUEUED · 2 saved to server ▾ 1 Qmuoi68p9-ONE keep queued 2 Qmuoi68p9-TWO inject restored after server restart · Resume the workflow to continue",
+  "abandonStatus": 200,
+  "qEnd": [
+    [" keep queued", "queued"],
+    ["9-TWO inject", "queued"]
+  ],
+  "execEnd": "finished",
+  "bandAbandoned": "PROMPT · QA16-OPERATOR Run these Bash steps one at a time, each as its own separate Bash call, in order: step N is \"sleep 9; echo sN\" for N = 1..5. Then reply with one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for in your final line. Qmuoi68p9 run NEVER SENT · 2 ▾ 1 Qmuoi68p9-ONE keep queued 2 Qmuoi68p9-TWO inject node finished · none of this was sent",
+  "neverSentShown": true,
+  "twoQueuedShown": true
+}

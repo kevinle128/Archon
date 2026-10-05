@@ -1,0 +1,43 @@
+{
+  "post": 33,
+  "res": { "success": true, "message": "Abandoned workflow: vq14-omp" },
+  "survC": [
+    [
+      -635,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [116, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue|"],
+    [135, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "survCFailedAt": 116,
+  "survCRunning": [],
+  "survL": [
+    [
+      -627,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [638, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "survLFailedAt": 638,
+  "survLRunning": [],
+  "freshC": [
+    [
+      -627,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [333, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "freshCFailedAt": 333,
+  "freshCRunning": [],
+  "freshL": [
+    [
+      -627,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [36, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue|"],
+    [55, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "freshLFailedAt": 36,
+  "freshLRunning": [],
+  "status": "cancelled"
+}

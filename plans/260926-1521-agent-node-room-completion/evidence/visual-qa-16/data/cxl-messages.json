@@ -1,0 +1,41 @@
+[
+  { "seq": 1, "kind": "status" },
+  {
+    "seq": 2,
+    "kind": "text",
+    "text": "Run exactly this shell command: sleep 90; echo long\nThen reply with one short line. If an operator m"
+  },
+  {
+    "seq": 3,
+    "kind": "tool",
+    "text": "/bin/zsh -lc 'sleep 90; echo long'",
+    "id": "codex-fe072391-9e22-44e7-989a-bf96cc5345ac:item_0"
+  },
+  { "seq": 4, "kind": "status" },
+  {
+    "seq": 5,
+    "kind": "text",
+    "text": "CXL1: reply with the token CXLACK1, then run exactly this shell command: sleep 90; echo again1"
+  },
+  { "seq": 6, "kind": "text", "text": "CXLACK1" },
+  {
+    "seq": 7,
+    "kind": "tool",
+    "text": "/bin/zsh -lc 'sleep 90; echo again1'",
+    "id": "codex-057d72a1-8efd-4c68-bd8f-6b0a840e022a:item_1"
+  },
+  { "seq": 8, "kind": "status" },
+  {
+    "seq": 9,
+    "kind": "text",
+    "text": "CXL2: reply with the token CXLACK2, then run exactly this shell command: sleep 90; echo again2"
+  },
+  { "seq": 10, "kind": "text", "text": "CXLACK2" },
+  {
+    "seq": 11,
+    "kind": "tool",
+    "text": "/bin/zsh -lc 'sleep 90; echo again2'",
+    "id": "codex-0a1067df-9eca-45f0-9f1a-393052626f02:item_1"
+  },
+  { "seq": 12, "kind": "status" }
+]

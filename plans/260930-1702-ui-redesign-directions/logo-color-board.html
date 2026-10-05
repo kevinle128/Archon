@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archon: chốt logo và bộ màu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Figtree:wght@400;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Archivo:wdth,wght@62..125,500;62..125,700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Board chrome is deliberately neutral cool gray so it does not bias the palette choice. */
+  :root {
+    --b-bg: #EEF0F3; --b-card: #F8F9FA; --b-line: #D5D9DF;
+    --b-ink: #16181C; --b-ink2: #505764; --b-ink3: #7B8290;
+    --b-sel: #16181C;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--b-bg); color: var(--b-ink);
+         font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1 { font-size: 28px; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 8px; }
+  h2 { font-size: 20px; letter-spacing: -0.01em; margin: 56px 0 6px; }
+  .lead { color: var(--b-ink2); max-width: 70ch; margin: 0; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  /* ---------- Logo concepts ---------- */
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 20px; }
+  @media (max-width: 1100px) { .grid4 { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px)  { .grid4 { grid-template-columns: 1fr; } }
+
+  .card { background: var(--b-card); border: 1px solid var(--b-line); border-radius: 12px;
+          overflow: hidden; display: flex; flex-direction: column; cursor: pointer;
+          transition: border-color .15s, box-shadow .15s, transform .15s; }
+  .card:hover { border-color: #AEB4BE; }
+  .card:active { transform: scale(0.99); }
+  .card[aria-pressed="true"] { border-color: var(--b-sel); box-shadow: 0 0 0 2px var(--b-sel); }
+  .card .body { padding: 16px; display: grid; gap: 10px; }
+  .card .name { font-weight: 600; font-size: 15px; display: flex; justify-content: space-between; align-items: baseline; }
+  .card .name .tag { font-size: 12px; font-weight: 500; color: var(--b-ink3); }
+  .card p { margin: 0; color: var(--b-ink2); font-size: 13px; }
+
+  .stage { display: grid; grid-template-columns: 1fr 1fr; }
+  .stage > div { aspect-ratio: 1 / 1; display: grid; place-items: center; }
+  .stage .dk { background: #121315; color: #ECEDEF; }
+  .stage .lt { background: #FBFBFC; color: #15171A; border-left: 1px solid var(--b-line); }
+  .stage svg { width: 58%; height: auto; }
+
+  .sizes { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-top: 1px solid var(--b-line); }
+  .sizes .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--b-ink3); }
+  .sizes svg { display: block; }
+  .wm { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-top: 1px solid var(--b-line); background: #121315; color: #ECEDEF; }
+  .wm svg { width: 28px; height: 28px; flex: none; }
+  .wm span { font-size: 22px; line-height: 1; }
+
+  /* ---------- Palettes ---------- */
+  .pal .sw { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .pal .sw div { height: 64px; }
+  .pal .rows { padding: 12px 16px 4px; display: grid; gap: 4px; }
+  .pal .row { display: grid; grid-template-columns: 18px 1fr auto auto; gap: 8px; align-items: center; font-size: 12px; }
+  .pal .row i { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0,0,0,.12); }
+  .pal .row .hex { color: var(--b-ink2); }
+  .pal .row .cr { color: var(--b-ink3); min-width: 64px; text-align: right; }
+  .pal .row .cr.fail { color: #B42318; font-weight: 600; }
+  .pal .kinds { display: flex; gap: 6px; padding: 8px 16px 14px; flex-wrap: wrap; }
+  .pal .kinds span { font-size: 11px; padding: 2px 7px; border-radius: 4px; font-family: "IBM Plex Mono", monospace; }
+  .spec { padding: 16px; display: grid; gap: 10px; }
+
+  /* ---------- Combiner ---------- */
+  .combo { display: grid; grid-template-columns: 300px 1fr; gap: 20px; margin-top: 20px; }
+  @media (max-width: 960px) { .combo { grid-template-columns: 1fr; } }
+  .ctl { background: var(--b-card); border: 1px solid var(--b-line); border-radius: 12px; padding: 16px; display: grid; gap: 18px; align-content: start; }
+  .ctl fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; }
+  .ctl legend { font-weight: 600; margin-bottom: 6px; font-size: 13px; }
+  .ctl label { display: flex; gap: 8px; align-items: center; font-size: 13px; cursor: pointer; }
+  .ctl .pick { padding: 12px; border-radius: 8px; background: var(--b-bg); font-size: 13px; }
+  .ctl .pick b { display: block; }
+  .ctl button { font: inherit; font-weight: 600; background: var(--b-ink); color: #F8F9FA; border: 0; border-radius: 8px; padding: 10px 14px; cursor: pointer; }
+  .ctl button:active { transform: translateY(1px); }
+  .ctl .ok { font-size: 12px; color: var(--b-ink2); min-height: 18px; }
+
+  /* The preview is themed purely through CSS variables set from the chosen palette. */
+  .pv { border-radius: 12px; overflow: hidden; border: 1px solid var(--b-line);
+        background: var(--bg); color: var(--tx); font-family: var(--font); }
+  .pv .top { display: flex; align-items: center; gap: 18px; height: 56px; padding: 0 18px; border-bottom: 1px solid var(--line); background: var(--sf); }
+  .pv .brand { display: flex; align-items: center; gap: 9px; font-size: 17px; }
+  .pv .brand svg { width: 24px; height: 24px; color: var(--tx); }
+  .pv nav { display: flex; gap: 4px; }
+  .pv nav a { font-size: 13px; color: var(--tx2); padding: 6px 10px; border-radius: 6px; text-decoration: none; }
+  .pv nav a.on { color: var(--tx); background: var(--rs); }
+  .pv .tab { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx3); }
+  .pv .tab svg { width: 16px; height: 16px; }
+  .pv .main { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; padding: 18px; }
+  @media (max-width: 760px) { .pv .main { grid-template-columns: 1fr; } }
+  .pv .panel { background: var(--sf); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; align-content: start; }
+  .pv h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .pv .muted { color: var(--tx2); font-size: 13px; margin: 0; }
+  .pv .ids { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--tx3); }
+  .pv .nodes { display: grid; gap: 6px; }
+  .pv .node { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--rs); font-size: 13px; }
+  .pv .node .k { font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 500; }
+  .pv .node .s { font-size: 12px; font-weight: 600; }
+  .pv .node.wait { outline: 1.5px solid var(--ac); }
+  .pv .bar { height: 4px; border-radius: 4px; background: var(--rs); overflow: hidden; }
+  .pv .bar i { display: block; height: 100%; width: 28%; background: var(--ac); }
+  .pv .ask { border: 1px solid var(--ac); border-radius: 10px; padding: 14px; display: grid; gap: 8px; }
+  .pv .ask label { font-size: 12px; color: var(--tx2); }
+  .pv input { font: inherit; font-size: 13px; color: var(--tx); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
+  .pv input::placeholder { color: var(--tx3); }
+  .pv input:focus { outline: 2px solid var(--ac); outline-offset: 1px; }
+  .pv .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pv .btn { font: inherit; font-size: 13px; font-weight: 600; border-radius: 8px; padding: 8px 14px; border: 1px solid transparent; cursor: pointer; }
+  .pv .btn.pri { background: var(--ac); color: var(--onac); }
+  .pv .btn.sec { background: transparent; color: var(--tx); border-color: var(--line); }
+  .pv .btn:active { transform: translateY(1px); }
+  .pv .stat { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; font-weight: 600; }
+  .pv .hero { display: flex; align-items: center; gap: 18px; padding: 6px 0; }
+  .pv .hero svg { width: 72px; height: 72px; color: var(--tx); }
+  .pv .hero span { font-size: 40px; line-height: 1; }
+
+  footer { margin-top: 48px; color: var(--b-ink3); font-size: 12px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Archon: chốt logo và bộ màu</h1>
+  <p class="lead">Bước 1 của bản redesign. Chọn 1 logo và 1 bộ màu, xem thử ở khu ghép bên dưới, rồi bấm "Chốt lựa chọn" và gửi lại cho tôi mã hiện ra. Font và bố cục sẽ làm sau khi chốt bước này.</p>
+
+  <h2>1. Logo</h2>
+  <p class="lead">Mỗi mark là SVG hình học đơn giản, một màu (dùng currentColor), đọc được ở 16px và 32px. Màu nhấn trong khu ghép sẽ lấy theo bộ màu bạn chọn.</p>
+  <div class="grid4" id="logos"></div>
+
+  <h2>2. Bộ màu</h2>
+  <p class="lead">Mỗi bộ có nền, bề mặt, chữ 3 cấp, 1 màu nhấn, 3 màu trạng thái và 5 màu loại node. Số bên phải là tỉ lệ tương phản thật so với nền, tính trực tiếp trong trang (đạt AA khi từ 4.5 trở lên với chữ thường).</p>
+  <div class="grid4" id="palettes"></div>
+
+  <h2>3. Ghép thử</h2>
+  <p class="lead">Logo và màu trên cùng một màn hình mẫu (thanh điều hướng, run đang chờ bạn trả lời, nút, trạng thái). Font của wordmark chỉ để xem thử, chưa phải lựa chọn chính thức.</p>
+  <div class="combo">
+    <div class="ctl">
+      <div class="pick" id="pickSummary"></div>
+      <fieldset id="fontPick"><legend>Font wordmark (xem thử)</legend></fieldset>
+      <div>
+        <button type="button" id="lockBtn">Chốt lựa chọn</button>
+        <div class="ok mono" id="lockOut" aria-live="polite"></div>
+      </div>
+    </div>
+    <div class="pv" id="pv">
+      <div class="top">
+        <div class="brand"><span class="mk"></span><span class="wmText">Archon</span></div>
+        <nav><a>Chat</a><a>Runs</a><a class="on">Workflows</a><a>Builder</a><a>Settings</a></nav>
+        <div class="tab"><span class="fav"></span><span>tab 16px</span></div>
+      </div>
+      <div class="main">
+        <div class="panel">
+          <div class="hero"><span class="mkL"></span><span class="wmText">Archon</span></div>
+          <div>
+            <h3>ak-feature</h3>
+            <p class="ids">kevinle128/Archon · issue #266</p>
+          </div>
+          <div class="bar"><i></i></div>
+          <div class="nodes" id="pvNodes"></div>
+        </div>
+        <div class="panel">
+          <h3>Node plan đang chờ bạn</h3>
+          <p class="muted">Agent cần bạn xác nhận phạm vi trước khi viết plan.</p>
+          <div class="ask">
+            <label for="pvIn">Plan có bao gồm phần migration dữ liệu không?</label>
+            <input id="pvIn" placeholder="Nhập câu trả lời">
+            <div class="btns"><button class="btn pri" type="button">Gửi câu trả lời</button><button class="btn sec" type="button">Xem log</button></div>
+          </div>
+          <div class="stat" id="pvStat"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Thời lượng trong khu ghép là số mẫu. Tên workflow, node và issue lấy từ dữ liệu thật của project.</footer>
+</div>
+
+<script>
+/* ---------- Logo marks: 64x64, currentColor strokes, `acc` = accent fill hook ---------- */
+const LOGOS = [
+  { id: 'L1', name: 'Node A', font: 'IBM Plex Sans', weight: 500, track: '-0.01em', upper: false,
+    note: 'Chữ A từ hai nét, thanh ngang là một cạnh nối hai node. Gợi ý workflow graph, gọn và kỹ thuật.',
+    svg: (acc) => `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <path d="M12 54 L32 10 L52 54" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M19.3 38 H44.7" stroke="currentColor" stroke-width="4"/>
+      <circle cx="19.3" cy="38" r="5.5" fill="${acc}"/><circle cx="44.7" cy="38" r="5.5" fill="${acc}"/></svg>` },
+  { id: 'L2', name: 'Arch', font: 'Figtree', weight: 700, track: '-0.01em', upper: false,
+    note: 'Ô vuông bo góc chứa một vòm có viên đá khóa ở đỉnh. Chơi chữ Archon và arch, thân thiện, vững.',
+    svg: (acc, knock = '#FFFFFF') => `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <rect x="2" y="2" width="60" height="60" rx="15" fill="${acc}"/>
+      <path d="M19 50 V33 A13 13 0 0 1 28.4 20.5" stroke="${knock}" stroke-width="6.5" stroke-linecap="butt"/>
+      <path d="M45 50 V33 A13 13 0 0 0 35.6 20.5" stroke="${knock}" stroke-width="6.5" stroke-linecap="butt"/>
+      <rect x="28.5" y="11" width="7" height="10" rx="1.5" fill="${knock}"/></svg>` },
+  { id: 'L3', name: 'Fan-out', font: 'Bricolage Grotesque', weight: 800, track: '-0.02em', upper: false,
+    note: 'Ba node tạo hình chữ A: một node gốc tỏa ra hai nhánh. Bản thân mark là một DAG nhỏ, biểu cảm hơn.',
+    svg: (acc) => `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <path d="M28.6 18.6 L15.4 43.4 M35.4 18.6 L48.6 43.4" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="32" cy="12" r="8" fill="${acc}"/>
+      <circle cx="12" cy="50" r="6.5" stroke="currentColor" stroke-width="4.5"/>
+      <circle cx="52" cy="50" r="6.5" stroke="currentColor" stroke-width="4.5"/></svg>` },
+  { id: 'L4', name: 'Stencil', font: 'Archivo', weight: 700, track: '0.14em', upper: true, wdth: 68,
+    note: 'Chữ A kiểu stencil, hở ở đỉnh, đặt trong ngoặc vuông. Góc sắc, cảm giác công cụ và terminal.',
+    svg: (acc) => `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <path d="M11 7 H4 V57 H11 M53 7 H60 V57 H53" stroke="currentColor" stroke-width="4.5"/>
+      <path d="M17.5 53 L30.4 17.5 M33.6 17.5 L46.5 53" stroke="currentColor" stroke-width="7"/>
+      <path d="M26.5 39 H37.5" stroke="${acc}" stroke-width="5.5"/></svg>` },
+];
+
+/* ---------- Palettes ---------- */
+const PALETTES = [
+  { id: 'P1', name: 'Graphite Teal', mode: 'Tối', note: 'Than chì lạnh, một màu nhấn teal. Tập trung, kỹ thuật.',
+    bg: '#111317', sf: '#171A1F', rs: '#1F232A', line: '#2B3038', tx: '#E6E8EB', tx2: '#A3A9B3', tx3: '#7E8591',
+    ac: '#2DD4BF', onac: '#06231F', ok: '#9BE15D', warn: '#F5B84B', err: '#F87171',
+    kinds: { command: '#7AA2F7', prompt: '#C099FF', bash: '#F5B84B', loop: '#2DD4BF', approval: '#FF9E64' } },
+  { id: 'P2', name: 'Cobalt Paper', mode: 'Sáng', note: 'Nền sáng lạnh, chữ mực, nhấn cobalt. Dễ đọc cho cả người không làm kỹ thuật.',
+    bg: '#F6F7F9', sf: '#FDFDFE', rs: '#ECEEF2', line: '#D9DDE4', tx: '#15171C', tx2: '#4A5160', tx3: '#697181',
+    ac: '#2B59E6', onac: '#FFFFFF', ok: '#1E7A45', warn: '#9A5B00', err: '#C22D2B',
+    kinds: { command: '#2B59E6', prompt: '#7B3FC4', bash: '#9A5B00', loop: '#0F7C74', approval: '#C2410C' } },
+  { id: 'P3', name: 'Ink Coral', mode: 'Tối', note: 'Xanh navy đậm như mực, nhấn coral ấm. Cá tính, dễ nhận ra.',
+    bg: '#0C1020', sf: '#141A2E', rs: '#1C2440', line: '#2A3354', tx: '#E9ECF5', tx2: '#A6ADC6', tx3: '#7880A0',
+    ac: '#FF6A4D', onac: '#2A0B04', ok: '#3DD68C', warn: '#F2C14E', err: '#FF4F81',
+    kinds: { command: '#7CA3FF', prompt: '#C4A0FF', bash: '#F2C14E', loop: '#3DD6C6', approval: '#FF6A4D' } },
+  { id: 'P4', name: 'Bone Lime', mode: 'Tối', note: 'Gần đen, chữ màu xương, lime chỉ dành cho việc cần người xử lý. Thô, rõ ràng.',
+    bg: '#0E0E0D', sf: '#161614', rs: '#1F1F1C', line: '#34342F', tx: '#E8E6DF', tx2: '#AAA79D', tx3: '#7D7A71',
+    ac: '#C8FF2E', onac: '#161A05', ok: '#8FC7A0', warn: '#F2A93B', err: '#FF5A3C',
+    kinds: { command: '#9DB4D9', prompt: '#C3A8E0', bash: '#E5C07B', loop: '#8FC7A0', approval: '#C8FF2E' } },
+];
+
+const FONTS = [
+  { v: 'auto', label: 'Theo logo (gợi ý)' },
+  { v: 'IBM Plex Sans', label: 'IBM Plex Sans' },
+  { v: 'Figtree', label: 'Figtree' },
+  { v: 'Bricolage Grotesque', label: 'Bricolage Grotesque' },
+  { v: 'Archivo', label: 'Archivo (hẹp)' },
+];
+
+/* ---------- WCAG contrast ---------- */
+function lum(hex) {
+  const n = hex.replace('#', '');
+  const c = [0, 2, 4].map(i => parseInt(n.slice(i, i + 2), 16) / 255)
+    .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+function ratio(a, b) { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+
+const state = { logo: 'L1', pal: 'P1', font: 'auto' };
+const $ = (id) => document.getElementById(id);
+
+function wordmarkStyle(l, fontOverride) {
+  const f = fontOverride && fontOverride !== 'auto' ? fontOverride : l.font;
+  const isArchivo = f === 'Archivo';
+  return `font-family:'${f}',system-ui,sans-serif;font-weight:${isArchivo ? 700 : l.weight};` +
+    `letter-spacing:${isArchivo ? '0.14em' : l.track};text-transform:${isArchivo || l.upper ? 'uppercase' : 'none'};` +
+    (isArchivo ? `font-variation-settings:'wdth' ${l.wdth || 68};` : '');
+}
+
+function renderLogos() {
+  $('logos').innerHTML = LOGOS.map(l => `
+    <div class="card" role="button" tabindex="0" data-logo="${l.id}" aria-pressed="${state.logo === l.id}">
+      <div class="stage">
+        <div class="dk">${l.svg('#ECEDEF', '#121315')}</div>
+        <div class="lt">${l.svg('#15171A', '#FBFBFC')}</div>
+      </div>
+      <div class="sizes">
+        <span class="chip" style="color:#15171A">${l.svg('#15171A', '#F8F9FA').replace('<svg', '<svg width="32" height="32"')}32px</span>
+        <span class="chip" style="color:#15171A">${l.svg('#15171A', '#F8F9FA').replace('<svg', '<svg width="16" height="16"')}16px</span>
+      </div>
+      <div class="wm">${l.svg('#ECEDEF', '#121315')}<span style="${wordmarkStyle(l)}">Archon</span></div>
+      <div class="body">
+        <div class="name">${l.id} · ${l.name}<span class="tag">${l.font}</span></div>
+        <p>${l.note}</p>
+      </div>
+    </div>`).join('');
+}
+
+function renderPalettes() {
+  $('palettes').innerHTML = PALETTES.map(p => {
+    const rows = [
+      ['Nền', p.bg, null], ['Bề mặt', p.sf, null], ['Chữ chính', p.tx, ratio(p.tx, p.bg)],
+      ['Chữ phụ', p.tx2, ratio(p.tx2, p.bg)], ['Chữ mờ', p.tx3, ratio(p.tx3, p.bg)],
+      ['Nhấn', p.ac, ratio(p.ac, p.bg)], ['Thành công', p.ok, ratio(p.ok, p.bg)],
+      ['Cảnh báo', p.warn, ratio(p.warn, p.bg)], ['Lỗi', p.err, ratio(p.err, p.bg)],
+      ['Chữ trên nút nhấn', p.onac, ratio(p.onac, p.ac)],
+    ];
+    return `
+    <div class="card pal" role="button" tabindex="0" data-pal="${p.id}" aria-pressed="${state.pal === p.id}">
+      <div class="sw"><div style="background:${p.bg}"></div><div style="background:${p.sf}"></div><div style="background:${p.tx}"></div><div style="background:${p.ac}"></div></div>
+      <div class="body" style="padding-bottom:0">
+        <div class="name">${p.id} · ${p.name}<span class="tag">${p.mode}</span></div>
+        <p>${p.note}</p>
+      </div>
+      <div class="rows">${rows.map(([n, h, r]) => `
+        <div class="row"><i style="background:${h}"></i><span>${n}</span><span class="hex mono">${h}</span>
+        <span class="cr mono ${r !== null && r < 4.5 ? 'fail' : ''}">${r === null ? '' : r.toFixed(1) + ':1'}</span></div>`).join('')}
+      </div>
+      <div class="kinds" style="background:${p.bg}">${Object.entries(p.kinds).map(([k, c]) =>
+        `<span style="color:${c};background:${p.rs}">${k}</span>`).join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderFontPick() {
+  $('fontPick').innerHTML = '<legend>Font wordmark (xem thử)</legend>' + FONTS.map(f =>
+    `<label><input type="radio" name="font" value="${f.v}" ${state.font === f.v ? 'checked' : ''}> ${f.label}</label>`).join('');
+}
+
+function renderPreview() {
+  const l = LOGOS.find(x => x.id === state.logo), p = PALETTES.find(x => x.id === state.pal);
+  const pv = $('pv');
+  Object.entries({ bg: p.bg, sf: p.sf, rs: p.rs, line: p.line, tx: p.tx, tx2: p.tx2, tx3: p.tx3, ac: p.ac, onac: p.onac })
+    .forEach(([k, v]) => pv.style.setProperty('--' + k, v));
+  pv.style.setProperty('--font', "'" + (state.font === 'auto' ? l.font : state.font) + "', system-ui, sans-serif");
+  // Arch (L2) fills its tile with the accent and knocks out with the on-accent color; others use the accent for node dots.
+  pv.querySelector('.mk').innerHTML = l.svg(p.ac, p.onac);
+  pv.querySelector('.mkL').innerHTML = l.svg(p.ac, p.onac);
+  pv.querySelector('.fav').innerHTML = l.svg(p.ac, p.onac).replace('<svg', '<svg width="16" height="16"');
+  pv.querySelectorAll('.wmText').forEach(el => el.setAttribute('style', wordmarkStyle(l, state.font)));
+  const nodes = [
+    ['bash', 'setup', 'Xong · 6.7s', p.ok, ''],
+    ['prompt', 'plan', 'Chờ bạn', p.ac, 'wait'],
+    ['prompt', 'verify-and-fix-plan', 'Chưa chạy', p.tx3, ''],
+    ['loop', 'ralph-loop-run', 'Chưa chạy', p.tx3, ''],
+    ['command', 'create-pull-request', 'Chưa chạy', p.tx3, ''],
+  ];
+  $('pvNodes').innerHTML = nodes.map(([k, n, s, c, cls]) =>
+    `<div class="node ${cls}"><span class="k" style="color:${p.kinds[k]}">${k}</span><span>${n}</span><span class="s" style="color:${c}">${s}</span></div>`).join('');
+  $('pvStat').innerHTML = `<span style="color:${p.ok}">3 xong</span><span style="color:${p.ac}">1 chờ bạn</span><span style="color:${p.warn}">1 cảnh báo</span><span style="color:${p.err}">1 lỗi</span>`;
+  $('pickSummary').innerHTML = `<b>Đang xem</b>Logo ${l.id} · ${l.name}<br>Màu ${p.id} · ${p.name}`;
+  document.querySelectorAll('[data-logo]').forEach(el => el.setAttribute('aria-pressed', el.dataset.logo === state.logo));
+  document.querySelectorAll('[data-pal]').forEach(el => el.setAttribute('aria-pressed', el.dataset.pal === state.pal));
+  $('lockOut').textContent = '';
+}
+
+function onPick(e) {
+  const card = e.target.closest('[data-logo],[data-pal]');
+  if (!card) return;
+  if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.type === 'keydown') e.preventDefault();
+  if (card.dataset.logo) state.logo = card.dataset.logo; else state.pal = card.dataset.pal;
+  renderPreview();
+}
+['click', 'keydown'].forEach(t => { $('logos').addEventListener(t, onPick); $('palettes').addEventListener(t, onPick); });
+$('fontPick').addEventListener('change', (e) => { state.font = e.target.value; renderPreview(); });
+$('lockBtn').addEventListener('click', () => {
+  const l = LOGOS.find(x => x.id === state.logo), p = PALETTES.find(x => x.id === state.pal);
+  $('lockOut').textContent = `Chốt: ${l.id} ${l.name} + ${p.id} ${p.name}. Gửi dòng này cho Claude.`;
+});
+
+renderLogos(); renderPalettes(); renderFontPick(); renderPreview();
+</script>
+</body>
+</html>

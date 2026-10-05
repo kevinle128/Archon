@@ -1,0 +1,44 @@
+{
+  "post": 26,
+  "res": { "success": true, "message": "Abandoned workflow: vq11-loop-steer" },
+  "survC": [
+    [
+      -487,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [131, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue"],
+    [152, "Failed|NEVER SENT · 1|node finished · none of this was sent"]
+  ],
+  "survCFailedAt": 131,
+  "survL": [
+    [
+      -487,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [233, "Recovery required|NEVER SENT · 1|node finished · none of this was sent"],
+    [2472, "Failed|NEVER SENT · 1|node finished · none of this was sent"]
+  ],
+  "survLFailedAt": 2472,
+  "freshC": [
+    [
+      -486,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [438, "Failed|NEVER SENT · 1|node finished · none of this was sent"]
+  ],
+  "freshCFailedAt": 438,
+  "freshL": [
+    [
+      -486,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [34, "Recovery required|NEVER SENT · 1|node finished · none of this was sent"],
+    [994, "Failed|NEVER SENT · 1|node finished · none of this was sent"]
+  ],
+  "freshLFailedAt": 994,
+  "status": "cancelled",
+  "ev": [
+    ["workflow_started", null, null, "2026-09-29 09:55:34"],
+    ["node_failed", "steer-loop", "Cancelled by user", "2026-09-29 10:16:42"]
+  ]
+}

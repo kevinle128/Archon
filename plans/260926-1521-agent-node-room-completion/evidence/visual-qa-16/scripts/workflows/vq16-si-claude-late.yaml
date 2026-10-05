@@ -1,0 +1,11 @@
+name: vq16-si-claude-late
+description: "Scratch - Claude haiku, one tool call, for late soft injection."
+mutates_checkout: false
+nodes:
+  - id: cl-node
+    provider: claude
+    model: haiku
+    prompt: |
+      Run exactly one Bash call: "sleep 6; echo s1". Then write a paragraph of about five sentences describing what a sleep command does.
+      If an operator message arrives, follow it exactly.
+      $ARGUMENTS

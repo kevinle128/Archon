@@ -1,0 +1,51 @@
+{
+  "outageMs": 12000,
+  "legacy": {
+    "preOutageKey": "{\"buttons\":[\"Send now\",\"will send · 1saved to server▾\",\"✕\",\"✕\"],\"field\":true,\"restored\":false,\"errorPage\":false}",
+    "framesBeforeRestore": 3,
+    "unexpected": [],
+    "restoredAtFrameIndex": 3,
+    "allFrames": [
+      [
+        1790743540952,
+        "{\"buttons\":[\"Send now\",\"will send · 1saved to server▾\",\"✕\",\"✕\"],\"field\":true,\"restored\":false,\"errorPage\":false}"
+      ],
+      [
+        1790743541856,
+        "{\"buttons\":[\"Retry\",\"Send now\",\"will send · 1saved to server▾\",\"✕\",\"✕\"],\"field\":true,\"restored\":false,\"errorPage\":false}"
+      ],
+      [
+        1790743553881,
+        "{\"buttons\":[\"Send now\",\"will send · 1saved to server▾\",\"✕\",\"✕\"],\"field\":true,\"restored\":false,\"errorPage\":false}"
+      ],
+      [
+        1790743553898,
+        "{\"buttons\":[\"queued · 1saved to server▾\",\"✕\"],\"field\":false,\"restored\":true,\"errorPage\":false}"
+      ]
+    ]
+  },
+  "console": {
+    "preOutageKey": "{\"buttons\":[\"Send now\",\"will send · 1saved to server▾\",\"✕\",\"✕\"],\"field\":true,\"restored\":false,\"errorPage\":false}",
+    "framesBeforeRestore": 2,
+    "unexpected": [],
+    "restoredAtFrameIndex": 2,
+    "allFrames": [
+      [
+        1790743540953,
+        "{\"buttons\":[\"Send now\",\"will send · 1saved to server▾\",\"✕\",\"✕\"],\"field\":true,\"restored\":false,\"errorPage\":false}"
+      ],
+      [
+        1790743541016,
+        "{\"buttons\":[\"Retry\",\"Send now\",\"will send · 1saved to server▾\",\"✕\",\"✕\"],\"field\":true,\"restored\":false,\"errorPage\":false}"
+      ],
+      [
+        1790743553890,
+        "{\"buttons\":[\"Retry\",\"queued · 1saved to server▾\",\"✕\"],\"field\":false,\"restored\":true,\"errorPage\":false}"
+      ],
+      [
+        1790743556015,
+        "{\"buttons\":[\"queued · 1saved to server▾\",\"✕\"],\"field\":false,\"restored\":true,\"errorPage\":false}"
+      ]
+    ]
+  }
+}

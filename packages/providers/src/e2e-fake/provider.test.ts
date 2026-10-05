@@ -1,7 +1,11 @@
 import { describe, expect, spyOn, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import { AskHumanAwaitingError, type MessageChunk, type NativeTool } from '../types';
-import { E2E_FAKE_CAPABILITIES } from './capabilities';
+import { E2E_FAKE_CAPABILITIES, E2E_FAKE_SOFT_INJECT_CAPABILITIES } from './capabilities';
 import {
   E2E_FAKE_AGENT_INPUT,
   E2E_FAKE_AGENT_TOOL_NAME,
@@ -15,6 +19,7 @@ import {
   E2E_FAKE_EDIT_PATH,
   E2E_FAKE_EDIT_TOOL_NAME,
   E2E_FAKE_LOOP_DONE,
+  E2E_FAKE_SOFT_INJECT_REPLY,
   E2E_FAKE_TASK_OMP_INPUT,
   E2E_FAKE_TASK_TOOL_NAME,
   E2E_FAKE_TODO_INPUTS,
@@ -28,6 +33,7 @@ import {
   E2E_FAKE_WRITE_INPUT,
   E2E_FAKE_WRITE_OUTPUT,
   E2E_FAKE_WRITE_TOOL_NAME,
+  e2eFakeReleaseSignalPath,
   E2eFakeProvider,
 } from './provider';
 
@@ -794,6 +800,68 @@ describe('E2eFakeProvider interruptible scenario', () => {
     expect(toolResult.toolCallId).toBe(toolCall.toolCallId);
   });
 
+  test('releaseSignal ends the bounded wait early and consumes its own marker', async () => {
+    const previousHome = process.env.ARCHON_HOME;
+    const home = mkdtempSync(join(tmpdir(), 'e2e-fake-release-test-'));
+    process.env.ARCHON_HOME = home;
+    try {
+      const releaseSignal = `unit-${randomUUID()}`;
+      const releasePath = e2eFakeReleaseSignalPath(releaseSignal);
+      const started = Date.now();
+      const it = provider.sendQuery(
+        interruptiblePrompt({ delayMs: 30_000, releaseSignal }),
+        '/tmp'
+      );
+      await it.next(); // assistant
+      await it.next(); // tool call emitted; generator paused before the wait
+      expect(existsSync(releasePath)).toBe(false);
+      mkdirSync(dirname(releasePath), { recursive: true });
+      writeFileSync(releasePath, '');
+      const chunks: MessageChunk[] = [];
+      for (let step = await it.next(); step.done !== true; step = await it.next()) {
+        chunks.push(step.value);
+      }
+      // Ends via the marker, nowhere near the 30s ceiling.
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(existsSync(releasePath), 'the wait removes the marker it consumed').toBe(false);
+      const toolResult = chunks[0];
+      const result = chunks[1];
+      if (toolResult.type !== 'tool_result' || result.type !== 'result') {
+        throw new Error('unexpected chunk shape');
+      }
+      expect(toolResult.toolOutcome).toBe('success');
+      expect(toolResult.toolOutput).toBe(E2E_FAKE_TOOL_OUTPUT);
+      expect(result.isError).toBeUndefined();
+    } finally {
+      if (previousHome === undefined) delete process.env.ARCHON_HOME;
+      else process.env.ARCHON_HOME = previousHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('a releaseSignal that never arrives still waits out the full delayMs ceiling', async () => {
+    const previousHome = process.env.ARCHON_HOME;
+    const home = mkdtempSync(join(tmpdir(), 'e2e-fake-release-test-'));
+    process.env.ARCHON_HOME = home;
+    try {
+      const started = Date.now();
+      await collect(
+        provider.sendQuery(
+          interruptiblePrompt({ delayMs: 200, releaseSignal: `unit-unused-${randomUUID()}` }),
+          '/tmp'
+        )
+      );
+      // A small tolerance below the requested delay absorbs 1ms clock
+      // granularity — this only needs to prove the wait ran out the ceiling
+      // rather than resolving near-instantly like the sibling test above.
+      expect(Date.now() - started).toBeGreaterThanOrEqual(190);
+    } finally {
+      if (previousHome === undefined) delete process.env.ARCHON_HOME;
+      else process.env.ARCHON_HOME = previousHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test('node abort wins over turn interrupt and throws Query aborted', async () => {
     const abort = new AbortController();
     const interrupt = new AbortController();
@@ -937,5 +1005,97 @@ describe('E2eFakeProvider interruptible scenario', () => {
     } finally {
       removeAbort3.mockRestore();
     }
+  });
+});
+
+describe('E2eFakeProvider soft injection', () => {
+  const scenario = `<<E2E_SCENARIO>>${JSON.stringify({ interruptible: true, emitTool: true, delayMs: 30_000 })}<</E2E_SCENARIO>>\nwork`;
+
+  type Handler = (request: { messageId: string; text: string }) => Promise<boolean>;
+  function makeChannel(): {
+    channel: { ready(handler: Handler): () => void };
+    current: () => Handler | undefined;
+  } {
+    let handler: Handler | undefined;
+    return {
+      channel: {
+        ready(next): () => void {
+          handler = next;
+          return (): void => {
+            if (handler === next) handler = undefined;
+          };
+        },
+      },
+      current: () => handler,
+    };
+  }
+
+  test('the default fake stays queue-only and never registers a handler', async () => {
+    const provider = new E2eFakeProvider();
+    const { channel, current } = makeChannel();
+    const interrupt = new AbortController();
+    const pending = collect(
+      provider.sendQuery(scenario, '/tmp', undefined, {
+        interruptSignal: interrupt.signal,
+        softInjection: channel,
+      })
+    );
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(current()).toBeUndefined();
+    expect(provider.getCapabilities().softInjection).toBe(false);
+    interrupt.abort();
+    await pending;
+  });
+
+  test('the soft-injectable fake echoes and answers each accepted message inside the same turn', async () => {
+    const provider = new E2eFakeProvider({ softInjectable: true });
+    expect(provider.getCapabilities()).toEqual(E2E_FAKE_SOFT_INJECT_CAPABILITIES);
+    const { channel, current } = makeChannel();
+    const release = `soft-inject-${randomUUID()}`;
+    const releasePath = e2eFakeReleaseSignalPath(release);
+    mkdirSync(dirname(releasePath), { recursive: true });
+    const prompt = `<<E2E_SCENARIO>>${JSON.stringify({ interruptible: true, emitTool: true, delayMs: 30_000, releaseSignal: release })}<</E2E_SCENARIO>>\nwork`;
+    const pending = collect(
+      provider.sendQuery(prompt, '/tmp', undefined, {
+        interruptSignal: new AbortController().signal,
+        softInjection: channel,
+      })
+    );
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    expect(await current()!({ messageId: 'msg-1', text: 'take the left fork' })).toBe(true);
+    writeFileSync(releasePath, '');
+    const chunks = await pending;
+
+    expect(current()).toBeUndefined();
+    const ackIndex = chunks.findIndex(
+      chunk => chunk.type === 'operator_delivery_ack' && chunk.messageId === 'msg-1'
+    );
+    expect(ackIndex).toBeGreaterThan(-1);
+    expect(chunks[ackIndex + 1]).toEqual({
+      type: 'assistant',
+      content: `${E2E_FAKE_SOFT_INJECT_REPLY} take the left fork`,
+    });
+    // One turn: exactly one terminal result, after the answer.
+    expect(chunks.filter(chunk => chunk.type === 'result')).toHaveLength(1);
+    expect(chunks.at(-1)?.type).toBe('result');
+  });
+
+  test('refuses a message once the turn was interrupted', async () => {
+    const provider = new E2eFakeProvider({ softInjectable: true });
+    const { channel, current } = makeChannel();
+    const interrupt = new AbortController();
+    const pending = collect(
+      provider.sendQuery(scenario, '/tmp', undefined, {
+        interruptSignal: interrupt.signal,
+        softInjection: channel,
+      })
+    );
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const handler = current()!;
+    interrupt.abort();
+    expect(await handler({ messageId: 'late', text: 'x' })).toBe(false);
+    const chunks = await pending;
+    expect(chunks.some(chunk => chunk.type === 'operator_delivery_ack')).toBe(false);
   });
 });

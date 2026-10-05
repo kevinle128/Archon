@@ -1,0 +1,7 @@
+{'injectedAtToolCall': 1, 'injectResult': '{"result":{"status":"queued"}}', 'promptResponses': 1, 'stopReason': 'end_turn', 'finalHasMarker': True, 'toolCallsAtFirstMarker': 1, 'toolCallsTotal': 3, 'outcome': 'ok'}
+commands one at a time, starting with the first.ACK_e0dbfdf758
+
+Continuing with the second step.s1, s2, and s3 finished.
+{'injectedAtToolCall': 1, 'injectResult': '{"result":{"status":"queued"}}', 'promptResponses': 1, 'stopReason': 'end_turn', 'finalHasMarker': True, 'toolCallsAtFirstMarker': 1, 'toolCallsTotal': 3, 'outcome': 'ok'}
+ commands one at a time, starting with the first.ACK_c0fd6d8b28
+Continuing with the second step.s1, s2, and s3 finished.

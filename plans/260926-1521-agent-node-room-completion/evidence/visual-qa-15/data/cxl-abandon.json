@@ -1,0 +1,23 @@
+{
+  "R": "4b8d09be7f7396e51e1ca69e49557408",
+  "post": 5,
+  "abandonAt": 1790747995476,
+  "raf": {
+    "c": [
+      [-1505, "Running||Stop,Queue|TA|QUEUED · 1|1 message queued||1|1|||TEXTAREA"],
+      [
+        314,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ],
+    "l": [
+      [-1505, "Running||Stop,Queue|TA|QUEUED · 1|agent generating||1|1|||DIV[room]"],
+      [44, "Failed||||QUEUED · 1|||1|0|||DIV[room]"],
+      [
+        60,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ]
+  },
+  "gets": []
+}

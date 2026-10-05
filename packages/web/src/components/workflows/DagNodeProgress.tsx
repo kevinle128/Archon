@@ -22,11 +22,11 @@ function TaskActivityLabel({ task }: { task: DagTaskInfo }): string {
 function TaskStatusBadge({ task }: { task: DagTaskInfo }): React.ReactElement {
   const cls =
     task.activity === 'completed'
-      ? 'text-emerald-400'
+      ? 'text-success'
       : task.activity === 'failed'
-        ? 'text-red-400'
+        ? 'text-error'
         : task.activity === 'stopped'
-          ? 'text-amber-400'
+          ? 'text-warning'
           : 'text-text-secondary';
   return <span className={`text-[10px] uppercase tracking-wide ${cls}`}>{task.activity}</span>;
 }
@@ -45,11 +45,11 @@ function HookIndicator({ hook }: { hook: DagHookInfo }): React.ReactElement {
           : 'running…';
   const outcomeColor =
     hook.outcome === 'success'
-      ? 'text-emerald-400'
+      ? 'text-success'
       : hook.outcome === 'error'
-        ? 'text-red-400'
+        ? 'text-error'
         : hook.outcome === 'cancelled'
-          ? 'text-amber-400'
+          ? 'text-warning'
           : 'text-text-tertiary';
   return (
     <div className="flex items-center gap-1.5 text-[11px] text-text-tertiary font-mono">
@@ -89,8 +89,8 @@ function DagNodeItem({
   return (
     <div>
       <div
-        className={`w-full text-left px-2 py-1.5 rounded transition-colors cursor-pointer ${
-          isActive ? 'bg-accent/10 border-l-2 border-accent' : 'hover:bg-surface-hover'
+        className={`w-full text-left px-3 py-2 rounded-[10px] transition-colors duration-150 cursor-pointer motion-reduce:transition-none ${
+          isActive ? 'bg-accent-muted' : 'hover:bg-surface'
         }`}
         onClick={(): void => {
           onNodeClick(node.nodeId);
@@ -129,7 +129,7 @@ function DagNodeItem({
           )}
         </div>
         {node.error && (
-          <div className="text-xs text-red-400 mt-0.5 ml-6 truncate" title={node.error}>
+          <div className="text-xs text-error mt-0.5 ml-6 truncate" title={node.error}>
             {node.error.slice(0, 80)}
           </div>
         )}

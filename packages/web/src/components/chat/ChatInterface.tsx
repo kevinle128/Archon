@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
-import { Header } from '@/components/layout/Header';
+import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { MessageInput, type MessageInputHandle } from './MessageInput';
 import { LockIndicator } from './LockIndicator';
@@ -24,6 +24,7 @@ import {
 import type { ConversationResponse, CodebaseResponse, MessageResponse } from '@/lib/api';
 import type {
   ChatMessage,
+  ChatToolResultOutcome,
   FileAttachment,
   ToolCallDisplay,
   ErrorDisplay,
@@ -49,6 +50,8 @@ function mapMessageRow(row: MessageResponse): ChatMessage {
       input: Record<string, unknown>;
       duration?: number;
       output?: string;
+      outcome?: ChatToolResultOutcome;
+      exitCode?: number;
     }[];
     error?: ErrorDisplay;
     workflowDispatch?: { workerConversationId: string; workflowName: string };
@@ -379,7 +382,13 @@ export function ChatInterface({
   );
 
   const onToolResult = useCallback(
-    (name: string, output: string, duration: number, toolCallId?: string): void => {
+    (
+      name: string,
+      output: string,
+      duration: number,
+      toolCallId?: string,
+      result?: { outcome?: ChatToolResultOutcome; exitCode?: number }
+    ): void => {
       setMessages(prev => {
         // Search all messages (not just last) — tool_result may arrive after a text message
         let targetIdx = -1;
@@ -400,7 +409,13 @@ export function ChatInterface({
         const msg = prev[targetIdx];
         const updatedTools = msg.toolCalls?.map(tc => {
           if (toolCallId ? tc.id === toolCallId : tc.name === name && tc.duration === undefined) {
-            return { ...tc, output: output !== undefined ? output : tc.output, duration };
+            return {
+              ...tc,
+              output: output !== undefined ? output : tc.output,
+              duration,
+              ...(result?.outcome !== undefined ? { outcome: result.outcome } : {}),
+              ...(result?.exitCode !== undefined ? { exitCode: result.exitCode } : {}),
+            };
           }
           return tc;
         });
@@ -659,7 +674,7 @@ export function ChatInterface({
           // Cache messages under the new ID so the remounted ChatInterface picks them up
           // (navigate changes the key prop, causing unmount/remount — state is lost otherwise)
           setCachedMessages(newId, [userMsg, thinkingMsg]);
-          navigate(`/legacy/chat/${newId}`, { replace: true });
+          navigate(`/chat/${newId}`, { replace: true });
           // Trigger title + workflow refreshes after AI generates a proper title
           if (!hasTriggeredTitleRefresh.current && !message.startsWith('/')) {
             hasTriggeredTitleRefresh.current = true;
@@ -728,21 +743,23 @@ export function ChatInterface({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-      <Header
+      <ChatHeader
         title={isNewChat ? 'New Chat' : headerTitle}
-        subtitle={headerSubtitle}
+        path={headerSubtitle}
         projectName={currentCodebase?.name ?? contextCodebase?.name}
+        provider={currentConv?.ai_assistant_type}
+        platform={currentConv?.platform_type}
         connected={isNewChat ? undefined : connected}
         isDocker={isDocker}
         isWsl={isWsl}
         wslDistro={wslDistro}
       />
       {(conversationsError || codebasesError) && (
-        <div className="flex gap-2 px-4 py-1">
+        <div className="flex gap-2 px-8 py-1">
           {conversationsError && (
-            <span className="text-xs text-red-400">Failed to load conversations</span>
+            <span className="text-xs text-error">Failed to load conversations</span>
           )}
-          {codebasesError && <span className="text-xs text-red-400">Failed to load projects</span>}
+          {codebasesError && <span className="text-xs text-error">Failed to load projects</span>}
         </div>
       )}
       <MessageList
@@ -750,6 +767,7 @@ export function ChatInterface({
         isStreaming={isStreaming}
         isNewChat={isNewChat}
         projectName={currentCodebase?.name ?? contextCodebase?.name}
+        assistantLabel={currentConv?.ai_assistant_type}
         onQuickAction={(action): void => {
           if (action === 'focus') {
             inputRef.current?.focus();
@@ -762,6 +780,7 @@ export function ChatInterface({
       <MessageInput
         ref={inputRef}
         onSend={handleSend}
+        projectName={currentCodebase?.name ?? contextCodebase?.name}
         disabled={
           sending ||
           locked ||
