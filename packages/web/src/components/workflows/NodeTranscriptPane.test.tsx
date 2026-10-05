@@ -1558,7 +1558,22 @@ describe('NodeTranscriptPane', () => {
           new Response(
             JSON.stringify({
               success: true,
-              queued: [{ message_id: 'q-1', message: 'steer once' }],
+              execution_state: 'live',
+              node_outcome: null,
+              auto_send: false,
+              capabilities: { soft_injection: false, delivery_ack: false },
+              queued: [
+                {
+                  message_id: 'q-1',
+                  message: 'steer once',
+                  operator_user_id: null,
+                  state: 'queued',
+                  last_error: null,
+                  dispatch_failure_count: 0,
+                  last_failure_kind: null,
+                },
+              ],
+              sub_state: 'generating',
             }),
             {
               status: 200,
@@ -1622,7 +1637,7 @@ describe('NodeTranscriptPane', () => {
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(host.querySelector('label')?.textContent).toContain('Jump to');
     expect(host.textContent).toContain('steer once');
-    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · this tab only');
+    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · saved for you');
   });
 
   test('absent bands leave no empty slot and no unrequested steering action', async () => {
@@ -1726,7 +1741,22 @@ describe('NodeTranscriptPane', () => {
           new Response(
             JSON.stringify({
               success: true,
-              queued: [{ message_id: 'q-ro', message: 'read-only receipt' }],
+              execution_state: 'finished-iteration',
+              node_outcome: null,
+              auto_send: false,
+              capabilities: { soft_injection: false, delivery_ack: false },
+              queued: [
+                {
+                  message_id: 'q-ro',
+                  message: 'read-only receipt',
+                  operator_user_id: null,
+                  state: 'queued',
+                  last_error: null,
+                  dispatch_failure_count: 0,
+                  last_failure_kind: null,
+                },
+              ],
+              sub_state: null,
             }),
             {
               status: 200,
