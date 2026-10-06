@@ -1,0 +1,47 @@
+{
+  "c": [
+    {
+      "sel": "-",
+      "ta": true,
+      "val": "LP draft c",
+      "act": "TEXTAREA",
+      "go": "",
+      "status": "",
+      "t": 1790689630432
+    },
+    {
+      "sel": "Iteration 2 · running",
+      "ta": true,
+      "val": "LP draft c",
+      "act": "TEXTAREA",
+      "go": "",
+      "status": "",
+      "t": 1790689654432
+    }
+  ],
+  "l": [
+    {
+      "sel": "-",
+      "ta": true,
+      "val": "LP draft l",
+      "act": "TEXTAREA",
+      "go": "",
+      "status": "",
+      "t": 1790689630432
+    },
+    {
+      "sel": "Iteration 2 · running",
+      "ta": true,
+      "val": "LP draft l",
+      "act": "TEXTAREA",
+      "go": "",
+      "status": "",
+      "t": 1790689655794
+    }
+  ],
+  "o1": {
+    "c": ["Iteration 1", "Iteration 2 · running*"],
+    "l": ["Iteration 1", "Iteration 2 · running*"]
+  },
+  "o2": ["Iteration 1*", "Iteration 2 · running"]
+}

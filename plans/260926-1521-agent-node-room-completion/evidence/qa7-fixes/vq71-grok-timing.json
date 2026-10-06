@@ -1,0 +1,1209 @@
+{
+  "label": "vq71-grok",
+  "runId": "efbe587c400a28e2e915c646d557a760",
+  "nodeId": "grok-node",
+  "clickAtMs": 33,
+  "sampleCount": 171,
+  "buggyFrameCount": 0,
+  "firstStopShownMs": 537,
+  "firstWithdrawGoneMs": 537,
+  "samples": [
+    {
+      "t": 0,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 28,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 55,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 83,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 111,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 138,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 166,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 194,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 230,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 258,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 286,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 314,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 340,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 368,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 394,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 422,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 452,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 480,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 509,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-grok withdraw race probe✕"
+    },
+    {
+      "t": 537,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 566,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 594,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 625,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 653,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 693,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 721,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 750,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 778,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 807,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 835,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 863,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 891,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 921,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 951,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 979,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1008,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1040,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1067,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1095,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1124,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1156,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1189,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1241,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1274,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1318,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1360,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1400,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1456,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1486,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1514,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1552,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1588,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1627,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1662,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1695,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1727,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1759,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1796,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1837,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1895,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1950,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 1980,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2010,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2042,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2069,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2105,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2137,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2169,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2207,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2245,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2276,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2309,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2355,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2392,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2424,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2457,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2486,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2523,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2553,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2587,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2619,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2657,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2691,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2720,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2750,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2778,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2806,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2836,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2870,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2902,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2931,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 2967,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3004,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3042,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3098,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3137,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3193,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3231,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3269,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3306,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3353,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3395,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3432,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3462,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3504,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3558,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3590,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3629,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3688,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3741,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3788,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3829,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3858,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3895,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3936,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 3969,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4004,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4037,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4069,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4104,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4143,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4187,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4228,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4259,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4296,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4331,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4363,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4402,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4441,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4478,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4524,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4558,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4594,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4627,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4667,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4703,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4749,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4785,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4820,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4852,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4893,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4941,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 4983,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5022,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5062,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5093,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5133,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5167,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5197,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5232,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5267,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5294,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5325,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5360,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5390,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5425,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5467,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5504,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5555,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5590,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5620,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5654,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5704,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5766,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5826,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5871,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5930,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 5963,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 6003,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 6033,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    },
+    {
+      "t": 6076,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-grok withdraw race probesen"
+    }
+  ]
+}

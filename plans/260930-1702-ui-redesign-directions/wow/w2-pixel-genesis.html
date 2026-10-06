@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>W2 Pixel Genesis · Archon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0B0D;
+  --panel:#111317;
+  --panel2:#15181D;
+  --well:#0D0F12;
+  --line:#252A31;
+  --line2:#353B45;
+  --text:#EDF0F3;
+  --text2:#AEB6C1;
+  --text3:#8A93A0;
+  --sig:#FF5B1F;
+  --hot:#FFEDE4;
+  --ui:"Hanken Grotesk","Instrument Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --logo:min(47vh,30vw,440px);
+  --row:38px;
+  --gap:12px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--text)}
+body{font-family:var(--ui);font-size:14px;line-height:1.4;min-height:100dvh;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--sig);outline-offset:2px}
+
+#field,#fx{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block}
+#field{z-index:0}
+#fx{z-index:3;pointer-events:none}
+
+.app{position:relative;z-index:2;min-height:100dvh;display:grid;grid-template-rows:auto 1fr;gap:16px;padding:16px 24px 20px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:0}
+.chip{display:inline-flex;align-items:center;gap:8px;margin:0;background:var(--panel);border:1px solid var(--line);font:500 11.5px/1 var(--mono);letter-spacing:.04em;color:var(--text2);padding:7px 10px}
+.eyebrow{font:500 10.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}
+
+/* top bar */
+.topbar{display:flex;align-items:stretch;height:52px;padding:0 8px 0 14px;gap:22px}
+.brand{display:flex;align-items:center;gap:10px;font:800 18px/1 var(--ui);letter-spacing:-.02em;color:var(--text);text-decoration:none}
+.brand svg{display:block}
+.tabs{display:flex;align-items:stretch;gap:2px}
+.tab{position:relative;display:inline-flex;align-items:center;gap:8px;background:none;border:0;padding:0 14px;font:600 13.5px/1 var(--ui);color:var(--text2);cursor:pointer}
+.tab:hover{color:var(--text)}
+.tab .pip{width:6px;height:6px;background:var(--line2)}
+.tab[aria-current="page"]{color:var(--text)}
+.tab[aria-current="page"] .pip{background:var(--sig)}
+.tab[aria-current="page"]::after{content:"";position:absolute;left:10px;right:10px;bottom:-1px;height:3px;background:var(--sig)}
+.meta{margin-left:auto;display:flex;align-items:center;gap:10px}
+.live{display:inline-flex;align-items:center;gap:8px;font:500 11.5px/1 var(--mono);color:var(--text2);padding:0 8px}
+.live i{width:7px;height:7px;background:var(--sig)}
+
+/* stage */
+.stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(440px,560px);gap:32px;align-items:start}
+
+/* hero */
+.hero{display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:6px 0 0 clamp(4px,3vw,56px)}
+.logo-slot{display:block;width:var(--logo);aspect-ratio:1/1;background:transparent;border:0;padding:0;cursor:crosshair}
+.wordmark{margin:4px 0 0;font:900 clamp(56px,8.2vw,128px)/.8 var(--ui);letter-spacing:-.05em;color:var(--text);text-shadow:0 0 22px var(--bg),0 0 8px var(--bg)}
+.hero-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip b{color:var(--text);font-weight:600}
+.chip .o{color:var(--sig)}
+.tagline{font:600 15px/1.3 var(--ui);letter-spacing:0;color:var(--text);padding:9px 12px}
+.tagline span{color:var(--sig)}
+
+/* run panel */
+.runs{display:flex;flex-direction:column;gap:var(--gap);min-width:0}
+.run-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;padding:14px 18px 14px;border-bottom:1px solid var(--line)}
+.run-title{margin:6px 0 0;font:800 28px/1 var(--ui);letter-spacing:-.03em}
+.run-input{margin:8px 0 0;font:400 12.5px/1.3 var(--mono);color:var(--text2)}
+.run-input b{font-weight:500;color:var(--text)}
+.run-side{display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;gap:10px}
+.pill{font:600 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;padding:7px 10px;border:1px solid var(--line2);color:var(--text2);background:var(--panel)}
+.pill[data-s="running"]{color:var(--sig);border-color:var(--sig)}
+.pill[data-s="waiting"]{color:#0A0B0D;background:var(--sig);border-color:var(--sig)}
+.pill[data-s="done"]{color:var(--text);border-color:var(--text3)}
+.step{font:500 11.5px/1 var(--mono);color:var(--text3)}
+.pixbar{grid-column:1/-1;display:flex;gap:4px;margin-top:2px}
+.pixbar span{flex:1;height:8px;background:transparent;border:1px solid var(--line2)}
+.pixbar span[data-s="running"]{background:var(--sig);border-color:var(--sig)}
+.pixbar span[data-s="waiting"]{background:var(--sig);border-color:var(--hot)}
+.pixbar span[data-s="done"]{background:#C4CBD4;border-color:#C4CBD4}
+
+.nodes{list-style:none;margin:0;padding:4px 0}
+.node{position:relative;display:grid;grid-template-columns:22px 26px minmax(0,1fr) 62px 96px;align-items:center;gap:10px;height:var(--row);padding:0 18px 0 15px;border-left:3px solid transparent}
+.node + .node{border-top:1px solid #1A1E24}
+.idx{font:500 11px/1 var(--mono);color:var(--text3)}
+.glyph{width:26px;height:26px;display:grid;place-items:center;border:1px solid var(--line2);background:var(--panel2)}
+.name{font:500 13.5px/1 var(--mono);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kind{font:500 10.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--text3)}
+.state{justify-self:end;font:500 12px/1 var(--mono);color:var(--text3);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.state sup{color:var(--sig);font-size:10px;margin-left:1px}
+.node[data-s="running"]{border-left-color:var(--sig);background:linear-gradient(90deg,rgba(255,91,31,.13),rgba(255,91,31,0) 75%)}
+.node[data-s="running"] .state{color:var(--sig)}
+.node[data-s="running"] .glyph,.node[data-s="waiting"] .glyph{border-color:var(--sig)}
+.node[data-s="waiting"]{border-left-color:var(--sig);background:linear-gradient(90deg,rgba(255,91,31,.2),rgba(255,91,31,.02) 80%)}
+.node[data-s="waiting"] .state em{font-style:normal;font-weight:600;color:#0A0B0D;background:var(--sig);padding:4px 7px;letter-spacing:.06em;text-transform:uppercase;font-size:10.5px}
+.node[data-s="done"] .state{color:var(--text2)}
+.spin{display:inline-flex;gap:2px}
+.spin b{width:4px;height:4px;background:var(--sig)}
+
+.run-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 18px;border-top:1px solid var(--line)}
+.legend{display:flex;gap:14px;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px;font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text2)}
+.foot-note{font:400 10.5px/1.2 var(--mono);color:var(--text3)}
+.foot-note sup{color:var(--sig)}
+
+/* agent panel */
+.agent-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 18px;border-bottom:1px solid var(--line)}
+.nodechip{font:500 11.5px/1 var(--mono);color:var(--text2);border:1px solid var(--line2);padding:6px 8px;background:var(--panel2)}
+.nodechip b{color:var(--sig);font-weight:500}
+.agent-body{position:relative;display:flex;flex-direction:column;gap:12px;padding:14px 18px 16px;min-height:282px;overflow:hidden}
+.placeholder{margin:0;font:400 13px/1.5 var(--mono);color:var(--text3);max-width:44ch}
+.turn{display:flex;flex-direction:column;gap:10px}
+.who{display:flex;align-items:center;gap:8px;font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text3)}
+.msg{margin:0;font:500 16px/1.45 var(--ui);color:var(--text);min-height:2.9em}
+.caret{display:inline-block;width:9px;height:17px;margin-left:2px;vertical-align:-3px;background:var(--sig)}
+.agent[data-typing="0"] .caret{visibility:hidden}
+.tool{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 10px;background:var(--well);border:1px solid var(--line)}
+.tool .tag{font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--text3);border:1px solid var(--line2);padding:3px 5px}
+.tool .call{font:400 12.5px/1.2 var(--mono);color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tool .call b{color:var(--text);font-weight:600}
+.tool .ts{font:500 11px/1 var(--mono);color:var(--sig)}
+.tool[data-s="done"] .ts{color:var(--text2)}
+
+.ask{position:relative;display:flex;flex-direction:column;gap:9px;margin:2px;padding:12px 14px;background:var(--panel2);border:1px solid var(--sig)}
+.ask-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.ask-label{font:600 10.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--sig)}
+.ask-q{margin:0;font:700 18px/1.25 var(--ui);letter-spacing:-.01em;color:var(--text)}
+.ask-form{display:flex;gap:8px}
+.ask-form input{flex:1;min-width:0;height:38px;padding:0 12px;background:var(--well);border:1px solid var(--line2);border-radius:0;font:400 13px/1 var(--mono);color:var(--text)}
+.ask-form input::placeholder{color:var(--text3)}
+.ask-form input:focus{border-color:var(--sig);outline:none}
+.send{height:38px;padding:0 16px;border:0;border-radius:0;background:var(--sig);color:#0A0B0D;font:700 13.5px/1 var(--ui);cursor:pointer}
+.send:hover{background:#FF7A45}
+.ask-note{display:flex;align-items:center;justify-content:space-between;gap:10px;font:400 11px/1 var(--mono);color:var(--text3)}
+.cd{display:flex;gap:3px}
+.cd i{width:6px;height:6px;border:1px solid var(--line2)}
+.cd i.on{background:var(--sig);border-color:var(--sig)}
+
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.log li{display:flex;align-items:baseline;gap:9px;font:400 12.5px/1.35 var(--mono);color:var(--text2)}
+.log li::before{content:"";flex:none;width:6px;height:6px;background:var(--line2);transform:translateY(-1px)}
+.log li.you{color:var(--text)}
+.log li.you::before{background:var(--sig)}
+.log li.end{color:var(--sig)}
+.log li.end::before{background:var(--sig)}
+
+.caption{position:fixed;left:16px;bottom:14px;z-index:5;margin:0;font:600 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text2);background:var(--panel);border:1px solid var(--line);padding:7px 10px}
+.caption b{color:var(--sig);font-weight:600}
+
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* motion, only when the viewer allows it */
+@media (prefers-reduced-motion: no-preference){
+  .live i{animation:blink 1.4s steps(1) infinite}
+  .spin b{animation:spin .9s steps(1) infinite}
+  .spin b:nth-child(2){animation-delay:.3s}
+  .spin b:nth-child(3){animation-delay:.6s}
+  .agent[data-typing="1"] .caret{animation:blink .7s steps(1) infinite}
+  .pixbar span[data-s="running"]{animation:blink .6s steps(1) infinite}
+  .ask{animation:ring 1.4s ease-in-out infinite}
+  .tab::after{transition:opacity .2s}
+}
+@keyframes blink{0%{opacity:1}50%{opacity:.25}}
+@keyframes spin{0%{opacity:1}33%{opacity:.2}66%{opacity:.5}}
+@keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(255,91,31,.0)}50%{box-shadow:0 0 0 4px rgba(255,91,31,.18)}}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+
+/* compact heights */
+@media (max-height: 860px){
+  :root{--row:34px;--gap:10px}
+  .app{gap:12px;padding-top:12px;padding-bottom:14px}
+  .topbar{height:46px}
+  .run-head{padding:10px 16px}
+  .run-title{font-size:25px;margin-top:4px}
+  .run-input{margin-top:6px}
+  .agent-head{padding:9px 16px}
+  .agent-body{padding:12px 16px 14px;gap:10px;min-height:262px}
+  .msg{font-size:15px}
+  .ask{padding:11px;gap:8px}
+  .ask-q{font-size:16.5px}
+  .ask-form input,.send{height:34px}
+  .run-foot{padding:8px 16px}
+  .hero{gap:10px}
+}
+@media (max-height: 790px){
+  :root{--row:31px}
+  .who{display:none}
+  .agent-body{min-height:236px}
+  .tool{padding:6px 10px}
+  .pixbar span{height:6px}
+  .run-title{font-size:23px}
+}
+@media (max-width: 1180px){
+  .stage{grid-template-columns:minmax(0,1fr) minmax(420px,480px);gap:22px}
+  .tab{padding:0 10px}
+  .meta .proj{display:none}
+  .node{grid-template-columns:20px 26px minmax(0,1fr) 56px 86px;gap:8px}
+}
+@media (max-width: 880px){
+  :root{--logo:min(70vw,360px)}
+  .stage{grid-template-columns:1fr}
+  .topbar{height:auto;flex-wrap:wrap;padding:8px 10px;gap:8px}
+  .tabs{order:3;width:100%;overflow-x:auto}
+  .tab{height:40px}
+}
+</style>
+</head>
+<body>
+<canvas id="field" aria-hidden="true"></canvas>
+<canvas id="fx" aria-hidden="true"></canvas>
+
+<div class="app">
+  <header class="topbar panel">
+    <a class="brand" href="#" aria-label="Archon home"><span id="miniLogo"></span>Archon</a>
+    <nav class="tabs" aria-label="Primary">
+      <button class="tab" type="button"><span class="pip"></span>Chat</button>
+      <button class="tab" type="button"><span class="pip"></span>Runs</button>
+      <button class="tab" type="button" aria-current="page"><span class="pip"></span>Workflows</button>
+      <button class="tab" type="button"><span class="pip"></span>Builder</button>
+      <button class="tab" type="button"><span class="pip"></span>Settings</button>
+    </nav>
+    <div class="meta">
+      <span class="chip proj">kevinle128/Archon</span>
+      <span class="live"><i></i>engine online</span>
+    </div>
+  </header>
+
+  <main class="stage">
+    <section class="hero" aria-label="Archon">
+      <p class="chip">GRID <b>7 x 7</b> · <b>1,080</b> PIXELS · RUNNER <b class="o" id="runnerOut">c3</b></p>
+      <button class="logo-slot" id="logoSlot" type="button" aria-label="Archon pixel A logo. Activate to burst it apart."></button>
+      <h1 class="wordmark">ARCHON</h1>
+      <p class="chip tagline">Agents build. <span>Humans decide.</span> Every step on the record.</p>
+      <div class="hero-row">
+        <span class="chip"><b>6</b> nodes</span>
+        <span class="chip"><b class="o">1</b> human gate</span>
+        <span class="chip"><b>4</b> node kinds</span>
+      </div>
+      <p class="chip hint">Move to push pixels. Click empty space or the A to burst it.</p>
+    </section>
+
+    <section class="runs" aria-label="Live run">
+      <article class="panel run">
+        <div class="run-head">
+          <div>
+            <span class="eyebrow">Workflow run · live</span>
+            <h2 class="run-title">ak-feature</h2>
+            <p class="run-input">input <b>kevinle128/Archon issue #266</b></p>
+          </div>
+          <div class="run-side">
+            <span class="pill" id="pill" data-s="queued" aria-live="polite">Queued</span>
+            <span class="step" id="step">node 0 of 6</span>
+          </div>
+          <div class="pixbar" id="pixbar" aria-hidden="true"></div>
+        </div>
+        <ol class="nodes" id="nodes"></ol>
+        <div class="run-foot">
+          <div class="legend" id="legend"></div>
+          <span class="foot-note"><sup>*</sup> sample durations</span>
+        </div>
+      </article>
+
+      <article class="panel agent" id="agent" data-typing="0">
+        <div class="agent-head">
+          <span class="eyebrow">Agent transcript</span>
+          <span class="nodechip" id="nodechip">now <b>queued</b></span>
+        </div>
+        <div class="agent-body">
+          <p class="placeholder" id="placeholder">setup is a bash node, so it streams no agent talk. The transcript opens when plan starts.</p>
+          <div class="turn" id="turn" hidden>
+            <div class="who"><span id="whoGlyph"></span>plan agent</div>
+            <p class="msg"><span id="typed"></span><span class="caret" aria-hidden="true"></span></p>
+            <div class="tool" id="tool" data-s="running" hidden>
+              <span class="tag">tool</span>
+              <span class="call"><b>Read</b> packages/web/src/App.tsx</span>
+              <span class="ts" id="toolState">running</span>
+            </div>
+          </div>
+          <form class="ask" id="ask" hidden>
+            <div class="ask-top">
+              <span class="ask-label">Waiting for you</span>
+              <span class="eyebrow">plan · human gate</span>
+            </div>
+            <p class="ask-q" id="askQ">Should the plan include a data migration?</p>
+            <div class="ask-form">
+              <label class="sr" for="answer">Your answer</label>
+              <input id="answer" name="answer" type="text" autocomplete="off" placeholder="Type your answer">
+              <button class="send" type="submit">Send answer</button>
+            </div>
+            <div class="ask-note"><span id="cdText">Demo auto-answers in 4s</span><span class="cd" id="cd" aria-hidden="true"></span></div>
+          </form>
+          <ol class="log" id="log" hidden></ol>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <p class="caption"><b>W2</b> Pixel Genesis</p>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = (s) => document.querySelector(s);
+  const TAU = Math.PI * 2;
+  const BG = '#0A0B0D';
+  const SIG = '#FF5B1F';
+  const HOT = '#FFEDE4';
+
+  /* Locked logo: 7x7, row 3 is the crossbar. */
+  const LOGO = ['..###..', '.##.##.', '##...##', '#######', '##...##', '##...##', '##...##'];
+
+  const mq = matchMedia('(prefers-reduced-motion: reduce)');
+  let reduced = mq.matches;
+
+  /* ---------- pixel glyphs ---------- */
+  function pixSvg(rows, px, colors) {
+    let r = '';
+    rows.forEach((row, y) => {
+      [...row].forEach((ch, x) => {
+        if (ch !== '.') r += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + colors[ch] + '"/>';
+      });
+    });
+    return '<svg viewBox="0 0 ' + rows[0].length + ' ' + rows.length + '" width="' + px + '" height="' + px +
+      '" shape-rendering="crispEdges" aria-hidden="true">' + r + '</svg>';
+  }
+
+  const KIND = {
+    bash:    { rows: ['#....', '.#...', '#....', '.....', '..ooo'], c: { '#': '#C4CBD4', o: SIG } },
+    prompt:  { rows: ['#####', '#...#', '#.o.#', '#####', '#....'], c: { '#': SIG, o: HOT } },
+    loop:    { rows: ['.###.', '#...#', '#...o', '#...#', '.###.'], c: { '#': '#C4CBD4', o: SIG } },
+    command: { rows: ['....#', '...#.', '..#..', '.#...', '#....'], c: { '#': '#F2F4F7' } }
+  };
+  const glyph = (k, px) => pixSvg(KIND[k].rows, px, KIND[k].c);
+
+  const mini = LOGO.map((row, y) => y === 3 ? row.slice(0, 3) + 'r' + row.slice(4) : row);
+  $('#miniLogo').innerHTML = pixSvg(mini, 22, { '#': SIG, r: HOT });
+  $('#whoGlyph').innerHTML = glyph('prompt', 12);
+  $('#legend').innerHTML = Object.keys(KIND).map((k) => '<span>' + glyph(k, 11) + k + '</span>').join('');
+
+  /* ---------- run model ---------- */
+  const NODES = [
+    { id: 'setup', kind: 'bash', sample: '6.7s' },
+    { id: 'plan', kind: 'prompt', sample: '48.0s' },
+    { id: 'verify-and-fix-plan', kind: 'prompt', sample: '31.5s' },
+    { id: 'build-ralph-prd', kind: 'prompt', sample: '22.8s' },
+    { id: 'ralph-loop-run', kind: 'loop', sample: '4m 06s' },
+    { id: 'create-pull-request', kind: 'command', sample: '9.2s' }
+  ];
+  const list = $('#nodes');
+  const pixbar = $('#pixbar');
+  NODES.forEach((n, i) => {
+    const li = document.createElement('li');
+    li.className = 'node';
+    li.innerHTML = '<span class="idx">0' + (i + 1) + '</span><span class="glyph">' + glyph(n.kind, 14) +
+      '</span><span class="name">' + n.id + '</span><span class="kind">' + n.kind + '</span><span class="state"></span>';
+    list.appendChild(li);
+    n.el = li;
+    n.stateEl = li.querySelector('.state');
+    n.glyphEl = li.querySelector('.glyph');
+    n.bar = document.createElement('span');
+    pixbar.appendChild(n.bar);
+  });
+
+  const cdEl = $('#cd');
+  const CD_N = 12;
+  for (let i = 0; i < CD_N; i++) cdEl.appendChild(document.createElement('i'));
+  const cdSquares = [...cdEl.children];
+
+  const MSG = 'Reading issue #266 and the repo layout. Two options for the data model, I need one decision from you.';
+  const ANSWER = 'No migration. Keep the change additive.';
+  const CPS = 50;
+  const T_TYPE0 = 0.3;
+  const T_TYPE1 = T_TYPE0 + MSG.length / CPS;
+  const T_TOOL0 = T_TYPE1 + 0.25;
+  const T_TOOL1 = T_TOOL0 + 0.8;
+
+  const PH = [
+    { k: 'queued', d: 0.7 },
+    { k: 'setup', d: 1.8, n: 0 },
+    { k: 'plan', d: T_TOOL1 + 0.3, n: 1 },
+    { k: 'wait', d: 4.2, n: 1 },
+    { k: 'verify', d: 1.1, n: 2 },
+    { k: 'prd', d: 1.0, n: 3 },
+    { k: 'loop', d: 2.1, n: 4 },
+    { k: 'pr', d: 0.9, n: 5 },
+    { k: 'done', d: 1.6 }
+  ];
+  const WAIT_I = PH.findIndex((p) => p.k === 'wait');
+
+  const ui = {
+    pill: $('#pill'), step: $('#step'), agent: $('#agent'), placeholder: $('#placeholder'), turn: $('#turn'),
+    typed: $('#typed'), tool: $('#tool'), toolState: $('#toolState'), ask: $('#ask'), input: $('#answer'),
+    cdText: $('#cdText'), log: $('#log'), nodechip: $('#nodechip'), runnerOut: $('#runnerOut')
+  };
+
+  const sim = { pi: 0, pt: 0, typedN: -1, loopIter: 0, cd: -1, cdSec: -1, focus: false, holdUntil: 0, userTyped: false };
+
+  function setNode(i, s, text) {
+    const n = NODES[i];
+    n.el.dataset.s = s;
+    n.bar.dataset.s = s;
+    if (s === 'pending') n.stateEl.textContent = 'queued';
+    else if (s === 'running') n.stateEl.innerHTML = '<i class="spin"><b></b><b></b><b></b></i>' + (text || 'running');
+    else if (s === 'waiting') n.stateEl.innerHTML = '<em>waiting</em>';
+    else n.stateEl.innerHTML = n.sample + '<sup>*</sup>';
+  }
+  function setStatus(s, label) { ui.pill.dataset.s = s; ui.pill.textContent = label; }
+  function setNow(label) { ui.nodechip.innerHTML = 'now <b>' + label + '</b>'; }
+  function addLog(text, cls) {
+    const li = document.createElement('li');
+    if (cls) li.className = cls;
+    li.textContent = text;
+    ui.log.appendChild(li);
+    while (ui.log.children.length > 5) ui.log.removeChild(ui.log.firstChild);
+  }
+
+  function resetRun() {
+    NODES.forEach((n, i) => setNode(i, 'pending'));
+    ui.placeholder.hidden = false;
+    ui.turn.hidden = true;
+    ui.typed.textContent = '';
+    ui.tool.hidden = true;
+    ui.tool.dataset.s = 'running';
+    ui.toolState.textContent = 'running';
+    ui.ask.hidden = true;
+    ui.input.value = '';
+    ui.log.hidden = true;
+    ui.log.textContent = '';
+    ui.agent.dataset.typing = '0';
+    sim.typedN = -1; sim.loopIter = 0; sim.cd = -1; sim.cdSec = -1; sim.userTyped = false;
+  }
+
+  function enter(pi) {
+    sim.pi = pi; sim.pt = 0;
+    const ph = PH[pi];
+    switch (ph.k) {
+      case 'queued': resetRun(); setStatus('queued', 'Queued'); setNow('queued'); break;
+      case 'setup': setNode(0, 'running'); setStatus('running', 'Running'); setNow('setup'); break;
+      case 'plan':
+        setNode(0, 'done'); setNode(1, 'running'); setNow('plan');
+        ui.placeholder.hidden = true; ui.turn.hidden = false;
+        break;
+      case 'wait':
+        setNode(1, 'waiting'); setStatus('waiting', 'Waiting'); setNow('you');
+        ui.typed.textContent = MSG; ui.agent.dataset.typing = '0';
+        ui.ask.hidden = false;
+        startGather();
+        break;
+      case 'verify':
+        setNode(1, 'done'); setNode(2, 'running'); setStatus('running', 'Running'); setNow('verify-and-fix-plan');
+        ui.ask.hidden = true; ui.log.hidden = false;
+        releaseGather();
+        addLog('You: ' + sim.answer, 'you');
+        addLog('verify-and-fix-plan is checking the plan against your answer');
+        break;
+      case 'prd': setNode(2, 'done'); setNode(3, 'running'); setNow('build-ralph-prd'); addLog('build-ralph-prd is drafting the PRD'); break;
+      case 'loop':
+        setNode(3, 'done'); setNode(4, 'running', 'iter 1/3'); setNow('ralph-loop-run');
+        sim.loopIter = 1; addLog('ralph-loop-run iteration 1 of 3');
+        break;
+      case 'pr': setNode(4, 'done'); setNode(5, 'running'); setNow('create-pull-request'); addLog('create-pull-request is opening a draft PR'); break;
+      case 'done':
+        setNode(5, 'done'); setStatus('done', 'Complete'); setNow('done');
+        addLog('Run complete. Draft PR ready for review.', 'end');
+        break;
+    }
+    const done = NODES.filter((n) => n.el.dataset.s === 'done').length;
+    const cur = ph.n !== undefined ? ph.n + 1 : done;
+    ui.step.textContent = 'node ' + cur + ' of 6';
+    if (reduced) renderStatic();
+  }
+
+  function submit(text) {
+    if (sim.pi !== WAIT_I) return;
+    sim.answer = text || ANSWER;
+    ui.input.blur();
+    enter(WAIT_I + 1);
+  }
+
+  ui.ask.addEventListener('submit', (e) => { e.preventDefault(); submit(ui.input.value.trim()); });
+  /* Focus pauses the auto-answer, but only for a bounded idle window so the demo never freezes. */
+  const HOLD_MS = 6000;
+  ui.input.addEventListener('focus', () => { sim.focus = true; sim.holdUntil = performance.now() + HOLD_MS; });
+  ui.input.addEventListener('blur', () => { sim.focus = false; });
+  ui.input.addEventListener('input', () => { sim.userTyped = ui.input.value.length > 0; sim.holdUntil = performance.now() + HOLD_MS; });
+
+  function tickSim(dt) {
+    const ph = PH[sim.pi];
+    const holding = ph.k === 'wait' && sim.focus && performance.now() < sim.holdUntil;
+    if (!holding) sim.pt += dt;
+    const t = sim.pt;
+
+    if (ph.k === 'plan') {
+      const n = reduced ? (t >= T_TYPE0 ? MSG.length : 0)
+        : Math.max(0, Math.min(MSG.length, Math.floor((t - T_TYPE0) * CPS)));
+      if (n !== sim.typedN) {
+        sim.typedN = n;
+        ui.typed.textContent = MSG.slice(0, n);
+        ui.agent.dataset.typing = n < MSG.length ? '1' : '0';
+      }
+      if (t >= T_TOOL0 && ui.tool.hidden) ui.tool.hidden = false;
+      if (t >= T_TOOL1 && ui.tool.dataset.s !== 'done') { ui.tool.dataset.s = 'done'; ui.toolState.textContent = 'done'; }
+    }
+
+    if (ph.k === 'wait') {
+      const left = Math.max(0, ph.d - t);
+      const lit = Math.ceil(left / ph.d * CD_N);
+      if (lit !== sim.cd) { sim.cd = lit; cdSquares.forEach((q, i) => q.classList.toggle('on', i < lit)); }
+      const sec = holding ? -2 : Math.ceil(left);
+      if (sec !== sim.cdSec) {
+        sim.cdSec = sec;
+        ui.cdText.textContent = holding ? 'Paused while you type' : 'Demo auto-answers in ' + sec + 's';
+      }
+      if (!sim.userTyped && !holding && left < 1.4) {
+        const k = reduced ? ANSWER.length : Math.min(ANSWER.length, Math.floor((1.4 - left) / 1.1 * ANSWER.length));
+        if (ui.input.value.length !== k) ui.input.value = ANSWER.slice(0, k);
+      }
+    }
+
+    if (ph.k === 'loop') {
+      const it = Math.min(3, 1 + Math.floor(t / (ph.d / 3)));
+      if (it !== sim.loopIter) {
+        sim.loopIter = it;
+        setNode(4, 'running', 'iter ' + it + '/3');
+        addLog('ralph-loop-run iteration ' + it + ' of 3');
+      }
+    }
+
+    if (t >= ph.d) {
+      if (ph.k === 'wait') submit(ui.input.value.trim());
+      else enter((sim.pi + 1) % PH.length);
+    }
+  }
+
+  /* ---------- nav ---------- */
+  document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((x) => x.removeAttribute('aria-current'));
+    b.setAttribute('aria-current', 'page');
+  }));
+
+  /* ---------- canvases ---------- */
+  const field = $('#field');
+  const fx = $('#fx');
+  const cf = field.getContext('2d');
+  const cx = fx.getContext('2d');
+  const slot = $('#logoSlot');
+  let W = 0, H = 0, DPR = 1, time = 0;
+  const L = { ox: 0, oy: 0, sub: 8, ps: 6 };
+
+  function measure() {
+    const r = slot.getBoundingClientRect();
+    const sub = r.width / 49;
+    const out = { dx: r.left - L.ox, dy: r.top - L.oy, subChanged: Math.abs(sub - L.sub) > 0.001 };
+    L.ox = r.left; L.oy = r.top; L.sub = sub; L.ps = Math.max(2, Math.round(sub * 0.78));
+    return out;
+  }
+
+  /* ambient flow field */
+  const AMB_C = ['#1B1F25', '#252A31', '#323842', '#48505B', '#6C7583', '#7E2C10', SIG];
+  const AMB_W = [0.26, 0.26, 0.2, 0.13, 0.07, 0.05, 0.03];
+  const TINT = '#D9501E';
+  let amb = [];
+  function pickColor() {
+    let r = Math.random();
+    for (let i = 0; i < AMB_W.length; i++) { r -= AMB_W[i]; if (r <= 0) return i; }
+    return 0;
+  }
+  function seedAmbient() {
+    const n = Math.round(Math.min(2200, Math.max(800, W * H / 560)));
+    if (amb.length === n) {
+      amb.forEach((a) => { a.x = ((a.x % W) + W) % W; a.y = ((a.y % H) + H) % H; });
+      return;
+    }
+    amb = [];
+    const sizes = [2, 2, 2, 3, 3, 4];
+    for (let i = 0; i < n; i++) {
+      amb.push({ x: Math.random() * W, y: Math.random() * H, vx: 0, vy: 0, sp: 0.25 + Math.random() * 0.75,
+        s: sizes[(Math.random() * sizes.length) | 0], c: pickColor(), near: 0 });
+    }
+  }
+
+  /* logo particles: 30 cells, each a 6x6 block with a one-pixel gutter, so the 7x7 grid reads */
+  const cells = [];
+  LOGO.forEach((row, r) => [...row].forEach((ch, c) => { if (ch === '#') cells.push({ r, c }); }));
+  cells.sort((a, b) => (b.r - a.r) || (a.c - b.c));
+  cells.forEach((cell, i) => { cell.order = i; cell.settled = 0; cell.broken = true; cell.flash = 0; });
+  const PER_CELL = 36;
+  const logo = [];
+  cells.forEach((cell, ci) => {
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) {
+      logo.push({ ci, r: cell.r, c: cell.c, gx: cell.c * 7 + 0.5 + j, gy: cell.r * 7 + 0.5 + i,
+        x: -50, y: -50, vx: 0, vy: 0, shade: Math.random() < 0.62 ? 0 : (Math.random() < 0.5 ? 1 : 2),
+        settled: false, burstUntil: 0, delay: 0, dur: 0, sx: 0, sy: 0, curve: 0, glint: 0 });
+    }
+  });
+  const LOGO_SHADES = [SIG, '#FF6E38', '#E64C15'];
+  const hx = (p) => L.ox + p.gx * L.sub;
+  const hy = (p) => L.oy + p.gy * L.sub;
+
+  let intro = true;
+  let introT0 = 0;
+  function startIntro(now) {
+    intro = true; introT0 = now;
+    const cxl = L.ox + 24.5 * L.sub, cyl = L.oy + 24.5 * L.sub;
+    const rad = Math.hypot(W, H) * 0.62;
+    logo.forEach((p) => {
+      const a = Math.random() * TAU;
+      p.sx = cxl + Math.cos(a) * rad * (0.7 + Math.random() * 0.5);
+      p.sy = cyl + Math.sin(a) * rad * (0.7 + Math.random() * 0.5);
+      p.x = p.sx; p.y = p.sy; p.vx = p.vy = 0; p.settled = false;
+      p.delay = cells[p.ci].order * 42 + Math.random() * 280;
+      p.dur = 750 + Math.random() * 520;
+      p.curve = (Math.random() - 0.5) * 320;
+    });
+    cells.forEach((c) => { c.settled = 0; c.broken = true; c.flash = 0; });
+  }
+  function settle(p) {
+    p.settled = true;
+    const c = cells[p.ci];
+    c.settled++;
+    if (c.settled === PER_CELL && c.broken) { c.broken = false; c.flash = 1; }
+  }
+  function snapLogo() {
+    logo.forEach((p) => { p.x = hx(p); p.y = hy(p); p.vx = p.vy = 0; p.settled = true; p.burstUntil = 0; p.glint = 0; });
+    cells.forEach((c) => { c.settled = PER_CELL; c.broken = false; c.flash = 0; });
+    intro = false;
+  }
+
+  /* runner on the crossbar, columns 2, 3, 4 */
+  const RUN_SEQ = [2, 3, 4, 3];
+  let runIdx = 1, runnerCol = 3, runT = 0;
+  function updateRunner(dt) {
+    if (intro) return;
+    const k = PH[sim.pi].k;
+    if (k === 'wait') return;
+    const iv = (k === 'queued' || k === 'done') ? 0.7 : 0.28;
+    runT += dt;
+    if (runT >= iv) {
+      runT = 0; runIdx = (runIdx + 1) % RUN_SEQ.length; runnerCol = RUN_SEQ[runIdx];
+      ui.runnerOut.textContent = 'c' + runnerCol;
+    }
+  }
+  const runnerCenter = () => ({ x: L.ox + (runnerCol * 7 + 3.5) * L.sub, y: L.oy + 24.5 * L.sub });
+
+  /* pointer */
+  const ptr = { x: -9999, y: -9999, on: false };
+  addEventListener('pointermove', (e) => { ptr.x = e.clientX; ptr.y = e.clientY; ptr.on = true; }, { passive: true });
+  document.addEventListener('pointerout', (e) => { if (!e.relatedTarget) ptr.on = false; });
+  addEventListener('blur', () => { ptr.on = false; });
+
+  function burst(x, y) {
+    if (reduced || intro) return;
+    const now = performance.now();
+    const cxl = L.ox + 24.5 * L.sub, cyl = L.oy + 24.5 * L.sub;
+    const far = Math.hypot(x - cxl, y - cyl) > 40 * L.sub;
+    const ox = far ? cxl : x, oy = far ? cyl : y;
+    logo.forEach((p) => {
+      const dx = p.x - ox + (Math.random() - 0.5) * 6, dy = p.y - oy + (Math.random() - 0.5) * 6;
+      const d = Math.hypot(dx, dy) || 1;
+      const m = 7 + Math.random() * 16;
+      p.vx = dx / d * m; p.vy = dy / d * m - 2;
+      p.burstUntil = now + 420 + cells[p.ci].order * 26 + Math.random() * 160;
+    });
+    cells.forEach((c) => { c.broken = true; });
+    amb.forEach((a) => {
+      const dx = a.x - x, dy = a.y - y, d = Math.hypot(dx, dy);
+      if (d < 260 && d > 0.1) { const s = (1 - d / 260) * 9; a.vx += dx / d * s; a.vy += dy / d * s; }
+    });
+  }
+  addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.panel, .chip, button, input, a, form, nav')) return;
+    burst(e.clientX, e.clientY);
+  });
+  slot.addEventListener('click', (e) => {
+    if (e.detail === 0) burst(L.ox + 24.5 * L.sub, L.oy + 24.5 * L.sub);
+    else burst(e.clientX, e.clientY);
+  });
+
+  /* updates */
+  function updateAmb(f) {
+    const t = time, R = 130, R2 = R * R;
+    for (let i = 0; i < amb.length; i++) {
+      const a = amb[i];
+      const ang = (Math.sin(a.x * 0.0023 + t * 0.21) + Math.cos(a.y * 0.0027 - t * 0.17) + Math.sin((a.x - a.y) * 0.0011 + t * 0.09)) * 1.25;
+      a.vx += (Math.cos(ang) * a.sp - a.vx) * 0.05 * f;
+      a.vy += (Math.sin(ang) * a.sp - a.vy) * 0.05 * f;
+      a.near = 0;
+      if (ptr.on) {
+        const dx = a.x - ptr.x, dy = a.y - ptr.y, d2 = dx * dx + dy * dy;
+        if (d2 < R2 && d2 > 0.01) {
+          const d = Math.sqrt(d2), s = 1 - d / R;
+          a.vx += dx / d * s * s * 1.7 * f; a.vy += dy / d * s * s * 1.7 * f; a.near = s;
+        }
+      }
+      const sp = a.vx * a.vx + a.vy * a.vy;
+      if (sp > 100) { const k = 10 / Math.sqrt(sp); a.vx *= k; a.vy *= k; }
+      a.x += a.vx * f; a.y += a.vy * f;
+      if (a.x < -8) a.x += W + 16; else if (a.x > W + 8) a.x -= W + 16;
+      if (a.y < -8) a.y += H + 16; else if (a.y > H + 8) a.y -= H + 16;
+    }
+  }
+
+  function updateLogo(now, f, dt) {
+    if (intro) {
+      let all = true;
+      for (let i = 0; i < logo.length; i++) {
+        const p = logo[i];
+        if (p.settled) continue;
+        const e = (now - introT0 - p.delay) / p.dur;
+        const HX = hx(p), HY = hy(p);
+        if (e >= 1) { p.x = HX; p.y = HY; p.vx = p.vy = 0; settle(p); continue; }
+        all = false;
+        if (e <= 0) continue;
+        const k = 1 - Math.pow(1 - e, 4);
+        const dx = HX - p.sx, dy = HY - p.sy, len = Math.hypot(dx, dy) || 1;
+        const bend = Math.sin(e * Math.PI) * p.curve * (1 - k);
+        p.x = p.sx + dx * k - dy / len * bend;
+        p.y = p.sy + dy * k + dx / len * bend;
+      }
+      if (all) intro = false;
+      return;
+    }
+    const K = 0.085, D = Math.pow(0.76, f), BD = Math.pow(0.935, f), R = 120, R2 = R * R;
+    for (let i = 0; i < logo.length; i++) {
+      const p = logo[i];
+      const HX = hx(p), HY = hy(p);
+      const inBurst = now < p.burstUntil;
+      if (inBurst) { p.vx *= BD; p.vy *= BD; }
+      else { p.vx = (p.vx + (HX - p.x) * K * f) * D; p.vy = (p.vy + (HY - p.y) * K * f) * D; }
+      if (ptr.on) {
+        const dx = p.x - ptr.x, dy = p.y - ptr.y, d2 = dx * dx + dy * dy;
+        if (d2 < R2 && d2 > 0.01) {
+          const d = Math.sqrt(d2), s = 1 - d / R;
+          p.vx += dx / d * s * s * 2.6 * f; p.vy += dy / d * s * s * 2.6 * f;
+        }
+      }
+      p.x += p.vx * f; p.y += p.vy * f;
+      const ex = HX - p.x, ey = HY - p.y, e2 = ex * ex + ey * ey;
+      if (!inBurst && e2 < 0.2 && p.vx * p.vx + p.vy * p.vy < 0.05) {
+        p.x = HX; p.y = HY; p.vx = p.vy = 0;
+        if (!p.settled) settle(p);
+      } else if (p.settled && e2 > 2.25) {
+        p.settled = false; cells[p.ci].settled--;
+      }
+      if (p.glint > 0) p.glint -= dt * 2.4;
+    }
+    if (Math.random() < 0.3) logo[(Math.random() * logo.length) | 0].glint = 1;
+  }
+
+  /* streams: logo to the running node */
+  const streams = Array.from({ length: 280 }, () => ({ on: false }));
+  let sCursor = 0, spawnAcc = 0;
+  const hitGlow = NODES.map(() => 0);
+  function activeNode() {
+    const ph = PH[sim.pi];
+    return (ph.n !== undefined && ph.k !== 'wait') ? ph.n : -1;
+  }
+  function updateStreams(dt) {
+    const an = intro ? -1 : activeNode();
+    if (an >= 0) {
+      spawnAcc += dt * 80;
+      const src = runnerCenter();
+      while (spawnAcc >= 1) {
+        spawnAcc -= 1;
+        const s = streams[sCursor]; sCursor = (sCursor + 1) % streams.length;
+        s.on = true; s.t = 0; s.sp = 0.7 + Math.random() * 0.5; s.off = Math.random() * 2 - 1; s.wob = Math.random() * 2 - 1;
+        s.n = an; s.sz = Math.random() < 0.8 ? 3 : 4; s.hot = Math.random() < 0.12;
+        s.sx = src.x + (Math.random() - 0.5) * L.sub * 5; s.sy = src.y + (Math.random() - 0.5) * L.sub * 5;
+      }
+    } else spawnAcc = 0;
+    for (let i = 0; i < streams.length; i++) {
+      const s = streams[i];
+      if (!s.on) continue;
+      s.t += s.sp * dt;
+      if (s.t >= 1) { s.on = false; hitGlow[s.n] = Math.min(1, hitGlow[s.n] + 0.12); }
+    }
+    for (let i = 0; i < hitGlow.length; i++) hitGlow[i] = Math.max(0, hitGlow[i] - dt * 1.6);
+  }
+
+  /* gather: orbit the question card while the run waits for a human */
+  const GN = 230;
+  const gath = Array.from({ length: GN }, (_, i) => ({ s: i / GN, x: 0, y: 0, vx: 0, vy: 0, st: 0, delay: 0, life: 0, hot: i % 9 === 0 }));
+  let gatherT = 0, askRect = null;
+  function startGather() {
+    gatherT = 0;
+    const S = runnerCenter();
+    gath.forEach((g) => {
+      g.st = 1; g.x = S.x; g.y = S.y; g.vx = (Math.random() - 0.5) * 6; g.vy = (Math.random() - 0.5) * 6 - 2;
+      g.delay = Math.random() * 0.75;
+    });
+  }
+  function releaseGather() {
+    const r = askRect;
+    const cxr = r ? r.left + r.width / 2 : W / 2, cyr = r ? r.top + r.height / 2 : H / 2;
+    gath.forEach((g) => {
+      if (g.st !== 1) return;
+      if (gatherT < g.delay) { g.st = 0; return; }
+      const dx = g.x - cxr, dy = g.y - cyr, d = Math.hypot(dx, dy) || 1, m = 3 + Math.random() * 7;
+      g.st = 2; g.life = 1; g.vx = dx / d * m; g.vy = dy / d * m;
+    });
+  }
+  function perim(r, s, out) {
+    const x0 = r.left - out, y0 = r.top - out, w = r.width + out * 2, h = r.height + out * 2;
+    let d = s * 2 * (w + h);
+    if (d < w) return [x0 + d, y0];
+    d -= w; if (d < h) return [x0 + w, y0 + d];
+    d -= h; if (d < w) return [x0 + w - d, y0 + h];
+    d -= w; return [x0, y0 + h - d];
+  }
+  const ringOut = (g) => 9 + 3.5 * Math.sin(time * 4.2 - g.s * TAU * 4);
+  function updateGather(dt, f) {
+    gatherT += dt;
+    const waiting = PH[sim.pi].k === 'wait';
+    askRect = waiting ? ui.ask.getBoundingClientRect() : askRect;
+    const S = runnerCenter();
+    const K = 0.07, D = Math.pow(0.8, f), FD = Math.pow(0.95, f), R = 90, R2 = R * R;
+    for (let i = 0; i < GN; i++) {
+      const g = gath[i];
+      if (g.st === 1) {
+        if (gatherT < g.delay) { g.x = S.x; g.y = S.y; continue; }
+        const P = perim(askRect, g.s, ringOut(g));
+        g.vx = (g.vx + (P[0] - g.x) * K * f) * D;
+        g.vy = (g.vy + (P[1] - g.y) * K * f) * D;
+        if (ptr.on) {
+          const dx = g.x - ptr.x, dy = g.y - ptr.y, d2 = dx * dx + dy * dy;
+          if (d2 < R2 && d2 > 0.01) { const d = Math.sqrt(d2), s = 1 - d / R; g.vx += dx / d * s * s * 2 * f; g.vy += dy / d * s * s * 2 * f; }
+        }
+        g.x += g.vx * f; g.y += g.vy * f;
+      } else if (g.st === 2) {
+        g.vx *= FD; g.vy *= FD; g.x += g.vx * f; g.y += g.vy * f;
+        g.life -= dt * 1.4; if (g.life <= 0) g.st = 0;
+      }
+    }
+  }
+
+  /* drawing */
+  const ambBuckets = AMB_C.map(() => []);
+  const tintBucket = [];
+  const logoBuckets = [[], [], [], []];
+  function drawField() {
+    cf.fillStyle = BG;
+    cf.fillRect(0, 0, W, H);
+
+    for (let k = 0; k < ambBuckets.length; k++) ambBuckets[k].length = 0;
+    tintBucket.length = 0;
+    for (let i = 0; i < amb.length; i++) { const a = amb[i]; (a.near > 0.12 ? tintBucket : ambBuckets[a.c]).push(a); }
+    for (let k = 0; k < ambBuckets.length; k++) {
+      cf.fillStyle = AMB_C[k];
+      const b = ambBuckets[k];
+      for (let i = 0; i < b.length; i++) { const a = b[i]; cf.fillRect(((a.x / 3) | 0) * 3, ((a.y / 3) | 0) * 3, a.s, a.s); }
+    }
+    cf.fillStyle = TINT;
+    for (let i = 0; i < tintBucket.length; i++) { const a = tintBucket[i]; cf.fillRect(((a.x / 3) | 0) * 3, ((a.y / 3) | 0) * 3, a.s + 1, a.s + 1); }
+
+    const sub = L.sub, ps = L.ps;
+    const waiting = PH[sim.pi].k === 'wait';
+    const runnerHot = !intro && (!waiting || reduced || Math.sin(time * 7) > -0.2);
+    if (!intro) {
+      const a = waiting && !reduced ? 0.16 + 0.14 * Math.sin(time * 6) : 0.18;
+      cf.fillStyle = 'rgba(255,91,31,' + a.toFixed(3) + ')';
+      cf.fillRect(L.ox + (runnerCol * 7 - 0.6) * sub, L.oy + (21 - 0.6) * sub, 8.2 * sub, 8.2 * sub);
+    }
+    for (let k = 0; k < 4; k++) logoBuckets[k].length = 0;
+    for (let i = 0; i < logo.length; i++) {
+      const p = logo[i];
+      const isHot = (runnerHot && p.r === 3 && p.c === runnerCol) || p.glint > 0.5;
+      logoBuckets[isHot ? 3 : p.shade].push(p);
+    }
+    for (let k = 0; k < 4; k++) {
+      cf.fillStyle = k === 3 ? HOT : LOGO_SHADES[k];
+      const b = logoBuckets[k];
+      for (let i = 0; i < b.length; i++) { const p = b[i]; cf.fillRect(Math.round(p.x), Math.round(p.y), ps, ps); }
+    }
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      if (c.flash <= 0) continue;
+      cf.fillStyle = 'rgba(255,237,228,' + (c.flash * 0.6).toFixed(3) + ')';
+      cf.fillRect(L.ox + (c.c * 7 + 0.5) * sub, L.oy + (c.r * 7 + 0.5) * sub, 5 * sub + ps, 5 * sub + ps);
+      c.flash = Math.max(0, c.flash - 0.06);
+    }
+  }
+
+  function quad(s, tx, ty, t) {
+    const mx = (s.sx + tx) / 2 + s.wob * 40;
+    const my = Math.min(s.sy, ty) - 70 - Math.abs(tx - s.sx) * 0.12 + s.wob * 30;
+    const u = 1 - t;
+    let x = u * u * s.sx + 2 * u * t * mx + t * t * tx;
+    let y = u * u * s.sy + 2 * u * t * my + t * t * ty;
+    const dx = tx - s.sx, dy = ty - s.sy, len = Math.hypot(dx, dy) || 1;
+    const o = s.off * Math.sin(t * Math.PI) * 24;
+    x += -dy / len * o; y += dx / len * o;
+    return [x, y];
+  }
+  function drawFx() {
+    cx.clearRect(0, 0, W, H);
+    const targets = NODES.map((n) => { const r = n.glyphEl.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, r }; });
+
+    for (let i = 0; i < NODES.length; i++) {
+      if (hitGlow[i] <= 0) continue;
+      const r = targets[i].r;
+      cx.globalAlpha = hitGlow[i];
+      cx.strokeStyle = SIG; cx.lineWidth = 1;
+      cx.strokeRect(Math.round(r.left) - 3.5, Math.round(r.top) - 3.5, Math.round(r.width) + 7, Math.round(r.height) + 7);
+    }
+
+    for (let i = 0; i < streams.length; i++) {
+      const s = streams[i];
+      if (!s.on) continue;
+      const T = targets[s.n];
+      const e = s.t < 0.5 ? 2 * s.t * s.t : 1 - Math.pow(-2 * s.t + 2, 2) / 2;
+      const alpha = Math.min(1, s.t * 8) * (s.t > 0.88 ? (1 - s.t) / 0.12 : 1);
+      cx.fillStyle = s.hot ? HOT : SIG;
+      for (let k = 2; k >= 0; k--) {
+        const tt = Math.max(0, e - k * 0.03);
+        const P = quad(s, T.x, T.y, tt);
+        cx.globalAlpha = alpha * (k === 0 ? 1 : k === 1 ? 0.45 : 0.2);
+        const sz = s.sz - k;
+        if (sz > 0) cx.fillRect(((P[0] / 2) | 0) * 2, ((P[1] / 2) | 0) * 2, sz, sz);
+      }
+    }
+
+    for (let i = 0; i < GN; i++) {
+      const g = gath[i];
+      if (g.st === 0 || (g.st === 1 && gatherT < g.delay)) continue;
+      const wave = 0.55 + 0.45 * Math.sin(time * 4.2 - g.s * TAU * 4);
+      cx.globalAlpha = g.st === 2 ? Math.max(0, g.life) : (reduced ? 0.9 : wave);
+      cx.fillStyle = g.hot ? HOT : SIG;
+      const sz = g.st === 1 && !reduced && wave > 0.9 ? 4 : 3;
+      cx.fillRect(Math.round(g.x), Math.round(g.y), sz, sz);
+    }
+    cx.globalAlpha = 1;
+  }
+
+  function renderStatic() {
+    measure();
+    snapLogo();
+    runnerCol = 3; ui.runnerOut.textContent = 'c3';
+    streams.forEach((s) => { s.on = false; });
+    hitGlow.fill(0);
+    if (PH[sim.pi].k === 'wait') {
+      askRect = ui.ask.getBoundingClientRect();
+      gatherT = 99;
+      gath.forEach((g) => { const P = perim(askRect, g.s, 10); g.st = 1; g.x = P[0]; g.y = P[1]; g.vx = g.vy = 0; });
+    } else gath.forEach((g) => { g.st = 0; });
+    drawField();
+    drawFx();
+  }
+
+  function resize() {
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    [field, fx].forEach((c) => {
+      c.width = Math.round(W * DPR); c.height = Math.round(H * DPR);
+      c.style.width = W + 'px'; c.style.height = H + 'px';
+    });
+    cf.setTransform(DPR, 0, 0, DPR, 0, 0);
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    seedAmbient();
+    if (reduced) renderStatic();
+  }
+
+  /* the single animation loop; under reduced motion it only advances the run state */
+  let raf = 0, last = 0;
+  function frame(now) {
+    raf = 0;
+    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+    last = now;
+    tickSim(dt);
+    if (!reduced) {
+      const f = dt * 60;
+      time += dt;
+      const m = measure();
+      if (m.subChanged && !intro) snapLogo();
+      else if ((m.dx || m.dy) && !intro) logo.forEach((p) => { p.x += m.dx; p.y += m.dy; });
+      updateRunner(dt);
+      updateAmb(f);
+      updateLogo(now, f, dt);
+      updateStreams(dt);
+      updateGather(dt, f);
+      drawField();
+      drawFx();
+    }
+    raf = requestAnimationFrame(frame);
+  }
+  let booted = false;
+  function start() {
+    if (raf || document.hidden) return;
+    if (!booted) { booted = true; if (!reduced) startIntro(performance.now()); }
+    last = performance.now();
+    raf = requestAnimationFrame(frame);
+  }
+  function stop() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); else start(); });
+
+  mq.addEventListener('change', () => {
+    reduced = mq.matches;
+    if (reduced) renderStatic();
+  });
+
+  addEventListener('resize', resize);
+
+  /* boot */
+  resize();
+  measure();
+  enter(0);
+  if (reduced) renderStatic();
+  start();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (reduced) renderStatic(); });
+})();
+</script>
+</body>
+</html>

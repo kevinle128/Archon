@@ -1,0 +1,1517 @@
+{
+  "out": {
+    "tag": "omp-c3",
+    "st": "l",
+    "sd": "c",
+    "ob": "l",
+    "stop": {
+      "post": 48,
+      "st": 200,
+      "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+    },
+    "send": {
+      "post": 49,
+      "st": 200,
+      "body": "{\"success\":true,\"message_id\":\"99ca6980-e1c4-483a-81c3-8a49c9d53be7\",\"state\":\"sent\"}"
+    },
+    "probe": {
+      "clickedRel": 22,
+      "label": "delete · omp-c3-Q1 queued: reply with the word omp-c3ACK then continue with the remaining steps",
+      "deleteResp": [
+        "200 {\"success\":true,\"message_id\":\"c6337da7-dc44-44f3-8840-a554284b8d69\"}"
+      ]
+    },
+    "C": {
+      "stoppingAt": null,
+      "sendNowAt": 156,
+      "stopAgainAt": 24,
+      "sendingAt": 24,
+      "flipBacks": 0,
+      "staleQueued": [],
+      "gaps": [],
+      "overlap": [],
+      "last": {
+        "bands": "",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+          "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+          "⚠ bash sleep 25 && echo step-4 interrupted ·",
+          "◐ bash sleep 25 && echo step-4 running · 17.4s message to long-omp"
+        ]
+      }
+    },
+    "L": {
+      "stoppingAt": 40,
+      "sendNowAt": 157,
+      "stopAgainAt": 51,
+      "sendingAt": 51,
+      "flipBacks": 0,
+      "staleQueued": [],
+      "gaps": [],
+      "overlap": [],
+      "last": {
+        "bands": "",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+          "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+          "⚠ bash sleep 25 && echo step-4 interrupted ·",
+          "◐ bash sleep 25 && echo step-4 running · 17.8s message to long-omp"
+        ]
+      }
+    }
+  },
+  "lc": [
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · omp-c3-Q1 queued: reply with the word omp-c3ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "◐ bash sleep 25 && echo step-4 running · 3.1s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728993132
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · omp-c3-Q1 queued: reply with the word omp-c3ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728993257
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728993825
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 149ms message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728996172
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 816ms message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728996853
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 1.2s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728997172
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 2.2s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728998172
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 3.2s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728999212
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 4.2s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729000212
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 5.2s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729001217
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 6.2s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729002253
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 7.2s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729003255
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 8.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729004292
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 9.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729005291
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 10.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729006298
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 11.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729007332
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 12.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729008332
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 13.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729009337
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 14.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729010372
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 15.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729011372
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 16.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729012373
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 17.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729013414
+    }
+  ],
+  "ll": [
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · omp-c3-Q1 queued: reply with the word omp-c3ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "◐ bash sleep 25 && echo step-4 running · 3.0s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790728993132
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · omp-c3-Q1 queued: reply with the word omp-c3ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "◐ bash sleep 25 && echo step-4 running · 3.2s WILL SEND · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790728993173
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · omp-c3-Q1 queued: reply with the word omp-c3ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted WILL SEND · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790728993293
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted SENDING · 1"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728993852
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728994258
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728996306
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 1.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728997265
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 2.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728998013
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 2.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728998293
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 2.7s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728998754
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 3.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728999013
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 3.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790728999301
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 4.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729000014
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 4.2s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729000253
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 4.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729000301
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 5.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729001013
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 5.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729001332
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 5.7s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729001773
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 6.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729002014
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 6.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729002336
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 7.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729003014
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 7.2s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729003252
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 7.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729003340
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 8.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729004012
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 8.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729004372
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 8.7s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729004773
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 9.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729005013
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 9.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729005382
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 10.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729006013
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 10.2s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729006259
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 10.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729006412
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 11.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729007013
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 11.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729007414
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 11.7s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729007772
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 12.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729008013
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 12.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729008412
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 13.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729009013
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 13.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729009259
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 13.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729009414
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 14.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729010012
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 14.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729010453
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 14.8s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729010773
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 15.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729011012
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 15.4s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729011452
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 16.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729012014
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 16.3s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729012262
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 16.5s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729012459
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 17.0s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729013013
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 17.5s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729013492
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.0s ASSISTANT",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ASSISTANT",
+        "✓ bash sleep 25 && echo step-4 2.1s OPERATOR · VQ14-OPERATOR",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 17.8s message to long-omp"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729013773
+    }
+  ],
+  "T": 1790728993801,
+  "stop": {
+    "clicked": 1790728993092,
+    "resolved": 1790728993140,
+    "st": 200,
+    "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+  },
+  "send": {
+    "clicked": 1790728993752,
+    "sendResolved": 1790728993801,
+    "st": 200,
+    "url": "/api/workflows/runs/ec7aff2317ef55925a44a589cdef55ad/nodes/long-omp/send",
+    "body": "{\"success\":true,\"message_id\":\"99ca6980-e1c4-483a-81c3-8a49c9d53be7\",\"state\":\"sent\"}"
+  }
+}

@@ -189,12 +189,14 @@ Choosing the arm from the family alone would mis-parse the majority of Claude's 
 **Tier 3 — name-only.** When `input` is absent or empty, which is every Codex call: family `shell`, headline from the name.
 This is 4,911 of 22,867 real rows, so it is a main path, not an edge case.
 
-**Strip the Codex wrapper first.** The name arrives wrapped in a fixed `/bin/zsh -lc '` or `/bin/bash -lc '` prefix with a matching closing quote. Remove both **before** choosing the headline; the untouched name stays available for the terminal body and the Raw toggle. Without this the prefix is the first thing every Codex row shows, and the rule would otherwise exist only in `EXPERIENCE.md`, forcing each renderer to implement it for itself.
+**Strip the Codex wrapper first.** The name arrives wrapped in a shell invocation prefix with a matching closing quote: either shell (`zsh`/`bash`), with or without the absolute `/bin/` path, either invocation flag (`-lc` for a login shell, `-c` for a bare one), and either quote style (`'…'` or `"…"`). Remove the whole prefix and its matching closing quote **before** choosing the headline; the expanded terminal body uses the same stripped text (same normalizer, same result), and only the Raw toggle keeps the untouched name. An incomplete wrapper (the closing quote missing or mismatched) stays untouched rather than being partially stripped. Without this the prefix is the first thing every Codex row shows, and the rule would otherwise exist only in `EXPERIENCE.md`, forcing each renderer to implement it for itself.
 
 **The name is frequently multi-line.** Real rows carry whole shell scripts as the tool name — loops, `&&` chains, heredocs. A collapsed row is one line, so the headline is the **first non-empty line** of the stripped name, with a trailing `…` when more lines follow; the full text belongs to the terminal body.
 Never feed the raw name into a single-line row.
 
-Emoji-bearing names pass through unchanged; they are already human-readable.
+Emoji-bearing names pass through unchanged; they are already human-readable — except the one exact marker below, which is duck-typed rather than displayed verbatim.
+
+**A Codex web search duck-types into the `web` family.** Codex's web-search tool sends a name-only call (no structured input, following the same "absent or empty" convention as every other Codex row) whose entire name is a fixed `🔍 Searching: ` marker followed by the query. Recognizing that literal marker — not the provider that sent it — reclassifies the row from the Tier 3 shell fallback to `web`, with the query (the text after the marker) as the headline. A name that starts with the marker but has nothing after it, or that carries any structured input at all, is not duck-typed and falls through to the ordinary resolution tiers.
 
 The `code` family headlines the **first non-empty line of the source**, `headlineKind: 'text'`, with the language as a badge.
 The 80-character generic truncation is exactly why this family exists: `eval` carries whole programs, and the fallback would have shown a stub.

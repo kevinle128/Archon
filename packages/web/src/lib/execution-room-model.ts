@@ -6,8 +6,13 @@
  * Focus restoration stays the caller's DOM responsibility via openerId.
  */
 import type { components } from './api.generated';
+import { ensureUtc, formatDurationLong } from './format';
 import type { RoomSurface } from './room-split-layout';
-import { IDLE_AWAIT_EXPIRED_ERROR } from './steering-dock';
+import {
+  IDLE_AWAIT_EXPIRED_ERROR,
+  type SteeringExecutionState,
+  type SteeringNodeOutcome,
+} from './steering-dock';
 
 type WorkflowEvent = components['schemas']['WorkflowEvent'];
 
@@ -52,18 +57,78 @@ export interface ExecutionHeaderModel {
   nodeId: string;
   nodeLabel: string;
   executionLabel: string;
+  /** The node's own condition — never the selected row's, when the two differ. See `ExecutionHeaderInput.nodeStatus`. */
   status: string;
+  /** The node's own failure reason. Only ever set while `status` is `failed`; null otherwise or when unknown. */
+  statusReason: string | null;
+  /** True while the agent is idle-after-interrupt: the header meta appends `waiting on operator` right after `running…`. */
+  waitingOnOperator: boolean;
   startedOffsetMs: number | null;
+  /** ISO timestamp the selected execution started, for the header's clock-time segment. */
+  startedAt: string | null;
   durationMs: number | null;
   provider: string | null;
   model: string | null;
   unknownScope: boolean;
+  /** True when the selected execution is one iteration of a loop node. */
+  isLoopIteration: boolean;
+  /**
+   * The node definition's `loop`/`loop_group.max_iterations`, or null for a
+   * non-loop node (or when the caller has no definition to read it from).
+   * This is the loop's own configured cap — never `EXECUTION_OPTIONS_MAX`,
+   * the unrelated selector-display ceiling — and only a loop node's header
+   * caption shows it.
+   */
+  loopMaxIterations: number | null;
 }
 
 export interface ExecutionHeaderInput {
   row: ExecutionRow;
   events: readonly WorkflowEvent[];
   runStartedAt: string;
+  /**
+   * Every execution row for this node, used to rank a retried selection's
+   * "Run N" against its surviving siblings (`survivingRetryEpochs`) instead
+   * of the raw retry epoch, so a skipped middle epoch never leaves a
+   * numbering gap. Omitted callers (most test fixtures, and any caller with
+   * no sibling rows in hand) keep the raw-epoch label — correct whenever
+   * there is no skipped epoch to create a gap.
+   */
+  siblingRows?: readonly RunFamilyRow[];
+  /** The selected row's node definition's loop cap, for `loopMaxIterations`. Omitted or null for a non-loop node. */
+  loopMaxIterations?: number | null;
+  /**
+   * The node's own aggregate status and failure reason — the same node
+   * state the graph card reads — independent of which execution row is
+   * selected. The header pill and meta always report the node's own
+   * condition, never a historical row's: a loop that failed on
+   * `max_iterations` still reads `Failed` while an earlier iteration is
+   * selected, and a node that later succeeded on retry reads `Completed`
+   * even while viewing the run that failed. Omitted callers (most test
+   * fixtures) keep the selected row's own status, which is correct
+   * whenever the two coincide — every node with exactly one execution.
+   */
+  nodeStatus?: string | null;
+  nodeError?: string | null;
+  /**
+   * The run's own overall status. When it is terminal
+   * (`completed`/`failed`/`cancelled`) and the node's own reported status is
+   * still `running`/`awaiting`, the header projects the run's outcome onto
+   * it instead — the durable write for an abandoned node with no live
+   * executor can lag one poll behind the run itself going terminal (e.g.
+   * right after Abandon of a restart-recovered node), and a stale `running`
+   * pill would claim a process that is already gone. Mirrors
+   * `settleRunningDagNodesForTerminalStatus` (Legacy's store) and
+   * `settleApiWorkflowNodeStatesForRunStatus` (the server's own read
+   * projection) — this is the same fold applied at the header's own read
+   * site so Console gets it too. Omitted callers (most test fixtures) keep
+   * the node's own reported status unprojected.
+   */
+  runStatus?: string;
+  /** The node's live steering sub-state (from the same node state as
+   * `nodeStatus`/`nodeError`), for `waitingOnOperator`. Omitted or any value
+   * other than `'idle-after-interrupt'` leaves `waitingOnOperator` false. */
+  nodeSteeringSubState?: string | null;
 }
 
 export type RoomOpenerKind = 'log' | 'graph';
@@ -96,11 +161,60 @@ function stringField(record: Record<string, unknown>, key: string): string | nul
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function numberField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function latestByOrder<T extends { order: number }>(rows: readonly T[]): T {
   return rows.reduce((best, row) => (row.order >= best.order ? row : best));
 }
 
-function executionLabel(selection: ExecutionRowSelection): string {
+/**
+ * Non-skipped retry epochs recorded for one iteration/route slot, across
+ * every row for the node — the sibling set every "Run N" label (a selector
+ * option, the header meta line) must rank against. A resume's skipped
+ * middle epoch (e.g. a rejected retry request that never produced a real
+ * run) must never leave a gap in the numbering, so the rank comes from
+ * position among survivors, never from the raw epoch value. Null when the
+ * selection carries no retry identity to rank.
+ */
+function survivingRetryEpochs(
+  rows: readonly RunFamilyRow[],
+  selection: ExecutionRowSelection
+): ReadonlySet<number> | null {
+  if (selection.kind !== 'occurrence') return null;
+  const iteration = selection.iteration ?? null;
+  const route = selection.routeActivationSeq ?? null;
+  const epochs = new Set<number>();
+  for (const candidate of rows) {
+    if (candidate.status === 'skipped') continue;
+    if (candidate.selection.kind !== 'occurrence') continue;
+    if ((candidate.selection.iteration ?? null) !== iteration) continue;
+    if ((candidate.selection.routeActivationSeq ?? null) !== route) continue;
+    epochs.add(candidate.selection.retryEpoch ?? 0);
+  }
+  epochs.add(selection.retryEpoch ?? 0);
+  return epochs;
+}
+
+/** 1-based rank of `retryEpoch` among `epochs`, sorted ascending. */
+function retryRunNumber(epochs: ReadonlySet<number>, retryEpoch: number): number {
+  const sorted = [...epochs].sort((a, b) => a - b);
+  const index = sorted.indexOf(retryEpoch);
+  return index === -1 ? retryEpoch + 1 : index + 1;
+}
+
+/**
+ * `survivingEpochs` is the sibling set from `survivingRetryEpochs`, when the
+ * caller has it — every real production call site does. It stays optional
+ * so a caller with no sibling rows in hand (a lone selection, most test
+ * fixtures) still gets a label, using the raw epoch as its own rank.
+ */
+function executionLabel(
+  selection: ExecutionRowSelection,
+  survivingEpochs?: ReadonlySet<number> | null
+): string {
   if (selection.kind === 'loop_iteration') {
     return `Iteration ${String(selection.iteration)}`;
   }
@@ -116,9 +230,17 @@ function executionLabel(selection: ExecutionRowSelection): string {
       context.push(`Iteration ${String(selection.iteration)}`);
     }
     if (selection.retryEpoch !== undefined && selection.retryEpoch > 0) {
-      context.push(`Attempt ${String(selection.retryEpoch + 1)}`);
+      const run =
+        survivingEpochs !== undefined && survivingEpochs !== null
+          ? retryRunNumber(survivingEpochs, selection.retryEpoch)
+          : selection.retryEpoch + 1;
+      context.push(`Run ${String(run)}`);
     }
-    return context.length > 0 ? context.join(' · ') : 'Attempt 1';
+    // "Attempt" is banned transcript vocabulary (EXPERIENCE.md); a bare
+    // first occurrence uses the same "Run N" base occurrence-groups.ts
+    // gives every retry heading, so the header and the transcript's own
+    // occurrence label can never disagree.
+    return context.length > 0 ? context.join(' · ') : 'Run 1';
   }
   return 'Execution unknown';
 }
@@ -140,14 +262,38 @@ function eventMatchesSelection(event: WorkflowEvent, row: ExecutionRow): boolean
   }
   const data = asRecord(event.data);
   if (data === null) return false;
-  const occurrenceId = stringField(data, 'occurrence_id');
-  const attemptId = stringField(data, 'attempt_id');
-  if (row.selection.kind === 'occurrence') {
-    if (occurrenceId !== row.selection.occurrenceId) return false;
-    const expectedAttempt = row.selection.attemptId ?? null;
-    return attemptId === expectedAttempt;
+  // A loop iteration's own execution scope (loop_ancestry) is nested under
+  // the loop node's own outer scope — never the same occurrence/attempt
+  // identity as the loop's single node_started row, since the loop node
+  // starts once per retry, never once per iteration. An iteration
+  // selection therefore matches that outer row by retry epoch alone.
+  if (row.selection.kind === 'loop_iteration') {
+    // The live selection carries no retry epoch of its own — there is only
+    // ever one loop execution live at a time, so the caller (which orders
+    // by array position) picks the latest match.
+    return true;
   }
+  if (row.selection.kind === 'occurrence' && row.selection.iteration !== undefined) {
+    const retryEpoch = numberField(data, 'retry_epoch') ?? 0;
+    return retryEpoch === (row.selection.retryEpoch ?? 0);
+  }
+  const occurrenceId = stringField(data, 'occurrence_id');
+  if (row.selection.kind === 'occurrence') {
+    // Occurrence identity alone decides the match (CAP-6: grouping never
+    // keys on attempt_id). A projected execution's attempt can land on a
+    // later provider turn than the one node_started recorded — a re-ask, or
+    // a run captured before guidance turns stopped rotating attempt_id —
+    // and the occurrence never changes across a node's whole life either way.
+    return occurrenceId === row.selection.occurrenceId;
+  }
+  const attemptId = stringField(data, 'attempt_id');
   return occurrenceId === null && attemptId === null;
+}
+
+/** A row backed by a live provider process — the same two statuses every
+ * selector/header live-word and follow-live decision in this module reads. */
+export function isLiveRowStatus(status: string): boolean {
+  return status === 'running' || status === 'awaiting';
 }
 
 export function chooseExecutionForNode<T extends ExecutionChoiceRow>(
@@ -165,7 +311,259 @@ export function chooseExecutionForNode<T extends ExecutionChoiceRow>(
   if (awaiting.length > 0) return latestByOrder(awaiting);
   const running = forNode.filter(row => row.status === 'running');
   if (running.length > 0) return latestByOrder(running);
+  // A skipped row (including a resume's "prior success" marker) carries no
+  // transcript content and a later order than the real work it stands in
+  // for. Prefer the latest row that actually ran unless every row skipped.
+  const ran = forNode.filter(row => row.status !== 'skipped');
+  if (ran.length > 0) return latestByOrder(ran);
   return latestByOrder(forNode);
+}
+
+/**
+ * The row a room visit actually displays, resolved fresh on every render —
+ * never written back into `RoomVisitState` itself, so there is nothing to
+ * resynchronize and no extra render pass between a live row appearing and
+ * the room showing it.
+ *
+ * While `selection.followingLive` holds, the displayed row is exactly what
+ * a brand-new room-open would choose right now (`chooseExecutionForNode`
+ * with no explicit override): it advances to a newer live row the instant
+ * one exists, and falls through to "the latest row that ran" when none does
+ * — the gap between one iteration ending and the next iteration's first row
+ * appearing stays on the just-finished row rather than jumping anywhere,
+ * because `chooseExecutionForNode` reports no live candidate to jump to.
+ * `resolveGapHoldStatus` is what keeps the dock itself open through that
+ * gap despite the row's own terminal status.
+ *
+ * An explicit pick of a non-live row (`followingLive: false`) is pinned by
+ * id — the transcript never moves out from under an operator reading it on
+ * purpose.
+ */
+export function resolveFollowedRow<T extends ExecutionChoiceRow>(
+  selection: RoomVisitSelection | null,
+  rows: readonly T[]
+): T | null {
+  if (selection === null) return null;
+  if (selection.followingLive) {
+    const live = chooseExecutionForNode(rows, selection.nodeId, null);
+    if (live !== null) return live;
+  }
+  return rows.find(row => row.id === selection.rowId) ?? null;
+}
+
+/**
+ * The room-header caption + the dock's own `rowStatus` input agree while a
+ * followed row is live or terminal; they diverge only in the gap between one
+ * iteration's row completing and the next iteration's row starting (e.g.
+ * `until_bash` still deciding). During that gap `resolveFollowedRow` holds
+ * the just-finished row (nothing live exists to switch to), whose own status
+ * would otherwise read `completed` and drop the composer. Returns the
+ * status to feed `steeringDockMode` instead — the node's own live status —
+ * only during that exact gap; every other case returns the row's own status
+ * unchanged, including once the node itself goes terminal (the hold releases
+ * on its own).
+ */
+export function resolveGapHoldStatus<S extends string>(input: {
+  followingLive: boolean;
+  rowStatus: S;
+  nodeStatus: S | null | undefined;
+}): S {
+  if (
+    input.followingLive &&
+    !isLiveRowStatus(input.rowStatus) &&
+    input.nodeStatus !== null &&
+    input.nodeStatus !== undefined &&
+    isLiveRowStatus(input.nodeStatus)
+  ) {
+    return input.nodeStatus;
+  }
+  return input.rowStatus;
+}
+
+/** Execution selector ceiling — also the header's "max N" caption. */
+export const EXECUTION_OPTIONS_MAX = 8;
+
+/** The node-definition shape `loopMaxIterationsForNode` reads; a `DagNode` satisfies this structurally. */
+export interface LoopMaxIterationsCandidate {
+  readonly loop?: { readonly max_iterations: number };
+  readonly loop_group?: { readonly max_iterations: number };
+}
+
+/**
+ * A loop node's own configured iteration cap, for the header's "· max N"
+ * caption — never `EXECUTION_OPTIONS_MAX`, the unrelated selector-display
+ * ceiling. Null for a non-loop node, or when the caller has no definition
+ * (still loading, or the node was removed from the workflow since the run
+ * started).
+ */
+export function loopMaxIterationsForNode(
+  node: LoopMaxIterationsCandidate | null | undefined
+): number | null {
+  return node?.loop?.max_iterations ?? node?.loop_group?.max_iterations ?? null;
+}
+
+/**
+ * Rows a header selector offers for one node. A skipped row (for example a
+ * resume's `node_skipped_prior_success` marker) is not a run, so it is left
+ * out whenever the node has a row that actually ran. The selected row always
+ * stays, so the selector can still show what the room projects.
+ */
+export function selectableExecutionRows<T extends { id: string; status: string }>(
+  rows: readonly T[],
+  selectedId?: string
+): T[] {
+  const ran = rows.filter(row => row.status !== 'skipped');
+  if (ran.length === 0) return [...rows];
+  return rows.filter(row => row.status !== 'skipped' || row.id === selectedId);
+}
+
+/**
+ * Cap the executions a header selector exposes, keeping the most recent
+ * ones so a long-running loop never grows the control past this ceiling.
+ * Chronological order is preserved among the kept rows.
+ */
+export function capExecutionOptions<T extends { order: number }>(
+  rows: readonly T[],
+  max = EXECUTION_OPTIONS_MAX
+): T[] {
+  if (rows.length <= max) return [...rows];
+  return [...rows].sort((a, b) => a.order - b.order).slice(rows.length - max);
+}
+
+export interface ExecutionOptionInput {
+  readonly id: string;
+  readonly label: string;
+  readonly status: string;
+}
+
+export interface ExecutionOption {
+  readonly id: string;
+  readonly label: string;
+}
+
+/** The live-status word a header selector option carries, mirroring `Iteration 3 · running`. */
+const EXECUTION_OPTION_LIVE_WORD: Readonly<Record<string, string>> = {
+  running: 'running',
+  awaiting: 'awaiting',
+};
+
+/**
+ * A header selector must never offer two options an operator cannot tell
+ * apart. Two independent signals close that gap over `options`, given in the
+ * caller's chronological order:
+ *
+ * - the row currently backed by a live process states so (`Iteration 3 ·
+ *   running`), matching the approved mockup;
+ * - if the text still collides after that — two finished executions of the
+ *   same iteration/route slot the engine never distinguished by retry epoch,
+ *   as a workflow resume can produce — a later duplicate gains a numbered
+ *   `· Run N` suffix so no two options ever render identical text.
+ */
+export function disambiguateExecutionOptions(
+  options: readonly ExecutionOptionInput[]
+): ExecutionOption[] {
+  const seen = new Map<string, number>();
+  return options.map(option => {
+    const liveWord = EXECUTION_OPTION_LIVE_WORD[option.status];
+    const base = liveWord === undefined ? option.label : `${option.label} · ${liveWord}`;
+    const occurrence = (seen.get(base) ?? 0) + 1;
+    seen.set(base, occurrence);
+    return {
+      id: option.id,
+      label: occurrence === 1 ? base : `${base} · Run ${String(occurrence)}`,
+    };
+  });
+}
+
+interface LoopAncestryLike {
+  readonly node_id: string;
+  readonly iteration: number;
+}
+
+/** The wire fields `excludeRepresentedLoopContainers` needs, nothing more. */
+export interface LoopContainerCandidate {
+  readonly node_id: string;
+  readonly node_type?: string;
+  readonly retry_epoch?: number;
+  readonly route_activation_seq?: number;
+  readonly loop_ancestry?: readonly LoopAncestryLike[];
+  readonly started_at?: string;
+  readonly ended_at?: string;
+}
+
+function normalizedEpoch(value: number | undefined): number {
+  return value ?? 0;
+}
+
+function ancestryPrefixEquals(
+  left: readonly LoopAncestryLike[],
+  right: readonly LoopAncestryLike[] | undefined
+): boolean {
+  const rightEntries = right ?? [];
+  if (left.length !== rightEntries.length) return false;
+  return left.every(
+    (entry, index) =>
+      entry.node_id === rightEntries[index]?.node_id &&
+      entry.iteration === rightEntries[index]?.iteration
+  );
+}
+
+/** Whether `candidateStartedAt` falls inside the container's own run window. */
+function executionWindowContains(
+  container: LoopContainerCandidate,
+  candidateStartedAt: string
+): boolean {
+  const containerStart =
+    container.started_at !== undefined ? Date.parse(container.started_at) : Number.NaN;
+  const candidateStart = Date.parse(candidateStartedAt);
+  if (!Number.isFinite(containerStart) || !Number.isFinite(candidateStart)) return false;
+  if (candidateStart < containerStart) return false;
+  if (container.ended_at === undefined) return true;
+  const containerEnd = Date.parse(container.ended_at);
+  return !Number.isFinite(containerEnd) || candidateStart <= containerEnd;
+}
+
+/**
+ * A loop node mints one "container" execution for its own top-level
+ * started/failed lifecycle, then a separate execution per iteration nested
+ * inside it (`dag-executor.ts`'s `outerExecutionScope` /
+ * `iterationExecutionScope`). Both share the loop's retry epoch and route
+ * activation and start within the same instant, so a container with no
+ * transcript of its own is the same physical invocation an iteration row
+ * already carries the transcript for — drop it so the Execution list, and its
+ * default selection, land on the iteration instead. A container proven to
+ * own no iteration (the loop failed before iteration 1 started) is never
+ * dropped, so a genuinely distinct execution never disappears.
+ */
+export function excludeRepresentedLoopContainers<T extends LoopContainerCandidate>(
+  executions: readonly T[]
+): T[] {
+  const isContainer = (exec: LoopContainerCandidate): boolean =>
+    exec.node_type === 'loop' &&
+    (exec.loop_ancestry === undefined || exec.loop_ancestry.length === 0);
+
+  const isRepresentedByAnIteration = (container: T): boolean =>
+    executions.some(candidate => {
+      if (candidate.node_id !== container.node_id) return false;
+      const ancestry = candidate.loop_ancestry;
+      if (ancestry === undefined || ancestry.length === 0) return false;
+      if (!ancestryPrefixEquals(ancestry.slice(0, -1), container.loop_ancestry)) return false;
+      if (normalizedEpoch(candidate.retry_epoch) !== normalizedEpoch(container.retry_epoch)) {
+        return false;
+      }
+      if (
+        normalizedEpoch(candidate.route_activation_seq) !==
+        normalizedEpoch(container.route_activation_seq)
+      ) {
+        return false;
+      }
+      return (
+        candidate.started_at !== undefined &&
+        executionWindowContains(container, candidate.started_at)
+      );
+    });
+
+  return executions.filter(exec => !isContainer(exec) || !isRepresentedByAnIteration(exec));
 }
 
 function sameAncestryPrefix(
@@ -280,6 +678,25 @@ export function chooseExecutionForInteraction<
   );
 }
 
+const NON_TERMINAL_NODE_STATUSES = new Set(['running', 'awaiting']);
+
+/**
+ * Fold a terminal run outcome onto a node/row status still reading
+ * `running`/`awaiting` — the durable node-level write can lag one poll
+ * behind the run's own status, which a running executor's own process
+ * always keeps in step but an abandoned node's does not. `isTerminalRunStatus`
+ * is defined further below in this file; declarations hoist.
+ */
+function projectRunTerminalOntoNodeStatus(
+  runStatus: string | undefined,
+  nodeStatus: string
+): string {
+  if (runStatus === undefined) return nodeStatus;
+  if (!isTerminalRunStatus(runStatus)) return nodeStatus;
+  if (!NON_TERMINAL_NODE_STATUSES.has(nodeStatus)) return nodeStatus;
+  return runStatus === 'completed' ? 'completed' : 'failed';
+}
+
 export function runtimeForSelection(
   events: readonly WorkflowEvent[],
   row: ExecutionRow
@@ -296,19 +713,302 @@ export function runtimeForSelection(
   return { provider: provider ?? '', model: model ?? '' };
 }
 
+/**
+ * `row.label` carries the log stream's own `×N`/`#N` execution suffix
+ * (`labelForExecution` in `build-log-rows.ts`) — useful for scanning a list
+ * of many rows, but the room header already states which execution is
+ * selected through its own Execution selector, so repeating the suffix in
+ * the title is redundant. Strips exactly that trailing suffix; a bare label
+ * with no suffix passes through unchanged. Exported so any other surface
+ * naming this node — the composer's accessible name, for one — reads the
+ * same bare label rather than the log stream's disambiguated one.
+ */
+export function bareNodeLabel(label: string): string {
+  const match = /^(.+) (?:×|#)\d+$/.exec(label);
+  return match?.[1] ?? label;
+}
+
 export function buildExecutionHeader(input: ExecutionHeaderInput): ExecutionHeaderModel {
   const runtime = runtimeForSelection(input.events, input.row);
+  const survivingEpochs =
+    input.siblingRows !== undefined
+      ? survivingRetryEpochs(input.siblingRows, input.row.selection)
+      : null;
+  const rawStatus = input.nodeStatus ?? input.row.status;
+  const status = projectRunTerminalOntoNodeStatus(input.runStatus, rawStatus);
   return {
     nodeId: input.row.nodeId,
-    nodeLabel: input.row.label,
-    executionLabel: executionLabel(input.row.selection),
-    status: input.row.status,
+    nodeLabel: bareNodeLabel(input.row.label),
+    executionLabel: executionLabel(input.row.selection, survivingEpochs),
+    status,
+    statusReason: status === 'failed' ? (input.nodeError ?? null) : null,
+    waitingOnOperator: input.nodeSteeringSubState === 'idle-after-interrupt',
     startedOffsetMs: startedOffsetMs(input.row, input.runStartedAt),
+    startedAt: input.row.startedAt ?? null,
     durationMs: input.row.durationMs ?? null,
     provider: runtime?.provider || null,
     model: runtime?.model || null,
     unknownScope: input.row.unknownScope ?? true,
+    isLoopIteration: input.row.selection.kind === 'loop_iteration',
+    loopMaxIterations: input.loopMaxIterations ?? null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Room header presentation: node-kind chip, status pill, retry count, and the
+// second header line. Every function here returns semantic data (labels and
+// design-token names) — never a Tailwind class — so Console and Legacy each
+// render it with their own JSX while sharing one source of truth.
+// ---------------------------------------------------------------------------
+
+export interface NodeKindChip {
+  readonly label: string;
+  readonly tone: string;
+}
+
+/** Kinds sharing an existing `--node-*` token; a script folds into bash, a
+ * plannotator gate folds into approval (DESIGN.md precedent) — anything else
+ * has no established color and omits the chip rather than inventing one. */
+const NODE_KIND_TONE: Readonly<Record<string, string>> = {
+  command: 'node-command',
+  prompt: 'node-prompt',
+  bash: 'node-bash',
+  script: 'node-bash',
+  loop: 'node-loop',
+  approval: 'node-approval',
+  plannotator_gate: 'node-approval',
+};
+
+export function nodeKindChip(kind: string | null | undefined): NodeKindChip | null {
+  if (kind === null || kind === undefined) return null;
+  const tone = NODE_KIND_TONE[kind];
+  return tone === undefined ? null : { label: kind, tone };
+}
+
+export interface StatusPill {
+  readonly label: string;
+  /** Design-token name, or null for a neutral (no color) pill. */
+  readonly tone: string | null;
+}
+
+const STATUS_PILL_TONE: Readonly<Record<string, string | null>> = {
+  pending: 'accent',
+  running: 'accent',
+  awaiting: 'warning',
+  completed: 'success',
+  failed: 'error',
+  skipped: null,
+  cancelled: null,
+};
+
+const STATUS_PILL_LABEL: Readonly<Record<string, string>> = {
+  pending: 'Pending',
+  running: 'Running',
+  awaiting: 'Waiting on you',
+  completed: 'Completed',
+  failed: 'Failed',
+  skipped: 'Skipped',
+  cancelled: 'Cancelled',
+};
+
+/** Every status this pill treats as a settled, durable outcome. */
+const TERMINAL_PILL_STATUSES = new Set(['completed', 'failed', 'skipped', 'cancelled']);
+
+/**
+ * A restart-recovery signal overrides the row's own lifecycle-status pill:
+ * the row is still non-terminal (`running`/`awaiting`), but no live provider
+ * process backs it, so `Running` would claim a process that no longer
+ * exists. The server tells the client this explicitly (`execution_state` on
+ * the steering queue read) — it is never guessed from a timer.
+ *
+ * That signal can clear (the queue read stops reporting recovery) before or
+ * after `status` itself catches up to a terminal outcome — e.g. right after
+ * Abandon of a restart-recovered node, whichever of the two polls lands
+ * first. A `status` that is ALREADY one of the durable terminal outcomes
+ * always wins over a `recoveryRequired` flag that has not caught down yet:
+ * the durable record is never stale in the direction that matters (it can
+ * only be terminal because something already settled it), while
+ * `recoveryRequired` is a live projection that can be momentarily behind.
+ */
+export function statusPill(status: string, recoveryRequired = false): StatusPill {
+  if (recoveryRequired && !TERMINAL_PILL_STATUSES.has(status)) {
+    return { label: 'Recovery required', tone: 'warning' };
+  }
+  return {
+    label: STATUS_PILL_LABEL[status] ?? status,
+    tone: STATUS_PILL_TONE[status] ?? null,
+  };
+}
+
+/**
+ * Folds the steering dock's own terminal reconciliation onto the room
+ * header's status the instant it is known, so a still-`running`/`awaiting`
+ * row status — fed by a separately-cadenced poll — never outlives the
+ * node's proven outcome. Feeding this ONE resolved status into both
+ * `statusPill` and `headerMetaLine` (rather than teaching each of them
+ * about `terminalOutcome` separately) is what keeps the pill and the
+ * `running…` meta segment from ever disagreeing about whether the node is
+ * still live for the same render.
+ *
+ * A `status` that is already one of the durable terminal outcomes always
+ * wins over `terminalOutcome` for the same reason `statusPill`'s own
+ * `recoveryRequired` precedent does: the durable record is never stale in
+ * the direction that matters.
+ */
+export function effectiveNodeRoomStatus(
+  status: string,
+  terminalOutcome: SteeringNodeOutcome | null | undefined
+): string {
+  if (terminalOutcome === null || terminalOutcome === undefined) return status;
+  if (TERMINAL_PILL_STATUSES.has(status)) return status;
+  return terminalOutcome;
+}
+
+export interface RunOfTotal {
+  readonly run: number;
+  readonly total: number;
+}
+
+interface RunFamilyRow {
+  readonly id: string;
+  readonly status: string;
+  readonly selection: ExecutionRowSelection;
+}
+
+/**
+ * Retry position and count for the selected row among sibling rows in the
+ * same iteration and route slot. A resume's `node_skipped_prior_success`
+ * marker can carry a different retry epoch than the real row it stands in
+ * for without being a second run, so skipped rows never count toward the
+ * total. Null when the selection carries no retry identity, or the slot only
+ * ever ran once.
+ */
+export function computeRunOfTotal(
+  rows: readonly RunFamilyRow[],
+  selectedId: string
+): RunOfTotal | null {
+  const selected = rows.find(candidate => candidate.id === selectedId);
+  if (selected?.selection.kind !== 'occurrence') return null;
+  const epochs = survivingRetryEpochs(rows, selected.selection);
+  if (epochs === null || epochs.size <= 1) return null;
+  const selectedEpoch = selected.selection.retryEpoch ?? 0;
+  return { run: retryRunNumber(epochs, selectedEpoch), total: epochs.size };
+}
+
+/** The retry epoch an iteration selection belongs to, or null when the
+ * selection is not one iteration of a loop node at all. The legacy
+ * `loop_iteration` kind (pre-occurrence-tracking history) never carries a
+ * retry epoch of its own — there is only ever one such live run at a time,
+ * so every row of that kind belongs to the same run. */
+function iterationRetryEpoch(selection: ExecutionRowSelection): number | null {
+  if (selection.kind === 'loop_iteration') return 0;
+  if (selection.kind === 'occurrence' && selection.iteration !== undefined) {
+    return selection.retryEpoch ?? 0;
+  }
+  return null;
+}
+
+/**
+ * How many iterations belong to the selected row's OWN run (retry epoch) —
+ * the header's "of N" caption pairs this against the loop's configured cap
+ * ("· max M"), so both numbers must describe the same run. Counting every
+ * iteration across every retry instead reads as impossible the moment a
+ * single-iteration loop retries even once ("of 2 · max 1"): "of N" would
+ * count retry executions while "max M" caps iterations per run. Null when
+ * the selected row is not a loop iteration at all, so the caller keeps
+ * using its own generic execution count for every other node kind.
+ */
+export function computeLoopIterationCount(
+  rows: readonly RunFamilyRow[],
+  selectedId: string
+): number | null {
+  const selected = rows.find(candidate => candidate.id === selectedId);
+  if (selected === undefined) return null;
+  const selectedEpoch = iterationRetryEpoch(selected.selection);
+  if (selectedEpoch === null) return null;
+  return rows.filter(candidate => iterationRetryEpoch(candidate.selection) === selectedEpoch)
+    .length;
+}
+
+function startedClockLabel(startedAt: string): string | null {
+  const parsed = new Date(ensureUtc(startedAt));
+  if (Number.isNaN(parsed.getTime())) return null;
+  const hours = String(parsed.getHours()).padStart(2, '0');
+  const minutes = String(parsed.getMinutes()).padStart(2, '0');
+  return `started ${hours}:${minutes}`;
+}
+
+export interface HeaderMetaLineInput {
+  readonly startedAt: string | null;
+  readonly status: string;
+  readonly durationMs: number | null;
+  readonly runOfTotal: RunOfTotal | null;
+  readonly provider: string | null;
+  readonly model: string | null;
+  /** Latest terminal execution failed for idle-await expiry. Default false. */
+  readonly idleAwaitExpired?: boolean;
+  /** The node's own failure reason (`ExecutionHeaderModel.statusReason`), shown
+   * in place of the duration segment while `status` is `failed` and no more
+   * specific reason (idle-await expiry) applies. Default null. */
+  readonly statusReason?: string | null;
+  /** Set only when viewing a finished iteration while the node runs live
+   * elsewhere; the run count is not meaningful for that stale history view. */
+  readonly iterationPrefix?: number | null;
+  /** Server-reported restart recovery — see `statusPill`. Default false. */
+  readonly recoveryRequired?: boolean;
+  /** The agent is idle-after-interrupt: the node stayed running, but its
+   * current generation stopped and now waits on an operator redirect.
+   * Appended right after `running…` — the node's own status, not this
+   * projected sub-state, still decides whether that segment renders at
+   * all. Default false. */
+  readonly waitingOnOperator?: boolean;
+}
+
+/** The live segment a restart-recovery meta line reports instead of `running…`. */
+const RECOVERY_REQUIRED_META_SEGMENT = 'restored after server restart';
+
+const LIVE_META_STATUSES: ReadonlySet<string> = new Set(['running', 'awaiting']);
+
+/**
+ * The room header's second line: which iteration this is (only when viewing
+ * finished history), start clock time, live/duration/idle-timeout state,
+ * retry count, provider, and model. Each segment appears only when its own
+ * data exists; the whole line is null when nothing is known yet.
+ */
+export function headerMetaLine(input: HeaderMetaLineInput): string | null {
+  const viewingStaleIteration =
+    input.iterationPrefix !== undefined && input.iterationPrefix !== null;
+  const segments: string[] = [];
+  if (viewingStaleIteration) {
+    segments.push(`iteration ${String(input.iterationPrefix)}`);
+  }
+  if (input.startedAt !== null) {
+    const clock = startedClockLabel(input.startedAt);
+    if (clock !== null) segments.push(clock);
+  }
+  if (input.recoveryRequired === true) {
+    segments.push(RECOVERY_REQUIRED_META_SEGMENT);
+  } else if (input.status === 'failed' && input.idleAwaitExpired === true) {
+    segments.push('failed after idle timeout');
+  } else if (
+    input.status === 'failed' &&
+    input.statusReason !== null &&
+    input.statusReason !== undefined &&
+    input.statusReason.length > 0
+  ) {
+    segments.push(input.statusReason);
+  } else if (LIVE_META_STATUSES.has(input.status)) {
+    segments.push('running…');
+    if (input.waitingOnOperator === true) segments.push('waiting on operator');
+  } else if (input.durationMs !== null) {
+    segments.push(formatDurationLong(input.durationMs));
+  }
+  if (!viewingStaleIteration && input.runOfTotal !== null) {
+    segments.push(`run ${String(input.runOfTotal.run)} of ${String(input.runOfTotal.total)}`);
+  }
+  if (input.provider !== null) segments.push(input.provider);
+  if (input.model !== null) segments.push(input.model);
+  return segments.length > 0 ? segments.join(' · ') : null;
 }
 
 export function roomOpenerId(surface: RoomSurface, kind: RoomOpenerKind, key: string): string {
@@ -326,6 +1026,18 @@ export interface RoomVisitSelection {
   nodeId: string;
   rowId: string;
   openerId: string | null;
+  /**
+   * True when `rowId` was live (`isLiveRowStatus`) at the moment it was
+   * selected — by any path: an auto room-open, an explicit click on the row
+   * currently backed by a live process, or "Go to iteration N" (which always
+   * targets the live row). `resolveFollowedRow` re-chooses the displayed row
+   * on every render while this holds, so the room keeps following the live
+   * execution across iteration boundaries. An explicit pick of a row that
+   * was NOT live at selection time sets this false, pinning that exact row —
+   * the operator is reading history on purpose and the room must never move
+   * out from under them.
+   */
+  followingLive: boolean;
 }
 
 export interface RoomVisitState {
@@ -394,7 +1106,7 @@ export function applyRoomDeepLink(
   }
   return openRoom(
     { ...state, appliedDeepLinkNode: queryNode },
-    { nodeId: queryNode, rowId: row.id, openerId: null }
+    { nodeId: queryNode, rowId: row.id, openerId: null, followingLive: isLiveRowStatus(row.status) }
   );
 }
 
@@ -445,6 +1157,27 @@ export function resolveRunDetailRefetchIntervalMs(
     return hasUnsettledNodeExecutions(executions) ? 3000 : false;
   }
   return 3000;
+}
+
+/**
+ * True on the exact edge a dock's queue read first reports `finished` while
+ * the cached run entity is still non-terminal — the moment to force an
+ * immediate run refetch instead of waiting on SSE (which a tab's own
+ * single-stream registration can lose to a sibling tab watching the same
+ * run) or the slower heartbeat poll. Durable terminal state takes
+ * precedence over a stale live projection the instant this dock itself
+ * learns the node settled, regardless of when the tab was opened.
+ */
+export function shouldRefetchRunOnDockFinished(
+  previousDockExecutionState: SteeringExecutionState | null,
+  nextDockExecutionState: SteeringExecutionState | null,
+  runStatus: string
+): boolean {
+  return (
+    nextDockExecutionState === 'finished' &&
+    previousDockExecutionState !== 'finished' &&
+    !isTerminalRunStatus(runStatus)
+  );
 }
 
 /**

@@ -1,0 +1,128 @@
+[
+  { "seq": 1, "kind": "status", "payload": { "state": "started" }, "meta": {} },
+  {
+    "seq": 2,
+    "kind": "text",
+    "payload": {
+      "text": "Run these shell steps one at a time, each as its own separate command, in order: \"sleep 25; echo s1\", \"sleep 25; echo s2"
+    },
+    "meta": {
+      "origin": "prompt",
+      "actor_user_id": "2e21b6d931f357f07399cbbd8ec11273",
+      "prompt_source": "node_prompt"
+    }
+  },
+  {
+    "seq": 3,
+    "kind": "tool",
+    "payload": {
+      "name": "/bin/zsh -lc 'sleep 25; echo s1'",
+      "id": "codex-9a785293-ae07-443e-9b88-8197b855e727:item_0",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  { "seq": 4, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 5,
+    "kind": "text",
+    "payload": {
+      "text": "OP cx-c1: reply with the token cx-c1ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "43f3766d-d3f2-4f7e-aef9-0bfc627cb882",
+      "origin": "operator",
+      "operator_user_id": "2e21b6d931f357f07399cbbd8ec11273"
+    }
+  },
+  {
+    "seq": 6,
+    "kind": "text",
+    "payload": { "text": "OP cx-c1b: also include the token cx-c1bACK." },
+    "meta": {
+      "message_id": "bb177aa6-821a-4661-ae9c-2a35f7bb5d44",
+      "origin": "operator",
+      "operator_user_id": "2e21b6d931f357f07399cbbd8ec11273"
+    }
+  },
+  {
+    "seq": 7,
+    "kind": "text",
+    "payload": { "text": "cx-c1ACK cx-c1bACK\n" },
+    "meta": { "text_mode": "complete" }
+  },
+  {
+    "seq": 8,
+    "kind": "tool",
+    "payload": {
+      "name": "/bin/zsh -lc 'sleep 25; echo s1'",
+      "id": "codex-f9c44207-b459-4128-a1ed-df0ac790e5bf:item_1",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  { "seq": 9, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 10,
+    "kind": "text",
+    "payload": {
+      "text": "OP cx-c2: reply with the token cx-c2ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "a8e2bad7-981a-4b44-a447-5bc8b38d14cd",
+      "origin": "operator",
+      "operator_user_id": "2e21b6d931f357f07399cbbd8ec11273"
+    }
+  },
+  {
+    "seq": 11,
+    "kind": "text",
+    "payload": { "text": "cx-c2ACK\n" },
+    "meta": { "text_mode": "complete" }
+  },
+  {
+    "seq": 12,
+    "kind": "tool",
+    "payload": {
+      "name": "/bin/zsh -lc 'sleep 25; echo s1'",
+      "id": "codex-7379f4f9-4599-4df4-b7a9-59cb578e1d3d:item_1",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  { "seq": 13, "kind": "status", "payload": { "state": "interrupted" }, "meta": {} },
+  {
+    "seq": 14,
+    "kind": "text",
+    "payload": {
+      "text": "OP cx-c3: reply with the token cx-c3ACK, then continue with the remaining steps."
+    },
+    "meta": {
+      "message_id": "3a97a963-8756-480c-9760-d74e6bec9f91",
+      "origin": "operator",
+      "operator_user_id": "2e21b6d931f357f07399cbbd8ec11273"
+    }
+  },
+  {
+    "seq": 15,
+    "kind": "text",
+    "payload": { "text": "cx-c3ACK\n" },
+    "meta": { "text_mode": "complete" }
+  },
+  {
+    "seq": 16,
+    "kind": "tool",
+    "payload": {
+      "name": "/bin/zsh -lc 'sleep 25; echo s1'",
+      "id": "codex-71dcfa87-7475-447c-85f0-ba449922ddbf:item_1",
+      "has_output": false
+    },
+    "meta": { "tool_phase": "call" }
+  },
+  {
+    "seq": 17,
+    "kind": "status",
+    "payload": { "state": "failed", "detail": "Cancelled by user" },
+    "meta": {}
+  }
+]

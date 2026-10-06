@@ -1,0 +1,63 @@
+{
+  "B2Fc0": [
+    [149, "NOROOM"],
+    [315, "Running||||"],
+    [436, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "B2Fc1": [
+    [191, "NOROOM"],
+    [286, "Running||||"],
+    [377, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "B2Fc2": [
+    [122, "NOROOM"],
+    [301, "Running||||"],
+    [406, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "B2Fl0": [
+    [118, "NOROOM"],
+    [350, "Running||||"],
+    [443, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "B2Fl1": [
+    [133, "NOROOM"],
+    [350, "Running||||"],
+    [450, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "B2Fl2": [
+    [126, "NOROOM"],
+    [280, "Running||||"],
+    [382, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "B2LFc0": [
+    [122, "NOROOM"],
+    [297, "Running||||"],
+    [368, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "B2LFc1": [
+    [115, "NOROOM"],
+    [293, "Running||||"],
+    [364, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "B2LFc2": [
+    [113, "NOROOM"],
+    [281, "Running||||"],
+    [344, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "B2LFl0": [
+    [106, "NOROOM"],
+    [244, "Running||||"],
+    [304, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "B2LFl1": [
+    [117, "NOROOM"],
+    [258, "Running||||"],
+    [324, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "B2LFl2": [
+    [119, "NOROOM"],
+    [260, "Running||||"],
+    [323, "Recovery required|QUEUED · 1|||restored after server restart · claude ·"]
+  ],
+  "focus": { "B2F": { "c": ["BODY"], "l": ["BODY"] }, "B2LF": { "c": ["BODY"], "l": ["BODY"] } }
+}

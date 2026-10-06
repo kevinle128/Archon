@@ -1,0 +1,44 @@
+{
+  "c": [
+    {
+      "sel": "Iteration 1",
+      "ta": false,
+      "val": null,
+      "act": "BODY",
+      "go": "Go to iteration 2",
+      "status": "reading a finished iteration · the agent is working in iteration 2",
+      "t": 1790733199387
+    },
+    {
+      "sel": "Iteration 1",
+      "ta": false,
+      "val": null,
+      "act": "BODY",
+      "go": "Go to iteration 3",
+      "status": "reading a finished iteration · the agent is working in iteration 3",
+      "t": 1790733224026
+    }
+  ],
+  "l": [
+    {
+      "sel": "Iteration 2 · running",
+      "ta": true,
+      "val": "LP draft l",
+      "act": "TEXTAREA",
+      "go": "",
+      "status": "",
+      "t": 1790733199388
+    },
+    {
+      "sel": "Iteration 3 · running",
+      "ta": true,
+      "val": "LP draft l",
+      "act": "TEXTAREA",
+      "go": "",
+      "status": "",
+      "t": 1790733225387
+    }
+  ],
+  "goTxt": "Go to iteration 3",
+  "after": { "sel": "Iteration 3 · running", "ta": "LP draft c", "act": "TEXTAREA" }
+}

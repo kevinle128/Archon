@@ -119,6 +119,21 @@ export interface ToolRowFacts {
   runningElapsedMs?: number | null;
 }
 
+/**
+ * The open-row body bar, composed once in the core and split into two zones
+ * so a renderer can truncate one without truncating the other: `label`
+ * (family, body facts, and the resolved name when the chip fell back to it)
+ * is arbitrarily long — a Codex wrapped command, a long path — and is the
+ * only part meant to ellipsize; `badges` (runtime facts: interrupted/exit
+ * code/output state/duration) must stay fully visible next to the Raw
+ * toggle regardless of how long `label` is. Empty string when there are no
+ * badges.
+ */
+export interface ToolBodyBar {
+  readonly label: string;
+  readonly badges: string;
+}
+
 export interface ToolRowPresentation extends ToolPresentation {
   glyph: ToolStatusGlyph;
   statusLabel: ToolOutcome;
@@ -126,12 +141,16 @@ export interface ToolRowPresentation extends ToolPresentation {
   badges: ToolRowBadge[];
   /** Canonical provider-facing payload for the Raw disclosure; opaque to renderers. */
   rawPayload: ToolRawPayload;
-  /** Complete open-row body bar: family prefix plus fact text, composed once in the core. */
-  bodyBarText: string;
+  /** Open-row body bar, pre-split into a truncatable label and pinned badges. */
+  bodyBar: ToolBodyBar;
 }
 
 const MCP_PREFIX = 'mcp__';
-const SHELL_WRAPPER_PREFIXES = ["/bin/zsh -lc '", "/bin/bash -lc '"] as const;
+const SHELL_WRAPPER_BINARIES = ['/bin/zsh', '/bin/bash', 'zsh', 'bash'] as const;
+const SHELL_WRAPPER_FLAGS = ['-lc', '-c'] as const;
+const SHELL_WRAPPER_QUOTES = ["'", '"'] as const;
+/** The exact literal Codex's web_search tool name carries; see `stripWebSearchMarker`. */
+const WEB_SEARCH_MARKER_PREFIX = '🔍 Searching: ';
 
 const COMMAND_KEYS = ['command', 'cmd', 'script'] as const;
 const PATH_KEYS = [
@@ -185,6 +204,8 @@ const FAMILY_ALIASES: Record<string, ToolFamily> = {
   todo: 'todo',
   todowrite: 'todo',
   plan: 'todo',
+  taskcreate: 'todo',
+  taskupdate: 'todo',
   task: 'task',
   agent: 'task',
   subagent: 'task',
@@ -339,15 +360,39 @@ function isCommandLikeName(name: string): boolean {
   return /\s/.test(name);
 }
 
-/** Removes only a complete `/bin/zsh -lc '…'` or `/bin/bash -lc '…'` wrapper; incomplete wrappers stay untouched. */
+/**
+ * Removes only a complete `[/bin/]{zsh,bash} {-lc,-c} '…'`/`"…"` wrapper —
+ * either shell, either invocation flag, either quote style, with or without
+ * the absolute `/bin/` prefix. An incomplete wrapper (missing the matching
+ * closing quote) stays untouched.
+ */
 function stripShellWrapper(name: string): string {
-  if (name.length > MAX_HEADLINE_SOURCE_CODE_UNITS || !name.endsWith("'")) return name;
-  for (const prefix of SHELL_WRAPPER_PREFIXES) {
-    if (name.startsWith(prefix) && name.length > prefix.length) {
-      return name.slice(prefix.length, -1);
+  if (name.length > MAX_HEADLINE_SOURCE_CODE_UNITS) return name;
+  for (const binary of SHELL_WRAPPER_BINARIES) {
+    for (const flag of SHELL_WRAPPER_FLAGS) {
+      for (const quote of SHELL_WRAPPER_QUOTES) {
+        const prefix = `${binary} ${flag} ${quote}`;
+        if (name.startsWith(prefix) && name.length > prefix.length && name.endsWith(quote)) {
+          return name.slice(prefix.length, -1);
+        }
+      }
     }
   }
   return name;
+}
+
+/**
+ * Codex's web_search tool sends a name-only call whose whole name is this
+ * exact marker plus the query, and no structured input. Duck-types on that
+ * shape rather than a provider check: the query becomes the headline and the
+ * row joins the web family like any other search/fetch call.
+ */
+function stripWebSearchMarker(name: string): string | null {
+  if (name.length > MAX_HEADLINE_SOURCE_CODE_UNITS || !name.startsWith(WEB_SEARCH_MARKER_PREFIX)) {
+    return null;
+  }
+  const query = name.slice(WEB_SEARCH_MARKER_PREFIX.length);
+  return query.length > 0 ? query : null;
 }
 
 /**
@@ -606,9 +651,14 @@ function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation
     name.length <= MAX_ALIAS_NAME_CODE_UNITS
       ? (FAMILY_ALIASES[normalizeAlias(name)] ?? null)
       : null;
+  // Codex's name-only convention (no structured input) can arrive as a
+  // missing `input` (record === null) or an empty object ({}) — the same
+  // "no keys" test the shell fallback below already uses.
+  const webSearchQuery = hasKeys(record) ? null : stripWebSearchMarker(name);
   const family =
     alias ??
     (record !== null ? inferFamily(record) : null) ??
+    (webSearchQuery !== null ? 'web' : null) ??
     (isCommandLikeName(name) && !hasKeys(record) ? 'shell' : null) ??
     'generic';
 
@@ -699,7 +749,9 @@ function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation
       break;
     }
     case 'web':
-      headline = boundedString(firstStringField(record, URL_KEYS));
+      headline = hasKeys(record)
+        ? boundedString(firstStringField(record, URL_KEYS))
+        : webSearchQuery;
       headlineKind = 'path';
       break;
     case 'generic': {
@@ -719,6 +771,15 @@ function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation
     body,
     bodyFacts,
   };
+}
+
+/**
+ * Headline text for a row that already prints its label as a chip. A row with
+ * no facts of its own carries the label as its headline; showing that text
+ * again would repeat the label, so the row prints nothing after the chip.
+ */
+export function headlineAfterLabel(presentation: { label: string; headline: string }): string {
+  return presentation.headline === presentation.label ? '' : presentation.headline;
 }
 
 /** Safe generic row used when resolution itself fails; the sent name is only reused if it is chip-worthy. */
@@ -877,17 +938,22 @@ export function toolRowPresentation(
   // an over-long tool name), so it stays readable and selectable.
   const isTaskBody = content.body?.kind === 'task';
   const sentName = safeRawName(rawPayload);
+  // Stripped the same way the shell headline and terminal body are — a
+  // fallen-back name is most often a Codex wrapped command, so the bar must
+  // never show the wrapper the headline and body have already dropped.
+  const strippedSentName = stripShellWrapper(sentName);
   const barName =
-    content.label !== sentName ? sanitizeBounded(sentName, MAX_ALIAS_NAME_CODE_UNITS).text : null;
+    content.label !== sentName
+      ? sanitizeBounded(strippedSentName, MAX_ALIAS_NAME_CODE_UNITS).text
+      : null;
   const barBadges = badges
     .filter(badge => badge.kind !== 'placeholder' && badge.kind !== 'diff')
     .filter(badge => !(isTaskBody && badge.kind === 'count'))
     .map(badge => badge.text);
-  const bodyBarText = [
+  const bodyBarLabel = [
     content.family,
     ...content.bodyFacts,
     ...(barName !== null && barName.length > 0 ? [barName] : []),
-    ...barBadges,
   ].join(' · ');
 
   return {
@@ -897,7 +963,7 @@ export function toolRowPresentation(
     initialOpen: outcome === 'failed',
     badges,
     rawPayload,
-    bodyBarText,
+    bodyBar: { label: bodyBarLabel, badges: barBadges.join(' · ') },
   };
 }
 
@@ -1165,7 +1231,11 @@ function resolveToolBody(
 
   switch (family) {
     case 'shell': {
-      const sent = firstStringField(record, COMMAND_KEYS) ?? name;
+      // Same normalizer as the headline (`shellHeadline`): a Codex name-only
+      // call carries its command as the wrapped tool name, and the body
+      // shows the same stripped text the headline already committed to —
+      // only Raw keeps the untouched name (`rawPayload`, captured separately).
+      const sent = firstStringField(record, COMMAND_KEYS) ?? stripShellWrapper(name);
       const command = sanitizeBounded(sent, MAX_BODY_COMMAND_CODE_UNITS);
       return {
         kind: 'terminal',

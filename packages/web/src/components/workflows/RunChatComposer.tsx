@@ -16,7 +16,7 @@ export function RunChatComposer(props: RunChatComposerProps): React.ReactElement
   return (
     <form
       aria-label="Run conversation composer"
-      className="border-t border-border bg-surface p-3"
+      className="sticky bottom-0 border-t border-border bg-background p-3"
       title={props.disabledReason ?? undefined}
       onSubmit={(event: FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
@@ -35,7 +35,7 @@ export function RunChatComposer(props: RunChatComposerProps): React.ReactElement
           disabled={disabled}
           rows={1}
           placeholder={placeholder}
-          className="min-h-10 flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-11 flex-1 resize-none rounded-[10px] border border-border bg-background px-3 py-2.5 text-sm text-text-primary transition-colors duration-150 placeholder:text-text-tertiary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50"
           onChange={(event: ChangeEvent<HTMLTextAreaElement>): void => {
             props.onValueChange(event.target.value);
           }}
@@ -43,7 +43,7 @@ export function RunChatComposer(props: RunChatComposerProps): React.ReactElement
         <button
           type="submit"
           disabled={disabled || props.value.trim().length === 0}
-          className="h-10 rounded-lg bg-primary px-4 text-sm text-primary-foreground hover:bg-accent-hover disabled:opacity-50"
+          className="h-11 cursor-pointer rounded-[10px] bg-accent px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
         >
           {props.sending ? 'Sending…' : 'Send'}
         </button>

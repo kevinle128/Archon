@@ -1,0 +1,140 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793874234,
+  "end": 1790793884445,
+  "procs": [
+    {
+      "pid": 14408,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790793874234,
+      "last": 1790793884120
+    },
+    {
+      "pid": 14422,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793874234,
+      "last": 1790793880504
+    },
+    {
+      "pid": 14579,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 14589,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 14594,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 14598,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 14599,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 14604,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 14605,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 17512,
+      "cmd": "zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>n",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 17816,
+      "cmd": "sleep 25",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 15071,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 15581,
+      "cmd": "node context7-mcp",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 15593,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793874234,
+      "last": 1790793877416
+    },
+    {
+      "pid": 18093,
+      "cmd": "zsh -c source snapshot-zsh-1790793870590-8q2u1v.sh 2>null ||",
+      "first": 1790793874234,
+      "last": 1790793884120
+    },
+    {
+      "pid": 18095,
+      "cmd": "sleep 6",
+      "first": 1790793874234,
+      "last": 1790793878026
+    },
+    {
+      "pid": 18317,
+      "cmd": "<defunct>",
+      "first": 1790793877725,
+      "last": 1790793878026
+    },
+    {
+      "pid": 18364,
+      "cmd": "<defunct>",
+      "first": 1790793878371,
+      "last": 1790793878371
+    },
+    {
+      "pid": 18461,
+      "cmd": "sleep 6",
+      "first": 1790793878371,
+      "last": 1790793884120
+    },
+    {
+      "pid": 18465,
+      "cmd": "<defunct>",
+      "first": 1790793878678,
+      "last": 1790793878989
+    },
+    {
+      "pid": 18485,
+      "cmd": "<defunct>",
+      "first": 1790793879295,
+      "last": 1790793879597
+    },
+    {
+      "pid": 18526,
+      "cmd": "<defunct>",
+      "first": 1790793879898,
+      "last": 1790793879898
+    }
+  ]
+}

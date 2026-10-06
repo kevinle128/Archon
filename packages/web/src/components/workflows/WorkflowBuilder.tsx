@@ -38,7 +38,7 @@ import type { DagNodeData, DagFlowNode } from './DagNodeComponent';
 const NODE_LIBRARY_WIDTH_KEY = 'archon:nodeLibraryWidth';
 const NODE_LIBRARY_MIN_WIDTH = 160;
 const NODE_LIBRARY_MAX_WIDTH = 400;
-const NODE_LIBRARY_DEFAULT_WIDTH = 208; // w-52
+const NODE_LIBRARY_DEFAULT_WIDTH = 240;
 const ROUTE_OUTCOMES = [
   'positive',
   'negative',
@@ -163,7 +163,7 @@ function NodeLibraryPanel({
         aria-orientation="vertical"
         aria-label="Resize node library panel"
         onMouseDown={onMouseDown}
-        className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-accent/40 transition-colors z-10"
+        className="absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize transition-colors duration-200 hover:bg-accent-muted focus-visible:bg-accent-muted motion-reduce:transition-none"
         title="Drag to resize"
       />
     </div>
@@ -215,7 +215,7 @@ function WorkflowBuilderInner(): React.ReactElement {
   });
   const commandList: CommandEntry[] = commands ?? [];
 
-  const { pushSnapshot, undo, redo } = useBuilderUndo();
+  const { pushSnapshot, undo, redo, canUndo, canRedo } = useBuilderUndo();
   const { zoom } = useViewport();
 
   const validationIssues = useBuilderValidation(workflowName, workflowDescription, nodes, edges);
@@ -408,7 +408,7 @@ function WorkflowBuilderInner(): React.ReactElement {
       const result = await createConversation(selectedProjectId ?? undefined);
       const conversationId = result.conversationId;
       await runWorkflow(workflowName.trim(), conversationId, '');
-      navigate(`/legacy/chat/${conversationId}`);
+      navigate(`/chat/${conversationId}`);
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error');
       console.error('[workflow-builder] workflow.run_failed', { workflowName, error });
@@ -570,6 +570,10 @@ function WorkflowBuilderInner(): React.ReactElement {
         onLoadWorkflow={(name): void => {
           void loadWorkflow(name);
         }}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
       />
 
       {commandsError && (
@@ -583,7 +587,7 @@ function WorkflowBuilderInner(): React.ReactElement {
         {showLibrary && <NodeLibraryPanel commands={commandList} isLoading={commandsLoading} />}
 
         {/* Center area */}
-        <div className="flex-1 relative overflow-hidden flex">
+        <div className="flex-1 relative overflow-hidden flex flex-col">
           {yamlViewMode === 'full' ? (
             <YamlCodeView definition={buildDefinition()} mode="full" />
           ) : (
@@ -605,8 +609,14 @@ function WorkflowBuilderInner(): React.ReactElement {
               </div>
 
               {yamlViewMode === 'split' && (
-                <div className="w-80 border-l border-border shrink-0">
-                  <YamlCodeView definition={buildDefinition()} mode="split" />
+                <div className="h-60 shrink-0 border-t border-border">
+                  <YamlCodeView
+                    definition={buildDefinition()}
+                    mode="split"
+                    onCollapse={(): void => {
+                      setYamlViewMode('hidden');
+                    }}
+                  />
                 </div>
               )}
             </>
@@ -615,7 +625,7 @@ function WorkflowBuilderInner(): React.ReactElement {
 
         {/* Right panel: Node Inspector */}
         {selectedNodeId && selectedNode && yamlViewMode !== 'full' && (
-          <div className="w-72 shrink-0">
+          <div className="w-80 shrink-0">
             <NodeInspector
               node={selectedNode.data}
               commands={commandList}

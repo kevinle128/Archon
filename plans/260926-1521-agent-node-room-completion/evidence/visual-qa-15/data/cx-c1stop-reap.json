@@ -1,0 +1,168 @@
+{
+  "root": 53226,
+  "mark": null,
+  "procs": [
+    {
+      "pid": 70793,
+      "cmd": "codex exec --experimental-json --config skills.include_instr",
+      "first": 1790747020164,
+      "last": 1790747028078
+    },
+    {
+      "pid": 70813,
+      "cmd": "git ls-remote https:/codex-warp.git HEAD",
+      "first": 1790747020164,
+      "last": 1790747021373
+    },
+    {
+      "pid": 70814,
+      "cmd": "git remote-https https:/codex-warp.git https:/codex-warp.git",
+      "first": 1790747020164,
+      "last": 1790747021373
+    },
+    {
+      "pid": 70816,
+      "cmd": "git-remote-https https:/codex-warp.git https:/codex-warp.git",
+      "first": 1790747020164,
+      "last": 1790747021373
+    },
+    {
+      "pid": 70902,
+      "cmd": "zsh -lc if [[ -n \"$ZDOTDIR\" ]]; then\\012 rc=\"$ZDOTDIR/.zshrc",
+      "first": 1790747022620,
+      "last": 1790747023829
+    },
+    {
+      "pid": 70913,
+      "cmd": "(go)",
+      "first": 1790747022620,
+      "last": 1790747022620
+    },
+    {
+      "pid": 70930,
+      "cmd": "(bash)",
+      "first": 1790747022913,
+      "last": 1790747022913
+    },
+    {
+      "pid": 70977,
+      "cmd": "(bash)",
+      "first": 1790747022913,
+      "last": 1790747022913
+    },
+    {
+      "pid": 70979,
+      "cmd": "(bash)",
+      "first": 1790747022913,
+      "last": 1790747022913
+    },
+    {
+      "pid": 70980,
+      "cmd": "(sort)",
+      "first": 1790747022913,
+      "last": 1790747022913
+    },
+    {
+      "pid": 70981,
+      "cmd": "(uniq)",
+      "first": 1790747022913,
+      "last": 1790747022913
+    },
+    {
+      "pid": 70985,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790747023216,
+      "last": 1790747028078
+    },
+    {
+      "pid": 70986,
+      "cmd": "node_repl",
+      "first": 1790747023216,
+      "last": 1790747028078
+    },
+    {
+      "pid": 70987,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790747023216,
+      "last": 1790747028078
+    },
+    {
+      "pid": 71262,
+      "cmd": "node_repl",
+      "first": 1790747023216,
+      "last": 1790747028078
+    },
+    {
+      "pid": 71336,
+      "cmd": "(kubectl)",
+      "first": 1790747023216,
+      "last": 1790747023216
+    },
+    {
+      "pid": 71365,
+      "cmd": "(zsh)",
+      "first": 1790747023522,
+      "last": 1790747023522
+    },
+    {
+      "pid": 71413,
+      "cmd": "(zsh)",
+      "first": 1790747023522,
+      "last": 1790747023522
+    },
+    {
+      "pid": 71414,
+      "cmd": "(zsh)",
+      "first": 1790747023522,
+      "last": 1790747023522
+    },
+    {
+      "pid": 71415,
+      "cmd": "(tail)",
+      "first": 1790747023522,
+      "last": 1790747023522
+    },
+    {
+      "pid": 71534,
+      "cmd": "(zsh)",
+      "first": 1790747023522,
+      "last": 1790747023522
+    },
+    {
+      "pid": 71544,
+      "cmd": "(zsh)",
+      "first": 1790747023522,
+      "last": 1790747023522
+    },
+    {
+      "pid": 71545,
+      "cmd": "(zsh)",
+      "first": 1790747023522,
+      "last": 1790747023522
+    },
+    {
+      "pid": 71546,
+      "cmd": "(printf)",
+      "first": 1790747023522,
+      "last": 1790747023522
+    },
+    {
+      "pid": 71547,
+      "cmd": "(awk)",
+      "first": 1790747023522,
+      "last": 1790747023522
+    },
+    {
+      "pid": 71783,
+      "cmd": "(zsh)",
+      "first": 1790747023829,
+      "last": 1790747023829
+    },
+    {
+      "pid": 71791,
+      "cmd": "(zsh)",
+      "first": 1790747023829,
+      "last": 1790747023829
+    }
+  ]
+}

@@ -1,28 +1,34 @@
-import { Pause } from 'lucide-react';
+import { Check, CircleDashed, CircleHelp, Minus, Pause, X } from 'lucide-react';
 
+/** Node/run status glyph. One stroke width; color carries the state. */
 export function StatusIcon({ status }: { status: string }): React.ReactElement {
   switch (status) {
     case 'completed':
-      return <span className="text-success text-sm">&#x2713;</span>;
+      return <Check aria-hidden="true" strokeWidth={2} className="h-4 w-4 text-success" />;
     case 'running':
       return (
-        <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent border-t-transparent motion-reduce:animate-none" />
       );
     case 'paused':
-      return <Pause className="h-3 w-3 text-warning" />;
+      return <Pause aria-hidden="true" strokeWidth={2} className="h-4 w-4 text-warning" />;
     case 'awaiting':
       return (
-        <span className="text-warning text-sm" aria-label="waiting on you" role="img">
-          ?
-        </span>
+        <CircleHelp
+          strokeWidth={2}
+          className="h-4 w-4 text-accent"
+          aria-label="waiting on you"
+          role="img"
+        />
       );
     case 'failed':
-      return <span className="text-error text-sm">&#x2717;</span>;
+      return <X aria-hidden="true" strokeWidth={2} className="h-4 w-4 text-error" />;
     case 'cancelled':
-      return <span className="text-text-secondary text-sm">&#x2715;</span>;
+      return <X aria-hidden="true" strokeWidth={2} className="h-4 w-4 text-text-tertiary" />;
     case 'skipped':
-      return <span className="text-text-secondary text-sm">&#x2014;</span>;
+      return <Minus aria-hidden="true" strokeWidth={2} className="h-4 w-4 text-text-tertiary" />;
     default:
-      return <span className="text-text-secondary text-sm">&#x25CB;</span>;
+      return (
+        <CircleDashed aria-hidden="true" strokeWidth={2} className="h-4 w-4 text-text-tertiary" />
+      );
   }
 }

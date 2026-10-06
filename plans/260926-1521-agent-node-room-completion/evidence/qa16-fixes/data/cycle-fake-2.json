@@ -1,0 +1,29 @@
+{
+  "cycle": "fake-2",
+  "runId": "47c22971fcc7cd95ed99dda49c22ef07",
+  "tag": "Qmuoi5eu0",
+  "killedAt": 1790796755190,
+  "downMs": 6440,
+  "injectStatus": 200,
+  "injectState": "sent",
+  "qBefore": [
+    [" keep queued", "queued"],
+    ["0-TWO inject", "sent"]
+  ],
+  "opRowsBefore": 0,
+  "qAfter": [
+    [" keep queued", "queued"],
+    ["0-TWO inject", "queued"]
+  ],
+  "execAfter": "recovery_required",
+  "bandRestored": "PROMPT · QA16-OPERATOR <<E2E_SCENARIO>>{\"interruptible\":true,\"emitTool\":true,\"delayMs\":30000}<</E2E_SCENARIO>> Qmuoi5eu0 run ASSISTANT [e2e-fake] tool pass ▶ unknown – Read HITL_TOOL_INPUT.txt output unknown QUEUED · 2 saved to server ▾ 1 Qmuoi5eu0-ONE keep queued 2 Qmuoi5eu0-TWO inject restored after server restart · Resume the workflow to continue",
+  "abandonStatus": 200,
+  "qEnd": [
+    [" keep queued", "queued"],
+    ["0-TWO inject", "queued"]
+  ],
+  "execEnd": "finished",
+  "bandAbandoned": "PROMPT · QA16-OPERATOR <<E2E_SCENARIO>>{\"interruptible\":true,\"emitTool\":true,\"delayMs\":30000}<</E2E_SCENARIO>> Qmuoi5eu0 run ASSISTANT [e2e-fake] tool pass ▶ unknown – Read HITL_TOOL_INPUT.txt output unknown NEVER SENT · 2 ▾ 1 Qmuoi5eu0-ONE keep queued 2 Qmuoi5eu0-TWO inject node finished · none of this was sent",
+  "neverSentShown": true,
+  "twoQueuedShown": true
+}

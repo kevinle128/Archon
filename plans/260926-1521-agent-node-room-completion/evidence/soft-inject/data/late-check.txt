@@ -1,0 +1,4 @@
+  frames(gaps,never,stopMissing,intr): {'c': ([], 0, 0, 0), 'l': ([], 0, 0, 0)} alert frames: {'c': 0, 'l': 0}
+late5 completed [('sent', None, 0)] [(8, 'late5 LATE: ')]
+  frames(gaps,never,stopMissing,intr): {'l': ([], 0, 0, 0), 'c': ([], 0, 0, 0)} alert frames: {'l': 0, 'c': 0}
+late6 completed [('sent', None, 0)] [(8, 'late6 LATE: ')]

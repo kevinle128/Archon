@@ -1,0 +1,16 @@
+{
+  "l": [
+    [1, "ROOM|Failed|NEVER SENT · 1||||||rows|"],
+    [8, "NOROOM|||||||"],
+    [7043, "NOROOM|||||||ERRPAGE"],
+    [10048, "NOROOM|||||||"],
+    [17080, "NOROOM|||||||ERRPAGE"]
+  ],
+  "lurl": "http://localhost:5274/legacy/workflows/runs/dda67df1c06b96774ee97cee5db8b88a?node=fake-node",
+  "c": [
+    [10, "ROOM|Failed|NEVER SENT · 1||||||rows|"],
+    [13, "NOROOM|||||||"],
+    [23, "NOROOM|||||||ERRPAGE"]
+  ],
+  "curl": "http://localhost:5274/console/p/2bc7e0c52ec57ac8078ef88244fdce41/r/dda67df1c06b96774ee97cee5db8b88a?node=fake-node"
+}

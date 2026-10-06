@@ -1,0 +1,13 @@
+name: vq16-fake-cap
+description: "Scratch - fake loop that hits its 10-iteration cap."
+mutates_checkout: false
+nodes:
+  - id: cap-loop
+    provider: e2e-fake
+    model: e2e-fake-model
+    loop:
+      prompt: |
+        <<E2E_SCENARIO>>{"emitTool":true,"delayMs":800}<</E2E_SCENARIO>>
+        iteration
+      until: E2E_LOOP_DONE
+      max_iterations: 10

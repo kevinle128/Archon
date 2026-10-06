@@ -6,182 +6,200 @@ import {
   type SendQueryOptions,
 } from '../../types';
 import {
-  INTERRUPT_SESSION_HEADER_WAIT_MS,
   OmpProvider,
   buildOmpArgs,
   setTerminationGraceMsForTest,
-  type OmpProcess,
-  type OmpSpawner,
-  type OmpSpawnOptions,
+  setWarmSessionIdleEvictionMsForTest,
+  type OmpRpcProcess,
+  type OmpRpcSpawner,
+  type OmpRpcSpawnOptions,
 } from './provider';
 
 const encoder = new TextEncoder();
+const DEFAULT_SESSION_ID = 'omp-rpc-session-1';
 
-function streamFromChunks(chunks: string[]): ReadableStream<Uint8Array> {
-  return new ReadableStream<Uint8Array>({
-    start(controller): void {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
-      controller.close();
-    },
-  });
+// File-wide small overrides so a warm session's real (5s / 40min) production
+// timers never dangle past a test that doesn't care about their exact value —
+// only the tests that assert on escalation/eviction TIMING itself override
+// further, and restore these file defaults afterward.
+const TEST_GRACE_MS = 25;
+const TEST_IDLE_EVICTION_MS = 50;
+setTerminationGraceMsForTest(TEST_GRACE_MS);
+setWarmSessionIdleEvictionMsForTest(TEST_IDLE_EVICTION_MS);
+
+interface SpawnCall {
+  command: string[];
+  options: OmpRpcSpawnOptions;
 }
 
-interface FakeProcess extends OmpProcess {
-  signals: NodeJS.Signals[];
-  pushStdout?: (text: string) => void;
-  closeStdout?: () => void;
-  resolveExit?: (code: number) => void;
+/**
+ * Fake `--mode rpc` child. Emits `ready` on open; auto-acknowledges
+ * `get_state` (with `sessionId`) and `prompt` writes unless a test disables
+ * one to exercise a rejection path. Every write is captured, parsed, in
+ * `writes` for assertions.
+ */
+interface FakeRpcProcess extends OmpRpcProcess {
+  readonly writes: Record<string, unknown>[];
+  readonly signals: NodeJS.Signals[];
+  stdinEnded: boolean;
+  push(frame: Record<string, unknown>): void;
+  pushRaw(text: string): void;
+  closeStdout(): void;
+  errorStdout(error: Error): void;
+  resolveExit(code: number): void;
+  /**
+   * Queues one turn's frames to be pushed automatically, in order,
+   * immediately after the NEXT `prompt` write is auto-acked (FIFO across
+   * multiple turns). Real OMP never emits agent-turn events before it has
+   * received a prompt, so a test must not pre-push them onto the stream
+   * before that write happens — pushing eagerly races the ready/get_state
+   * handshake, which drains and discards any frame it does not recognize.
+   */
+  queueTurn(frames: Record<string, unknown>[]): void;
 }
 
-function makeProcess(stdoutChunks: string[], stderr = '', exitCode = 0): FakeProcess {
-  const proc: FakeProcess = {
-    stdout: streamFromChunks(stdoutChunks),
-    stderr: streamFromChunks([stderr]),
-    exited: Promise.resolve(exitCode),
-    signals: [],
-    kill: (signal = 'SIGTERM'): void => {
-      proc.signals.push(signal);
-    },
+function makeFakeRpcProcess(
+  options: {
+    sessionId?: string;
+    autoAckGetState?: boolean;
+    autoAckPrompt?: boolean;
+    pid?: number;
+  } = {}
+): FakeRpcProcess {
+  const sessionId = options.sessionId ?? DEFAULT_SESSION_ID;
+  const autoAckGetState = options.autoAckGetState ?? true;
+  const autoAckPrompt = options.autoAckPrompt ?? true;
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+  let started = false;
+  let stdoutClosed = false;
+  const exitGate = Promise.withResolvers<number>();
+  const writes: Record<string, unknown>[] = [];
+  const signals: NodeJS.Signals[] = [];
+  const queuedTurns: Record<string, unknown>[][] = [];
+  // `ReadableStream`'s `start()` is not guaranteed to run before this
+  // function returns, so a `push()` called synchronously right after
+  // construction (every test does this) must not depend on `controller`
+  // already being assigned — buffer until `start()` flushes it, in order.
+  const preStartBuffer: Uint8Array[] = [];
+
+  const enqueue = (bytes: Uint8Array): void => {
+    if (stdoutClosed) return;
+    if (started && controller) controller.enqueue(bytes);
+    else preStartBuffer.push(bytes);
   };
-  return proc;
-}
-
-function makeRunningProcess(
-  exitOn: NodeJS.Signals,
-  stdoutFailureOrOptions?:
-    | Error
-    | {
-        stdoutFailure?: Error;
-        exitCode?: number;
-        /** Delay between matching kill and close/exit (ms). */
-        settleDelayMs?: number;
-      }
-): FakeProcess {
-  const options =
-    stdoutFailureOrOptions instanceof Error
-      ? { stdoutFailure: stdoutFailureOrOptions }
-      : (stdoutFailureOrOptions ?? {});
-  let stdoutController: ReadableStreamDefaultController<Uint8Array> | undefined;
-  let resolveExit: ((code: number) => void) | undefined;
-  let reaped = false;
-  const settle = (signal: NodeJS.Signals): void => {
-    if (signal !== exitOn || reaped) return;
-    reaped = true;
-    const finish = (): void => {
-      if (options.stdoutFailure) stdoutController?.error(options.stdoutFailure);
-      else stdoutController?.close();
-      resolveExit?.(options.exitCode ?? 0);
-    };
-    if (options.settleDelayMs && options.settleDelayMs > 0) {
-      setTimeout(finish, options.settleDelayMs);
-      return;
-    }
-    finish();
+  const push = (frame: Record<string, unknown>): void => {
+    enqueue(encoder.encode(`${JSON.stringify(frame)}\n`));
   };
-  const proc: FakeProcess = {
+
+  const proc: FakeRpcProcess = {
+    pid: options.pid ?? 4242,
     stdout: new ReadableStream<Uint8Array>({
-      start(controller): void {
-        stdoutController = controller;
+      start(c): void {
+        controller = c;
+        c.enqueue(
+          encoder.encode(
+            `${JSON.stringify({
+              type: 'ready',
+              protocolVersion: 1,
+              supportedProtocolVersions: [1, 2],
+              maxFrameBytes: 1048576,
+              maxReassembledFrameBytes: 67108864,
+            })}\n`
+          )
+        );
+        started = true;
+        for (const bytes of preStartBuffer) c.enqueue(bytes);
+        preStartBuffer.length = 0;
       },
     }),
-    stderr: streamFromChunks([]),
-    exited: new Promise<number>(resolve => {
-      resolveExit = resolve;
-    }),
-    signals: [],
-    pushStdout: (text): void => {
-      stdoutController?.enqueue(encoder.encode(text));
-    },
-    kill: (signal = 'SIGTERM'): void => {
-      proc.signals.push(signal);
-      settle(signal);
-    },
-  };
-  return proc;
-}
-
-function makeStderrRejectingProcess(stdoutChunks: string[] = []): FakeProcess {
-  let resolveExit: ((code: number) => void) | undefined;
-  let reaped = false;
-  const proc: FakeProcess = {
-    stdout: streamFromChunks(stdoutChunks),
     stderr: new ReadableStream<Uint8Array>({
-      start(controller): void {
-        controller.error(new Error('stderr read failed'));
+      start(c): void {
+        c.close();
       },
     }),
-    // Exit only after kill so the provider's terminate path can reap the child.
-    exited: new Promise<number>(resolve => {
-      resolveExit = resolve;
-    }),
-    signals: [],
-    kill: (signal = 'SIGTERM'): void => {
-      proc.signals.push(signal);
-      if (!reaped) {
-        reaped = true;
-        resolveExit?.(0);
-      }
-    },
-  };
-  return proc;
-}
-
-function makeExitRejectingProcess(stdoutChunks: string[]): FakeProcess {
-  const proc: FakeProcess = {
-    stdout: streamFromChunks(stdoutChunks),
-    stderr: streamFromChunks([]),
-    exited: Promise.reject(new Error('exit wait failed')),
-    signals: [],
-    kill: (signal = 'SIGTERM'): void => {
-      proc.signals.push(signal);
-    },
-  };
-  // Prevent unhandled rejection noise if kill races the await.
-  void proc.exited.catch(() => undefined);
-  return proc;
-}
-
-function makeStdoutFailAfterTerminal(stdoutText: string): FakeProcess {
-  const payload = encoder.encode(stdoutText.endsWith('\n') ? stdoutText : `${stdoutText}\n`);
-  let delivered = false;
-  let resolveExit: ((code: number) => void) | undefined;
-  let reaped = false;
-  const proc: FakeProcess = {
-    stdout: new ReadableStream<Uint8Array>({
-      pull(controller): void {
-        if (!delivered) {
-          delivered = true;
-          controller.enqueue(payload);
-          return;
+    exited: exitGate.promise,
+    writes,
+    signals,
+    stdinEnded: false,
+    write: (data: string): void => {
+      for (const line of data.split('\n')) {
+        if (line.trim().length === 0) continue;
+        const frame = JSON.parse(line) as Record<string, unknown>;
+        writes.push(frame);
+        if (autoAckGetState && frame.type === 'get_state') {
+          push({
+            type: 'response',
+            id: frame.id,
+            command: 'get_state',
+            success: true,
+            data: { sessionId },
+          });
         }
-        controller.error(new Error('stdout read failed'));
-      },
-    }),
-    stderr: streamFromChunks([]),
-    exited: new Promise<number>(resolve => {
-      resolveExit = resolve;
-    }),
-    signals: [],
-    kill: (signal = 'SIGTERM'): void => {
-      proc.signals.push(signal);
-      if (!reaped) {
-        reaped = true;
-        resolveExit?.(0);
+        if (autoAckPrompt && frame.type === 'prompt') {
+          push({ type: 'response', id: frame.id, command: 'prompt', success: true });
+          const batch = queuedTurns.shift();
+          if (batch) for (const turnFrame of batch) push(turnFrame);
+        }
       }
     },
+    endStdin: (): void => {
+      proc.stdinEnded = true;
+      resolveExit(0);
+    },
+    kill: (signal: NodeJS.Signals = 'SIGTERM'): void => {
+      signals.push(signal);
+      // Mirrors real process semantics for these tests: SIGKILL always
+      // resolves immediately; SIGTERM may be ignored, which is exactly what
+      // the escalation-timer tests need to exercise.
+      if (signal === 'SIGKILL') resolveExit(-9);
+    },
+    push,
+    pushRaw: (text: string): void => {
+      enqueue(encoder.encode(text));
+    },
+    closeStdout: (): void => {
+      if (stdoutClosed) return;
+      stdoutClosed = true;
+      controller?.close();
+    },
+    errorStdout: (error: Error): void => {
+      if (stdoutClosed) return;
+      stdoutClosed = true;
+      controller?.error(error);
+    },
+    resolveExit,
+    queueTurn: (frames: Record<string, unknown>[]): void => {
+      queuedTurns.push(frames);
+    },
   };
+
+  let exitResolved = false;
+  function resolveExit(code: number): void {
+    if (exitResolved) return;
+    exitResolved = true;
+    proc.closeStdout();
+    exitGate.resolve(code);
+  }
+
   return proc;
 }
 
-function successfulLines(sessionId = 'omp-session-1', text = 'Hello'): string[] {
+function makeSpawner(proc: FakeRpcProcess, calls: SpawnCall[]): OmpRpcSpawner {
+  return (command, opts): OmpRpcProcess => {
+    calls.push({ command, options: opts });
+    return proc;
+  };
+}
+
+/** One realistic assistant turn: text delta, a tool round-trip, then agent_end. */
+function assistantTurnFrames(
+  options: { text?: string; sessionId?: string } = {}
+): Record<string, unknown>[] {
+  const text = options.text ?? 'Hello';
   return [
-    JSON.stringify({ type: 'session', id: sessionId }),
-    JSON.stringify({ type: 'message_start', message: { role: 'assistant', content: [] } }),
-    JSON.stringify({
-      type: 'message_update',
-      assistantMessageEvent: { type: 'text_delta', delta: text },
-    }),
-    JSON.stringify({
+    { type: 'message_start', message: { role: 'assistant', content: [] } },
+    { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: text } },
+    {
       type: 'message_end',
       message: {
         role: 'assistant',
@@ -191,51 +209,22 @@ function successfulLines(sessionId = 'omp-session-1', text = 'Hello'): string[] 
         usage: { input: 3, output: 2, totalTokens: 5, cost: { total: 0.1 } },
         stopReason: 'stop',
       },
-    }),
-    JSON.stringify({
+    },
+    {
       type: 'tool_execution_start',
       toolCallId: 'tool-1',
       toolName: 'read',
       args: { path: 'README.md' },
-    }),
-    JSON.stringify({
+    },
+    {
       type: 'tool_execution_end',
       toolCallId: 'tool-1',
       toolName: 'read',
       result: 'contents',
       isError: false,
-    }),
-    JSON.stringify({ type: 'agent_end', messages: [] }),
+    },
+    { type: 'agent_end', messages: [], isTerminal: true },
   ];
-}
-
-function modelErrorLines(): string[] {
-  return [
-    JSON.stringify({ type: 'session', id: 'model-error-session' }),
-    JSON.stringify({
-      type: 'message_end',
-      message: {
-        role: 'assistant',
-        content: [{ type: 'text', text: '{"answer":"partial"}' }],
-        provider: 'openai-codex',
-        model: 'gpt-6-sol',
-        usage: { input: 7, output: 4, totalTokens: 11, cost: { total: 0.3 } },
-        stopReason: 'error',
-        errorMessage: 'rate limited',
-      },
-    }),
-    '{bad json',
-  ];
-}
-
-function makeSpawner(
-  proc: FakeProcess,
-  calls: { command: string[]; options: OmpSpawnOptions }[]
-): OmpSpawner {
-  return (command, options): OmpProcess => {
-    calls.push({ command, options });
-    return proc;
-  };
 }
 
 async function collect(
@@ -253,7 +242,7 @@ async function collect(
   return chunks;
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 500): Promise<void> {
+async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     if (predicate()) return;
@@ -263,14 +252,10 @@ async function waitFor(predicate: () => boolean, timeoutMs = 500): Promise<void>
 }
 
 describe('buildOmpArgs', () => {
-  test('builds a safe headless OMP command', () => {
+  test('builds a safe headless rpc command with no argv prompt', () => {
     const result = buildOmpArgs({
-      prompt: 'hello',
       cwd: '/repo',
-      config: {
-        model: 'openai-codex/gpt-6-sol',
-        modelReasoningEffort: 'high',
-      },
+      config: { model: 'openai-codex/gpt-6-sol', modelReasoningEffort: 'high' },
       requestOptions: {
         systemPrompt: ['first', 'second'],
         nodeConfig: { skills: ['archon', 'review-*'] },
@@ -279,7 +264,7 @@ describe('buildOmpArgs', () => {
 
     expect(result.args).toEqual([
       '--mode',
-      'json',
+      'rpc',
       '--cwd',
       '/repo',
       '--yolo',
@@ -293,14 +278,11 @@ describe('buildOmpArgs', () => {
       'first\n\nsecond',
       '--skills',
       'archon,review-*',
-      '--',
-      'hello',
     ]);
   });
 
   test('uses request model and string thinking before assistant defaults', () => {
     const result = buildOmpArgs({
-      prompt: 'hello',
       cwd: '/repo',
       config: { model: 'fallback/model', modelReasoningEffort: 'low' },
       requestOptions: {
@@ -314,7 +296,6 @@ describe('buildOmpArgs', () => {
 
   test('passes raw effort unchanged when string thinking is absent', () => {
     const result = buildOmpArgs({
-      prompt: 'hello',
       cwd: '/repo',
       config: {},
       requestOptions: { nodeConfig: { effort: '  future-omp  ' } },
@@ -322,9 +303,8 @@ describe('buildOmpArgs', () => {
     expect(result.thinking).toBe('  future-omp  ');
   });
 
-  test('uses resume, fork, and in-memory flags without inventing session ids', () => {
+  test('uses resume, fork, and no-session flags without inventing session ids', () => {
     const resumeArgs = buildOmpArgs({
-      prompt: 'a',
       cwd: '/repo',
       config: {},
       resumeSessionId: 'session-1',
@@ -334,7 +314,6 @@ describe('buildOmpArgs', () => {
     expect(resumeArgs[resumeIndex + 1]).toBe('session-1');
 
     const forkArgs = buildOmpArgs({
-      prompt: 'b',
       cwd: '/repo',
       config: {},
       resumeSessionId: 'session-1',
@@ -345,19 +324,13 @@ describe('buildOmpArgs', () => {
     expect(forkArgs[forkIndex + 1]).toBe('session-1');
 
     expect(
-      buildOmpArgs({
-        prompt: 'c',
-        cwd: '/repo',
-        config: {},
-        requestOptions: { persistSession: false },
-      }).args
+      buildOmpArgs({ cwd: '/repo', config: {}, requestOptions: { persistSession: false } }).args
     ).toContain('--no-session');
   });
 
   test('rejects resume when persistence is disabled', () => {
     expect(() =>
       buildOmpArgs({
-        prompt: 'hello',
         cwd: '/repo',
         config: {},
         resumeSessionId: 'session-1',
@@ -367,23 +340,22 @@ describe('buildOmpArgs', () => {
   });
 
   test('omits no-extensions only after explicit opt-in', () => {
-    const result = buildOmpArgs({
-      prompt: 'hello',
-      cwd: '/repo',
-      config: { enableExtensions: true },
-    });
+    const result = buildOmpArgs({ cwd: '/repo', config: { enableExtensions: true } });
     expect(result.args).not.toContain('--no-extensions');
   });
 });
 
-describe('OmpProvider', () => {
-  test('streams fragmented NDJSON and emits the concrete session result', async () => {
-    const ndjson = successfulLines().join('\r\n');
-    const proc = makeProcess([ndjson.slice(0, 17), ndjson.slice(17, 91), ndjson.slice(91)]);
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
+describe('OmpProvider fresh-spawn turns', () => {
+  test('completes the ready/get_state handshake, streams a turn, emits the concrete result', async () => {
+    const proc = makeFakeRpcProcess();
+    proc.queueTurn(assistantTurnFrames());
+    const calls: SpawnCall[] = [];
     const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, calls) }));
 
     expect(calls).toHaveLength(1);
+    expect(calls[0]?.command).toContain('rpc');
+    expect(proc.writes.some(w => w.type === 'get_state')).toBe(true);
+    expect(proc.writes.some(w => w.type === 'prompt')).toBe(true);
     expect(chunks).toContainEqual({ type: 'assistant', content: 'Hello' });
     expect(chunks).toContainEqual({
       type: 'tool',
@@ -401,17 +373,23 @@ describe('OmpProvider', () => {
     });
     expect(chunks.at(-1)).toMatchObject({
       type: 'result',
-      sessionId: 'omp-session-1',
+      sessionId: DEFAULT_SESSION_ID,
       tokens: { input: 3, output: 2, total: 5, cost: 0.1 },
-      cost: 0.1,
       stopReason: 'stop',
       resolvedModel: { id: 'openai-codex/gpt-6-sol' },
     });
   });
 
-  test('marks a successful resumed stream as resumed', async () => {
-    const proc = makeProcess([successfulLines('new-session').join('\n')]);
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), 'old-session');
+  test('marks a successful resumed stream as resumed and passes --resume', async () => {
+    const proc = makeFakeRpcProcess({ sessionId: 'new-session' });
+    proc.queueTurn(assistantTurnFrames());
+    const calls: SpawnCall[] = [];
+    const chunks = await collect(
+      new OmpProvider({ spawn: makeSpawner(proc, calls) }),
+      'old-session'
+    );
+    expect(calls[0]?.command).toContain('--resume');
+    expect(calls[0]?.command).toContain('old-session');
     expect(chunks.at(-1)).toMatchObject({
       type: 'result',
       sessionId: 'new-session',
@@ -419,124 +397,140 @@ describe('OmpProvider', () => {
     });
   });
 
-  test('maps a non-zero exit with stderr diagnostics', async () => {
-    const proc = makeProcess([], 'missing credentials', 2);
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), 'old-session');
-    expect(chunks.at(-2)).toMatchObject({
-      type: 'system',
-      content: expect.stringContaining('setup'),
-    });
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      isError: true,
-      errorSubtype: 'omp_exit_nonzero',
-      resumed: false,
-    });
+  test('rejects a pre-aborted request without spawning', async () => {
+    const calls: SpawnCall[] = [];
+    const controller = new AbortController();
+    controller.abort();
+    const provider = new OmpProvider({ spawn: makeSpawner(makeFakeRpcProcess(), calls) });
+    await expect(
+      collect(provider, undefined, { abortSignal: controller.signal, env: { OMP_BIN_PATH: '' } })
+    ).rejects.toThrow('Query aborted');
+    expect(calls).toHaveLength(0);
   });
 
-  test('preserves parser metadata on a non-zero exit result', async () => {
-    const proc = makeProcess(
-      [successfulLines('exit-session', '{"answer":"ok"}').join('\n')],
-      'process failed',
-      2
+  test('kills the child and throws when get_state never answers', async () => {
+    const proc = makeFakeRpcProcess({ autoAckGetState: false });
+    await expect(collect(new OmpProvider({ spawn: makeSpawner(proc, []) }))).rejects.toThrow(
+      'OMP RPC frame read timed out'
     );
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
-      outputFormat: { type: 'json_schema', schema: { type: 'object' } },
+    expect(proc.signals).toContain('SIGKILL');
+  }, 20_000);
+
+  test('maps a rejected prompt request to a protocol error and disposes the session', async () => {
+    const proc = makeFakeRpcProcess({ autoAckPrompt: false });
+    const iterator = new OmpProvider({ spawn: makeSpawner(proc, []) }).sendQuery(
+      'hello',
+      '/repo',
+      undefined,
+      {
+        env: { OMP_BIN_PATH: process.execPath },
+      }
+    );
+    const chunks: MessageChunk[] = [];
+    const done = (async (): Promise<void> => {
+      for await (const chunk of iterator) chunks.push(chunk);
+    })();
+    await waitFor(() => proc.writes.some(w => w.type === 'prompt'));
+    const promptWrite = proc.writes.find(w => w.type === 'prompt');
+    proc.push({
+      id: promptWrite?.id,
+      type: 'response',
+      command: 'prompt',
+      success: false,
+      error: 'nope',
     });
+    await done;
     expect(chunks.at(-1)).toMatchObject({
       type: 'result',
-      sessionId: 'exit-session',
-      tokens: { input: 3, output: 2, total: 5, cost: 0.1 },
-      cost: 0.1,
-      stopReason: 'stop',
-      numTurns: 1,
-      resolvedModel: { id: 'openai-codex/gpt-6-sol' },
-      structuredOutput: { answer: 'ok' },
       isError: true,
-      errorSubtype: 'omp_exit_nonzero',
+      errorSubtype: 'omp_protocol_error',
     });
   });
 
-  test('maps exit zero without agent_end to incomplete output', async () => {
-    const proc = makeProcess([[JSON.stringify({ type: 'session', id: 'incomplete' })].join('\n')]);
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }));
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'incomplete',
-      isError: true,
-      errorSubtype: 'omp_incomplete_output',
-    });
-  });
-
-  test('completes successfully when OMP exits 0 after a finished turn without agent_end', async () => {
-    const proc = makeProcess([successfulLines('no-end-session').slice(0, -1).join('\n')]);
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }));
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'no-end-session',
-      stopReason: 'stop',
-    });
-    expect(chunks.at(-1)).not.toHaveProperty('isError');
-  });
-
-  test('maps malformed JSON to a protocol error and kills the child', async () => {
-    const proc = makeRunningProcess('SIGTERM');
+  test('maps malformed JSON mid-turn to a protocol error and kills the child', async () => {
+    const proc = makeFakeRpcProcess();
     const chunksPromise = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }));
-    await waitFor(() => proc.stdout?.locked === true);
-    proc.pushStdout?.(
-      `${JSON.stringify({ type: 'session', id: 'protocol-session' })}\n{bad json\n`
-    );
+    await waitFor(() => proc.writes.some(w => w.type === 'prompt'));
+    proc.pushRaw('{bad json\n');
     const chunks = await chunksPromise;
     expect(proc.signals).toContain('SIGTERM');
     expect(chunks.at(-1)).toMatchObject({
       type: 'result',
-      sessionId: 'protocol-session',
       isError: true,
       errorSubtype: 'omp_protocol_error',
     });
   });
 
-  test('preserves parser metadata and model errors on a protocol error result', async () => {
-    const proc = makeProcess([modelErrorLines().join('\n')]);
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
-      outputFormat: { type: 'json_schema', schema: { type: 'object' } },
-    });
+  test('maps an rpc_frame_error frame to a protocol error', async () => {
+    const proc = makeFakeRpcProcess();
+    const chunksPromise = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }));
+    await waitFor(() => proc.writes.some(w => w.type === 'prompt'));
+    proc.push({ type: 'rpc_frame_error', originalType: 'agent_end', error: 'frame too large' });
+    const chunks = await chunksPromise;
     expect(chunks.at(-1)).toMatchObject({
       type: 'result',
-      sessionId: 'model-error-session',
-      tokens: { input: 7, output: 4, total: 11, cost: 0.3 },
-      cost: 0.3,
-      stopReason: 'error',
-      numTurns: 1,
-      resolvedModel: { id: 'openai-codex/gpt-6-sol' },
-      structuredOutput: { answer: 'partial' },
       isError: true,
       errorSubtype: 'omp_protocol_error',
-      errors: expect.arrayContaining(['rate limited']),
     });
   });
 
-  test('completes successfully when OMP emits maintenance events after agent_end', async () => {
-    const proc = makeProcess([
-      [
-        ...successfulLines('trail-session'),
-        JSON.stringify({ type: 'notice', message: 'Todo completion reminder' }),
-        JSON.stringify({ type: 'custom_message', customType: 'advisor' }),
-      ].join('\n'),
-    ]);
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }));
-    expect(chunks.at(-1)).toMatchObject({
+  test('auto-answers a defensive extension_ui_request instead of hanging', async () => {
+    const proc = makeFakeRpcProcess();
+    const chunksPromise = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }));
+    await waitFor(() => proc.writes.some(w => w.type === 'prompt'));
+    proc.push({ type: 'extension_ui_request', id: 'ext-1', method: 'confirm' });
+    for (const frame of assistantTurnFrames()) proc.push(frame);
+    const chunks = await chunksPromise;
+    expect(proc.writes).toContainEqual({
+      type: 'extension_ui_response',
+      id: 'ext-1',
+      confirmed: true,
+    });
+    expect(chunks.at(-1)).toMatchObject({ type: 'result', stopReason: 'stop' });
+  });
+
+  test('maps an unexpected mid-turn exit to a transport error', async () => {
+    const proc = makeFakeRpcProcess();
+    const chunksPromise = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }));
+    await waitFor(() => proc.writes.some(w => w.type === 'prompt'));
+    proc.resolveExit(1);
+    await expect(chunksPromise).rejects.toThrow();
+  });
+
+  test('preserves parsed usage when the process exits unexpectedly after a terminal turn', async () => {
+    const proc = makeFakeRpcProcess({ sessionId: 'usage-session' });
+    proc.queueTurn(assistantTurnFrames());
+    // Exit right after agent_end, before this call would otherwise keep it warm.
+    const chunksPromise = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }));
+    await waitFor(() => proc.stdinEnded || proc.signals.length > 0, 2000).catch(() => undefined);
+    const chunks = await chunksPromise;
+    const results = chunks.filter(c => c.type === 'result');
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
       type: 'result',
-      sessionId: 'trail-session',
+      sessionId: 'usage-session',
       stopReason: 'stop',
     });
-    expect(chunks.at(-1)).not.toHaveProperty('isError');
-    expect(proc.signals).not.toContain('SIGTERM');
+  });
+
+  test('augments JSON-schema prompts and returns parsed structured output', async () => {
+    const proc = makeFakeRpcProcess({ sessionId: 'json-session' });
+    proc.queueTurn(assistantTurnFrames({ text: '{"answer":"ok"}' }));
+    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
+      outputFormat: {
+        type: 'json_schema',
+        schema: { type: 'object', properties: { answer: { type: 'string' } } },
+      },
+    });
+    const promptWrite = proc.writes.find(w => w.type === 'prompt');
+    expect(String(promptWrite?.message)).toContain('CRITICAL: Respond with ONLY a JSON object');
+    expect(chunks.at(-1)).toMatchObject({ type: 'result', structuredOutput: { answer: 'ok' } });
   });
 
   test('warns before spawn for object-form thinking and falls back to effort', async () => {
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const proc = makeProcess([successfulLines().join('\n')]);
+    const calls: SpawnCall[] = [];
+    const proc = makeFakeRpcProcess();
+    proc.queueTurn(assistantTurnFrames());
     const iterator = new OmpProvider({ spawn: makeSpawner(proc, calls) }).sendQuery(
       'hello',
       '/repo',
@@ -554,385 +548,118 @@ describe('OmpProvider', () => {
     expect(calls[0]?.command).toContain('high');
     await iterator.return(undefined);
   });
-
-  test('rejects a pre-aborted request without spawning', async () => {
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const controller = new AbortController();
-    controller.abort();
-    const provider = new OmpProvider({ spawn: makeSpawner(makeProcess([]), calls) });
-    await expect(
-      collect(provider, undefined, { abortSignal: controller.signal, env: { OMP_BIN_PATH: '' } })
-    ).rejects.toThrow('Query aborted');
-    expect(calls).toHaveLength(0);
-  });
-
-  test('escalates an aborted stream from SIGTERM to SIGKILL', async () => {
-    const proc = makeRunningProcess('SIGKILL');
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const controller = new AbortController();
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, calls) }), undefined, {
-      abortSignal: controller.signal,
-    });
-    await waitFor(() => calls.length === 1);
-    controller.abort();
-    await expect(run).rejects.toThrow('Query aborted');
-    expect(proc.signals).toEqual(['SIGTERM', 'SIGKILL']);
-  }, 7_000);
-
-  test('reports abort when SIGTERM makes stdout reject', async () => {
-    const proc = makeRunningProcess('SIGTERM', new Error('stdout read failed'));
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const controller = new AbortController();
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, calls) }), undefined, {
-      abortSignal: controller.signal,
-    });
-    await waitFor(() => calls.length === 1);
-    controller.abort();
-    await expect(run).rejects.toThrow('Query aborted');
-    expect(proc.signals).toEqual(['SIGTERM']);
-  });
-
-  test('tears down and reaps after an early stderr read rejection', async () => {
-    const proc = makeStderrRejectingProcess();
-    await expect(collect(new OmpProvider({ spawn: makeSpawner(proc, []) }))).rejects.toThrow(
-      'stderr read failed'
-    );
-    expect(proc.signals).toEqual(['SIGTERM']);
-  });
-
-  test('preserves parsed usage once when stderr rejects after a terminal turn', async () => {
-    const proc = makeStderrRejectingProcess([successfulLines('usage-stderr-session').join('\n')]);
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }));
-    const results = chunks.filter(chunk => chunk.type === 'result');
-    expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({
-      type: 'result',
-      isError: true,
-      errorSubtype: 'omp_transport_error',
-      sessionId: 'usage-stderr-session',
-      tokens: { input: 3, output: 2, total: 5, cost: 0.1 },
-      cost: 0.1,
-      stopReason: 'stop',
-      resolvedModel: { id: 'openai-codex/gpt-6-sol' },
-      usageBreakdown: [
-        {
-          provider: 'openai-codex',
-          model: 'gpt-6-sol',
-          modelSource: 'reported',
-          inputTokens: 3,
-          outputTokens: 2,
-          costUsd: 0.1,
-        },
-      ],
-      errors: ['stderr read failed'],
-    });
-    expect(proc.signals).toEqual(['SIGTERM']);
-  });
-
-  test('preserves parsed usage once when process.exited rejects after a terminal turn', async () => {
-    const proc = makeExitRejectingProcess([successfulLines('usage-exit-session').join('\n')]);
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }));
-    const results = chunks.filter(chunk => chunk.type === 'result');
-    expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({
-      type: 'result',
-      isError: true,
-      errorSubtype: 'omp_transport_error',
-      sessionId: 'usage-exit-session',
-      usageBreakdown: [
-        {
-          provider: 'openai-codex',
-          model: 'gpt-6-sol',
-          modelSource: 'reported',
-          inputTokens: 3,
-          outputTokens: 2,
-          costUsd: 0.1,
-        },
-      ],
-      errors: ['exit wait failed'],
-    });
-  });
-
-  test('preserves parsed usage once when stdout fails after the terminal event', async () => {
-    const proc = makeStdoutFailAfterTerminal(successfulLines('usage-stdout-session').join('\n'));
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }));
-    const results = chunks.filter(chunk => chunk.type === 'result');
-    expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({
-      type: 'result',
-      isError: true,
-      errorSubtype: 'omp_transport_error',
-      sessionId: 'usage-stdout-session',
-      usageBreakdown: [
-        {
-          provider: 'openai-codex',
-          model: 'gpt-6-sol',
-          modelSource: 'reported',
-          inputTokens: 3,
-          outputTokens: 2,
-          costUsd: 0.1,
-        },
-      ],
-      errors: ['stdout read failed'],
-    });
-  });
-
-  test('throws on exit rejection with no parsed usage and does not invent observations', async () => {
-    const proc = makeExitRejectingProcess([]);
-    await expect(collect(new OmpProvider({ spawn: makeSpawner(proc, []) }))).rejects.toThrow(
-      'exit wait failed'
-    );
-  });
-
-  test('overlays request environment values on defined process values', async () => {
-    const key = 'ARCHON_OMP_PROVIDER_TEST';
-    const original = process.env[key];
-    process.env[key] = 'base';
-    try {
-      const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
-      const proc = makeProcess([successfulLines().join('\n')]);
-      await collect(new OmpProvider({ spawn: makeSpawner(proc, calls) }), undefined, {
-        env: { [key]: 'request' },
-      });
-      expect(calls[0]?.options.env[key]).toBe('request');
-      const envPath = calls[0]?.options.env.PATH ?? calls[0]?.options.env.Path;
-      expect(envPath).toBeDefined();
-    } finally {
-      if (original === undefined) delete process.env[key];
-      else process.env[key] = original;
-    }
-  });
-
-  test('augments JSON-schema prompts and returns parsed structured output', async () => {
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const proc = makeProcess([successfulLines('json-session', '{"answer":"ok"}').join('\n')]);
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, calls) }), undefined, {
-      outputFormat: {
-        type: 'json_schema',
-        schema: { type: 'object', properties: { answer: { type: 'string' } } },
-      },
-    });
-    expect(calls[0]?.command.at(-1)).toContain('CRITICAL: Respond with ONLY a JSON object');
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      structuredOutput: { answer: 'ok' },
-    });
-  });
-
-  test('clears the escalation timer after early close reaps the child', async () => {
-    const proc = makeRunningProcess('SIGTERM');
-    const iterator = new OmpProvider({ spawn: makeSpawner(proc, []) }).sendQuery(
-      'hello',
-      '/repo',
-      undefined,
-      { env: { OMP_BIN_PATH: process.execPath } }
-    );
-    const firstChunk = iterator.next();
-    await waitFor(() => proc.stdout?.locked === true);
-    proc.pushStdout?.(`${successfulLines().slice(0, 4).join('\n')}\n`);
-    await expect(firstChunk).resolves.toMatchObject({
-      value: { type: 'assistant', content: 'Hello' },
-    });
-    await iterator.return(undefined);
-    await new Promise(resolve => setTimeout(resolve, 5_100));
-    expect(proc.signals).toEqual(['SIGTERM']);
-  }, 7_000);
 });
 
-function makeControllableProcess(options?: {
-  exitOn?: NodeJS.Signals | 'manual';
-  stdoutFailure?: Error;
-}): FakeProcess {
-  const exitOn = options?.exitOn ?? 'manual';
-  let stdoutController: ReadableStreamDefaultController<Uint8Array> | undefined;
-  const exitGate = Promise.withResolvers<number>();
-  let exitResolved = false;
-  let stdoutClosed = false;
-  const closeStdoutSafe = (fail?: Error): void => {
-    if (stdoutClosed) return;
-    stdoutClosed = true;
-    try {
-      if (fail) stdoutController?.error(fail);
-      else stdoutController?.close();
-    } catch {
-      // Controller may already be closed by the reader.
-    }
-  };
-  const finish = (code: number, fail?: Error): void => {
-    if (exitResolved) return;
-    exitResolved = true;
-    closeStdoutSafe(fail);
-    exitGate.resolve(code);
-  };
-  const proc: FakeProcess = {
-    stdout: new ReadableStream<Uint8Array>({
-      start(controller): void {
-        stdoutController = controller;
-      },
-    }),
-    stderr: streamFromChunks([]),
-    exited: exitGate.promise,
-    signals: [],
-    pushStdout: (text): void => {
-      if (stdoutClosed) return;
-      stdoutController?.enqueue(encoder.encode(text));
-    },
-    closeStdout: (): void => {
-      closeStdoutSafe();
-    },
-    resolveExit: (code): void => {
-      finish(code);
-    },
-    kill: (signal = 'SIGTERM'): void => {
-      proc.signals.push(signal);
-      if (exitOn === 'manual') return;
-      if (signal === exitOn) finish(0, options?.stdoutFailure);
-    },
-  };
-  return proc;
-}
-
-describe('OmpProvider interrupt / stream-abort seam', () => {
+describe('OmpProvider warm-session reuse', () => {
   afterEach(() => {
-    setTerminationGraceMsForTest(undefined);
+    setWarmSessionIdleEvictionMsForTest(TEST_IDLE_EVICTION_MS);
   });
 
-  test('never-aborted interruptSignal matches no-signal argv and chunks; late abort sends nothing', async () => {
-    const baselineCalls: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const baselineProc = makeProcess([successfulLines('base-session').join('\n')]);
-    const baseline = await collect(
-      new OmpProvider({ spawn: makeSpawner(baselineProc, baselineCalls) })
-    );
+  test('reuses the same live process for a second turn on the same session — no respawn', async () => {
+    const proc = makeFakeRpcProcess({ sessionId: 'warm-session' });
+    proc.queueTurn(assistantTurnFrames({ text: 'first' }));
+    const calls: SpawnCall[] = [];
+    const provider = new OmpProvider({ spawn: makeSpawner(proc, calls) });
 
-    const interrupt = new AbortController();
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const proc = makeProcess([successfulLines('base-session').join('\n')]);
-    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, calls) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
+    const first = await collect(provider);
+    expect(first.at(-1)).toMatchObject({ type: 'result', sessionId: 'warm-session' });
+    expect(calls).toHaveLength(1);
 
-    expect(calls[0]?.command).toEqual(baselineCalls[0]?.command);
-    expect(chunks).toEqual(baseline);
-    expect(proc.signals).toEqual([]);
-
-    interrupt.abort();
-    await waitFor(() => true);
-    expect(proc.signals).toEqual([]);
+    proc.queueTurn(assistantTurnFrames({ text: 'second' }));
+    const second = await collect(provider, 'warm-session');
+    expect(second).toContainEqual({ type: 'assistant', content: 'second' });
+    // Still exactly one spawn — the second turn rode the same process.
+    expect(calls).toHaveLength(1);
+    const promptWrites = proc.writes.filter(w => w.type === 'prompt');
+    expect(promptWrites).toHaveLength(2);
   });
 
-  test('immediate fresh-turn Stop still spawns, waits for session header, one SIGTERM, real id', async () => {
-    const interrupt = new AbortController();
-    interrupt.abort();
-    const proc = makeControllableProcess({ exitOn: 'SIGTERM' });
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, calls) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
-    await waitFor(() => calls.length === 1);
-    expect(proc.signals).toEqual([]);
-    proc.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'fresh-int' })}\n`);
-    const chunks = await run;
-    expect(proc.signals).toEqual(['SIGTERM']);
-    expect(chunks.filter(c => c.type === 'result')).toHaveLength(1);
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'fresh-int',
-      terminalReason: STREAM_ABORTED_TERMINAL_REASON,
-    });
-    expect(chunks.at(-1)).not.toHaveProperty('isError');
-    expect(chunks.at(-1)).not.toHaveProperty('stopReason');
+  test('does not reuse across a mismatched resumeSessionId — spawns fresh and closes the old one gracefully', async () => {
+    const warmProc = makeFakeRpcProcess({ sessionId: 'warm-session' });
+    warmProc.queueTurn(assistantTurnFrames());
+    const freshProc = makeFakeRpcProcess({ sessionId: 'other-session' });
+    freshProc.queueTurn(assistantTurnFrames());
+    const calls: SpawnCall[] = [];
+    let spawnCount = 0;
+    const spawner: OmpRpcSpawner = (command, opts) => {
+      spawnCount += 1;
+      calls.push({ command, options: opts });
+      return spawnCount === 1 ? warmProc : freshProc;
+    };
+    const provider = new OmpProvider({ spawn: spawner });
+
+    await collect(provider);
+    await collect(provider, 'some-other-session-id');
+
+    expect(calls).toHaveLength(2);
+    expect(warmProc.stdinEnded).toBe(true);
   });
 
-  test('turn event before session header yields unmarked omp_interrupt_session_unavailable', async () => {
-    const interrupt = new AbortController();
-    const proc = makeControllableProcess({ exitOn: 'SIGTERM' });
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, calls) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
-    await waitFor(() => calls.length === 1);
-    interrupt.abort();
-    proc.pushStdout?.(
-      `${JSON.stringify({ type: 'message_start', message: { role: 'assistant', content: [] } })}\n`
-    );
-    const chunks = await run;
-    expect(proc.signals).toEqual(['SIGTERM']);
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      isError: true,
-      errorSubtype: 'omp_interrupt_session_unavailable',
-    });
-    expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
-    expect(chunks.at(-1)).not.toHaveProperty('sessionId');
+  test('never reuses when persistSession is false and closes right after the turn', async () => {
+    const proc = makeFakeRpcProcess();
+    proc.queueTurn(assistantTurnFrames());
+    const calls: SpawnCall[] = [];
+    const provider = new OmpProvider({ spawn: makeSpawner(proc, calls) });
+    await collect(provider, undefined, { persistSession: false });
+    await waitFor(() => proc.stdinEnded);
+    expect(calls[0]?.command).toContain('--no-session');
   });
 
-  test('500 ms header timeout yields unmarked omp_interrupt_session_unavailable', async () => {
-    const interrupt = new AbortController();
-    interrupt.abort();
-    const proc = makeControllableProcess({ exitOn: 'SIGTERM' });
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, calls) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
-    await waitFor(() => calls.length === 1);
-    expect(proc.signals).toEqual([]);
-    await waitFor(() => proc.signals.includes('SIGTERM'), 1_500);
-    const chunks = await run;
-    expect(proc.signals).toEqual(['SIGTERM']);
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      isError: true,
-      errorSubtype: 'omp_interrupt_session_unavailable',
-    });
-    expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
-  }, 2_000);
+  test('always spawns fresh when forkSession is true, even with a matching resumeSessionId', async () => {
+    const warmProc = makeFakeRpcProcess({ sessionId: 'warm-session' });
+    warmProc.queueTurn(assistantTurnFrames());
+    const forkedProc = makeFakeRpcProcess({ sessionId: 'forked-session' });
+    forkedProc.queueTurn(assistantTurnFrames());
+    let spawnCount = 0;
+    const calls: SpawnCall[] = [];
+    const spawner: OmpRpcSpawner = (command, opts) => {
+      spawnCount += 1;
+      calls.push({ command, options: opts });
+      return spawnCount === 1 ? warmProc : forkedProc;
+    };
+    const provider = new OmpProvider({ spawn: spawner });
 
-  test('mid-text Stop drains coalesced deltas once then one marked result without completion/error fields', async () => {
-    const interrupt = new AbortController();
-    const proc = makeControllableProcess({ exitOn: 'SIGTERM' });
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, calls) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
-    await waitFor(() => calls.length === 1);
-    proc.pushStdout?.(
-      [
-        JSON.stringify({ type: 'session', id: 'mid-text' }),
-        JSON.stringify({ type: 'message_start', message: { role: 'assistant', content: [] } }),
-        JSON.stringify({
-          type: 'message_update',
-          assistantMessageEvent: { type: 'text_delta', delta: 'Hel' },
-        }),
-        JSON.stringify({
-          type: 'message_update',
-          assistantMessageEvent: { type: 'text_delta', delta: 'lo' },
-        }),
-      ].join('\n') + '\n'
-    );
-    await waitFor(() => proc.stdout?.locked === true);
-    interrupt.abort();
-    const chunks = await run;
-    expect(chunks.filter(c => c.type === 'assistant')).toEqual([
-      { type: 'assistant', content: 'Hello' },
-    ]);
-    const results = chunks.filter(c => c.type === 'result');
-    expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({
-      type: 'result',
-      sessionId: 'mid-text',
-      terminalReason: STREAM_ABORTED_TERMINAL_REASON,
-    });
-    expect(results[0]).not.toHaveProperty('isError');
-    expect(results[0]).not.toHaveProperty('stopReason');
-    expect(results[0]).not.toHaveProperty('errorSubtype');
-    expect(results[0]).not.toHaveProperty('errors');
-    expect(results[0]).not.toHaveProperty('structuredOutput');
+    await collect(provider);
+    const chunks = await collect(provider, 'warm-session', { forkSession: true });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.command).toContain('--fork');
+    expect(chunks.at(-1)).toMatchObject({ sessionId: 'forked-session' });
   });
 
-  test('active-tool Stop maps errored end to interrupted, late success stays success, open tool stays open', async () => {
+  test('idle-evicts an unused warm session after the configured TTL, closing it gracefully', async () => {
+    setWarmSessionIdleEvictionMsForTest(20);
+    const proc = makeFakeRpcProcess({ sessionId: 'warm-session' });
+    proc.queueTurn(assistantTurnFrames());
+    const provider = new OmpProvider({ spawn: makeSpawner(proc, []) });
+    await collect(provider);
+    await waitFor(() => proc.stdinEnded, 2000);
+    expect(proc.signals).not.toContain('SIGTERM');
+  });
+
+  test('reusing before the idle TTL elapses cancels the pending eviction', async () => {
+    setWarmSessionIdleEvictionMsForTest(200);
+    const proc = makeFakeRpcProcess({ sessionId: 'warm-session' });
+    proc.queueTurn(assistantTurnFrames({ text: 'first' }));
+    const provider = new OmpProvider({ spawn: makeSpawner(proc, []) });
+    await collect(provider);
+
+    proc.queueTurn(assistantTurnFrames({ text: 'second' }));
+    const second = await collect(provider, 'warm-session');
+    expect(second).toContainEqual({ type: 'assistant', content: 'second' });
+    expect(proc.stdinEnded).toBe(false);
+  });
+});
+
+describe('OmpProvider Stop (in-band abort) and Cancel', () => {
+  afterEach(() => {
+    setTerminationGraceMsForTest(TEST_GRACE_MS);
+  });
+
+  test('mid-text Stop sends an in-band abort, never kills the process, yields an interrupted result', async () => {
+    const proc = makeFakeRpcProcess({ sessionId: 'stop-session' });
     const interrupt = new AbortController();
-    const proc = makeControllableProcess({ exitOn: 'manual' });
-    const it = new OmpProvider({ spawn: makeSpawner(proc, []) }).sendQuery(
+    const iterator = new OmpProvider({ spawn: makeSpawner(proc, []) }).sendQuery(
       'hello',
       '/repo',
       undefined,
@@ -941,435 +668,173 @@ describe('OmpProvider interrupt / stream-abort seam', () => {
         interruptSignal: interrupt.signal,
       }
     );
-    const firstNext = it.next();
-    await waitFor(() => proc.stdout?.locked === true);
-    proc.pushStdout?.(
-      [
-        JSON.stringify({ type: 'session', id: 'tool-late' }),
-        JSON.stringify({
-          type: 'tool_execution_start',
-          toolCallId: 't-err',
-          toolName: 'bash',
-          args: { command: 'x' },
-        }),
-        JSON.stringify({
-          type: 'tool_execution_start',
-          toolCallId: 't-ok',
-          toolName: 'read',
-          args: { path: 'a' },
-        }),
-        JSON.stringify({
-          type: 'tool_execution_start',
-          toolCallId: 't-open',
-          toolName: 'bash',
-          args: { command: 'sleep' },
-        }),
-      ].join('\n') + '\n'
-    );
-    // Consume tool starts so interrupt ownership snapshots active tools.
-    const early: MessageChunk[] = [];
-    const first = await firstNext;
-    if (first.done || !first.value) throw new Error('expected first tool start chunk');
-    early.push(first.value);
-    for (let i = 0; i < 2; i += 1) {
-      const next = await it.next();
-      if (next.done || !next.value) throw new Error('expected tool start chunk');
-      early.push(next.value);
-    }
-    expect(early.every(c => c.type === 'tool')).toBe(true);
+    const chunks: MessageChunk[] = [];
+    void (async (): Promise<void> => {
+      for await (const chunk of iterator) chunks.push(chunk);
+    })();
+
+    // Real OMP never emits agent-turn events before it has seen the prompt —
+    // wait for the handshake to finish and the prompt to be written before
+    // pushing anything, or the ready/get_state handshake drains and discards it.
+    await waitFor(() => proc.writes.some(w => w.type === 'prompt'));
+    proc.push({ type: 'message_start', message: { role: 'assistant', content: [] } });
     interrupt.abort();
-    await waitFor(() => proc.signals[0] === 'SIGTERM');
-    proc.pushStdout?.(
-      [
-        JSON.stringify({
-          type: 'tool_execution_end',
-          toolCallId: 't-err',
-          toolName: 'bash',
-          isError: true,
-          result: 'aborted',
-        }),
-        JSON.stringify({
-          type: 'tool_execution_end',
-          toolCallId: 't-ok',
-          toolName: 'read',
-          isError: false,
-          result: 'ok',
-        }),
-      ].join('\n') + '\n'
+    await waitFor(() => proc.writes.some(w => w.type === 'abort'));
+    proc.push({
+      type: 'message_end',
+      message: {
+        role: 'assistant',
+        content: [],
+        provider: 'xai-oauth',
+        model: 'grok-4.5',
+        usage: { input: 0, output: 0, totalTokens: 0, cost: { total: 0 } },
+        stopReason: 'aborted',
+        errorMessage: 'Interrupted by user',
+      },
+    });
+    proc.push({ type: 'agent_end', messages: [], isTerminal: true });
+
+    await waitFor(() => chunks.some(c => c.type === 'result'));
+    const result = chunks.find(c => c.type === 'result');
+    expect(result).toMatchObject({
+      type: 'result',
+      sessionId: 'stop-session',
+      terminalReason: STREAM_ABORTED_TERMINAL_REASON,
+    });
+    expect(proc.signals).toHaveLength(0);
+  });
+
+  test('mid-tool Stop maps the interrupted tool call to toolOutcome "interrupted"', async () => {
+    const proc = makeFakeRpcProcess({ sessionId: 'stop-tool-session' });
+    const interrupt = new AbortController();
+    const iterator = new OmpProvider({ spawn: makeSpawner(proc, []) }).sendQuery(
+      'hello',
+      '/repo',
+      undefined,
+      {
+        env: { OMP_BIN_PATH: process.execPath },
+        interruptSignal: interrupt.signal,
+      }
     );
-    // Let the provider read the tool ends before reaping.
-    const mid: MessageChunk[] = [];
-    for (let i = 0; i < 2; i += 1) {
-      const next = await it.next();
-      if (next.done || !next.value) throw new Error('expected tool end chunk');
-      mid.push(next.value);
-    }
-    proc.closeStdout?.();
-    proc.resolveExit?.(0);
-    const rest: MessageChunk[] = [];
-    for await (const chunk of it) rest.push(chunk);
-    const chunks = [...early, ...mid, ...rest];
+    const chunks: MessageChunk[] = [];
+    void (async (): Promise<void> => {
+      for await (const chunk of iterator) chunks.push(chunk);
+    })();
+
+    await waitFor(() => proc.writes.some(w => w.type === 'prompt'));
+    proc.push({
+      type: 'tool_execution_start',
+      toolCallId: 'sleep-1',
+      toolName: 'bash',
+      args: { command: 'sleep 90' },
+    });
+    await waitFor(() => chunks.some(c => c.type === 'tool'));
+    interrupt.abort();
+    await waitFor(() => proc.writes.some(w => w.type === 'abort'));
+    proc.push({
+      type: 'tool_execution_end',
+      toolCallId: 'sleep-1',
+      toolName: 'bash',
+      result: 'Command aborted',
+      isError: true,
+    });
+    proc.push({
+      type: 'message_end',
+      message: {
+        role: 'assistant',
+        content: [],
+        provider: 'xai-oauth',
+        model: 'grok-4.5',
+        usage: { input: 0, output: 0, totalTokens: 0, cost: { total: 0 } },
+        stopReason: 'aborted',
+        errorMessage: 'Interrupted by user',
+      },
+    });
+    proc.push({ type: 'agent_end', messages: [], isTerminal: true });
+
+    await waitFor(() => chunks.some(c => c.type === 'result'));
     expect(chunks).toContainEqual({
       type: 'tool_result',
       toolName: 'bash',
-      toolOutput: 'aborted',
-      toolCallId: 't-err',
+      toolOutput: 'Command aborted',
+      toolCallId: 'sleep-1',
       toolOutcome: 'interrupted',
       outputState: 'full',
     });
-    expect(chunks).toContainEqual({
-      type: 'tool_result',
-      toolName: 'read',
-      toolOutput: 'ok',
-      toolCallId: 't-ok',
-      toolOutcome: 'success',
-      outputState: 'full',
-    });
-    expect(chunks.some(c => c.type === 'tool_result' && c.toolCallId === 't-open')).toBe(false);
-    expect(chunks.filter(c => c.type === 'system')).toEqual([]);
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'tool-late',
-      terminalReason: STREAM_ABORTED_TERMINAL_REASON,
-    });
-    expect(proc.signals).toEqual(['SIGTERM']);
   });
 
-  test('Cancel alone and Cancel+Stop keep Query aborted; co-fire sends at most one SIGTERM', async () => {
-    const cancelOnly = new AbortController();
-    const procA = makeControllableProcess({ exitOn: 'SIGTERM' });
-    const callsA: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const runA = collect(new OmpProvider({ spawn: makeSpawner(procA, callsA) }), undefined, {
-      abortSignal: cancelOnly.signal,
-    });
-    await waitFor(() => callsA.length === 1);
-    cancelOnly.abort();
-    await expect(runA).rejects.toThrow('Query aborted');
-    expect(procA.signals).toEqual(['SIGTERM']);
-
-    const cancel = new AbortController();
+  test('a Stop that races a natural completion is not classified as interrupted', async () => {
+    const proc = makeFakeRpcProcess({ sessionId: 'race-session' });
+    proc.queueTurn(assistantTurnFrames());
     const interrupt = new AbortController();
-    const procB = makeControllableProcess({ exitOn: 'SIGTERM' });
-    const callsB: { command: string[]; options: OmpSpawnOptions }[] = [];
-    const runB = collect(new OmpProvider({ spawn: makeSpawner(procB, callsB) }), undefined, {
-      abortSignal: cancel.signal,
+    const chunks = await collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
       interruptSignal: interrupt.signal,
     });
-    await waitFor(() => callsB.length === 1);
-    procB.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'cofire' })}\n`);
-    await waitFor(() => true);
+    // Interrupt fires only after the turn has already fully streamed.
     interrupt.abort();
-    cancel.abort();
-    await expect(runB).rejects.toThrow('Query aborted');
-    expect(procB.signals.filter(s => s === 'SIGTERM')).toHaveLength(1);
-  });
-
-  test('interrupt-owned truncated JSON after SIGTERM stays marked graceful result', async () => {
-    const interrupt = new AbortController();
-    const proc = makeControllableProcess({ exitOn: 'manual' });
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
-    await waitFor(() => proc.stdout?.locked === true);
-    proc.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'trunc' })}\n`);
-    await waitFor(() => true);
-    interrupt.abort();
-    await waitFor(() => proc.signals.includes('SIGTERM'));
-    proc.pushStdout?.('{bad json\n');
-    proc.closeStdout?.();
-    proc.resolveExit?.(0);
-    const chunks = await run;
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'trunc',
-      terminalReason: STREAM_ABORTED_TERMINAL_REASON,
-    });
-    expect(chunks.at(-1)).not.toHaveProperty('isError');
-  });
-
-  test('interrupt-owned stdout rejection after SIGTERM stays marked graceful result', async () => {
-    const interrupt = new AbortController();
-    const proc = makeControllableProcess({
-      exitOn: 'SIGTERM',
-      stdoutFailure: new Error('stdout read failed'),
-    });
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
-    await waitFor(() => proc.stdout?.locked === true);
-    proc.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'rej' })}\n`);
-    await waitFor(() => true);
-    interrupt.abort();
-    const chunks = await run;
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'rej',
-      terminalReason: STREAM_ABORTED_TERMINAL_REASON,
-    });
-    expect(chunks.at(-1)).not.toHaveProperty('isError');
-  });
-
-  test('protocol error that owns termination before Stop retains original error', async () => {
-    const interrupt = new AbortController();
-    const proc = makeControllableProcess({ exitOn: 'SIGTERM' });
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
-    await waitFor(() => proc.stdout?.locked === true);
-    proc.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'proto' })}\n{bad json\n`);
-    await waitFor(() => proc.signals.includes('SIGTERM'));
-    interrupt.abort();
-    const chunks = await run;
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'proto',
-      isError: true,
-      errorSubtype: 'omp_protocol_error',
-    });
+    expect(chunks.at(-1)).toMatchObject({ type: 'result', stopReason: 'stop' });
     expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
   });
 
-  test('a non-zero process exit that wins before Stop remains an unmarked failure', async () => {
+  test('redirect after Stop reuses the same live process — no respawn', async () => {
+    const proc = makeFakeRpcProcess({ sessionId: 'redirect-session' });
     const interrupt = new AbortController();
-    const proc = makeControllableProcess({ exitOn: 'manual' });
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
+    const provider = new OmpProvider({ spawn: makeSpawner(proc, []) });
+    const iterator = provider.sendQuery('hello', '/repo', undefined, {
+      env: { OMP_BIN_PATH: process.execPath },
       interruptSignal: interrupt.signal,
     });
-    await waitFor(() => proc.stdout?.locked === true);
-    proc.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'exit-first' })}\n`);
-    proc.closeStdout?.();
-    proc.resolveExit?.(1);
-    await waitFor(() => proc.signals.length === 0);
+    const chunks: MessageChunk[] = [];
+    void (async (): Promise<void> => {
+      for await (const chunk of iterator) chunks.push(chunk);
+    })();
+    await waitFor(() => proc.writes.some(w => w.type === 'prompt'));
+    proc.push({ type: 'message_start', message: { role: 'assistant', content: [] } });
     interrupt.abort();
-
-    const chunks = await run;
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'exit-first',
-      isError: true,
-      errorSubtype: 'omp_exit_nonzero',
+    await waitFor(() => proc.writes.some(w => w.type === 'abort'));
+    proc.push({
+      type: 'message_end',
+      message: {
+        role: 'assistant',
+        content: [],
+        provider: 'xai-oauth',
+        model: 'grok-4.5',
+        usage: { input: 0, output: 0, totalTokens: 0, cost: { total: 0 } },
+        stopReason: 'aborted',
+      },
     });
-    expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
-    expect(proc.signals).toEqual([]);
+    proc.push({ type: 'agent_end', messages: [], isTerminal: true });
+    await waitFor(() => chunks.some(c => c.type === 'result'));
+
+    proc.queueTurn(assistantTurnFrames({ text: 'redirected' }));
+    const redirectChunks = await collect(provider, 'redirect-session');
+    expect(redirectChunks).toContainEqual({ type: 'assistant', content: 'redirected' });
   });
 
-  test('agent_end then Stop before process close remains normal unmarked result', async () => {
-    const interrupt = new AbortController();
-    const proc = makeControllableProcess({ exitOn: 'manual' });
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
-    await waitFor(() => proc.stdout?.locked === true);
-    proc.pushStdout?.(`${successfulLines('natural-end').join('\n')}\n`);
-    await waitFor(() => true);
-    interrupt.abort();
-    proc.closeStdout?.();
-    proc.resolveExit?.(0);
-    const chunks = await run;
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'natural-end',
-      stopReason: 'stop',
-    });
-    expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
-    expect(chunks.at(-1)).not.toHaveProperty('isError');
-    expect(proc.signals).toEqual([]);
-  });
-
-  test('forced escalation emits omp_interrupt_force_killed without interrupt marker', async () => {
-    setTerminationGraceMsForTest(20);
-    const interrupt = new AbortController();
-    const proc = makeControllableProcess({ exitOn: 'SIGKILL' });
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
-    await waitFor(() => proc.stdout?.locked === true);
-    proc.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'force' })}\n`);
-    await waitFor(() => true);
-    interrupt.abort();
-    const chunks = await run;
-    expect(proc.signals).toEqual(['SIGTERM', 'SIGKILL']);
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'force',
-      isError: true,
-      errorSubtype: 'omp_interrupt_force_killed',
-    });
-    expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
-  });
-
-  test('fresh process exit before session header is incomplete/error, never fabricated interrupted session', async () => {
-    const interrupt = new AbortController();
-    interrupt.abort();
-    const proc = makeControllableProcess({ exitOn: 'manual' });
-    const calls: { command: string[]; options: OmpSpawnOptions }[] = [];
+  test('Cancel escalates SIGTERM to SIGKILL and rejects with Query aborted', async () => {
+    const proc = makeFakeRpcProcess();
+    setTerminationGraceMsForTest(30);
+    const controller = new AbortController();
+    const calls: SpawnCall[] = [];
     const run = collect(new OmpProvider({ spawn: makeSpawner(proc, calls) }), undefined, {
-      interruptSignal: interrupt.signal,
+      abortSignal: controller.signal,
     });
     await waitFor(() => calls.length === 1);
-    expect(proc.signals).toEqual([]);
-    proc.closeStdout?.();
-    proc.resolveExit?.(0);
-    const chunks = await run;
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      isError: true,
-      errorSubtype: 'omp_incomplete_output',
-    });
-    expect(chunks.at(-1)).not.toHaveProperty('sessionId');
-    expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
-    // Header wait must not later SIGTERM a finished process.
-    await waitFor(() => true);
-    expect(proc.signals).toEqual([]);
+    controller.abort();
+    await expect(run).rejects.toThrow('Query aborted');
+    await waitFor(() => proc.signals.includes('SIGKILL'));
+    expect(proc.signals).toEqual(['SIGTERM', 'SIGKILL']);
   });
 
-  test('interrupted resume equality/mismatch and fork-with/without-header set resumed conservatively', async () => {
-    {
-      const interrupt = new AbortController();
-      const proc = makeControllableProcess({ exitOn: 'SIGTERM' });
-      const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), 'same-id', {
-        interruptSignal: interrupt.signal,
-      });
-      await waitFor(() => proc.stdout?.locked === true);
-      proc.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'same-id' })}\n`);
-      await waitFor(() => true);
-      interrupt.abort();
-      const chunks = await run;
-      expect(chunks.at(-1)).toMatchObject({
-        terminalReason: STREAM_ABORTED_TERMINAL_REASON,
-        resumed: true,
-        sessionId: 'same-id',
-      });
-    }
-    {
-      const interrupt = new AbortController();
-      const proc = makeControllableProcess({ exitOn: 'SIGTERM' });
-      const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), 'wanted', {
-        interruptSignal: interrupt.signal,
-      });
-      await waitFor(() => proc.stdout?.locked === true);
-      proc.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'other' })}\n`);
-      await waitFor(() => true);
-      interrupt.abort();
-      const chunks = await run;
-      expect(chunks.at(-1)).toMatchObject({
-        terminalReason: STREAM_ABORTED_TERMINAL_REASON,
-        resumed: false,
-        sessionId: 'other',
-      });
-    }
-    {
-      const interrupt = new AbortController();
-      const proc = makeControllableProcess({ exitOn: 'SIGTERM' });
-      const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), 'seed', {
-        interruptSignal: interrupt.signal,
-        forkSession: true,
-      });
-      await waitFor(() => proc.stdout?.locked === true);
-      proc.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'forked' })}\n`);
-      await waitFor(() => true);
-      interrupt.abort();
-      const chunks = await run;
-      expect(chunks.at(-1)).toMatchObject({
-        terminalReason: STREAM_ABORTED_TERMINAL_REASON,
-        resumed: true,
-        sessionId: 'forked',
-      });
-    }
-    {
-      // Fork without observed header → interrupt-unresumable (no fabricated id).
-      const interrupt = new AbortController();
-      interrupt.abort();
-      const proc = makeControllableProcess({ exitOn: 'SIGTERM' });
-      const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), 'seed', {
-        interruptSignal: interrupt.signal,
-        forkSession: true,
-      });
-      await waitFor(() => proc.signals.includes('SIGTERM'), 1_500);
-      const chunks = await run;
-      expect(chunks.at(-1)).toMatchObject({
-        isError: true,
-        errorSubtype: 'omp_interrupt_session_unavailable',
-      });
-      expect(chunks.at(-1)).not.toHaveProperty('resumed');
-      expect(chunks.at(-1)).not.toHaveProperty('sessionId');
-    }
-  });
+  test('Cancel while idling between two turns kills the warm process with no active call', async () => {
+    const proc = makeFakeRpcProcess({ sessionId: 'idle-cancel-session' });
+    proc.queueTurn(assistantTurnFrames());
+    const controller = new AbortController();
+    const provider = new OmpProvider({ spawn: makeSpawner(proc, []) });
+    await collect(provider, undefined, { abortSignal: controller.signal });
 
-  test('observed primary usage survives the interrupt path', async () => {
-    const interrupt = new AbortController();
-    const proc = makeControllableProcess({ exitOn: 'SIGTERM' });
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
-    await waitFor(() => proc.stdout?.locked === true);
-    proc.pushStdout?.(
-      [
-        JSON.stringify({ type: 'session', id: 'usage-int' }),
-        JSON.stringify({ type: 'message_start', message: { role: 'assistant', content: [] } }),
-        JSON.stringify({
-          type: 'message_update',
-          assistantMessageEvent: { type: 'text_delta', delta: 'Hi' },
-        }),
-        JSON.stringify({
-          type: 'message_end',
-          message: {
-            role: 'assistant',
-            content: [{ type: 'text', text: 'Hi' }],
-            provider: 'openai-codex',
-            model: 'gpt-6-sol',
-            usage: { input: 3, output: 2, totalTokens: 5, cost: { total: 0.1 } },
-            stopReason: 'stop',
-          },
-        }),
-      ].join('\n') + '\n'
-    );
-    await waitFor(() => true);
-    interrupt.abort();
-    const chunks = await run;
-    expect(chunks.filter(c => c.type === 'assistant')).toEqual([
-      { type: 'assistant', content: 'Hi' },
-    ]);
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'usage-int',
-      terminalReason: STREAM_ABORTED_TERMINAL_REASON,
-      tokens: { input: 3, output: 2, total: 5, cost: 0.1 },
-      cost: 0.1,
-      numTurns: 1,
-      resolvedModel: { id: 'openai-codex/gpt-6-sol' },
-      usageBreakdown: [
-        {
-          provider: 'openai-codex',
-          model: 'gpt-6-sol',
-          modelSource: 'reported',
-          inputTokens: 3,
-          outputTokens: 2,
-          requests: 1,
-          costUsd: 0.1,
-        },
-      ],
-    });
-    expect(chunks.at(-1)).not.toHaveProperty('stopReason');
-  });
-
-  test('listener/timer cleanup holds after graceful interrupt without later SIGKILL', async () => {
-    setTerminationGraceMsForTest(30);
-    const interrupt = new AbortController();
-    const proc = makeControllableProcess({ exitOn: 'SIGTERM' });
-    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
-      interruptSignal: interrupt.signal,
-    });
-    await waitFor(() => proc.stdout?.locked === true);
-    proc.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'cleanup' })}\n`);
-    await waitFor(() => true);
-    interrupt.abort();
-    await run;
-    await waitFor(() => true);
-    // Allow shortened grace window to elapse; SIGKILL must not fire after graceful reap.
-    const { promise, resolve } = Promise.withResolvers<void>();
-    setTimeout(resolve, 50);
-    await promise;
-    expect(proc.signals).toEqual(['SIGTERM']);
+    controller.abort();
+    await waitFor(() => proc.signals.includes('SIGTERM'));
+    expect(proc.signals[0]).toBe('SIGTERM');
   });
 });

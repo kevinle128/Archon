@@ -58,30 +58,44 @@ Then start the backend separately with `bun run dev:server`. The Web UI will be 
 
 ## UI Layout
 
-The Web UI is a dark-themed single-page application with four main areas:
+The Web UI is a single-page application with a minimal, conversation-first design. It has a light theme and a dark theme. Light is the default, dark follows the system setting, and a theme toggle in the sidebar footer overrides both. The page is a left sidebar and a main area.
 
 ### Left Sidebar
 
-- **Conversations list** -- All your chat conversations, searchable and grouped by project. Click to switch, right-click or hover for rename/delete.
-- **Project selector** -- Registered codebases appear here. Select a project to scope conversations and workflows to that repository. You can also register new projects (clone from URL or register a local path) and remove existing ones.
-- **Workflow invoker** -- A quick-launch panel for running workflows. Select a workflow from the dropdown, type a message, and hit Run. This creates a new conversation and starts the workflow in one action.
+- **Navigation** -- Chat, Dashboard, Workflows, and Settings. The Archon pixel logo at the top shows a moving accent pixel while a workflow is running.
+- **Needs you** -- Runs that wait for a human answer or approval, such as an approval gate or an `AskHuman` question. Each entry links to the run. The section is hidden when nothing is waiting.
+- **Projects and conversations** -- Registered codebases with their conversations, searchable. Select a project to scope conversations and workflows to that repository. Click a conversation to switch to it, and use the row actions to rename or delete it.
+- **Workflow invoker** -- A quick-launch panel for running workflows. Select a workflow, type a message, and click Run. This creates a new conversation and starts the workflow in one action.
 
-### Main Chat Area
+### Chat
 
-The center of the screen is the chat interface -- this is where you interact with the AI assistant. It works like any chat application, with some additions specific to coding workflows.
+The center of the product is the chat interface, where you interact with the AI assistant. Your messages are aligned right in a tinted bubble. Agent messages are aligned left as plain text. Tool calls, workflow progress, and questions for you appear as context cards. The input bar stays at the bottom of the view.
 
-### Command Center (Dashboard)
+### Dashboard
 
-Accessible via the `/legacy/dashboard` route, the Command Center shows all workflow runs across your projects. It includes:
+Accessible via the `/dashboard` route, the dashboard shows all workflow runs across your projects. It includes:
 
 - **Status summary bar** -- Counts of running, completed, failed, and paused workflows
-- **Workflow run cards** -- Each run shows its status, workflow name, elapsed time, and node progress
+- **Workflow run cards** -- Each run shows its status, workflow name, elapsed time (for example `3h 40m` or `4d 6h`), and node progress
 - **Actions** -- Resume, cancel, abandon, approve, or reject runs directly from the dashboard
 - **History table** -- Paginated list of past runs with date range filtering
 
+### Workflows
+
+The `/workflows` page lists the workflows available to the selected project. Open a workflow in the builder to edit it, or run it from the page. See [Workflow Builder](#workflow-builder) and [Execution Detail Page](#execution-detail-page).
+
 ### Settings
 
-The `/legacy/settings` page lets you configure assistant defaults (model, provider) without editing YAML files. It also includes a **Projects** section for registering and managing codebases.
+The `/settings` page configures the install without editing YAML files. Its sections are:
+
+- **Projects** -- Register and manage codebases.
+- **Assistant defaults** -- The default assistant and the default model for each provider.
+- **AI providers** -- Connect provider API keys or subscription logins for the current user.
+- **GitHub** -- Connect the current user's GitHub identity.
+- **Model tiers** -- Set the `small`, `medium`, and `large` model presets.
+- **Aliases** -- Define `@custom` model aliases.
+- **Usage and cost** -- Token usage and estimated cost for workflow runs.
+- **System** -- Install and database status.
 
 ## Chat Interface
 
@@ -156,7 +170,7 @@ Click the arrow button in the result card header to open the full execution deta
 
 ### Execution Detail Page
 
-Click on a workflow run (from the dashboard or progress card) to open the execution detail page. The legacy run view is at `/legacy/workflows/runs/:runId`; the console run view is at `/console/p/:projectId/r/:runId`. Both show:
+Click on a workflow run (from the dashboard or progress card) to open the execution detail page. The run view is at `/workflows/runs/:runId`. It shows:
 
 - The full DAG graph with per-node status
 - A **node transcript pane** -- click any graph node or Logs row to open that node's room. A running agent node streams its transcript live; a completed node replays the same pane as a static transcript.
@@ -180,7 +194,7 @@ It has the Archon service account's operating-system permissions and can change 
 
 ## Workflow Builder
 
-The Workflow Builder at `/legacy/workflows/builder` provides a visual editor for creating and modifying workflow YAML files. Features include:
+The Workflow Builder at `/workflows/builder` provides a visual editor for creating and modifying workflow YAML files. Features include:
 
 - **DAG canvas** -- Drag-and-drop nodes to build your workflow graph visually
 - **Node palette** -- Drag command, prompt, bash, and route-loop nodes from a sidebar library. Additional node types (`script`, `loop`, `approval`, `cancel`) are editable via the Code / Split view
@@ -193,13 +207,7 @@ The Workflow Builder at `/legacy/workflows/builder` provides a visual editor for
 - **Delete node** -- Remove a selected node with `Delete` or `Backspace`, the Delete button in the inspector header, or the right-click context menu on any node
 - **Save** -- Saves the workflow YAML to your project's `.archon/workflows/` directory
 
-You can also browse existing workflows on the `/legacy/workflows` page and open any of them in the builder to edit.
-
-### Archon Studio builder (beta)
-
-A rebuilt visual builder is available in the new console at `/console/builder` (reachable from the console sidebar). It is a controlled React Flow canvas with a node palette, per-node inspector, live YAML preview, inline validation panel, smart-guide snapping, marquee selection, and a right-click context menu (add node, cut/copy/duplicate/delete, paste, select all, auto-arrange, fit view). All seven node types (`prompt`, `command`, `bash`, `script`, `loop`, `approval`, `cancel`) are editable directly in the inspector.
-
-This builder is **beta and fixture-backed**: it loads a local example workflow and reports edits in-memory — load/save to `.archon/workflows/` and a live `/console/builder/:name` route land in a later milestone. For saving workflows today, use the `/legacy/workflows/builder` editor above.
+You can also browse existing workflows on the `/workflows` page and open any of them in the builder to edit.
 
 ## SSE Streaming
 

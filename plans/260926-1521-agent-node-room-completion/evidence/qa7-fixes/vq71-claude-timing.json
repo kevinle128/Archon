@@ -1,0 +1,1377 @@
+{
+  "label": "vq71-claude",
+  "runId": "94d805b7ae6cb8976d3f136375dc4923",
+  "nodeId": "claude-node",
+  "clickAtMs": 35,
+  "sampleCount": 195,
+  "buggyFrameCount": 0,
+  "firstStopShownMs": 744,
+  "firstWithdrawGoneMs": 744,
+  "samples": [
+    {
+      "t": 1,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 29,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 59,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 86,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 116,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 144,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 172,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 204,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 235,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 263,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 293,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 321,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 350,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 378,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 407,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 435,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 465,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 495,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 528,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 562,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 616,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 644,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 674,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 708,
+      "rowPresent": true,
+      "withdrawOffered": true,
+      "stopShown": false,
+      "bandHeader": "will send · 1saved to server▾1vq71-claude withdraw race prob"
+    },
+    {
+      "t": 744,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 776,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 807,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 836,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 867,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 898,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 928,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 955,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 983,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1015,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1044,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1072,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1099,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1129,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1155,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1182,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1209,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1238,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1269,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1298,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1325,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1355,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1381,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1408,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1437,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1465,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1494,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1521,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1569,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1601,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1629,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1661,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1689,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1717,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1745,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1772,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1800,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1827,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1854,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1881,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1910,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1938,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1966,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 1993,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2020,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2047,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2073,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2102,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2129,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2159,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2186,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2213,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2240,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2269,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2298,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2327,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2354,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2382,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2409,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2437,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2465,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2494,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2522,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2552,
+      "rowPresent": true,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": "sending · 1saved to server▾1vq71-claude withdraw race probes"
+    },
+    {
+      "t": 2579,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2614,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2653,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2684,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2713,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2742,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2770,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2800,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2834,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2875,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2907,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2940,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 2971,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3004,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3035,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3068,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3102,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3134,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3166,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3198,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3233,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3277,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3305,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3430,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3473,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3502,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3533,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3571,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3602,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3633,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3668,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3704,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3736,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3767,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3807,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3837,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3871,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3911,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3940,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3969,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 3999,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4028,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4067,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4103,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4138,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4168,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4200,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4235,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4268,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4304,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4338,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4370,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4404,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4435,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4470,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4506,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4536,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4565,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4638,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4668,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4699,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4744,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4796,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4828,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4870,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4905,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4941,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4970,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 4999,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5028,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5055,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5084,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5110,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5139,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5168,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5196,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5225,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5252,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5280,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5310,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5340,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5369,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5398,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5425,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5453,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5480,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5507,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5534,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5562,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5590,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5618,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5646,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5674,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5704,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5734,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5762,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5794,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5823,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5852,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5880,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5909,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5937,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5964,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 5991,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 6020,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 6048,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    },
+    {
+      "t": 6076,
+      "rowPresent": false,
+      "withdrawOffered": false,
+      "stopShown": true,
+      "bandHeader": null
+    }
+  ]
+}

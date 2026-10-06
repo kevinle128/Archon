@@ -13,26 +13,42 @@ import { OMP_CAPABILITIES } from './capabilities';
 import { parseOmpConfig, type OmpProviderDefaults } from './config';
 import { OmpEventParser } from './event-parser';
 import {
+  OmpRpcSession,
+  RpcFrameParseError,
+  handleOutOfBandFrame,
+  performReadyHandshakeAndGetSessionId,
+  spawnOmpRpcSession,
+  defaultRpcSpawner,
+  type OmpRpcSpawner,
+  type RpcFrame,
+} from './rpc-transport';
+import {
   collectHiddenSessionUsage,
   enrichResultWithHiddenUsage,
   snapshotHiddenSessionFiles,
   type SessionUsageSnapshot,
 } from './session-usage';
 
-const MAX_CAPTURE_CHARS = 1_000_000;
+export type { OmpRpcProcess, OmpRpcSpawnOptions, OmpRpcSpawner } from './rpc-transport';
+
 const TERMINATION_GRACE_MS = 5_000;
-/** Bounded wait for a session header after operator Stop on a fresh turn. */
-export const INTERRUPT_SESSION_HEADER_WAIT_MS = 500;
+const READY_TIMEOUT_MS = 15_000;
+const GET_STATE_TIMEOUT_MS = 15_000;
+/**
+ * How long a warm `--mode rpc` process is kept alive with no new turn before
+ * it is closed. Must exceed the workflow engine's own operator-redirect
+ * window (`STEERING_IDLE_AWAIT_INACTIVITY_MS`, 30 minutes,
+ * packages/workflows/src/steering-registry.ts) — otherwise a Stop that the
+ * operator is slow to redirect would evict the very process this transport
+ * exists to keep warm, silently falling back to (still correct, but
+ * slower and now merely disk-resumable) fresh-spawn `--resume`. `@archon/providers`
+ * cannot import that constant (workflows depends on providers, not the
+ * reverse), so this is a deliberately generous, independently-chosen margin
+ * rather than a shared value — revisit both together if either changes.
+ */
+const WARM_SESSION_IDLE_EVICTION_MS = 40 * 60_000;
 
-type TerminationCause =
-  | 'interrupt'
-  | 'interrupt-unresumable'
-  | 'cancel'
-  | 'transport'
-  | 'protocol'
-  | 'cleanup';
-
-/** Test-only override so force-kill paths avoid a second real 5s wait. */
+/** Test-only override so force-kill paths avoid a real 5s wait. */
 let terminationGraceMsForTest: number | undefined;
 
 export function setTerminationGraceMsForTest(ms: number | undefined): void {
@@ -43,17 +59,21 @@ function terminationGraceMs(): number {
   return terminationGraceMsForTest ?? TERMINATION_GRACE_MS;
 }
 
+/** Test-only override so idle-eviction tests do not wait 40 real minutes. */
+let idleEvictionMsForTest: number | undefined;
+
+export function setWarmSessionIdleEvictionMsForTest(ms: number | undefined): void {
+  idleEvictionMsForTest = ms;
+}
+
+function warmSessionIdleEvictionMs(): number {
+  return idleEvictionMsForTest ?? WARM_SESSION_IDLE_EVICTION_MS;
+}
+
 let cachedLog: ReturnType<typeof createLogger> | undefined;
 function getLog(): ReturnType<typeof createLogger> {
   cachedLog ??= createLogger('provider.omp');
   return cachedLog;
-}
-
-export interface OmpProcess {
-  stdout: ReadableStream<Uint8Array> | null;
-  stderr: ReadableStream<Uint8Array> | null;
-  exited: Promise<number>;
-  kill: (signal?: NodeJS.Signals) => void;
 }
 
 export interface OmpSpawnOptions {
@@ -61,10 +81,7 @@ export interface OmpSpawnOptions {
   env: Record<string, string>;
 }
 
-export type OmpSpawner = (command: string[], options: OmpSpawnOptions) => OmpProcess;
-
 interface BuildOmpArgsInput {
-  prompt: string;
   cwd: string;
   config: OmpProviderDefaults;
   requestOptions?: SendQueryOptions;
@@ -75,26 +92,6 @@ interface BuildOmpArgsResult {
   args: string[];
   model?: string;
   thinking?: string;
-}
-
-type ProcessOutcome<T> = { ok: true; value: T } | { ok: false; error: Error };
-
-function defaultSpawner(command: string[], options: OmpSpawnOptions): OmpProcess {
-  const proc = Bun.spawn(command, {
-    cwd: options.cwd,
-    env: options.env,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  return {
-    stdout: proc.stdout,
-    stderr: proc.stderr,
-    exited: proc.exited,
-    kill: (signal?: NodeJS.Signals): void => {
-      proc.kill(signal);
-    },
-  };
 }
 
 function buildProviderEnv(requestEnv?: Record<string, string>): Record<string, string> {
@@ -144,12 +141,18 @@ function resolveThinking(
   return config.modelReasoningEffort;
 }
 
+/**
+ * Builds the argv for a `--mode rpc` OMP child. Unlike the retired `--mode
+ * json` transport, the prompt travels over stdin as a `{type:"prompt"}`
+ * frame — never in argv — so a fresh turn on an already-warm process needs
+ * no args at all.
+ */
 export function buildOmpArgs(input: BuildOmpArgsInput): BuildOmpArgsResult {
   if (input.resumeSessionId && input.requestOptions?.persistSession === false) {
     throw new Error('OMP cannot resume a session when persistSession is false.');
   }
 
-  const args = ['--mode', 'json', '--cwd', input.cwd, '--yolo', '--no-title'];
+  const args = ['--mode', 'rpc', '--cwd', input.cwd, '--yolo', '--no-title'];
   if (input.config.enableExtensions !== true) args.push('--no-extensions');
 
   const model = input.requestOptions?.model ?? input.config.model;
@@ -172,79 +175,7 @@ export function buildOmpArgs(input: BuildOmpArgsInput): BuildOmpArgsResult {
     args.push(input.resumeSessionId);
   }
 
-  args.push('--', input.prompt);
   return { args, model, thinking };
-}
-
-async function readStream(stream: ReadableStream<Uint8Array> | null): Promise<string> {
-  if (!stream) return '';
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let output = '';
-  try {
-    while (true) {
-      const next = await reader.read();
-      if (next.done) break;
-      if (output.length < MAX_CAPTURE_CHARS) {
-        output += decoder
-          .decode(next.value, { stream: true })
-          .slice(0, MAX_CAPTURE_CHARS - output.length);
-      }
-    }
-    if (output.length < MAX_CAPTURE_CHARS) {
-      output += decoder.decode().slice(0, MAX_CAPTURE_CHARS - output.length);
-    }
-    return output;
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-async function* streamLines(stream: ReadableStream<Uint8Array> | null): AsyncGenerator<string> {
-  if (!stream) return;
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  try {
-    while (true) {
-      const next = await reader.read();
-      if (next.done) break;
-      buffer += decoder.decode(next.value, { stream: true });
-      let newlineIndex = buffer.indexOf('\n');
-      while (newlineIndex >= 0) {
-        const line = buffer.slice(0, newlineIndex).replace(/\r$/, '');
-        buffer = buffer.slice(newlineIndex + 1);
-        yield line;
-        newlineIndex = buffer.indexOf('\n');
-      }
-    }
-    buffer += decoder.decode();
-    if (buffer.length > 0) yield buffer.replace(/\r$/, '');
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-function scheduleKill(proc: OmpProcess, onSigkill: () => void): ReturnType<typeof setTimeout> {
-  proc.kill('SIGTERM');
-  return setTimeout(() => {
-    onSigkill();
-    proc.kill('SIGKILL');
-  }, terminationGraceMs());
-}
-
-/**
- * Interrupted-result `resumed` only. Ordinary resume requires id equality;
- * fork requires an observed session header; no request omits the field.
- */
-function interruptedResumed(
-  resumeSessionId: string | undefined,
-  forkSession: boolean | undefined,
-  observedSessionId: string | undefined
-): boolean | undefined {
-  if (resumeSessionId === undefined) return undefined;
-  if (forkSession === true) return observedSessionId !== undefined;
-  return observedSessionId !== undefined && observedSessionId === resumeSessionId;
 }
 
 function buildExitErrorMessage(exitCode: number, stderr: string): string {
@@ -294,6 +225,20 @@ function hasAuthoritativeUsage(result: MessageChunk): boolean {
   );
 }
 
+/**
+ * Interrupted-result `resumed` only. Ordinary resume requires id equality;
+ * fork requires an observed session id; no request omits the field.
+ */
+function interruptedResumed(
+  resumeSessionId: string | undefined,
+  forkSession: boolean | undefined,
+  observedSessionId: string | undefined
+): boolean | undefined {
+  if (resumeSessionId === undefined) return undefined;
+  if (forkSession === true) return observedSessionId !== undefined;
+  return observedSessionId !== undefined && observedSessionId === resumeSessionId;
+}
+
 async function maybeEnrichResult(
   result: MessageChunk,
   options: {
@@ -328,11 +273,41 @@ async function maybeEnrichResult(
   }
 }
 
-export class OmpProvider implements IAgentProvider {
-  private readonly spawn: OmpSpawner;
+function assistantMessageStopReason(frame: RpcFrame): string | undefined {
+  const message = frame.message;
+  if (typeof message !== 'object' || message === null) return undefined;
+  const record = message as { role?: unknown; stopReason?: unknown };
+  if (record.role !== 'assistant') return undefined;
+  return typeof record.stopReason === 'string' ? record.stopReason : undefined;
+}
 
-  constructor(options?: { spawn?: OmpSpawner }) {
-    this.spawn = options?.spawn ?? defaultSpawner;
+/** Classification outcome of one turn's drain loop. */
+type DrainOutcome =
+  | { kind: 'natural' }
+  | { kind: 'interrupted' }
+  | { kind: 'protocol'; error: Error }
+  | { kind: 'transport'; error: Error };
+
+/** Bounded escalation kill for a warm session (operator Cancel — no attempt at a clean exit). */
+function scheduleHardKill(
+  session: OmpRpcSession,
+  onSigkill: () => void
+): ReturnType<typeof setTimeout> {
+  session.kill('SIGTERM');
+  return setTimeout(() => {
+    onSigkill();
+    session.kill('SIGKILL');
+  }, terminationGraceMs());
+}
+
+export class OmpProvider implements IAgentProvider {
+  private readonly spawn: OmpRpcSpawner;
+  private warmSession: OmpRpcSession | undefined;
+  private evictionTimer: ReturnType<typeof setTimeout> | undefined;
+  private cancelListenerSignal: AbortSignal | undefined;
+
+  constructor(options?: { spawn?: OmpRpcSpawner }) {
+    this.spawn = options?.spawn ?? defaultRpcSpawner;
   }
 
   getType(): string {
@@ -341,6 +316,67 @@ export class OmpProvider implements IAgentProvider {
 
   getCapabilities(): ProviderCapabilities {
     return OMP_CAPABILITIES;
+  }
+
+  private disarmEviction(): void {
+    if (!this.evictionTimer) return;
+    clearTimeout(this.evictionTimer);
+    this.evictionTimer = undefined;
+  }
+
+  private armEviction(): void {
+    this.disarmEviction();
+    if (!this.warmSession) return;
+    this.evictionTimer = setTimeout(() => {
+      getLog().info({ sessionId: this.warmSession?.sessionId }, 'omp.warm_session_idle_evicted');
+      this.disposeWarmSession('idle-timeout');
+    }, warmSessionIdleEvictionMs());
+  }
+
+  /** Called once a turn ends without error: keep the session warm, unless it was ephemeral. */
+  private finishTurnKeepWarm(noSession: boolean): void {
+    if (noSession) this.disposeWarmSession('ephemeral');
+    else this.armEviction();
+  }
+
+  /** Tears down the current warm session, if any. Idempotent; safe with no session. */
+  private disposeWarmSession(
+    reason: 'cancel' | 'mismatch' | 'idle-timeout' | 'crash' | 'ephemeral'
+  ): void {
+    this.disarmEviction();
+    const session = this.warmSession;
+    this.warmSession = undefined;
+    if (!session || session.disposed) return;
+    if (reason === 'cancel' || reason === 'crash') {
+      // A process that just proved its protocol stream unreliable, or that
+      // Cancel means to abandon outright, is not worth a graceful stdin-close.
+      scheduleHardKill(session, () => undefined);
+    } else {
+      void session.closeGracefully(terminationGraceMs());
+    }
+  }
+
+  /**
+   * Registers exactly one Cancel listener per node execution. `abortSignal`
+   * is the same `AbortController.signal` reused by the dag-executor across
+   * every turn of one node (fresh only per node, not per turn) — a single
+   * listener kills the warm session even while it is idling between turns,
+   * with no dispose()/cancel() hook needed on `IAgentProvider`.
+   */
+  private ensureCancelListener(abortSignal: AbortSignal | undefined): void {
+    if (!abortSignal || this.cancelListenerSignal === abortSignal) return;
+    this.cancelListenerSignal = abortSignal;
+    if (abortSignal.aborted) {
+      this.disposeWarmSession('cancel');
+      return;
+    }
+    abortSignal.addEventListener(
+      'abort',
+      () => {
+        this.disposeWarmSession('cancel');
+      },
+      { once: true }
+    );
   }
 
   async *sendQuery(
@@ -359,13 +395,6 @@ export class OmpProvider implements IAgentProvider {
     const effectivePrompt = wantsStructured
       ? augmentPromptForJsonSchema(prompt, outputFormat.schema)
       : prompt;
-    const { args, model, thinking } = buildOmpArgs({
-      prompt: effectivePrompt,
-      cwd,
-      config,
-      requestOptions,
-      resumeSessionId,
-    });
 
     const rawThinking = requestOptions?.nodeConfig?.thinking;
     if (rawThinking !== null && typeof rawThinking === 'object') {
@@ -376,29 +405,71 @@ export class OmpProvider implements IAgentProvider {
       };
     }
 
-    const command = buildSpawnCommand(binaryPath, args);
-    getLog().info(
-      {
-        cwd,
-        model,
-        thinking,
-        resumed: resumeSessionId !== undefined,
-        forked: requestOptions?.forkSession === true,
-      },
-      'omp.query_started'
-    );
-
+    const abortSignal = requestOptions?.abortSignal;
+    const interruptSignal = requestOptions?.interruptSignal;
     const noSession = requestOptions?.persistSession === false;
+    this.ensureCancelListener(abortSignal);
+    // Binary resolution above awaited — re-check before spawning anything.
+    if (abortSignal?.aborted) throw new Error('Query aborted');
+
+    const warmSession = this.warmSession;
+    const reusable =
+      warmSession !== undefined &&
+      !warmSession.disposed &&
+      !noSession &&
+      requestOptions?.forkSession !== true &&
+      resumeSessionId !== undefined &&
+      warmSession.sessionId === resumeSessionId;
+
+    let session: OmpRpcSession;
+    if (reusable && warmSession !== undefined) {
+      session = warmSession;
+      this.disarmEviction();
+    } else {
+      if (this.warmSession) this.disposeWarmSession('mismatch');
+      const { args, model, thinking } = buildOmpArgs({
+        cwd,
+        config,
+        requestOptions,
+        resumeSessionId,
+      });
+      const command = buildSpawnCommand(binaryPath, args);
+      getLog().info(
+        {
+          cwd,
+          model,
+          thinking,
+          resumed: resumeSessionId !== undefined,
+          forked: requestOptions?.forkSession === true,
+        },
+        'omp.query_started'
+      );
+      session = await spawnOmpRpcSession(this.spawn, command, { cwd, env });
+      // Registered as the Cancel target IMMEDIATELY — a Cancel that fires
+      // during the handshake below must still find and kill this process,
+      // even for an ephemeral (`--no-session`) request (cleared below once
+      // the call's outcome is known).
+      this.warmSession = session;
+      try {
+        const sessionId = await performReadyHandshakeAndGetSessionId(
+          session,
+          READY_TIMEOUT_MS,
+          GET_STATE_TIMEOUT_MS
+        );
+        session.sessionId = sessionId;
+      } catch (error: unknown) {
+        this.warmSession = undefined;
+        session.kill('SIGKILL');
+        throw toError(error);
+      }
+    }
+
     // Resume/fork need a pre-spawn snapshot so copied history is not double-counted.
-    // null = snapshot failed → skip hidden enrichment after exit; undefined = fresh run.
+    // null = snapshot failed → skip hidden enrichment after exit; undefined = fresh session.
     let snapshot: SessionUsageSnapshot | null | undefined;
     if (!noSession && resumeSessionId) {
       try {
-        snapshot = await snapshotHiddenSessionFiles({
-          env,
-          cwd,
-          resumeSessionId,
-        });
+        snapshot = await snapshotHiddenSessionFiles({ env, cwd, resumeSessionId });
       } catch (error: unknown) {
         getLog().warn(
           {
@@ -412,237 +483,122 @@ export class OmpProvider implements IAgentProvider {
     }
 
     const parser = new OmpEventParser(wantsStructured);
-    const proc = this.spawn(command, { cwd, env });
-    const abortSignal = requestOptions?.abortSignal;
-    const interruptSignal = requestOptions?.interruptSignal;
-    let processExited = false;
-    let killTimer: ReturnType<typeof setTimeout> | undefined;
-    let headerWaitTimer: ReturnType<typeof setTimeout> | undefined;
-    let terminationCause: TerminationCause | undefined;
-    let sigkillFired = false;
-    let pendingInterrupt = false;
-    let protocolError: Error | undefined;
-    let transportError: Error | undefined;
+    // `--mode rpc` never emits the `session` header frame `--mode json` does
+    // (verified against the real binary) — seed the parser's existing
+    // extension point with the id already known from get_state/reuse,
+    // through the exact event shape it already handles for `--mode json`.
+    parser.consumeLine(JSON.stringify({ type: 'session', id: session.sessionId }));
 
-    const clearKillTimer = (): void => {
-      if (!killTimer) return;
-      clearTimeout(killTimer);
-      killTimer = undefined;
-    };
-    const clearHeaderWait = (): void => {
-      if (!headerWaitTimer) return;
-      clearTimeout(headerWaitTimer);
-      headerWaitTimer = undefined;
-    };
-    const recordCause = (cause: TerminationCause): boolean => {
-      if (terminationCause !== undefined) return false;
-      terminationCause = cause;
-      return true;
-    };
-    const scheduleTerminate = (): void => {
-      if (processExited || killTimer) return;
-      killTimer = scheduleKill(proc, () => {
-        sigkillFired = true;
-      });
-    };
-    const claimInterruptOwnership = (): void => {
-      if (parser.hasNaturalTurnEnded()) return;
-      if (parser.hasSession()) {
-        pendingInterrupt = false;
-        clearHeaderWait();
-        if (recordCause('interrupt')) {
-          parser.beginOperatorInterrupt();
-          scheduleTerminate();
-        }
-        return;
-      }
-      if (parser.hasTurnActivity()) {
-        pendingInterrupt = false;
-        clearHeaderWait();
-        if (recordCause('interrupt-unresumable')) scheduleTerminate();
-        return;
-      }
-      // No session yet and no turn activity — defer until header or deadline.
-      pendingInterrupt = true;
-      if (headerWaitTimer) return;
-      headerWaitTimer = setTimeout(() => {
-        headerWaitTimer = undefined;
-        if (!pendingInterrupt) return;
-        pendingInterrupt = false;
-        if (parser.hasSession()) {
-          claimInterruptOwnership();
-          return;
-        }
-        if (recordCause('interrupt-unresumable')) scheduleTerminate();
-      }, INTERRUPT_SESSION_HEADER_WAIT_MS);
-    };
-    const onAbort = (): void => {
-      // Cancel wins final classification whenever aborted, even if Stop fired first.
-      if (
-        terminationCause === undefined ||
-        terminationCause === 'interrupt' ||
-        terminationCause === 'interrupt-unresumable'
-      ) {
-        terminationCause = 'cancel';
-      }
-      pendingInterrupt = false;
-      clearHeaderWait();
-      scheduleTerminate();
-    };
+    let interruptSent = false;
     const onInterrupt = (): void => {
-      if (abortSignal?.aborted) return;
-      claimInterruptOwnership();
+      if (abortSignal?.aborted) return; // Cancel wins final classification.
+      if (parser.hasNaturalTurnEnded()) return; // Raced a natural end — not an interrupt.
+      if (interruptSent) return;
+      interruptSent = true;
+      parser.beginOperatorInterrupt();
+      // The abort command's own JSON-RPC response is unreliable (verified
+      // against the real binary: never observed to echo back by id across
+      // repeated runs) — stamped with an id anyway for OMP's own
+      // diagnostics, but classification never waits on or reads it.
+      session.writeFrame({ id: crypto.randomUUID(), type: 'abort' });
     };
-    const afterParsedLine = (): void => {
-      if (!pendingInterrupt) return;
-      if (parser.hasSession() || parser.hasTurnActivity()) {
-        claimInterruptOwnership();
-      }
-    };
-    const exitOutcomePromise = proc.exited.then<ProcessOutcome<number>, ProcessOutcome<number>>(
-      exitCode => {
-        processExited = true;
-        clearKillTimer();
-        clearHeaderWait();
-        pendingInterrupt = false;
-        // A non-zero child exit is a real provider failure.  Record it before
-        // a later Stop listener can claim the already-dead process as its own.
-        if (exitCode !== 0) recordCause('transport');
-        return { ok: true, value: exitCode };
-      },
-      (error: unknown) => {
-        const normalized = toError(error);
-        transportError ??= normalized;
-        recordCause('transport');
-        scheduleTerminate();
-        return { ok: false, error: normalized };
-      }
-    );
-    const stderrOutcomePromise = readStream(proc.stderr).then<
-      ProcessOutcome<string>,
-      ProcessOutcome<string>
-    >(
-      stderr => ({ ok: true, value: stderr }),
-      (error: unknown) => {
-        const normalized = toError(error);
-        transportError ??= normalized;
-        recordCause('transport');
-        scheduleTerminate();
-        return { ok: false, error: normalized };
-      }
-    );
-
-    if (abortSignal) {
-      if (abortSignal.aborted) onAbort();
-      else abortSignal.addEventListener('abort', onAbort, { once: true });
-    }
-    // No pre-aborted no-spawn guard for interruptSignal — fresh-turn Stop still spawns.
     if (interruptSignal) {
       if (interruptSignal.aborted) onInterrupt();
       else interruptSignal.addEventListener('abort', onInterrupt, { once: true });
     }
 
+    const enrichOptions = { env, cwd, noSession, snapshot };
+    const resumedForInterrupt = interruptedResumed(
+      resumeSessionId,
+      requestOptions?.forkSession,
+      session.sessionId
+    );
+
     try {
-      try {
-        for await (const line of streamLines(proc.stdout)) {
-          if (line.trim().length === 0) continue;
-          try {
-            const chunks = parser.consumeLine(line);
-            // Fire pending interrupt as soon as the header is consumed, before yielding work.
-            afterParsedLine();
-            for (const chunk of chunks) yield chunk;
-          } catch (error: unknown) {
-            // Interrupt-owned truncated JSON / protocol noise after SIGTERM stays graceful.
-            if (terminationCause === 'interrupt') break;
-            protocolError = toError(error);
-            recordCause('protocol');
-            scheduleTerminate();
+      const promptId = crypto.randomUUID();
+      session.writeFrame({ id: promptId, type: 'prompt', message: effectivePrompt });
+
+      let observedAbortedStopReason = false;
+      let outcome: DrainOutcome | undefined;
+
+      while (outcome === undefined) {
+        let next: { frame: RpcFrame } | { exited: number };
+        try {
+          next = await session.nextFrameOrExit();
+        } catch (error: unknown) {
+          // A malformed frame on the wire is a protocol error; any other
+          // stream failure (I/O, decode) is a transport error.
+          outcome =
+            error instanceof RpcFrameParseError
+              ? { kind: 'protocol', error }
+              : { kind: 'transport', error: toError(error) };
+          break;
+        }
+        if ('exited' in next) {
+          const stderr = session.stderrSnapshot();
+          const message =
+            next.exited === 0
+              ? 'OMP RPC CLI exited unexpectedly while a turn was in progress.'
+              : buildExitErrorMessage(next.exited, stderr);
+          outcome = { kind: 'transport', error: new Error(message) };
+          break;
+        }
+        const frame = next.frame;
+        if (frame.type === 'response' && frame.id === promptId) {
+          if (frame.success !== true) {
+            outcome = {
+              kind: 'protocol',
+              error: new Error(
+                `OMP RPC CLI rejected the prompt request: ${String((frame as { error?: unknown }).error)}`
+              ),
+            };
             break;
           }
+          continue;
         }
-      } catch (error: unknown) {
-        if (terminationCause !== 'interrupt') {
-          transportError ??= toError(error);
-          recordCause('transport');
-          scheduleTerminate();
+        if (interruptSent && assistantMessageStopReason(frame) === 'aborted') {
+          observedAbortedStopReason = true;
+        }
+        try {
+          handleOutOfBandFrame(session, frame);
+        } catch (error: unknown) {
+          outcome = { kind: 'protocol', error: toError(error) };
+          break;
+        }
+        try {
+          for (const chunk of parser.consumeLine(JSON.stringify(frame))) yield chunk;
+        } catch (error: unknown) {
+          outcome = { kind: 'protocol', error: toError(error) };
+          break;
+        }
+        if (parser.hasNaturalTurnEnded()) {
+          outcome =
+            interruptSent && observedAbortedStopReason
+              ? { kind: 'interrupted' }
+              : { kind: 'natural' };
         }
       }
+      // Every loop exit sets `outcome` before `break`; narrow explicitly
+      // rather than relying on TS to see that through the while-condition.
+      if (outcome === undefined)
+        throw new Error('OMP RPC drain loop exited without a classification.');
 
-      const [exitOutcome, stderrOutcome] = await Promise.all([
-        exitOutcomePromise,
-        stderrOutcomePromise,
-      ]);
-      // Cancel dominates final classification whenever the node abort fired.
       if (abortSignal?.aborted) throw new Error('Query aborted');
 
-      const enrichOptions = { env, cwd, noSession, snapshot };
-      const resumedForInterrupt = interruptedResumed(
-        resumeSessionId,
-        requestOptions?.forkSession,
-        parser.getSessionId()
-      );
-
-      // SIGKILL during an interrupt attempt → unmarked force-kill error (never idle).
-      if (
-        sigkillFired &&
-        (terminationCause === 'interrupt' || terminationCause === 'interrupt-unresumable')
-      ) {
-        for (const chunk of parser.drainPendingAssistant()) yield chunk;
-        yield await maybeEnrichResult(
-          parser.buildForceKilledResult(resumedForInterrupt),
-          enrichOptions
-        );
-        return;
-      }
-
-      if (terminationCause === 'interrupt-unresumable') {
-        for (const chunk of parser.drainPendingAssistant()) yield chunk;
-        yield parser.buildSessionUnavailableResult();
-        return;
-      }
-
-      if (terminationCause === 'interrupt') {
-        // Drain pending assistant → one marked result → fail-soft usage enrich → return (no throw).
-        for (const chunk of parser.drainPendingAssistant()) yield chunk;
+      if (outcome.kind === 'interrupted') {
+        this.finishTurnKeepWarm(noSession);
+        for (const chunk of parser.drainPendingText()) yield chunk;
         yield await maybeEnrichResult(
           parser.buildInterruptedResult(resumedForInterrupt),
           enrichOptions
         );
-        getLog().info({ sessionId: parser.getSessionId() }, 'omp.query_interrupted');
+        getLog().info({ sessionId: session.sessionId }, 'omp.query_interrupted');
         return;
       }
 
-      // Late I/O after the parser already accepted authoritative usage must
-      // yield one terminal isError result (not throw) so the executor can
-      // record spend before failing the node. No-usage I/O still throws.
-      const lateIoError =
-        transportError ??
-        (!exitOutcome.ok ? exitOutcome.error : undefined) ??
-        (!stderrOutcome.ok ? stderrOutcome.error : undefined);
-      if (lateIoError) {
-        const observed = parser.buildResult(resumeSessionId !== undefined ? false : undefined);
-        if (hasAuthoritativeUsage(observed)) {
-          const message = lateIoError.message;
-          yield { type: 'system', content: message };
-          yield await maybeEnrichResult(
-            buildTransportErrorResult(
-              parser,
-              'omp_transport_error',
-              message,
-              resumeSessionId !== undefined
-            ),
-            enrichOptions
-          );
-          return;
-        }
-        throw lateIoError;
-      }
-      // lateIoError already covered both failure arms; re-check to narrow the union.
-      if (!exitOutcome.ok) throw exitOutcome.error;
-      if (!stderrOutcome.ok) throw stderrOutcome.error;
-
-      if (protocolError) {
-        const message = protocolError.message;
+      if (outcome.kind === 'protocol') {
+        this.disposeWarmSession('crash');
+        const message = outcome.error.message;
         yield { type: 'system', content: message };
         yield await maybeEnrichResult(
           buildTransportErrorResult(
@@ -656,37 +612,41 @@ export class OmpProvider implements IAgentProvider {
         return;
       }
 
-      if (exitOutcome.value !== 0) {
-        const message = buildExitErrorMessage(exitOutcome.value, stderrOutcome.value);
-        yield { type: 'system', content: message };
-        yield await maybeEnrichResult(
-          buildTransportErrorResult(
-            parser,
-            'omp_exit_nonzero',
-            message,
-            resumeSessionId !== undefined
-          ),
-          enrichOptions
-        );
-        return;
+      if (outcome.kind === 'transport') {
+        this.disposeWarmSession('crash');
+        const observed = parser.buildResult(resumeSessionId !== undefined ? false : undefined);
+        if (hasAuthoritativeUsage(observed)) {
+          const message = outcome.error.message;
+          yield { type: 'system', content: message };
+          yield await maybeEnrichResult(
+            buildTransportErrorResult(
+              parser,
+              'omp_transport_error',
+              message,
+              resumeSessionId !== undefined
+            ),
+            enrichOptions
+          );
+          return;
+        }
+        throw outcome.error;
       }
 
+      // Natural end.
+      this.finishTurnKeepWarm(noSession);
       yield await maybeEnrichResult(
         parser.buildResult(resumeSessionId === undefined ? undefined : true),
         enrichOptions
       );
-      getLog().info({ sessionId: parser.getSessionId() }, 'omp.query_completed');
+      getLog().info({ sessionId: session.sessionId }, 'omp.query_completed');
     } finally {
-      if (abortSignal) abortSignal.removeEventListener('abort', onAbort);
       if (interruptSignal) interruptSignal.removeEventListener('abort', onInterrupt);
-      clearHeaderWait();
-      pendingInterrupt = false;
-      if (!processExited) {
-        recordCause('cleanup');
-        scheduleTerminate();
+      // Ephemeral (`--no-session`) turns are never stored on `this.warmSession`
+      // (see the reuse guard above), so their teardown closes the LOCAL
+      // handle directly rather than through `disposeWarmSession`.
+      if (noSession && !session.disposed) {
+        void session.closeGracefully(terminationGraceMs());
       }
-      await Promise.all([exitOutcomePromise, stderrOutcomePromise]);
-      if (processExited) clearKillTimer();
     }
   }
 }

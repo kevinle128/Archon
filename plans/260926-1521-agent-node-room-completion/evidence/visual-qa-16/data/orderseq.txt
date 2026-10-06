@@ -1,0 +1,27 @@
+SIC01 TWO 7 runningToolRows [5, 6] ACK [8, 20] ONE 22 rowAfterTool True ackSameTurnBeforeONE True
+SIC02 TWO 6 runningToolRows [4, 5] ACK [7, 19] ONE 21 rowAfterTool True ackSameTurnBeforeONE True
+SIC03 TWO 7 runningToolRows [5, 6] ACK [8, 20] ONE 22 rowAfterTool True ackSameTurnBeforeONE True
+SIC04 TWO 6 runningToolRows [4, 5] ACK [7, 19] ONE 21 rowAfterTool True ackSameTurnBeforeONE True
+SIC05 TWO 7 runningToolRows [5, 6] ACK [8, 20] ONE 22 rowAfterTool True ackSameTurnBeforeONE True
+SIC06 TWO 7 runningToolRows [5, 6] ACK [8, 21] ONE 22 rowAfterTool True ackSameTurnBeforeONE True
+SIC07 TWO 7 runningToolRows [5, 6] ACK [8, 20] ONE 22 rowAfterTool True ackSameTurnBeforeONE True
+SIC08 TWO 6 runningToolRows [4, 5] ACK [7, 19] ONE 21 rowAfterTool True ackSameTurnBeforeONE True
+SIC09 TWO 10 runningToolRows [8, 9] ACK [11, 20] ONE 30 rowAfterTool True ackSameTurnBeforeONE True
+SIC10 TWO 7 runningToolRows [5, 6] ACK [8, 21] ONE 22 rowAfterTool True ackSameTurnBeforeONE True
+SIC11 TWO 7 runningToolRows [5, 6] ACK [8, 20] ONE 22 rowAfterTool True ackSameTurnBeforeONE True
+SIC12 TWO 7 runningToolRows [5, 6] ACK [8, 9] ONE 23 rowAfterTool True ackSameTurnBeforeONE True
+GKS01 TWO 29 runningToolRows [27, 28] ACK [38] ONE 111 rowAfterTool True ackSameTurnBeforeONE True
+GKS02 TWO 24 runningToolRows [22, 23] ACK [33] ONE 85 rowAfterTool True ackSameTurnBeforeONE True
+GKS03 TWO 28 runningToolRows [26, 27] ACK [35, 86] ONE 79 rowAfterTool True ackSameTurnBeforeONE True
+GKS04 TWO 28 runningToolRows [26, 27] ACK [51, 69] ONE 64 rowAfterTool True ackSameTurnBeforeONE True
+GKS05 TWO 28 runningToolRows [26, 27] ACK [35, 49] ONE 81 rowAfterTool True ackSameTurnBeforeONE True
+{'cycles': 17, 'rowAfterTool': 17, 'ackBetween': 17}
+FSI01 TWO 6 runningToolRows [4, 5] ACK [7] ONE 8 rowAfterTool True ackSameTurnBeforeONE True
+FSI02 TWO 6 runningToolRows [4, 5] ACK [7] ONE 8 rowAfterTool True ackSameTurnBeforeONE True
+FSI03 TWO 6 runningToolRows [4, 5] ACK [7] ONE 8 rowAfterTool True ackSameTurnBeforeONE True
+FSI04 TWO 6 runningToolRows [4, 5] ACK [7] ONE 8 rowAfterTool True ackSameTurnBeforeONE True
+FSI05 TWO 6 runningToolRows [4, 5] ACK [7] ONE 8 rowAfterTool True ackSameTurnBeforeONE True
+FSI06 TWO 6 runningToolRows [4, 5] ACK [7] ONE 8 rowAfterTool True ackSameTurnBeforeONE True
+FSI07 TWO 6 runningToolRows [4, 5] ACK [7] ONE 8 rowAfterTool True ackSameTurnBeforeONE True
+FSI08 TWO 6 runningToolRows [4, 5] ACK [7] ONE 8 rowAfterTool True ackSameTurnBeforeONE True
+{'cycles': 8, 'rowAfterTool': 8, 'ackBetween': 8}

@@ -3,7 +3,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
-import { type Locator, type Page, type Request, type Route, type TestInfo } from '@playwright/test';
+import {
+  type APIRequestContext,
+  type Locator,
+  type Page,
+  type Request,
+  type Route,
+  type TestInfo,
+} from '@playwright/test';
 
 import { test, expect } from '../lib/playwright/suite';
 import {
@@ -62,13 +69,13 @@ const OPERATOR_EVIDENCE_DIR = join(
 const MEASUREMENTS_FILE = join(EVIDENCE_DIR, 'us-005-measurements.json');
 
 const SCROLLER_TESTID: Record<Surface, string> = {
-  console: 'console-node-room-scroll',
+  console: 'node-transcript-scroll',
   legacy: 'node-transcript-scroll',
 };
 
 const INTERRUPT_DISCLOSURE =
   'stopped after the last completed tool call · files already written stay written';
-const SEND_HINT = 'Cmd/Ctrl+Enter to send · this tab only';
+const SEND_HINT = 'Cmd/Ctrl+Enter to send · saved for you';
 const AGENT_INTERRUPTING = 'agent interrupting';
 const AGENT_IDLE = 'agent idle · Send now delivers';
 const AGENT_GENERATING = 'agent generating';
@@ -79,6 +86,14 @@ const DETACHED_DISCLOSURE =
 const REDIRECT_SCENARIO = '{"echoPrompt":true,"delayMs":1500}';
 const REDIRECT_TEXT = `<<E2E_SCENARIO>>${REDIRECT_SCENARIO}<</E2E_SCENARIO>>third`;
 const REDIRECT_ECHO = '[e2e-fake] resumed echo: first\n\nsecond\n\nthird';
+// Carries its own echoPrompt directive so the drained guidance turn proves it
+// ran on the resumed session, same pattern as REDIRECT_TEXT above — the
+// directive is stripped before the fake provider echoes it back. delayMs
+// holds the turn open long enough for the transient Stop/"agent generating"
+// state to become observable before the echo resolves.
+const BLANK_SEND_NOW_TEXT =
+  '<<E2E_SCENARIO>>{"echoPrompt":true,"delayMs":1500}<</E2E_SCENARIO>>first';
+const BLANK_SEND_NOW_ECHO = '[e2e-fake] resumed echo: first';
 const MULTILINE_FIRST =
   'line one of operator guidance\n\nline two keeps the breaks\nline three wraps in the narrow room';
 const LOOP_REDIRECT_SCENARIO =
@@ -93,6 +108,48 @@ function sendPathname(runId: string, nodeId: string): string {
 
 function interruptPathname(runId: string, nodeId: string): string {
   return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/interrupt`;
+}
+
+function draftPathname(runId: string, nodeId: string): string {
+  return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/draft`;
+}
+
+function queuePathname(runId: string, nodeId: string): string {
+  return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/queue`;
+}
+
+interface DraftSnapshot {
+  message: string;
+  updated_at: string;
+}
+
+/**
+ * Reads the acting operator's own server-persisted composer draft. Scoped by
+ * the request context's identity header — a different identity's GET on the
+ * same run/node never sees this one.
+ */
+async function readDraft(
+  request: APIRequestContext,
+  runId: string,
+  nodeId: string
+): Promise<DraftSnapshot | null> {
+  const res = await request.get(draftPathname(runId, nodeId), {
+    headers: { 'Cache-Control': 'no-store' },
+  });
+  expect(res.status(), `GET draft ${runId}/${nodeId}`).toBe(200);
+  const body = (await res.json()) as { success?: boolean; draft?: DraftSnapshot | null };
+  expect(body.success, 'draft read success flag').toBe(true);
+  return body.draft ?? null;
+}
+
+/** Waits for the composer's debounced draft PUT to reach the server. */
+async function waitForDraftSaved(page: Page, runId: string, nodeId: string): Promise<void> {
+  await page.waitForResponse(
+    res =>
+      res.request().method() === 'PUT' &&
+      new URL(res.url()).pathname === draftPathname(runId, nodeId) &&
+      res.ok()
+  );
 }
 
 /** Counts POSTs to a node route so no-request guards are provable. */
@@ -598,6 +655,11 @@ for (const surface of ['console', 'legacy'] as const) {
     const interrupts = trackPosts(page, interruptPathname(run.runId, QUEUE_GUIDANCE_NODE));
     const room = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_NODE);
     const field = guidanceField(room);
+    // Set once the interrupted tool settles below; re-checked while the
+    // redirect turn is live to prove the room keeps that row visible instead
+    // of dropping it once a later turn starts (the whole point of one
+    // occurrence spanning every turn of a steered node).
+    let interruptedToolId: string | null = null;
 
     await test.step('generating dock: tool call in flight, Stop + Queue render', async () => {
       const toolRow = room.locator('[data-tool-id]').first();
@@ -673,6 +735,8 @@ for (const surface of ['console', 'legacy'] as const) {
         timeout: T.medium,
       });
       await expect(toolRow.locator('summary')).toContainText('⚠');
+      interruptedToolId = await toolRow.getAttribute('data-tool-id');
+      expect(interruptedToolId).not.toBeNull();
       await waitForSubState(page, run.runId, QUEUE_GUIDANCE_NODE, 'idle-after-interrupt');
       const state = await getNodeState(page, run.runId, QUEUE_GUIDANCE_NODE);
       expect(state?.status, 'interrupt never cancels the node').toBe('running');
@@ -691,15 +755,14 @@ for (const surface of ['console', 'legacy'] as const) {
       await captureEvidence(room, `us-005-${surface}-idle-after-interrupt.png`, testInfo);
     });
 
-    await test.step('blank Send now and its shortcut issue no request', async () => {
-      const before = sends.count();
+    await test.step('blank Send now is enabled while items wait, and never sent by accident', async () => {
+      // CAP-10: with items already waiting, a blank Send now would deliver
+      // everything — so the control must not be disabled here. The redirect
+      // step below exercises the actual delivery (see the dedicated blank
+      // Send now test for the delivery-with-no-typed-text path in isolation).
       const sendNow = sendNowButton(room);
-      await expect(sendNow).toHaveAttribute('aria-disabled', 'true');
+      await expect(sendNow).not.toHaveAttribute('aria-disabled', 'true');
       expect(await sendNow.getAttribute('disabled')).toBeNull();
-      await sendNow.click({ force: true });
-      await field.focus();
-      await field.press('Meta+Enter');
-      expect(sends.count(), 'no send POST while the draft is blank').toBe(before);
     });
 
     await test.step('Send now posts only the typed message; the band drains', async () => {
@@ -730,9 +793,15 @@ for (const surface of ['console', 'legacy'] as const) {
     });
 
     await test.step('same-session redirect completes with three operator rows before the echo', async () => {
-      // Attempt-scoped rooms drop the interrupted attempt's tool card as soon as
-      // the redirect turn starts, so interrupted->operator DOM adjacency is
-      // proven via API seq (below). Live DOM proves operators precede the echo.
+      // The redirect turn is one execution continuing on the interrupted
+      // turn's own occurrence — the interrupted tool card must stay visible
+      // alongside the operator rows WHILE the node is still running (Stop
+      // still up here), never dropped once the redirect turn starts.
+      expect(interruptedToolId).not.toBeNull();
+      await expect(
+        room.locator(`[data-tool-id="${interruptedToolId}"]`).locator('summary')
+      ).toContainText('⚠');
+      await expect(stopButton(room)).toBeVisible();
       await expect(room.locator('[data-operator-row]')).toHaveCount(3, { timeout: T.xlong });
       await expect(room.getByText(/resumed echo: first/).first()).toBeVisible({
         timeout: T.xlong,
@@ -805,7 +874,13 @@ for (const surface of ['console', 'legacy'] as const) {
       const resumedAttempt = resumed!.metadata?.execution?.attempt_id;
       const interruptedAttempt = interrupted!.metadata?.execution?.attempt_id;
       expect(typeof resumedAttempt).toBe('string');
-      expect(resumedAttempt).not.toBe(interruptedAttempt);
+      // The redirect turn is the SAME execution as the interrupted one — one
+      // occurrence and attempt spanning both, so the room never has to
+      // choose which turn's rows to show.
+      expect(resumedAttempt).toBe(interruptedAttempt);
+      expect(resumed!.metadata?.execution?.occurrence_id).toBe(
+        interrupted!.metadata?.execution?.occurrence_id
+      );
       for (const row of operatorRows) {
         expect(row.metadata?.execution?.attempt_id).toBe(resumedAttempt);
       }
@@ -863,6 +938,66 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(freshRoom.getByText('delivered')).toHaveCount(0);
       await expect(guidanceField(freshRoom)).toHaveCount(0);
     });
+  });
+
+  test(`[P1] [V:steer.interrupt-blank-send-now-${surface}] blank Send now delivers everything already waiting on ${surface}`, async ({
+    page,
+    archon,
+  }, testInfo: TestInfo) => {
+    test.setTimeout(T.xlong * 2);
+    const run = await archon.startWorkflowViaWeb(
+      E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
+      'e2e blank send now'
+    );
+    const sends = trackPosts(page, sendPathname(run.runId, QUEUE_GUIDANCE_NODE));
+    const room = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_NODE);
+    const field = guidanceField(room);
+    await expect(room.locator('[data-tool-id]').first()).toBeVisible({ timeout: T.medium });
+
+    await field.fill(BLANK_SEND_NOW_TEXT);
+    await queueButton(room).click();
+    await expect(room.getByText('queued · 1')).toBeVisible();
+
+    const interruptResponse = page.waitForResponse(
+      res => new URL(res.url()).pathname === interruptPathname(run.runId, QUEUE_GUIDANCE_NODE)
+    );
+    await stopButton(room).click();
+    expect((await interruptResponse).status()).toBe(200);
+    await expect(sendNowButton(room)).toBeVisible({ timeout: T.medium });
+    await expect(room.getByText('will send · 1')).toBeVisible();
+
+    // The composer stays empty — CAP-10's "delivers everything" applies with
+    // nothing newly typed.
+    await expect(field).toHaveValue('');
+    const sendNow = sendNowButton(room);
+    await expect(sendNow).not.toHaveAttribute('aria-disabled', 'true');
+
+    const sendNowResponse = page.waitForResponse(
+      res => new URL(res.url()).pathname === sendPathname(run.runId, QUEUE_GUIDANCE_NODE)
+    );
+    await sendNow.click();
+    const response = await sendNowResponse;
+    expect(response.status()).toBe(200);
+    const posted = response.request().postDataJSON() as { message?: string; intent?: string };
+    expect(posted.message).toBe('');
+    expect(posted.intent).toBe('send_now');
+    expect(sends.count()).toBe(2); // the earlier Queue post, then this blank Send now.
+
+    await expect(room.getByText(/^will send ·/)).toHaveCount(0);
+    await expect(stopButton(room)).toBeVisible();
+    await expect(dockStatus(room)).toContainText(AGENT_GENERATING);
+
+    await expect(room.getByText(BLANK_SEND_NOW_ECHO).first()).toBeVisible({
+      timeout: T.xlong,
+    });
+    await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
+
+    const messages = await listNodeMessages(page, run.runId, QUEUE_GUIDANCE_NODE);
+    const operatorRows = messages.filter(
+      message => message.kind === 'text' && message.metadata?.origin === 'operator'
+    );
+    expect(operatorRows.map(row => row.payload.text)).toEqual([BLANK_SEND_NOW_TEXT]);
+    await captureEvidence(room, `us-004-${surface}-blank-send-now.png`, testInfo);
   });
 
   test(`[P1] [V:steer.interrupt-fail-${surface}] interrupt and redirect failure paths restore state on ${surface}`, async ({
@@ -1019,7 +1154,15 @@ for (const surface of ['console', 'legacy'] as const) {
     await field.fill('first');
     await queueButton(room).click();
     await expect(room.getByText('queued · 1')).toBeVisible();
+
+    const draftSaved = waitForDraftSaved(page, run.runId, QUEUE_GUIDANCE_NODE);
     await field.fill('kept draft');
+    // Wait for the debounced PUT to land, then read it back before the 422
+    // even fires — a precondition that fails loudly on an identity mismatch
+    // rather than surfacing as an ambiguous "draft missing" later.
+    await draftSaved;
+    const draftBefore = await readDraft(page.request, run.runId, QUEUE_GUIDANCE_NODE);
+    expect(draftBefore?.message, 'the draft reaches the server before the 422').toBe('kept draft');
 
     await page.route('**/interrupt', async route => {
       await route.fulfill({
@@ -1036,15 +1179,11 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(disclosure).toContainText(DETACHED_DISCLOSURE, { timeout: T.medium });
     await expect(field).toHaveCount(0);
 
-    const stored = await page.evaluate(
-      key => sessionStorage.getItem(key),
-      `archon:steering-draft:${run.runId}:${QUEUE_GUIDANCE_NODE}`
-    );
-    const record = JSON.parse(stored ?? '{}') as {
-      draft?: string;
-      pendingRetry?: { messageId?: string; message?: string };
-    };
-    expect(record.draft, 'the typed draft survives the 422').toBe('kept draft');
+    // The 422 replaces the dock with the detached disclosure — the field
+    // (and any never-sent-draft display) leaves the DOM, so the server draft
+    // is the only remaining proof that the typed text survives the 422.
+    const draftAfter = await readDraft(page.request, run.runId, QUEUE_GUIDANCE_NODE);
+    expect(draftAfter?.message, 'the typed draft survives the 422').toBe('kept draft');
     await page.unroute('**/interrupt');
     // Let the natural delay finish so the run leaves no live process; the
     // queued item still drains at the boundary.
@@ -1126,6 +1265,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(page.getByText(LOOP_DONE_TEXT).first()).toBeVisible();
     await expect(page.getByText('×2')).toHaveCount(0);
     if (surface === 'console') {
+      await page.getByRole('tab', { name: 'Logs' }).click();
       const order = await page.evaluate(() => {
         const text = (document.querySelector('main') ?? document.body).textContent ?? '';
         return {
@@ -1138,10 +1278,15 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(order.group, '×1 group header exists').toBeGreaterThanOrEqual(0);
       expect(order.echo).toBeGreaterThan(order.group);
       expect(order.done).toBeGreaterThan(order.echo);
-      expect(
-        order.text.match(/steer-loop ×/g)?.length ?? 0,
-        'exactly one iteration group for steer-loop'
-      ).toBe(1);
+      // Scoped to the node run list only: the open room's own header
+      // legitimately repeats the same "steer-loop ×1" label alongside it, so
+      // counting across the whole page would double-count one iteration
+      // instead of catching a genuine second one.
+      await expect(
+        page.getByRole('navigation', { name: 'Node runs' }).getByRole('button', {
+          name: /steer-loop ×/,
+        })
+      ).toHaveCount(1);
     }
   });
 
@@ -1157,7 +1302,10 @@ for (const surface of ['console', 'legacy'] as const) {
     );
     const room = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_NODE);
     const field = guidanceField(room);
-    await expect(room.locator('[data-tool-id]').first()).toBeVisible({ timeout: T.medium });
+    const initialToolRow = room.locator('[data-tool-id]').first();
+    await expect(initialToolRow).toBeVisible({ timeout: T.medium });
+    const interruptedToolId = await initialToolRow.getAttribute('data-tool-id');
+    expect(interruptedToolId).not.toBeNull();
     await expect(stopButton(room)).toBeVisible({ timeout: T.medium });
 
     await field.fill(MULTILINE_FIRST);
@@ -1281,6 +1429,13 @@ for (const surface of ['console', 'legacy'] as const) {
       await sendNow.click();
       expect((await sendNowResponse).status()).toBe(200);
       await expect(stopButton(room)).toBeVisible();
+      // The redirect turn continues the interrupted turn's own occurrence —
+      // its tool card must stay visible, with Stop still up, proving the
+      // room keeps the full transcript live rather than swapping to only
+      // the new turn's rows.
+      await expect(
+        room.locator(`[data-tool-id="${interruptedToolId}"]`).locator('summary')
+      ).toContainText('⚠');
       await captureEvidence(room, `us-005-${surface}-460-generating-again.png`, testInfo);
       const afterGrow = await lastRowVisibility(room, surface);
       expect(afterGrow, 'last transcript row reachable after dock shrink').toBe('ok');
@@ -1351,7 +1506,7 @@ for (const surface of ['console', 'legacy'] as const) {
   });
 }
 
-test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 idle idempotent, awaiting_send_now, drain-once, 404, 409, 422', async ({
+test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 idle idempotent, awaiting_send_now, drain-once, 404, 409 finished, 409 recovery', async ({
   page,
   archon,
 }) => {
@@ -1371,9 +1526,10 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
   await waitForNodeStarted(page, run.runId, QUEUE_GUIDANCE_NODE);
   await waitForSubState(page, run.runId, QUEUE_GUIDANCE_NODE, 'generating');
 
+  const queuedOneId = randomUUID();
   const queued = await post(run.runId, QUEUE_GUIDANCE_NODE, {
     message: 'route queued one',
-    message_id: randomUUID(),
+    message_id: queuedOneId,
     intent: 'queue',
   });
   expect(queued.status).toBe(200);
@@ -1389,9 +1545,10 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
   expect(await again.json()).toEqual({ success: true, sub_state: 'idle-after-interrupt' });
 
   // Queueing while idle records the receipt without waking the turn.
+  const queuedTwoId = randomUUID();
   const idleQueued = await post(run.runId, QUEUE_GUIDANCE_NODE, {
     message: 'route queued two',
-    message_id: randomUUID(),
+    message_id: queuedTwoId,
     intent: 'queue',
   });
   expect(idleQueued.status).toBe(200);
@@ -1418,6 +1575,13 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
   await waitForSubState(page, run.runId, QUEUE_GUIDANCE_NODE, 'generating');
 
   // A replayed send_now is idempotent — the accepted id never drains twice.
+  // The contract's replay guarantee is "the current receipt", not a frozen
+  // one: by now the drain has claimed the message into the active turn, so
+  // its state has legitimately advanced past `awaiting_send_now`. The fake
+  // provider's `delayMs` blocks every emission (including the first stream
+  // chunk that would mark it `sent`) until the full delay elapses, so
+  // `dispatching` — claimed, not yet delivered — is the deterministic state
+  // at this point.
   const replay = await post(run.runId, QUEUE_GUIDANCE_NODE, {
     message: sendNowMessage,
     message_id: sendNowId,
@@ -1427,8 +1591,22 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
   expect(await replay.json()).toEqual({
     success: true,
     message_id: sendNowId,
-    state: 'awaiting_send_now',
+    state: 'dispatching',
   });
+
+  // Stronger proof the replay never inserted a second queue entry: the
+  // durable queue still holds exactly the three original ids, in FIFO order.
+  const queueAfterReplay = await archon.starterFetch(queuePathname(run.runId, QUEUE_GUIDANCE_NODE));
+  expect(queueAfterReplay.status).toBe(200);
+  const queueAfterReplayBody = (await queueAfterReplay.json()) as {
+    success: boolean;
+    queued: { message_id: string }[];
+  };
+  expect(queueAfterReplayBody.queued.map(entry => entry.message_id)).toEqual([
+    queuedOneId,
+    queuedTwoId,
+    sendNowId,
+  ]);
 
   const unknown = await interrupt(run.runId, 'ghost-node');
   expect(unknown.status).toBe(404);
@@ -1437,15 +1615,21 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
     error: { code: 'not_found' },
   });
 
+  // A CLI-detached run registers its own live handle in its own process and
+  // durably stamps `provider_id` on the node's steering settings row. From
+  // this server's perspective that row looks identical to a crashed process
+  // that once held a live handle — the classifier cannot tell "alive in
+  // another process" from "orphaned by a crash", so it asks for the explicit
+  // Resume action (409 `recovery_required`) rather than guessing.
   const detached = await archon.startDetachedWorkflow(E2E_QUEUE_GUIDANCE_WORKFLOW_NAME);
   const detachedRunId = await detached.runId;
   await archon.waitForRunStatus(detachedRunId, 'running', T.long);
   await waitForNodeStarted(page, detachedRunId, QUEUE_GUIDANCE_NODE);
   const detachedInterrupt = await interrupt(detachedRunId, QUEUE_GUIDANCE_NODE);
-  expect(detachedInterrupt.status).toBe(422);
+  expect(detachedInterrupt.status).toBe(409);
   expect(await detachedInterrupt.json()).toMatchObject({
     success: false,
-    error: { code: 'not_steerable_here' },
+    error: { code: 'recovery_required' },
   });
 
   await archon.waitForRunStatus(run.runId, 'completed', T.xlong);

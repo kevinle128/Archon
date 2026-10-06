@@ -55,6 +55,12 @@ export class OmpEventParser {
   private sawTurnActivity = false;
   private activeAssistantMessage = false;
   private pendingAssistant = '';
+  /** Coalesced thinking deltas, mirroring `pendingAssistant` — OMP's CLI has
+   *  emitted one `thinking_delta` per turn in observed traffic, but nothing
+   *  in the protocol guarantees that, so this accumulates rather than
+   *  yielding a chunk per delta. Assistant and thinking are mutually
+   *  exclusive: starting one always flushes the other first. */
+  private pendingThinking = '';
   private currentMessageText = '';
   private structuredText = '';
   private streamError: string | undefined;
@@ -161,9 +167,9 @@ export class OmpEventParser {
     this.toolsActiveAtInterrupt = new Set(this.activeTools.keys());
   }
 
-  /** Idempotent drain of coalesced assistant text (wraps flushAssistant). */
-  drainPendingAssistant(): MessageChunk[] {
-    return this.flushAssistant();
+  /** Idempotent drain of coalesced assistant and thinking text. */
+  drainPendingText(): MessageChunk[] {
+    return this.flushPendingText();
   }
 
   /**
@@ -279,12 +285,12 @@ export class OmpEventParser {
       case 'tool_execution_end':
         return this.consumeToolEnd(event);
       case 'notice': {
-        const chunks = this.flushAssistant();
+        const chunks = this.flushPendingText();
         const message = stringField(event.message);
         return message ? [...chunks, { type: 'system', content: message }] : chunks;
       }
       case 'auto_retry_start': {
-        const chunks = this.flushAssistant();
+        const chunks = this.flushPendingText();
         const attempt = event.attempt;
         const error = stringField(event.errorMessage) ?? stringField(event.error);
         const details = [
@@ -302,9 +308,9 @@ export class OmpEventParser {
           throw new Error('OMP CLI ended with an outstanding tool call.');
         this.sawTurnActivity = true;
         this.sawAgentEnd = true;
-        return this.activeAssistantMessage ? [] : this.flushAssistant();
+        return this.activeAssistantMessage ? [] : this.flushPendingText();
       default:
-        return this.flushAssistant();
+        return this.flushPendingText();
     }
   }
 
@@ -313,15 +319,20 @@ export class OmpEventParser {
     const delta = stringField(event?.delta);
     if (type === 'text_delta' && delta) {
       this.sawTurnActivity = true;
+      const chunks = this.flushThinking();
       this.pendingAssistant += delta;
       this.currentMessageText += delta;
-      return [];
+      return chunks;
     }
     if (type === 'thinking_delta' && delta) {
       this.sawTurnActivity = true;
-      return [...this.flushAssistant(), { type: 'thinking', content: delta }];
+      const chunks = this.flushAssistant();
+      this.pendingThinking += delta;
+      return chunks;
     }
-    return type === 'text_end' || type === 'done' || type === 'error' ? this.flushAssistant() : [];
+    return type === 'text_end' || type === 'done' || type === 'error'
+      ? this.flushPendingText()
+      : [];
   }
 
   private consumeMessageEnd(message: JsonObject | undefined): MessageChunk[] {
@@ -347,13 +358,13 @@ export class OmpEventParser {
       this.pendingAssistant += suffix;
       this.currentMessageText += suffix;
       if (this.wantsStructured) this.structuredText += completeText;
-      chunks = this.flushAssistant();
+      chunks = this.flushPendingText();
     } else {
       log.warn(
         { streamedLength: this.currentMessageText.length, completeLength: completeText.length },
         'omp.streaming_text_mismatch'
       );
-      chunks = this.flushAssistant();
+      chunks = this.flushPendingText();
       this.streamError = 'omp_stream_mismatch';
     }
     this.sawAssistantMessage = true;
@@ -373,7 +384,7 @@ export class OmpEventParser {
   }
 
   private consumeToolStart(event: JsonObject): MessageChunk[] {
-    const chunks = this.flushAssistant();
+    const chunks = this.flushPendingText();
     const toolName = stringField(event.toolName);
     if (!toolName) throw new Error('OMP CLI tool_execution_start is missing toolName.');
     const toolCallId = stringField(event.toolCallId);
@@ -396,7 +407,7 @@ export class OmpEventParser {
   }
 
   private consumeToolEnd(event: JsonObject): MessageChunk[] {
-    const chunks = this.flushAssistant();
+    const chunks = this.flushPendingText();
     const toolName = stringField(event.toolName);
     if (!toolName) throw new Error('OMP CLI tool_execution_end is missing toolName.');
     const toolCallId = stringField(event.toolCallId);
@@ -444,6 +455,20 @@ export class OmpEventParser {
       outputState: 'full' as const,
     });
     return result;
+  }
+
+  /** Flushes whichever text span is open. Assistant and thinking never
+   *  accumulate at once — each start flushes the other first — so this is
+   *  never more than the one chunk that was actually pending. */
+  private flushPendingText(): MessageChunk[] {
+    return [...this.flushAssistant(), ...this.flushThinking()];
+  }
+
+  private flushThinking(): MessageChunk[] {
+    if (this.pendingThinking.length === 0) return [];
+    const content = this.pendingThinking;
+    this.pendingThinking = '';
+    return [{ type: 'thinking', content }];
   }
 
   private flushAssistant(): MessageChunk[] {

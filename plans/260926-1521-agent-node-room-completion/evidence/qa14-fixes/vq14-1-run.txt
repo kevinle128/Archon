@@ -1,0 +1,15 @@
+[port-proof] all stream hosts observed: ["localhost:5283","localhost:3415"]
+[port-proof] console stream hosts: ["localhost:3415"]
+[disconnect-30s] legacyB errors=0 consoleRuns errors=0 legacyDashboard errors=0
+[fin-1] latencyAfterTerminalFrameMs=-148
+[fin-2] latencyAfterTerminalFrameMs=-146
+[fin-3] latencyAfterTerminalFrameMs=-183
+[fin-4] latencyAfterTerminalFrameMs=-146
+[fin-5] latencyAfterTerminalFrameMs=-139
+[fin-6] latencyAfterTerminalFrameMs=-141
+[fin-7] latencyAfterTerminalFrameMs=-132
+[fin-8] latencyAfterTerminalFrameMs=-140
+[fin-9] latencyAfterTerminalFrameMs=-135
+[fin-10] latencyAfterTerminalFrameMs=-208
+[console-runs-page] terminal-relevant messages seen: 592
+DONE

@@ -1,0 +1,13 @@
+@archon/server dev: {"level":30,"time":1790645950463,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"provider.codex","threadId":"01a0ead0-d4e4-7e33-bb20-1546dba9f726","msg":"codex.thread_started"}
+@archon/server dev: {"level":30,"time":1790645950463,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"provider.codex","threadId":"01a0ead0-d590-7a70-a2f0-493da92e132a","msg":"codex.thread_started"}
+@archon/server dev: {"level":30,"time":1790645984993,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"workflow.dag-executor","workflowRunId":"4156c2844d5f618a04f6cee0dba33714","nodeId":"hold","status":"cancelled","msg":"dag.node_cancel_poll_detected"}
+@archon/server dev: {"level":30,"time":1790645984993,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"provider.codex","rootPid":19971,"descendantCount":6,"msg":"codex.tree_reap_armed"}
+@archon/server dev: {"level":30,"time":1790645984993,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"provider.codex.process-tree-reap","pids":[20487,20488,20489,23489,20844,23490],"msg":"codex.tree_reap_terminating_orphans"}
+@archon/server dev: {"level":30,"time":1790645984993,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"workflow.dag-executor","nodeId":"hold","durationMs":36051,"msg":"dag_node_cancelled_during_streaming"}
+@archon/server dev: {"level":30,"time":1790646037035,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"provider.codex","threadId":"01a0ead2-2762-7a01-bf36-c6a4391d5b65","msg":"codex.thread_started"}
+@archon/server dev: {"level":30,"time":1790646037035,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"provider.codex","threadId":"01a0ead2-27bf-7412-a6b3-91e2881ccd17","msg":"codex.thread_started"}
+@archon/server dev: {"level":30,"time":1790646068066,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"provider.codex","rootPid":26737,"descendantCount":6,"msg":"codex.tree_reap_armed"}
+@archon/server dev: {"level":30,"time":1790646068066,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"provider.codex.process-tree-reap","pids":[27418,27420,27421,30210,27908,30211],"msg":"codex.tree_reap_terminating_orphans"}
+@archon/server dev: {"level":30,"time":1790646068071,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"provider.codex","threadId":"01a0ead2-27bf-7412-a6b3-91e2881ccd17","msg":"codex.query_interrupted"}
+@archon/server dev: {"level":30,"time":1790646098471,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"provider.codex","threadId":"01a0ead2-27bf-7412-a6b3-91e2881ccd17","msg":"codex.thread_started"}
+@archon/server dev: {"level":30,"time":1790646109355,"pid":19016,"hostname":"Les-MacBook-Pro.local","module":"workflow.dag-executor","nodeId":"hold","durationMs":73955,"msg":"dag_node_completed"}

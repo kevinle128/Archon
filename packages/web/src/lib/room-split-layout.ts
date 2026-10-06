@@ -1,6 +1,14 @@
 export type PanelPercent = `${number}%`;
 export type RoomSurface = 'legacy' | 'console';
 
+/**
+ * The node panel's fixed width in the horizontal room split. It does not
+ * resize with the window and carries no drag handle; a narrow container
+ * falls back to the single-column room instead of shrinking this value.
+ */
+export const CONSOLE_ROOM_WIDTH_PX = 520;
+export const LEGACY_ROOM_WIDTH_PX = 460;
+
 export const ROOM_SPLIT = {
   defaultRoomRatio: 40,
   minRoomRatio: 24,

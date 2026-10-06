@@ -1,36 +1,18 @@
 import { describe, expect, mock, spyOn, test } from 'bun:test';
 
 import {
+  createSoftInjectionController,
   createSteeringRegistry,
   getSteeringRegistry,
   resolveIdleAwaitInactivityMs,
   scheduleIdleExpiryWithTimeout,
   STEERING_IDLE_AWAIT_INACTIVITY_MS,
   type NodeSteeringHandle,
-  type QueuedOperatorMessage,
   type ScheduleIdleExpiry,
   type SteeringIdleWake,
   type SteeringRegistry,
 } from './steering-registry';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-let seq = 0;
-function msg(
-  id?: string,
-  text = `guidance-${seq}`,
-  operatorUserId: string | null = 'user-1'
-): QueuedOperatorMessage {
-  seq += 1;
-  return {
-    messageId: id ?? `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`,
-    message: text,
-    operatorUserId,
-    receivedAt: `2026-09-19T01:00:${String(seq % 60).padStart(2, '0')}.000Z`,
-  };
-}
+import type { SoftInjectionRequest } from '@archon/providers/types';
 
 // ---------------------------------------------------------------------------
 // Registry construction
@@ -68,12 +50,9 @@ describe('registry construction', () => {
   test('clearForTests empties the singleton and seals held handles', () => {
     const singleton = getSteeringRegistry();
     const handle = singleton.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
     singleton.clearForTests();
     expect(singleton.get('run-1', 'node-1')).toBeUndefined();
-    const result = handle.enqueue(msg('m-2'));
-    expect(result).toEqual({ ok: false, reason: 'closed' });
-    expect(handle.drain()).toEqual([]);
+    expect(handle.snapshot().phase).toBe('closed');
   });
 });
 
@@ -94,52 +73,35 @@ describe('register/get/unregister', () => {
   test('register on a live handle returns the same handle', () => {
     const registry = createSteeringRegistry();
     const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
     expect(registry.register('run-1', 'node-1')).toBe(handle);
-    expect(handle.pendingCount()).toBe(1);
   });
 
-  test('register resumes a parked handle with its queue intact', () => {
+  test('register resumes a parked handle', () => {
     const registry = createSteeringRegistry();
     const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
     handle.park();
     const resumed = registry.register('run-1', 'node-1');
     expect(resumed).toBe(handle);
     expect(resumed.snapshot().phase).toBe('live');
-    expect(resumed.pendingCount()).toBe(1);
   });
 
   test('register replaces a closed handle for a genuinely new execution', () => {
     const registry = createSteeringRegistry();
     const first = registry.register('run-1', 'node-1');
-    first.enqueue(msg('m-1'));
     first.close();
     const second = registry.register('run-1', 'node-1');
     expect(second).not.toBe(first);
     expect(second.snapshot().phase).toBe('live');
-    expect(second.pendingCount()).toBe(0);
-    // Fresh idempotency scope: the id accepted by the closed handle is new here.
-    const again = second.enqueue(msg('m-1'));
-    expect(again).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    // The replaced handle stays closed and undisturbed.
     expect(first.snapshot().phase).toBe('closed');
-    expect(first.snapshot().queued).toHaveLength(1);
   });
 
   test('unregister removes the handle so register starts fresh', () => {
     const registry = createSteeringRegistry();
     const first = registry.register('run-1', 'node-1');
-    first.enqueue(msg('m-1'));
     registry.unregister('run-1', 'node-1');
     expect(registry.get('run-1', 'node-1')).toBeUndefined();
     const second = registry.register('run-1', 'node-1');
     expect(second).not.toBe(first);
-    expect(second.enqueue(msg('m-1')).duplicate).toBe(false);
   });
 
   test('unregister is a no-op for unknown keys', () => {
@@ -152,401 +114,17 @@ describe('register/get/unregister', () => {
 });
 
 // ---------------------------------------------------------------------------
-// enqueue ordering and receipts
+// park / resume / close
 // ---------------------------------------------------------------------------
-
-describe('enqueue', () => {
-  test('live appends in receipt order with caller-supplied ISO receipt time', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    const first = msg('m-1', 'first');
-    const second = msg('m-2', 'second');
-    expect(handle.enqueue(first)).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    expect(handle.enqueue(second)).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-2', state: 'queued' },
-    });
-    expect(handle.snapshot().queued).toEqual([first, second]);
-    expect(handle.snapshot().queued[0]?.receivedAt).toBe(first.receivedAt);
-    expect(handle.pendingCount()).toBe(2);
-    expect(handle.snapshot().acceptedCount).toBe(2);
-  });
-
-  test('receipt carries no message content', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    const result = handle.enqueue(msg('m-1', 'secret prose'));
-    expect(result).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-  });
-
-  test('parked handle refuses new ids with not_live', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.park();
-    expect(handle.enqueue(msg('m-1'))).toEqual({ ok: false, reason: 'not_live' });
-    expect(handle.pendingCount()).toBe(0);
-  });
-
-  test('closed handle refuses new ids with closed', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.close();
-    expect(handle.enqueue(msg('m-1'))).toEqual({ ok: false, reason: 'closed' });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Idempotency
-// ---------------------------------------------------------------------------
-
-describe('idempotency', () => {
-  test('duplicate id before drain returns the original receipt and adds no item', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1', 'original'));
-    const dup = handle.enqueue(msg('m-1', 'original'));
-    expect(dup).toEqual({
-      ok: true,
-      duplicate: true,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    expect(handle.pendingCount()).toBe(1);
-    expect(handle.snapshot().acceptedCount).toBe(1);
-  });
-
-  test('duplicate id after drain still returns the original receipt', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1', 'original'));
-    expect(handle.drain()).toHaveLength(1);
-    const dup = handle.enqueue(msg('m-1', 'original'));
-    expect(dup).toEqual({
-      ok: true,
-      duplicate: true,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    expect(handle.pendingCount()).toBe(0);
-    expect(handle.snapshot().acceptedCount).toBe(1);
-  });
-
-  test('duplicate id while parked returns the original receipt before phase logic', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
-    handle.park();
-    const dup = handle.enqueue(msg('m-1'));
-    expect(dup).toEqual({
-      ok: true,
-      duplicate: true,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    // A new id on the same parked handle is still refused.
-    expect(handle.enqueue(msg('m-2'))).toEqual({ ok: false, reason: 'not_live' });
-  });
-
-  test('duplicate id while closed returns the original receipt before phase logic', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
-    handle.close();
-    expect(handle.enqueue(msg('m-1'))).toEqual({
-      ok: true,
-      duplicate: true,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    expect(handle.enqueue(msg('m-2'))).toEqual({ ok: false, reason: 'closed' });
-  });
-
-  test('duplicate id with different prose keeps the original and adds no item', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1', 'original prose', 'op-a'));
-    const dup = handle.enqueue(msg('m-1', 'different prose', 'op-b'));
-    expect(dup).toEqual({
-      ok: true,
-      duplicate: true,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    expect(handle.pendingCount()).toBe(1);
-    expect(handle.snapshot().queued[0]?.message).toBe('original prose');
-    expect(handle.snapshot().queued[0]?.operatorUserId).toBe('op-a');
-  });
-
-  test('more than 500 accepted ids still leaves the first id idempotent', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    const firstId = 'm-first';
-    handle.enqueue(msg(firstId));
-    for (let i = 0; i < 600; i++) {
-      handle.enqueue(msg(`m-${i}`));
-    }
-    expect(handle.snapshot().acceptedCount).toBe(601);
-    const dup = handle.enqueue(msg(firstId));
-    expect(dup).toEqual({
-      ok: true,
-      duplicate: true,
-      receipt: { messageId: firstId, state: 'queued' },
-    });
-    expect(handle.pendingCount()).toBe(601);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// closeIfEmpty / drain / park / resume / close
-// ---------------------------------------------------------------------------
-
-describe('closeIfEmpty', () => {
-  test('closes an empty live handle synchronously and returns true', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    expect(handle.closeIfEmpty()).toBe(true);
-    expect(handle.snapshot().phase).toBe('closed');
-    expect(handle.enqueue(msg('m-1'))).toEqual({ ok: false, reason: 'closed' });
-  });
-
-  test('returns false without mutation when items exist', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
-    expect(handle.closeIfEmpty()).toBe(false);
-    expect(handle.snapshot().phase).toBe('live');
-    expect(handle.pendingCount()).toBe(1);
-  });
-
-  test('returns false on a parked handle even when empty', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.park();
-    expect(handle.closeIfEmpty()).toBe(false);
-    expect(handle.snapshot().phase).toBe('parked');
-  });
-
-  test('seals before a racing enqueue - no receipt succeeds after the gate', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    expect(handle.closeIfEmpty()).toBe(true);
-    expect(handle.enqueue(msg('m-1'))).toEqual({ ok: false, reason: 'closed' });
-  });
-});
-
-describe('drain', () => {
-  test('drain atomically returns pending items without closing the handle', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    const a = msg('m-1', 'a');
-    const b = msg('m-2', 'b');
-    handle.enqueue(a);
-    handle.enqueue(b);
-    const items = handle.drain();
-    expect(items).toEqual([a, b]);
-    expect(handle.pendingCount()).toBe(0);
-    expect(handle.snapshot().phase).toBe('live');
-    // Accepted-id memory survives drain.
-    expect(handle.enqueue(msg('m-1'))).toEqual({
-      ok: true,
-      duplicate: true,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    // And new ids still append after a drain.
-    expect(handle.enqueue(msg('m-3'))).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-3', state: 'queued' },
-    });
-  });
-
-  test('drain on an empty handle returns no items and keeps the phase', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    expect(handle.drain()).toEqual([]);
-    expect(handle.snapshot().phase).toBe('live');
-  });
-
-  test('mixed senders keep order and attribution through drain', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    const a1 = msg('a1', 'from-a-1', 'op-a');
-    const b1 = msg('b1', 'from-b-1', 'op-b');
-    const a2 = msg('a2', 'from-a-2', 'op-a');
-    const b2 = msg('b2', 'from-b-2', 'op-b');
-    handle.accept(a1, 'queue');
-    handle.accept(b1, 'queue');
-    handle.accept(a2, 'queue');
-    handle.accept(b2, 'queue');
-
-    const queued = handle.snapshot().queued;
-    expect(queued.map(m => m.messageId)).toEqual(['a1', 'b1', 'a2', 'b2']);
-    expect(queued.map(m => m.operatorUserId)).toEqual(['op-a', 'op-b', 'op-a', 'op-b']);
-    expect(queued.filter(m => m.operatorUserId === 'op-a').map(m => m.messageId)).toEqual([
-      'a1',
-      'a2',
-    ]);
-    expect(queued.filter(m => m.operatorUserId === 'op-b').map(m => m.messageId)).toEqual([
-      'b1',
-      'b2',
-    ]);
-
-    const drained = handle.drain();
-    expect(drained).toEqual([a1, b1, a2, b2]);
-    expect(handle.drain()).toEqual([]);
-  });
-});
-
-describe('withdraw', () => {
-  test('removing B from pending A/B/C leaves A/C in order, phase live, pendingCount decremented', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    const a = msg('m-1', 'a');
-    const b = msg('m-2', 'b');
-    const c = msg('m-3', 'c');
-    handle.enqueue(a);
-    handle.enqueue(b);
-    handle.enqueue(c);
-
-    expect(handle.withdraw('m-2')).toBe(true);
-    const snap = handle.snapshot();
-    expect(snap.queued).toEqual([a, c]);
-    expect(snap.phase).toBe('live');
-    expect(snap.acceptedCount).toBe(3);
-    expect(handle.pendingCount()).toBe(2);
-  });
-
-  test('never-seen and already-drained ids return false without changing the snapshot', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
-    handle.enqueue(msg('m-2'));
-    handle.drain();
-    const before = handle.snapshot();
-
-    expect(handle.withdraw('m-1')).toBe(false);
-    expect(handle.withdraw('m-never-seen')).toBe(false);
-    const after = handle.snapshot();
-    expect(after.phase).toBe(before.phase);
-    expect(after.queued).toEqual(before.queued);
-    expect(after.acceptedCount).toBe(before.acceptedCount);
-  });
-
-  test('repeating a successful withdraw returns false and is mutation-free', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
-    handle.enqueue(msg('m-2'));
-
-    expect(handle.withdraw('m-1')).toBe(true);
-    const before = handle.snapshot();
-    expect(handle.withdraw('m-1')).toBe(false);
-    const after = handle.snapshot();
-    expect(after.phase).toBe(before.phase);
-    expect(after.queued).toEqual(before.queued);
-    expect(after.acceptedCount).toBe(before.acceptedCount);
-  });
-
-  test('replaying enqueue(A) after withdraw returns the original duplicate receipt without requeueing', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1', 'original'));
-    expect(handle.withdraw('m-1')).toBe(true);
-    expect(handle.pendingCount()).toBe(0);
-
-    const dup = handle.enqueue(msg('m-1', 'original'));
-    expect(dup).toEqual({
-      ok: true,
-      duplicate: true,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    expect(handle.pendingCount()).toBe(0);
-    expect(handle.snapshot().acceptedCount).toBe(1);
-  });
-
-  test('a parked handle removes A while remaining parked; resume drains only the retained siblings', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    const a = msg('m-1', 'a');
-    const b = msg('m-2', 'b');
-    const c = msg('m-3', 'c');
-    handle.enqueue(a);
-    handle.enqueue(b);
-    handle.enqueue(c);
-    handle.park();
-
-    expect(handle.withdraw('m-1')).toBe(true);
-    expect(handle.snapshot().phase).toBe('parked');
-    expect(handle.snapshot().queued).toEqual([b, c]);
-
-    handle.resume();
-    expect(handle.drain()).toEqual([b, c]);
-    expect(handle.snapshot().phase).toBe('live');
-  });
-
-  test('a closed handle containing A returns false and keeps the full snapshot unchanged', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
-    handle.enqueue(msg('m-2'));
-    handle.close();
-    const before = handle.snapshot();
-
-    expect(handle.withdraw('m-1')).toBe(false);
-    const after = handle.snapshot();
-    expect(after.phase).toBe('closed');
-    expect(after.queued).toEqual(before.queued);
-    expect(after.acceptedCount).toBe(before.acceptedCount);
-  });
-
-  test('removing the last live item does not close the handle - only closeIfEmpty seals', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
-
-    expect(handle.withdraw('m-1')).toBe(true);
-    expect(handle.snapshot().phase).toBe('live');
-    expect(handle.pendingCount()).toBe(0);
-    // The executor's last gate still owns the seal, and it still applies.
-    expect(handle.closeIfEmpty()).toBe(true);
-    expect(handle.snapshot().phase).toBe('closed');
-  });
-
-  test('a later drain cannot return a previously withdrawn item', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    const a = msg('m-1', 'a');
-    const b = msg('m-2', 'b');
-    handle.enqueue(a);
-    handle.enqueue(b);
-
-    expect(handle.withdraw('m-1')).toBe(true);
-    expect(handle.drain()).toEqual([b]);
-    expect(handle.drain()).toEqual([]);
-  });
-});
 
 describe('park/resume/close', () => {
-  test('park retains queued items and blocks enqueue; resume re-lives the same handle', () => {
+  test('park moves a live handle to parked; resume re-lives the same handle', () => {
     const registry = createSteeringRegistry();
     const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
     handle.park();
     expect(handle.snapshot().phase).toBe('parked');
-    expect(handle.pendingCount()).toBe(1);
-    expect(handle.enqueue(msg('m-2'))).toEqual({ ok: false, reason: 'not_live' });
     handle.resume();
     expect(handle.snapshot().phase).toBe('live');
-    expect(handle.enqueue(msg('m-2'))).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-2', state: 'queued' },
-    });
-    expect(handle.snapshot().queued).toHaveLength(2);
   });
 
   test('park on a closed handle does not resurrect it', () => {
@@ -563,20 +141,6 @@ describe('park/resume/close', () => {
     handle.close();
     handle.resume();
     expect(handle.snapshot().phase).toBe('closed');
-    expect(handle.enqueue(msg('m-1'))).toEqual({ ok: false, reason: 'closed' });
-  });
-
-  test('close refuses later enqueues but retains items for counting', () => {
-    const registry = createSteeringRegistry();
-    const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1'));
-    handle.enqueue(msg('m-2'));
-    handle.close();
-    expect(handle.enqueue(msg('m-3'))).toEqual({ ok: false, reason: 'closed' });
-    const snap = handle.snapshot();
-    expect(snap.phase).toBe('closed');
-    expect(snap.queued).toHaveLength(2);
-    expect(snap.acceptedCount).toBe(2);
   });
 });
 
@@ -585,62 +149,40 @@ describe('park/resume/close', () => {
 // ---------------------------------------------------------------------------
 
 describe('discardRun', () => {
-  test('closes, clears, and removes every handle for only the named run', () => {
+  test('closes and removes every handle for only the named run', () => {
     const registry = createSteeringRegistry();
     const h1 = registry.register('run-1', 'node-1');
     const h2 = registry.register('run-1', 'node-2');
     const other = registry.register('run-2', 'node-1');
-    h1.enqueue(msg('m-1'));
-    h1.enqueue(msg('m-2'));
-    h2.enqueue(msg('m-3'));
     h2.park();
-    other.enqueue(msg('m-4'));
 
     const counts = registry.discardRun('run-1');
-    expect(counts).toEqual({ handles: 2, queued: 3 });
+    expect(counts).toEqual({ handles: 2 });
     expect(registry.get('run-1', 'node-1')).toBeUndefined();
     expect(registry.get('run-1', 'node-2')).toBeUndefined();
 
-    // Held references are closed and emptied - they cannot drain or accept.
     expect(h1.snapshot().phase).toBe('closed');
-    expect(h1.snapshot().queued).toEqual([]);
-    expect(h1.drain()).toEqual([]);
-    expect(h1.enqueue(msg('m-9'))).toEqual({ ok: false, reason: 'closed' });
-    // Accepted-id memory is cleared too: a replayed id is refused, not replayed.
-    expect(h1.enqueue(msg('m-1'))).toEqual({ ok: false, reason: 'closed' });
     expect(h2.snapshot().phase).toBe('closed');
 
     // Other runs are untouched.
     expect(registry.get('run-2', 'node-1')).toBe(other);
     expect(other.snapshot().phase).toBe('live');
-    expect(other.pendingCount()).toBe(1);
-    expect(other.enqueue(msg('m-5'))).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-5', state: 'queued' },
-    });
   });
 
-  test('discardRun on an unknown run returns zero counts', () => {
+  test('discardRun on an unknown run returns a zero count', () => {
     const registry = createSteeringRegistry();
     registry.register('run-1', 'node-1');
-    expect(registry.discardRun('run-2')).toEqual({ handles: 0, queued: 0 });
+    expect(registry.discardRun('run-2')).toEqual({ handles: 0 });
     expect(registry.get('run-1', 'node-1')).toBeDefined();
   });
 
   test('a handle re-registered after discardRun starts a fresh execution', () => {
     const registry = createSteeringRegistry();
     const first = registry.register('run-1', 'node-1');
-    first.enqueue(msg('m-1'));
     registry.discardRun('run-1');
     const second = registry.register('run-1', 'node-1');
     expect(second).not.toBe(first);
     expect(second.snapshot().phase).toBe('live');
-    expect(second.enqueue(msg('m-1'))).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
   });
 });
 
@@ -695,11 +237,6 @@ describe('capability-aware registration', () => {
     expect(handle.steeringSubState()).toBeUndefined();
     expect(handle.snapshot().subState).toBeUndefined();
     expect(() => handle.beginTurn(new AbortController())).toThrow(/interruptible/);
-    expect(handle.enqueue(msg('m-1'))).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
   });
 });
 
@@ -846,114 +383,283 @@ describe('interrupt', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Atomic accept + idle await (#183)
+// markTurnNotInterruptible — per-turn interrupt downgrade (provider report
+// that THIS turn cannot honor Stop despite an otherwise-interruptible handle)
 // ---------------------------------------------------------------------------
 
-describe('accept + enterIdle', () => {
-  test('queue intent while generating lands as queued', () => {
+describe('markTurnNotInterruptible', () => {
+  test('hides the sub-state projection for the flagged turn only', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const t1 = handle.beginTurn(new AbortController());
+    expect(handle.steeringSubState()).toBe('generating');
+    handle.markTurnNotInterruptible(t1);
+    expect(handle.steeringSubState()).toBeUndefined();
+    expect(handle.snapshot().subState).toBeUndefined();
+  });
+
+  test('interrupt() on a flagged turn settles not_steerable_here immediately and never aborts', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const controller = new AbortController();
+    const token = handle.beginTurn(controller);
+    handle.markTurnNotInterruptible(token);
+    await expect(handle.interrupt()).resolves.toBe('not_steerable_here');
+    expect(controller.signal.aborted).toBe(false); // no node-level or turn-level abort
+    expect(handle.wasOperatorInterrupted(token)).toBe(false); // flag never set
+  });
+
+  test('an interrupt() that lands BEFORE the report resolves immediately once the report arrives, instead of hanging until the turn settles', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const controller = new AbortController();
+    const token = handle.beginTurn(controller);
+
+    const pending = handle.interrupt(); // races in before the provider's report
+    expect(controller.signal.aborted).toBe(true); // inert abort — nothing reads this signal
+    expect(handle.wasOperatorInterrupted(token)).toBe(true);
+
+    handle.markTurnNotInterruptible(token); // the report arrives next
+
+    await expect(pending).resolves.toBe('not_steerable_here'); // resolves now, not at turn end
+    expect(handle.wasOperatorInterrupted(token)).toBe(false); // stale flag cleared
+
+    // A second call after the report is idempotent with the first's outcome.
+    await expect(handle.interrupt()).resolves.toBe('not_steerable_here');
+  });
+
+  test('a later turn on the same node is interruptible again', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const t1 = handle.beginTurn(new AbortController());
+    handle.markTurnNotInterruptible(t1);
+    handle.endTurnStream(t1);
+    handle.settleTurn(t1, 'generating');
+
+    const t2 = handle.beginTurn(new AbortController());
+    expect(handle.steeringSubState()).toBe('generating');
+    expect(handle.snapshot().subState).toBe('generating');
+    void t2;
+  });
+
+  test('stale or already-settled tokens are a no-op', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const t1 = handle.beginTurn(new AbortController());
+    handle.markTurnNotInterruptible(999); // stale — no-op
+    expect(handle.steeringSubState()).toBe('generating');
+
+    handle.endTurnStream(t1);
+    handle.settleTurn(t1, 'generating');
+    handle.markTurnNotInterruptible(t1); // already settled — no-op, no throw
+    const t2 = handle.beginTurn(new AbortController());
+    expect(handle.steeringSubState()).toBe('generating');
+    void t2;
+  });
+
+  test('a queue-only (non-interruptible) handle ignores the report and stays not-steerable', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    handle.markTurnNotInterruptible(1); // no active turn, no throw
+    expect(handle.steeringSubState()).toBeUndefined();
+    await expect(handle.interrupt()).resolves.toBe('not_steerable_here');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// softInject — mid-turn delivery channel (CAP-12 per-item Send now)
+// ---------------------------------------------------------------------------
+
+describe('softInject', () => {
+  test('delivers to a registered handler and resolves what the handler resolves', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const channel = createSoftInjectionController();
+    handle.beginTurn(new AbortController(), channel);
+    const received: SoftInjectionRequest[] = [];
+    channel.channel.ready(async request => {
+      received.push(request);
+      return true;
+    });
+    await expect(handle.softInject({ messageId: 'msg-1', text: 'keep going' })).resolves.toBe(
+      'delivered'
+    );
+    expect(received).toEqual([{ messageId: 'msg-1', text: 'keep going' }]);
+  });
+
+  test('runs the acceptance hook only after a handler accepts, and hides the operator from the handler', async () => {
+    const accepted: string[] = [];
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const channel = createSoftInjectionController(async request => {
+      accepted.push(`${request.messageId}:${String(request.operatorUserId)}`);
+    });
+    handle.beginTurn(new AbortController(), channel);
+    const received: SoftInjectionRequest[] = [];
+    let accept = false;
+    channel.channel.ready(async request => {
+      received.push(request);
+      return accept;
+    });
+
+    await handle.softInject({ messageId: 'msg-1', text: 'x', operatorUserId: 'op-1' });
+    expect(accepted).toEqual([]);
+    accept = true;
+    await handle.softInject({ messageId: 'msg-2', text: 'y', operatorUserId: 'op-1' });
+    expect(accepted).toEqual(['msg-2:op-1']);
+    expect(received[1]).toEqual({ messageId: 'msg-2', text: 'y' });
+  });
+
+  test('resolves not_ready when the handler itself declines', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const channel = createSoftInjectionController();
+    handle.beginTurn(new AbortController(), channel);
+    channel.channel.ready(async () => false);
+    await expect(handle.softInject({ messageId: 'msg-1', text: 'x' })).resolves.toBe('not_ready');
+  });
+
+  test('resolves not_ready when no handler is registered yet', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    handle.beginTurn(new AbortController(), createSoftInjectionController());
+    await expect(handle.softInject({ messageId: 'msg-1', text: 'x' })).resolves.toBe('not_ready');
+  });
+
+  test('resolves no_active_turn with no channel on the turn (e.g. provider without the capability)', async () => {
     const registry = createSteeringRegistry();
     const handle = registry.register('run-1', 'node-1', { interruptible: true });
     handle.beginTurn(new AbortController());
-    expect(handle.accept(msg('m-1'), 'queue')).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    expect(handle.pendingCount()).toBe(1);
+    await expect(handle.softInject({ messageId: 'msg-1', text: 'x' })).resolves.toBe(
+      'no_active_turn'
+    );
   });
 
-  test('queue intent while interrupting lands as queued — no wake semantics', async () => {
+  test('resolves no_active_turn between turns, after Stop settles idle, and once closed', async () => {
     const registry = createSteeringRegistry();
     const handle = registry.register('run-1', 'node-1', { interruptible: true });
-    const token = handle.beginTurn(new AbortController());
-    const pending = handle.interrupt();
-    expect(handle.accept(msg('m-1'), 'queue')).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    handle.settleTurn(token, 'idle-after-interrupt');
-    await expect(pending).resolves.toBe('idle-after-interrupt');
+    const token = handle.beginTurn(new AbortController(), createSoftInjectionController());
+    handle.settleTurn(token, 'generating'); // between-turn boundary window
+    await expect(handle.softInject({ messageId: 'a', text: 'x' })).resolves.toBe('no_active_turn');
+
+    const idleToken = handle.beginTurn(new AbortController(), createSoftInjectionController());
+    handle.interrupt();
+    void handle.enterIdle(idleToken);
+    await expect(handle.softInject({ messageId: 'b', text: 'x' })).resolves.toBe('no_active_turn');
+
+    handle.close();
+    await expect(handle.softInject({ messageId: 'c', text: 'x' })).resolves.toBe('no_active_turn');
   });
 
-  test('queue intent while idle lands as awaiting_send_now and never wakes', async () => {
+  test('resolves no_active_turn on a queue-only (non-interruptible) or parked handle', async () => {
+    const registry = createSteeringRegistry();
+    const queueOnly = registry.register('run-1', 'node-1');
+    await expect(queueOnly.softInject({ messageId: 'a', text: 'x' })).resolves.toBe(
+      'no_active_turn'
+    );
+
+    const parked = registry.register('run-1', 'node-2', { interruptible: true });
+    parked.beginTurn(new AbortController(), createSoftInjectionController());
+    parked.park();
+    await expect(parked.softInject({ messageId: 'b', text: 'x' })).resolves.toBe('no_active_turn');
+  });
+
+  test("a fresh turn never receives a request through a prior turn's stale channel", async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const firstChannel = createSoftInjectionController();
+    const firstToken = handle.beginTurn(new AbortController(), firstChannel);
+    const firstReceived: SoftInjectionRequest[] = [];
+    firstChannel.channel.ready(async request => {
+      firstReceived.push(request);
+      return true;
+    });
+    handle.settleTurn(firstToken, 'generating');
+
+    // Second turn begins with its own fresh channel and no handler registered yet.
+    handle.beginTurn(new AbortController(), createSoftInjectionController());
+    await expect(handle.softInject({ messageId: 'turn-2', text: 'x' })).resolves.toBe('not_ready');
+    expect(firstReceived).toEqual([]); // never routed to the settled turn's handler
+  });
+});
+
+// ---------------------------------------------------------------------------
+// wakeForSendNow / awaitSendNowAgain (#183) — content-free idle wake
+// ---------------------------------------------------------------------------
+
+describe('wakeForSendNow + awaitSendNowAgain', () => {
+  test('wakeForSendNow resolves the waiter but leaves sub-state idle until a turn begins', async () => {
     const registry = createSteeringRegistry();
     const handle = registry.register('run-1', 'node-1', { interruptible: true });
     const token = handle.beginTurn(new AbortController());
     handle.interrupt();
     const waiter = handle.enterIdle(token);
+    expect(handle.wakeForSendNow()).toBe('woken');
+    await expect(waiter).resolves.toEqual({ kind: 'send_now' });
+    // The claim can still find nothing (a race with withdraw) — sub-state
+    // must not report generating before a real turn actually begins.
     expect(handle.steeringSubState()).toBe('idle-after-interrupt');
-    expect(handle.accept(msg('m-1', 'hold'), 'queue')).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-1', state: 'awaiting_send_now' },
-    });
-    // The waiter stays pending — racing it against a resolved sentinel proves
-    // no implicit wake.
-    const settled = await Promise.race([waiter.then(() => 'woke'), Promise.resolve('still-idle')]);
-    expect(settled).toBe('still-idle');
-    expect(handle.pendingCount()).toBe(1);
-    handle.close(); // test cleanup — resolves the waiter
-    await expect(waiter).resolves.toEqual({ kind: 'terminated' });
+    const newToken = handle.beginTurn(new AbortController());
+    expect(handle.steeringSubState()).toBe('generating');
+    handle.settleTurn(newToken, 'node_finished');
   });
 
-  test('send_now while idle drains in order and resolves the waiter in the same tick', async () => {
+  test('wakeForSendNow is a no-op off a generating, parked, or closed handle', () => {
+    const registry = createSteeringRegistry();
+    const generating = registry.register('run-1', 'gen', { interruptible: true });
+    generating.beginTurn(new AbortController());
+    expect(generating.wakeForSendNow()).toBe('not_idle');
+
+    const queueOnly = registry.register('run-1', 'queue-only');
+    expect(queueOnly.wakeForSendNow()).toBe('not_idle');
+
+    const parked = registry.register('run-1', 'parked', { interruptible: true });
+    parked.park();
+    expect(parked.wakeForSendNow()).toBe('not_idle');
+
+    const closed = registry.register('run-1', 'closed', { interruptible: true });
+    closed.close();
+    expect(closed.wakeForSendNow()).toBe('not_idle');
+  });
+
+  test('a duplicate wake after the waiter already fired is inert', async () => {
     const registry = createSteeringRegistry();
     const handle = registry.register('run-1', 'node-1', { interruptible: true });
     const token = handle.beginTurn(new AbortController());
     handle.interrupt();
     const waiter = handle.enterIdle(token);
-    const first = msg('m-1', 'first', 'op-a');
-    const second = msg('m-2', 'second', 'op-b');
-    const trigger = msg('m-3', 'go');
-    handle.accept(first, 'queue');
-    handle.accept(second, 'send_now'); // non-blank: drains [m-1, m-2] itself
-    const wake1 = await waiter;
-    expect(wake1).toEqual({ kind: 'send_now', messages: [first, second] });
-    expect(handle.steeringSubState()).toBe('generating');
-
-    // Second idle cycle: a later send_now drains the whole batch in order.
-    const token2 = handle.beginTurn(new AbortController());
-    handle.interrupt();
-    const waiter2 = handle.enterIdle(token2);
-    handle.accept(trigger, 'send_now');
-    const wake2 = await waiter2;
-    expect(wake2.kind).toBe('send_now');
-    if (wake2.kind === 'send_now') {
-      expect(wake2.messages.map(m => m.messageId)).toEqual(['m-3']);
-    }
+    expect(handle.wakeForSendNow()).toBe('woken');
+    await waiter;
+    // The waiter is already consumed — a second wake attempt (e.g. a
+    // replayed duplicate message id) finds no idle waiter to resolve.
+    expect(handle.wakeForSendNow()).toBe('not_idle');
   });
 
-  test('duplicate ids replay the original receipt and never release a second drain', async () => {
+  test('awaitSendNowAgain re-installs a waiter after a claim finds nothing', async () => {
     const registry = createSteeringRegistry();
     const handle = registry.register('run-1', 'node-1', { interruptible: true });
     const token = handle.beginTurn(new AbortController());
     handle.interrupt();
-    const waiter = handle.enterIdle(token);
-    handle.accept(msg('m-1', 'go'), 'send_now');
-    const wake = await waiter;
-    expect(wake.kind).toBe('send_now');
-    // Replay: the original receipt comes back — no re-enqueue, no waiter release.
-    const dup = handle.accept(msg('m-1', 'go'), 'send_now');
-    expect(dup).toEqual({
-      ok: true,
-      duplicate: true,
-      receipt: { messageId: 'm-1', state: 'awaiting_send_now' },
-    });
-    expect(handle.pendingCount()).toBe(0);
+    void handle.enterIdle(token);
+    expect(handle.wakeForSendNow()).toBe('woken');
+
+    // The executor's claim found nothing (a race with withdraw) — it re-waits.
+    const again = handle.awaitSendNowAgain();
+    expect(handle.wakeForSendNow()).toBe('woken');
+    await expect(again).resolves.toEqual({ kind: 'send_now' });
   });
 
-  test('send_now while generating queues normally — never drains the live turn', () => {
+  test('awaitSendNowAgain fails outside a live idle handle or with a waiter already installed', () => {
     const registry = createSteeringRegistry();
+    const generating = registry.register('run-1', 'gen', { interruptible: true });
+    generating.beginTurn(new AbortController());
+    expect(() => generating.awaitSendNowAgain()).toThrow(/idle-after-interrupt/);
+
     const handle = registry.register('run-1', 'node-1', { interruptible: true });
-    handle.beginTurn(new AbortController());
-    expect(handle.accept(msg('m-1', 'not now'), 'send_now')).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-1', state: 'queued' },
-    });
-    expect(handle.pendingCount()).toBe(1);
-    expect(handle.steeringSubState()).toBe('generating');
+    const token = handle.beginTurn(new AbortController());
+    handle.interrupt();
+    void handle.enterIdle(token);
+    expect(() => handle.awaitSendNowAgain()).toThrow(/already installed/);
   });
 
   test('enterIdle resolves the in-flight interrupt as idle and fails on stale tokens', async () => {
@@ -1173,7 +879,7 @@ describe('idle-await inactivity timer + keepalive', () => {
     await expect(idleWaiter).resolves.toEqual({ kind: 'terminated' });
   });
 
-  test('T1.5 send_now cancels the job, drains once, and later expiry cannot resolve again', async () => {
+  test('T1.5 wakeForSendNow cancels the job and resolves the waiter once', async () => {
     const scheduler = createManualScheduler();
     const registry = createSteeringRegistry({
       idleAwaitInactivityMs: 10_000,
@@ -1181,56 +887,15 @@ describe('idle-await inactivity timer + keepalive', () => {
     });
     const handle = registry.register('run-1', 'node-1', { interruptible: true });
     const waiter = enterIdleFor(handle);
-    const first = msg('m-1', 'hold');
-    const trigger = msg('m-2', 'go');
-    handle.accept(first, 'queue');
     const job = scheduler.activeJobs()[0]!;
 
-    handle.accept(trigger, 'send_now');
+    expect(handle.wakeForSendNow()).toBe('woken');
     expect(job.cancelled).toBe(true);
-    const wake = await waiter;
-    expect(wake).toEqual({ kind: 'send_now', messages: [first, trigger] });
-    expect(handle.pendingCount()).toBe(0);
-    expect(handle.steeringSubState()).toBe('generating');
+    await expect(waiter).resolves.toEqual({ kind: 'send_now' });
+    expect(handle.steeringSubState()).toBe('idle-after-interrupt');
 
     scheduler.fire(job);
-    expect(handle.pendingCount()).toBe(0);
-    expect(handle.steeringSubState()).toBe('generating');
-  });
-
-  test('T1.6 queue intent neither rearms nor resolves; expiry leaves the row pending', async () => {
-    const scheduler = createManualScheduler();
-    const registry = createSteeringRegistry({
-      idleAwaitInactivityMs: 10_000,
-      scheduleIdleExpiry: scheduler.schedule,
-    });
-    const handle = registry.register('run-1', 'node-1', { interruptible: true });
-    const waiter = enterIdleFor(handle);
-    const job = scheduler.activeJobs()[0]!;
-
-    expect(handle.accept(msg('m-1', 'hold'), 'queue')).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-1', state: 'awaiting_send_now' },
-    });
-    expect(job.cancelled).toBe(false);
-    expect(scheduler.activeJobs()).toHaveLength(1);
-    expect(scheduler.activeJobs()[0]).toBe(job);
-
-    const stillPending = await Promise.race([
-      waiter.then(() => 'woke'),
-      Promise.resolve('still-idle'),
-    ]);
-    expect(stillPending).toBe('still-idle');
-
-    scheduler.fire(job);
-    await expect(waiter).resolves.toEqual({ kind: 'expired' });
-    expect(handle.accept(msg('m-2', 'after'), 'queue')).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-2', state: 'awaiting_send_now' },
-    });
-    expect(handle.pendingCount()).toBe(2);
+    expect(handle.steeringSubState()).toBe('idle-after-interrupt');
   });
 
   test('T1.7 every seal path cancels the active job and resolves terminated once', async () => {
@@ -1257,15 +922,12 @@ describe('idle-await inactivity timer + keepalive', () => {
     await sealCase('discard', (_r, h) => {
       h.discard();
     });
-    await sealCase('closeIfEmpty', (_r, h) => {
-      expect(h.closeIfEmpty()).toBe(true);
-    });
     await sealCase('clearForTests', (r, _h) => {
       r.clearForTests();
     });
   });
 
-  test('T1.8 post-expiry handle stays live/idle for queue reconciliation', async () => {
+  test('T1.8 post-expiry handle stays live/idle and accepts a later wake', async () => {
     const scheduler = createManualScheduler();
     const registry = createSteeringRegistry({
       idleAwaitInactivityMs: 10_000,
@@ -1278,13 +940,11 @@ describe('idle-await inactivity timer + keepalive', () => {
 
     expect(handle.snapshot().phase).toBe('live');
     expect(handle.steeringSubState()).toBe('idle-after-interrupt');
-    expect(handle.accept(msg('m-1', 'held'), 'queue')).toEqual({
-      ok: true,
-      duplicate: false,
-      receipt: { messageId: 'm-1', state: 'awaiting_send_now' },
-    });
-    expect(handle.pendingCount()).toBe(1);
-    expect(handle.closeIfEmpty()).toBe(false);
+    // Expiry resolved the waiter, but the handle stays idle for the executor
+    // to re-wait through awaitSendNowAgain — mirroring production behavior.
+    const again = handle.awaitSendNowAgain();
+    expect(handle.wakeForSendNow()).toBe('woken');
+    await expect(again).resolves.toEqual({ kind: 'send_now' });
     handle.close();
   });
 
@@ -1298,13 +958,13 @@ describe('idle-await inactivity timer + keepalive', () => {
       });
       const handle = registry.register('run-a', 'n1', { interruptible: true });
       const waiter = enterIdleFor(handle);
-      handle.accept(msg('a-1', 'hold'), 'queue');
       const job = scheduler.activeJobs()[0]!;
-      handle.accept(msg('a-2', 'go'), 'send_now');
-      await expect(waiter).resolves.toMatchObject({ kind: 'send_now' });
+      expect(handle.wakeForSendNow()).toBe('woken');
+      await expect(waiter).resolves.toEqual({ kind: 'send_now' });
       scheduler.fire(job);
-      // Queue was drained by send_now — not silently re-drained by expiry.
-      expect(handle.pendingCount()).toBe(0);
+      // Wake already resolved the waiter — expiry cannot resolve it again.
+      expect(handle.steeringSubState()).toBe('idle-after-interrupt');
+      handle.close();
     }
 
     // expiry then send
@@ -1316,13 +976,11 @@ describe('idle-await inactivity timer + keepalive', () => {
       });
       const handle = registry.register('run-b', 'n1', { interruptible: true });
       const waiter = enterIdleFor(handle);
-      handle.accept(msg('b-1', 'hold'), 'queue');
       scheduler.fire(scheduler.activeJobs()[0]!);
       await expect(waiter).resolves.toEqual({ kind: 'expired' });
-      // Post-expiry send_now cannot resolve the already-settled waiter; row stays.
-      const before = handle.pendingCount();
-      handle.accept(msg('b-2', 'too-late'), 'send_now');
-      expect(handle.pendingCount()).toBe(before + 1);
+      // Post-expiry wake cannot resolve the already-settled waiter — the
+      // handle stays idle-after-interrupt until awaitSendNowAgain re-waits.
+      expect(handle.wakeForSendNow()).toBe('not_idle');
       expect(handle.steeringSubState()).toBe('idle-after-interrupt');
       handle.close();
     }
@@ -1336,14 +994,11 @@ describe('idle-await inactivity timer + keepalive', () => {
       });
       const handle = registry.register('run-c', 'n1', { interruptible: true });
       const waiter = enterIdleFor(handle);
-      handle.accept(msg('c-1', 'hold'), 'queue');
       const job = scheduler.activeJobs()[0]!;
       handle.close();
       await expect(waiter).resolves.toEqual({ kind: 'terminated' });
-      // Teardown does not silently drain — items retained until discard.
-      expect(handle.pendingCount()).toBe(1);
-      scheduler.fire(job);
-      expect(handle.pendingCount()).toBe(1);
+      scheduler.fire(job); // inert after teardown
+      expect(handle.snapshot().phase).toBe('closed');
     }
   });
 

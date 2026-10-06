@@ -1,0 +1,104 @@
+{
+  "post": 6,
+  "res": { "success": true, "message": "Abandoned workflow: vq14-codex" },
+  "C": {
+    "neverSentAt": 573,
+    "pillAt": 532,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": ["– shell sleep 25 && echo step-1 output unknown ·"],
+      "ta": false
+    },
+    "frames": [
+      [
+        -268,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cx2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        13,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cx2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [532, "QUEUED · 1", "QUEUED · 1\nsaved to server\n▾", "Failed", 1],
+      [573, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "L": {
+    "neverSentAt": 457,
+    "pillAt": 457,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": ["– shell sleep 25 && echo step-1 output unknown ·"],
+      "ta": false
+    },
+    "frames": [
+      [
+        -268,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cx2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [457, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "raf": {
+    "c": [
+      [-298, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [531, "Failed||||QUEUED · 1||0|1"],
+      [538, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ],
+    "l": [
+      [-298, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [447, "Failed||||QUEUED · 1||0|1"],
+      [461, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ]
+  },
+  "gets": [
+    { "s": "l", "t": -1546, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -1066, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -1045, "k": "r", "st": "running", "ns": "long-codex:running" },
+    { "s": "l", "t": -1045, "k": "r", "st": "running", "ns": "long-codex:running" },
+    { "s": "l", "t": -1042, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -62, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -37, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": 426, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 449, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 449, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 455, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 456, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 456, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "c", "t": 525, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "c", "t": 535, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 535, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 1963, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 1963, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 1963, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 3454, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 3454, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 3454, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 4963, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 4963, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 4963, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 6465, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 6465, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 6465, "k": "r", "st": "cancelled", "ns": "long-codex:failed" }
+  ]
+}

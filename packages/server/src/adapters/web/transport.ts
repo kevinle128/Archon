@@ -49,8 +49,19 @@ interface BufferedEvent {
   timestamp: number;
 }
 
+/**
+ * Stream id that fans out to every open subscriber instead of the
+ * single-writer eviction every other id gets. The dashboard is read by
+ * several independent surfaces at once (a run page's terminal-edge probe,
+ * the runs list, the standalone dashboard page) and none of them should
+ * evict another's connection just by opening its own.
+ */
+const BROADCAST_STREAM_ID = '__dashboard__';
+
 export class SSETransport {
   private streams = new Map<string, SSEWriter>();
+  /** Subscriber sets for {@link BROADCAST_STREAM_ID}-style fan-out ids, keyed apart from `streams`. */
+  private broadcastStreams = new Map<string, Set<SSEWriter>>();
   private cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private zombieReaperHandle: ReturnType<typeof setInterval> | null = null;
   private eventBuffer = new Map<string, BufferedEvent[]>();
@@ -66,8 +77,15 @@ export class SSETransport {
    * Register an SSE stream for a conversation.
    * Closes any existing stream (browser refresh / new tab replaces old).
    * Replays any buffered events that arrived before the stream connected.
+   * Exception: {@link BROADCAST_STREAM_ID} never closes an existing stream —
+   * see {@link registerBroadcastStream}.
    */
   registerStream(conversationId: string, stream: SSEWriter): void {
+    if (conversationId === BROADCAST_STREAM_ID) {
+      this.registerBroadcastStream(conversationId, stream);
+      return;
+    }
+
     const existing = this.streams.get(conversationId);
     if (existing && !existing.closed) {
       existing.close().catch((e: unknown) => {
@@ -84,34 +102,71 @@ export class SSETransport {
     }
 
     // Replay buffered events that arrived before the stream connected
-    const buffered = this.eventBuffer.get(conversationId);
-    if (buffered && buffered.length > 0) {
-      const now = Date.now();
-      const valid = buffered.filter(e => now - e.timestamp < EVENT_BUFFER_TTL_MS);
-      const expired = buffered.length - valid.length;
-      this.clearBuffer(conversationId);
-      if (expired > 0) {
-        // Events outlived the buffer TTL before the client reconnected.
-        // Symptom on the UI: stuck tool cards for any tool_result that was
-        // in the expired batch. If this fires in practice, bump TTL further.
-        getLog().warn(
-          { conversationId, expired, ttlMs: EVENT_BUFFER_TTL_MS },
-          'transport.buffer_ttl_expired'
-        );
-      }
-      if (valid.length > 0) {
-        getLog().debug({ conversationId, count: valid.length }, 'sse_buffer_replay');
-        for (const event of valid) {
-          if (stream.closed) break;
-          stream.writeSSE({ data: event.data }).catch((e: unknown) => {
-            getLog().warn({ conversationId, err: e }, 'sse_buffer_replay_failed');
-          });
-        }
+    this.replayBuffer(conversationId, stream);
+  }
+
+  /**
+   * Add a subscriber to a broadcast id's fan-out set. Never evicts an
+   * existing subscriber — every open connection for this id keeps receiving
+   * events, which is the whole point of a broadcast id (see
+   * {@link BROADCAST_STREAM_ID}'s doc comment).
+   */
+  private registerBroadcastStream(id: string, stream: SSEWriter): void {
+    let subscribers = this.broadcastStreams.get(id);
+    if (!subscribers) {
+      subscribers = new Set();
+      this.broadcastStreams.set(id, subscribers);
+    }
+    subscribers.add(stream);
+
+    // Cancel a pending cleanup scheduled when the last subscriber left.
+    const pendingCleanup = this.cleanupTimers.get(id);
+    if (pendingCleanup) {
+      clearTimeout(pendingCleanup);
+      this.cleanupTimers.delete(id);
+    }
+
+    // A buffer can only exist here if it was empty of subscribers when the
+    // event arrived — once at least one subscriber is connected, `emit`/
+    // `writeToStream` fan out live instead of buffering. So this replay
+    // only ever plays back to the first subscriber to reconnect.
+    this.replayBuffer(id, stream);
+  }
+
+  /** Shared buffered-event replay, used by both the single-writer and broadcast paths. */
+  private replayBuffer(id: string, stream: SSEWriter): void {
+    const buffered = this.eventBuffer.get(id);
+    if (!buffered || buffered.length === 0) return;
+    const now = Date.now();
+    const valid = buffered.filter(e => now - e.timestamp < EVENT_BUFFER_TTL_MS);
+    const expired = buffered.length - valid.length;
+    this.clearBuffer(id);
+    if (expired > 0) {
+      // Events outlived the buffer TTL before the client reconnected.
+      // Symptom on the UI: stuck tool cards for any tool_result that was
+      // in the expired batch. If this fires in practice, bump TTL further.
+      getLog().warn(
+        { conversationId: id, expired, ttlMs: EVENT_BUFFER_TTL_MS },
+        'transport.buffer_ttl_expired'
+      );
+    }
+    if (valid.length > 0) {
+      getLog().debug({ conversationId: id, count: valid.length }, 'sse_buffer_replay');
+      for (const event of valid) {
+        if (stream.closed) break;
+        stream.writeSSE({ data: event.data }).catch((e: unknown) => {
+          getLog().warn({ conversationId: id, err: e }, 'sse_buffer_replay_failed');
+        });
       }
     }
   }
 
   removeStream(conversationId: string, expectedStream?: SSEWriter): void {
+    if (conversationId === BROADCAST_STREAM_ID) {
+      this.removeBroadcastStream(conversationId, expectedStream);
+      return;
+    }
+
     // If a specific stream reference is provided, only remove if it matches
     // the currently registered stream. This prevents a race condition where
     // a stale onAbort callback (from a replaced stream) removes a newer stream.
@@ -126,7 +181,38 @@ export class SSETransport {
     this.scheduleCleanup(conversationId, this.graceMs);
   }
 
+  /**
+   * Remove one subscriber from a broadcast id's fan-out set. Every real
+   * caller passes `expectedStream` (each subscriber's own `onAbort` removes
+   * only itself); the no-argument form is a defensive fallback that clears
+   * every subscriber, mirroring the single-writer path's unconditional
+   * delete when no reference is given.
+   */
+  private removeBroadcastStream(id: string, expectedStream?: SSEWriter): void {
+    const subscribers = this.broadcastStreams.get(id);
+    if (!subscribers) return;
+    if (expectedStream) {
+      if (!subscribers.has(expectedStream)) return;
+      subscribers.delete(expectedStream);
+    } else {
+      subscribers.clear();
+    }
+    if (subscribers.size === 0) {
+      this.broadcastStreams.delete(id);
+      // Schedule onCleanup after grace period, same as the single-writer path.
+      this.scheduleCleanup(id, this.graceMs);
+    }
+  }
+
   hasActiveStream(conversationId: string): boolean {
+    if (conversationId === BROADCAST_STREAM_ID) {
+      const subscribers = this.broadcastStreams.get(conversationId);
+      if (!subscribers) return false;
+      for (const stream of subscribers) {
+        if (!stream.closed) return true;
+      }
+      return false;
+    }
     const stream = this.streams.get(conversationId);
     return stream !== undefined && !stream.closed;
   }
@@ -137,6 +223,13 @@ export class SSETransport {
       for (const [id, stream] of this.streams) {
         if (stream.closed) {
           this.removeStream(id);
+        }
+      }
+      for (const [id, subscribers] of this.broadcastStreams) {
+        for (const stream of [...subscribers]) {
+          if (stream.closed) {
+            this.removeBroadcastStream(id, stream);
+          }
         }
       }
     }, 300_000);
@@ -160,6 +253,17 @@ export class SSETransport {
       getLog().debug({ conversationId: id }, 'sse_stream_closed');
     }
     this.streams.clear();
+    for (const [id, subscribers] of this.broadcastStreams) {
+      for (const stream of subscribers) {
+        if (!stream.closed) {
+          stream.close().catch((e: unknown) => {
+            getLog().warn({ conversationId: id, err: e }, 'sse_close_failed');
+          });
+        }
+      }
+      getLog().debug({ conversationId: id, subscribers: subscribers.size }, 'sse_stream_closed');
+    }
+    this.broadcastStreams.clear();
     for (const timer of this.cleanupTimers.values()) {
       clearTimeout(timer);
     }
@@ -174,6 +278,10 @@ export class SSETransport {
   }
 
   async emit(conversationId: string, event: string): Promise<void> {
+    if (conversationId === BROADCAST_STREAM_ID) {
+      await this.emitBroadcast(conversationId, event);
+      return;
+    }
     const stream = this.streams.get(conversationId);
     if (stream && !stream.closed) {
       try {
@@ -195,6 +303,28 @@ export class SSETransport {
     }
   }
 
+  /** Fan out an event to every open subscriber of a broadcast id; buffers only while none are open. */
+  private async emitBroadcast(id: string, event: string): Promise<void> {
+    const subscribers = this.activeBroadcastSubscribers(id);
+    if (subscribers.length === 0) {
+      this.bufferEvent(id, event);
+      return;
+    }
+    await Promise.all(
+      subscribers.map(async stream => {
+        try {
+          await stream.writeSSE({ data: event });
+        } catch (e: unknown) {
+          getLog().warn({ conversationId: id, err: e }, 'sse_write_failed');
+          this.removeBroadcastStream(id, stream);
+          stream.close().catch((_: unknown) => {
+            /* stream already closing */
+          });
+        }
+      })
+    );
+  }
+
   /**
    * Emit a workflow event to the SSE stream for a conversation. Fire-and-forget.
    */
@@ -207,6 +337,10 @@ export class SSETransport {
    * Used by emitWorkflowEvent and any other fire-and-forget path.
    */
   private writeToStream(conversationId: string, event: string): void {
+    if (conversationId === BROADCAST_STREAM_ID) {
+      this.writeToBroadcastStream(conversationId, event);
+      return;
+    }
     const stream = this.streams.get(conversationId);
     if (stream && !stream.closed) {
       stream.writeSSE({ data: event }).catch((e: unknown) => {
@@ -219,6 +353,31 @@ export class SSETransport {
     } else {
       this.bufferEvent(conversationId, event);
     }
+  }
+
+  /** Fire-and-forget counterpart of {@link emitBroadcast}, used by `writeToStream`. */
+  private writeToBroadcastStream(id: string, event: string): void {
+    const subscribers = this.activeBroadcastSubscribers(id);
+    if (subscribers.length === 0) {
+      this.bufferEvent(id, event);
+      return;
+    }
+    for (const stream of subscribers) {
+      stream.writeSSE({ data: event }).catch((e: unknown) => {
+        getLog().warn({ conversationId: id, err: e }, 'sse_write_failed');
+        this.removeBroadcastStream(id, stream);
+        stream.close().catch((_: unknown) => {
+          /* stream already closing */
+        });
+      });
+    }
+  }
+
+  /** Snapshot of a broadcast id's currently-open subscribers, safe to iterate while mutating the underlying set. */
+  private activeBroadcastSubscribers(id: string): SSEWriter[] {
+    const subscribers = this.broadcastStreams.get(id);
+    if (!subscribers) return [];
+    return [...subscribers].filter(stream => !stream.closed);
   }
 
   /**
@@ -286,11 +445,14 @@ export class SSETransport {
     const timer = setTimeout(() => {
       try {
         this.cleanupTimers.delete(conversationId);
-        // Only clean up if stream is still absent (client didn't reconnect)
-        if (!this.streams.has(conversationId)) {
-          if (this.onCleanup) {
-            this.onCleanup(conversationId);
-          }
+        // Only clean up if the resource is still absent (client didn't
+        // reconnect) — checked against whichever map actually holds this id.
+        const stillAbsent =
+          conversationId === BROADCAST_STREAM_ID
+            ? !this.broadcastStreams.has(conversationId)
+            : !this.streams.has(conversationId);
+        if (stillAbsent && this.onCleanup) {
+          this.onCleanup(conversationId);
         }
       } catch (e: unknown) {
         getLog().warn({ conversationId, err: e }, 'cleanup_timer_failed');

@@ -1,0 +1,195 @@
+{
+  "B2F": {
+    "fresh": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · sonnet"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · sonnet"
+      }
+    },
+    "surv": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · sonnet"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · sonnet"
+      }
+    },
+    "ta": [0, 0],
+    "codes": [409, 409],
+    "q": ["recovery_required", true, ["queued"]],
+    "draft": "B2F draft typed before restart",
+    "sv": {
+      "c": [
+        [3, "ROOM|Running|WILL SEND · 1|TA||Send|||rows|"],
+        [22842, "ROOM|Running|WILL SEND · 1|TA||Send|HINT||rows|"],
+        [33261, "ROOM|Recovery required|QUEUED · 1||||HINT||rows|REST"],
+        [34928, "ROOM|Recovery required|QUEUED · 1||||||rows|REST"]
+      ],
+      "l": [
+        [3, "ROOM|Running|WILL SEND · 1|TA||Send|||rows|"],
+        [10667, "ROOM|Running|WILL SEND · 1|TA||Send|HINT||rows|"],
+        [33085, "ROOM|Recovery required|QUEUED · 1||||HINT||rows|REST"],
+        [33711, "ROOM|Recovery required|QUEUED · 1||||||rows|REST"]
+      ]
+    }
+  },
+  "B2LF": {
+    "fresh": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · haiku"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · haiku"
+      }
+    },
+    "surv": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · haiku"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · haiku"
+      }
+    },
+    "ta": [0, 0],
+    "codes": [409, 409],
+    "q": ["recovery_required", false, ["queued"]],
+    "draft": null,
+    "sv": {
+      "c": [
+        [3, "ROOM|Running|WILL SEND · 1|TA||Send|||rows|"],
+        [6731, "ROOM|Running|WILL SEND · 1|TA||Send|HINT||rows|"],
+        [32987, "ROOM|Recovery required|QUEUED · 1||||HINT||rows|REST"],
+        [33852, "ROOM|Recovery required|QUEUED · 1||||||rows|REST"]
+      ],
+      "l": [
+        [0, "ROOM|Running|WILL SEND · 1|TA||Send|||rows|"],
+        [11612, "ROOM|Running|WILL SEND · 1|TA||Send|HINT||rows|"],
+        [32755, "ROOM|Recovery required|QUEUED · 1||||HINT||rows|REST"],
+        [34647, "ROOM|Recovery required|QUEUED · 1||||||rows|REST"]
+      ]
+    }
+  },
+  "B2R": {
+    "fresh": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · omp · xai-oauth/grok-4.5"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · omp · xai-oauth/grok-4.5"
+      }
+    },
+    "surv": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · omp · xai-oauth/grok-4.5"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · omp · xai-oauth/grok-4.5"
+      }
+    },
+    "ta": [0, 0],
+    "codes": [409, 409],
+    "q": ["recovery_required", false, ["queued"]],
+    "draft": null,
+    "sv": {
+      "c": [
+        [1, "ROOM|Running|WILL SEND · 1|TA||Send|||rows|"],
+        [17550, "ROOM|Running|WILL SEND · 1|TA||Send|HINT||rows|"],
+        [32789, "ROOM|Recovery required|QUEUED · 1||||HINT||rows|REST"],
+        [35062, "ROOM|Recovery required|QUEUED · 1||||||rows|REST"]
+      ],
+      "l": [
+        [11, "ROOM|Running|WILL SEND · 1|TA||Send|||rows|"],
+        [11323, "ROOM|Running|WILL SEND · 1|TA||Send|HINT||rows|"],
+        [33577, "ROOM|Recovery required|QUEUED · 1||||HINT||rows|REST"],
+        [34356, "ROOM|Recovery required|QUEUED · 1||||||rows|REST"]
+      ]
+    }
+  },
+  "B2X": {
+    "fresh": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · codex · gpt-5.5"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · codex · gpt-5.5"
+      }
+    },
+    "surv": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · codex · gpt-5.5"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · codex · gpt-5.5"
+      }
+    },
+    "ta": [0, 0],
+    "codes": [409, 409],
+    "q": ["recovery_required", false, ["queued"]],
+    "draft": null,
+    "sv": {
+      "c": [
+        [7, "ROOM|Running|WILL SEND · 1|TA||Send|||rows|"],
+        [26720, "ROOM|Running|WILL SEND · 1|TA||Send|HINT||rows|"],
+        [32746, "ROOM|Running|WILL SEND · 1|TA||Send|||rows|"],
+        [32754, "ROOM|Running|QUEUED · 1|TA|Q||||rows|"],
+        [32923, "ROOM|Recovery required|QUEUED · 1||||||rows|REST"]
+      ],
+      "l": [
+        [9, "ROOM|Running|WILL SEND · 1|TA||Send|||rows|"],
+        [11464, "ROOM|Running|WILL SEND · 1|TA||Send|HINT||rows|"],
+        [32683, "ROOM|Recovery required|QUEUED · 1||||HINT||rows|REST"],
+        [34505, "ROOM|Recovery required|QUEUED · 1||||||rows|REST"]
+      ]
+    }
+  }
+}

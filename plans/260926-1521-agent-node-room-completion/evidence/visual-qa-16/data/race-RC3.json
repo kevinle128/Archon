@@ -1,0 +1,20 @@
+{
+  "R": "64fa45dcc55ab4cd23bfbdd616ae7f15",
+  "delay": 60,
+  "send": { "clicked": 1790794322415, "sendResolved": 1790794322444, "st": 200 },
+  "delClick": 61,
+  "del": null,
+  "q": { "sub": null, "items": [["RC3-Q1 queued ", "sent"]] },
+  "tc": [
+    [3, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||BODY|0"],
+    [28, "Running||Send now|TA|SENDING · 1|agent idle · Send now delivers||1|0|||BUTTON|0"],
+    [40, "Running||Stop,Queue|TA|SENDING · 1|agent generating||1|0|||TEXTAREA|0"],
+    [72, "Completed||||SENDING · 1|||1|0|||DIV[room]|0"],
+    [81, "Completed|||||||1|0|||DIV[room]|0"]
+  ],
+  "tl": [
+    [3, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||DIV[room]|0"],
+    [70, "Completed||||QUEUED · 1|||1|0|||DIV[room]|0"],
+    [79, "Completed|||||||1|0|||DIV[room]|0"]
+  ]
+}

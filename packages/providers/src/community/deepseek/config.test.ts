@@ -141,7 +141,10 @@ describe('DEEPSEEK_CAPABILITIES', () => {
       nativeTools: false,
       containerExec: false,
       askHuman: false,
-      interrupt: false,
+      interrupt: 'stream-abort',
+      interruptedToolStatus: false,
+      softInjection: false,
+      deliveryAck: false,
     });
   });
 });

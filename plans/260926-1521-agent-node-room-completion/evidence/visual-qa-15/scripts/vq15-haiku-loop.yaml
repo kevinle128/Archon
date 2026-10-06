@@ -1,0 +1,14 @@
+name: vq15-haiku-loop
+description: "Scratch - real Claude haiku loop, about 30 s per iteration."
+mutates_checkout: false
+nodes:
+  - id: haiku-loop
+    provider: claude
+    model: haiku
+    loop:
+      prompt: |
+        Run exactly one Bash call: for i in 1 2 3 4 5; do sleep 6; done; echo tick
+        Then reply with one short line. Only if this is iteration 5 or later, end your reply with LOOPDONE.
+        Previous output: $LOOP_PREV_OUTPUT
+      until: LOOPDONE
+      max_iterations: 5

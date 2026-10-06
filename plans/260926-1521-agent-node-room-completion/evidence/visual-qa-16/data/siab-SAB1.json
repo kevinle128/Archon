@@ -1,0 +1,42 @@
+{
+  "R": "916e0532dd2a6dd721d8a67dcdb55403",
+  "tag": "SAB1",
+  "clickedAt": 1790793965990,
+  "click": 200,
+  "abandonAt": 1790793967216,
+  "abandon": 200,
+  "q0": [
+    ["SAB1 ONE kee", "queued"],
+    ["SAB1 TWO inj", "sent"]
+  ],
+  "q1": [
+    ["SAB1 ONE kee", "never_sent"],
+    ["SAB1 TWO inj", "never_sent"]
+  ],
+  "ops": [],
+  "frames": {
+    "c": [
+      [1790793964912, "Running|Stop,Queue|0|0||||||||BODY"],
+      [1790793964919, "Running|Stop,Queue|0|0||||||||TEXTAREA"],
+      [1790793964944, "Running|Stop,Queue|0|0||||||||BUTTON:Queue · Cmd/Ct"],
+      [1790793964961, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs||||||TEXTAREA"],
+      [1790793964987, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs||||||BUTTON:Queue · Cmd/Ct"],
+      [1790793964995, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||TEXTAREA"],
+      [1790793966011, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||BUTTON:Send now · SAB"],
+      [1790793966020, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790793967401, "Failed||0|0|QUEUED · 1|ONE,TWO*||||||BODY"],
+      [1790793967410, "Failed||0|0||||NEVER||ALERT||DIV"]
+    ],
+    "l": [
+      [1790793964912, "Running|Stop,Queue|0|0||||||||BODY"],
+      [1790793965054, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||BODY"],
+      [1790793966054, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790793967401, "Failed||0|0|QUEUED · 1|ONE,TWO*||||||BODY"],
+      [1790793967413, "Failed||0|0||||NEVER||ALERT||DIV"]
+    ]
+  },
+  "final": {
+    "c": "Failed||||NEVER SENT · 2|node finished · none of this was sent|node finished · none of this was sent|-1|0|||DIV[room]|0",
+    "l": "Failed||||NEVER SENT · 2|node finished · none of this was sent|node finished · none of this was sent|-1|0|||DIV[room]|0"
+  }
+}

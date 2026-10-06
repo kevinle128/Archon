@@ -1,0 +1,837 @@
+{
+  "out": {
+    "tag": "gk-c1",
+    "st": "c",
+    "sd": "l",
+    "ob": "c",
+    "stop": {
+      "post": 4126,
+      "st": 200,
+      "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+    },
+    "send": {
+      "post": 37,
+      "st": 200,
+      "body": "{\"success\":true,\"message_id\":\"ac21d872-df20-4de2-b1bb-ace9cdcb0e26\",\"state\":\"sent\"}"
+    },
+    "probe": null,
+    "C": {
+      "stoppingAt": 40,
+      "sendNowAt": 4135,
+      "stopAgainAt": 123,
+      "sendingAt": 123,
+      "flipBacks": 0,
+      "staleQueued": [],
+      "gaps": [],
+      "overlap": [],
+      "last": {
+        "bands": "",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+          "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+          "◐ run_terminal_command sleep 25 && echo step-2 running · 8.3s message to long-grok"
+        ]
+      }
+    },
+    "L": {
+      "stoppingAt": null,
+      "sendNowAt": 4218,
+      "stopAgainAt": 3,
+      "sendingAt": 3,
+      "flipBacks": 0,
+      "staleQueued": [],
+      "gaps": [],
+      "overlap": [],
+      "last": {
+        "bands": "",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+          "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+          "◐ run_terminal_command sleep 25 && echo step-2 running · 8.6s message to long-grok"
+        ]
+      }
+    }
+  },
+  "lc": [
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 1.5s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790712879441
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 2.5s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790712879521
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 2.7s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790712879681
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 3.7s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790712880681
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 4.7s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790712881722
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 5.7s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790712882722
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790712883043
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790712883561
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790712884281
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790712890321
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 267ms message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790712895281
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 1.3s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790712896281
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 2.3s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790712897281
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 3.3s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790712898284
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 4.3s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790712899287
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 5.3s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790712900322
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 6.3s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790712901324
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 7.3s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790712902322
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 8.3s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790712903326
+    }
+  ],
+  "ll": [
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 2.4s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790712879443
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 3.4s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790712880402
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 3.5s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790712880482
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 4.4s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790712881402
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 4.5s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790712881482
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 5.4s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790712882402
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 5.5s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790712882486
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 6.4s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790712883402
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 6.5s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790712883485
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790712883562
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · gk-c1-Q1 queued: reply with the word gk-c1ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown WILL SEND · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790712883607
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown SENDING · 1"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712884161
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712884452
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712889522
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712895562
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 1.5s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712896484
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 2.4s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712897402
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 2.5s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712897487
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 3.4s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712898403
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 3.5s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712898522
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 4.4s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712899402
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 4.5s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712899522
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 5.4s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712900402
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 5.5s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712900522
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 6.4s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712901402
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 6.5s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712901523
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 7.4s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712902402
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 7.5s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712902562
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 8.4s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712903402
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ run_terminal_command sleep 25 && echo step-1 25.7s ASSISTANT",
+        "– run_terminal_command sleep 25 && echo step-2 output unknown ·",
+        "◐ run_terminal_command sleep 25 && echo step-2 running · 8.6s message to long-grok"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712903562
+    }
+  ],
+  "T": 1790712884158,
+  "stop": {
+    "clicked": 1790712879401,
+    "resolved": 1790712883527,
+    "st": 200,
+    "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+  },
+  "send": {
+    "clicked": 1790712884121,
+    "sendResolved": 1790712884158,
+    "st": 200,
+    "url": "/api/workflows/runs/54e77f9f0b404412a336bf4fbec069a0/nodes/long-grok/send",
+    "body": "{\"success\":true,\"message_id\":\"ac21d872-df20-4de2-b1bb-ace9cdcb0e26\",\"state\":\"sent\"}"
+  }
+}

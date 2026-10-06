@@ -379,7 +379,7 @@ Values are validated against the workflow's declaration before any worktree, clo
 curl http://localhost:3090/api/runs/{runId}/artifacts
 ```
 
-Walks the run's on-disk artifact directory (dotfiles skipped) and returns `{ files: [{ path, size, modifiedAt }] }`. Used by the console UI's Artifacts tab. Returns `{ files: [] }` when the run has no codebase or the codebase name is not in `owner/repo` form; 400 on invalid run id or path-escape attempt, 404 if the run does not exist.
+Walks the run's on-disk artifact directory (dotfiles skipped) and returns `{ files: [{ path, size, modifiedAt }] }`. Used by the run detail page's Artifacts tab. Returns `{ files: [] }` when the run has no codebase or the codebase name is not in `owner/repo` form; 400 on invalid run id or path-escape attempt, 404 if the run does not exist.
 
 #### Resume a Failed or Paused Run
 

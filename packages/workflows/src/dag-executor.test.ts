@@ -79,6 +79,7 @@ import {
   registerDeepseekProvider,
   DEVIN_CAPABILITIES,
   DEEPSEEK_CAPABILITIES,
+  CODEX_CAPABILITIES,
   clearRegistry,
   getRegistration,
 } from '@archon/providers';
@@ -109,6 +110,7 @@ import {
   containerCommandName,
   buildSubprocessDockerArgs,
   IDLE_AWAIT_EXPIRED_ERROR,
+  STREAM_CANCEL_POLL_INTERVAL_MS,
 } from './dag-executor';
 import type { WorkflowModelScope } from './node-model-resolution';
 import { getSteeringRegistry, type NodeSteeringHandle } from './steering-registry';
@@ -132,10 +134,18 @@ import { expandWorkflowIncludes } from './include-expander';
 import { OutputRefError } from './output-ref';
 import type { WorkflowDeps, IWorkflowPlatform, WorkflowConfig } from './deps';
 import type { IWorkflowStore, WorkflowEventData } from './store';
+import type {
+  SteeringDraft,
+  SteeringNodeSettings,
+  SteeringQueueEntry,
+  SteeringQueueState,
+} from './schemas/steering';
+import { STEERING_QUEUE_CLAIMABLE_STATES, STEERING_QUEUE_VISIBLE_STATES } from './schemas/steering';
 import { buildAiProfile } from './model-validation';
 import {
   AskHumanNoStarterError,
   AskHumanPauseFailedError,
+  STREAM_ABORTED_TERMINAL_REASON,
   type SendQueryOptions,
 } from '@archon/providers/types';
 import * as plannotatorGateExecutor from './plannotator-gate-executor';
@@ -143,10 +153,266 @@ import { applyEnvOverlay } from './env-overlay';
 
 // --- Mock helpers ---
 
+/**
+ * Faithful in-memory model of the durable steering store for tests: FIFO
+ * position, message_id idempotency, and claim/state transitions mirror
+ * packages/core/src/db/workflow-steering.ts closely enough that a test can
+ * seed the queue exactly like the send route would (durable insert) and the
+ * executor's claim sees exactly what it would see against a real database.
+ * Every mutation is synchronous inside the async function body, so a call
+ * site between an async generator's `yield`s does not need to `await` it for
+ * the mutation to be visible immediately.
+ */
+function createMockSteeringStore(): Pick<
+  IWorkflowStore,
+  | 'getSteeringDraft'
+  | 'upsertSteeringDraft'
+  | 'clearSteeringDraft'
+  | 'getSteeringNodeSettings'
+  | 'upsertSteeringNodeSettings'
+  | 'enqueueSteeringMessage'
+  | 'withdrawSteeringMessage'
+  | 'listSteeringQueue'
+  | 'claimSteeringQueue'
+  | 'markSteeringMessagesSent'
+  | 'markSteeringMessageDelivered'
+  | 'claimSteeringMessageForSoftInjection'
+  | 'revertSteeringSoftInjectionClaim'
+  | 'reconcileNeverSentSteeringMessages'
+  | 'revertSteeringQueueClaim'
+> {
+  const drafts = new Map<string, SteeringDraft>();
+  const settings = new Map<string, SteeringNodeSettings>();
+  const queue: SteeringQueueEntry[] = [];
+  let nextId = 0;
+  const freshId = (prefix: string): string => `${prefix}-${String((nextId += 1))}`;
+  const draftKey = (runId: string, nodeId: string, userId: string | null): string =>
+    `${runId}::${nodeId}::${userId ?? ''}`;
+  const settingsKey = (runId: string, nodeId: string): string => `${runId}::${nodeId}`;
+
+  const claimable = new Set<SteeringQueueState>(STEERING_QUEUE_CLAIMABLE_STATES);
+  const visible = new Set<SteeringQueueState>(STEERING_QUEUE_VISIBLE_STATES);
+
+  return {
+    getSteeringDraft: async key =>
+      drafts.get(draftKey(key.workflow_run_id, key.node_id, key.operator_user_id)) ?? null,
+    upsertSteeringDraft: async input => {
+      const key = draftKey(input.workflow_run_id, input.node_id, input.operator_user_id);
+      const draft: SteeringDraft = {
+        id: drafts.get(key)?.id ?? freshId('draft'),
+        workflow_run_id: input.workflow_run_id,
+        node_id: input.node_id,
+        operator_user_id: input.operator_user_id,
+        message: input.message,
+        updated_at: new Date(),
+      };
+      drafts.set(key, draft);
+      return draft;
+    },
+    clearSteeringDraft: async key => {
+      drafts.delete(draftKey(key.workflow_run_id, key.node_id, key.operator_user_id));
+    },
+    getSteeringNodeSettings: async (workflowRunId, nodeId) =>
+      settings.get(settingsKey(workflowRunId, nodeId)) ?? null,
+    upsertSteeringNodeSettings: async input => {
+      const key = settingsKey(input.workflow_run_id, input.node_id);
+      const current = settings.get(key);
+      const next: SteeringNodeSettings = {
+        id: current?.id ?? freshId('settings'),
+        workflow_run_id: input.workflow_run_id,
+        node_id: input.node_id,
+        auto_send_enabled: input.auto_send_enabled ?? current?.auto_send_enabled ?? false,
+        updated_by_user_id: input.updated_by_user_id ?? current?.updated_by_user_id ?? null,
+        provider_id: input.provider_id ?? current?.provider_id ?? null,
+        updated_at: new Date(),
+      };
+      settings.set(key, next);
+      return next;
+    },
+    enqueueSteeringMessage: async input => {
+      const existing = queue.find(
+        entry =>
+          entry.workflow_run_id === input.workflow_run_id &&
+          entry.node_id === input.node_id &&
+          entry.message_id === input.message_id
+      );
+      if (existing !== undefined) {
+        return { entry: existing, duplicate: true };
+      }
+      const scopedMax = queue
+        .filter(
+          entry =>
+            entry.workflow_run_id === input.workflow_run_id && entry.node_id === input.node_id
+        )
+        .reduce((max, entry) => Math.max(max, entry.fifo_position), 0);
+      const entry: SteeringQueueEntry = {
+        id: freshId('queue'),
+        workflow_run_id: input.workflow_run_id,
+        node_id: input.node_id,
+        message_id: input.message_id,
+        message: input.message,
+        operator_user_id: input.operator_user_id,
+        fifo_position: scopedMax + 1,
+        state: input.initial_state,
+        last_error: null,
+        dispatch_failure_count: 0,
+        last_failure_kind: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+      queue.push(entry);
+      return { entry, duplicate: false };
+    },
+    withdrawSteeringMessage: async (workflowRunId, nodeId, messageId) => {
+      const entry = queue.find(
+        item =>
+          item.workflow_run_id === workflowRunId &&
+          item.node_id === nodeId &&
+          item.message_id === messageId &&
+          claimable.has(item.state)
+      );
+      if (entry === undefined) return { removed: false };
+      entry.state = 'withdrawn';
+      entry.updated_at = new Date();
+      return { removed: true };
+    },
+    listSteeringQueue: async (workflowRunId, nodeId) =>
+      queue
+        .filter(
+          entry =>
+            entry.workflow_run_id === workflowRunId &&
+            entry.node_id === nodeId &&
+            visible.has(entry.state)
+        )
+        .sort((a, b) => a.fifo_position - b.fifo_position),
+    claimSteeringQueue: async (workflowRunId, nodeId, limit) => {
+      const eligible = queue
+        .filter(
+          entry =>
+            entry.workflow_run_id === workflowRunId &&
+            entry.node_id === nodeId &&
+            claimable.has(entry.state)
+        )
+        .sort((a, b) => a.fifo_position - b.fifo_position);
+      const claimed = limit === 'all' ? eligible : eligible.slice(0, limit);
+      const now = new Date();
+      for (const entry of claimed) {
+        entry.state = 'dispatching';
+        entry.updated_at = now;
+      }
+      return claimed.map(entry => ({
+        message_id: entry.message_id,
+        message: entry.message,
+        operator_user_id: entry.operator_user_id,
+      }));
+    },
+    markSteeringMessagesSent: async (workflowRunId, nodeId, messageIds) => {
+      const ids = new Set(messageIds);
+      const now = new Date();
+      for (const entry of queue) {
+        if (
+          entry.workflow_run_id === workflowRunId &&
+          entry.node_id === nodeId &&
+          ids.has(entry.message_id) &&
+          (entry.state === 'dispatching' || entry.state === 'delivery_unknown')
+        ) {
+          entry.state = 'sent';
+          entry.updated_at = now;
+        }
+      }
+    },
+    markSteeringMessageDelivered: async (workflowRunId, nodeId, messageId) => {
+      const entry = queue.find(
+        item =>
+          item.workflow_run_id === workflowRunId &&
+          item.node_id === nodeId &&
+          item.message_id === messageId &&
+          item.state === 'sent'
+      );
+      if (entry === undefined) return;
+      entry.state = 'delivered';
+      entry.updated_at = new Date();
+    },
+    claimSteeringMessageForSoftInjection: async (workflowRunId, nodeId, messageId) => {
+      const entry = queue.find(
+        item =>
+          item.workflow_run_id === workflowRunId &&
+          item.node_id === nodeId &&
+          item.message_id === messageId &&
+          claimable.has(item.state)
+      );
+      if (entry === undefined) return null;
+      entry.state = 'sent';
+      entry.updated_at = new Date();
+      return {
+        message_id: entry.message_id,
+        message: entry.message,
+        operator_user_id: entry.operator_user_id,
+      };
+    },
+    revertSteeringSoftInjectionClaim: async (workflowRunId, nodeId, messageId) => {
+      const entry = queue.find(
+        item =>
+          item.workflow_run_id === workflowRunId &&
+          item.node_id === nodeId &&
+          item.message_id === messageId &&
+          item.state === 'sent'
+      );
+      if (entry === undefined) return;
+      entry.state = 'queued';
+      entry.updated_at = new Date();
+    },
+    reconcileNeverSentSteeringMessages: async (workflowRunId, nodeId) => {
+      const now = new Date();
+      let count = 0;
+      for (const entry of queue) {
+        if (
+          entry.workflow_run_id === workflowRunId &&
+          entry.node_id === nodeId &&
+          (entry.state === 'queued' ||
+            entry.state === 'awaiting_send_now' ||
+            entry.state === 'dispatching')
+        ) {
+          entry.state = 'never_sent';
+          entry.updated_at = now;
+          count += 1;
+        }
+      }
+      return { count };
+    },
+    revertSteeringQueueClaim: async (
+      workflowRunId,
+      nodeId,
+      messageIds,
+      failureMessage,
+      failureKind
+    ) => {
+      const ids = new Set(messageIds);
+      const now = new Date();
+      for (const entry of queue) {
+        if (
+          entry.workflow_run_id === workflowRunId &&
+          entry.node_id === nodeId &&
+          entry.state === 'dispatching' &&
+          ids.has(entry.message_id)
+        ) {
+          entry.state = 'queued';
+          entry.last_error = failureMessage;
+          entry.dispatch_failure_count += 1;
+          entry.last_failure_kind = failureKind;
+          entry.updated_at = now;
+        }
+      }
+    },
+  };
+}
+
 function createMockStore(): IWorkflowStore {
   let nodeMessageSeq = 0;
   const nodeMessages: Awaited<ReturnType<IWorkflowStore['appendNodeMessage']>>[] = [];
+  const steeringStore = createMockSteeringStore();
   return {
+    ...steeringStore,
     createWorkflowRun: mock(() =>
       Promise.resolve({
         id: 'mock-run-id',
@@ -2098,6 +2364,176 @@ describe('executeDagWorkflow -- tool restrictions', () => {
     const messages = sendMessage.mock.calls.map((call: unknown[]) => call[1] as string);
     const warning = messages.find(m => m.includes('hooks') && m.includes('codex'));
     expect(warning).toBeDefined();
+  });
+});
+
+describe('executeDagWorkflow -- operator delivery acknowledgement (CAP-13)', () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(tmpdir(), `dag-ack-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(testDir, { recursive: true });
+    mockSendQueryDag.mockClear();
+    mockGetAgentProviderDag.mockClear();
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+  });
+
+  afterEach(async () => {
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  });
+
+  it('advances a sent queue entry to delivered when the provider stream echoes its message id', async () => {
+    const mockDeps = createMockDeps();
+    const runId = 'dag-test-run-id';
+    await mockDeps.store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: 'review',
+      message_id: 'ack-1',
+      message: 'redirect the plan',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    // Claim straight to `sent` — the same durable shape a soft-injected or
+    // boundary-delivered message is in while awaiting acknowledgement.
+    await mockDeps.store.claimSteeringMessageForSoftInjection(runId, 'review', 'ack-1');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'operator_delivery_ack', messageId: 'ack-1' };
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'dag-session-id' };
+    });
+
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun(runId);
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      {
+        name: 'dag-delivery-ack',
+        nodes: [{ id: 'review', prompt: 'do the thing' }],
+      },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await mockDeps.store.listSteeringQueue(runId, 'review');
+    expect(rows.find(r => r.message_id === 'ack-1')?.state).toBe('delivered');
+  });
+
+  it('delivers only the soft-injected entry on its echo and leaves the other queued entry undelivered', async () => {
+    const mockDeps = createMockDeps();
+    const runId = 'dag-test-run-id';
+    for (const id of ['queued-1', 'injected-2']) {
+      await mockDeps.store.enqueueSteeringMessage({
+        workflow_run_id: runId,
+        node_id: 'review',
+        message_id: id,
+        message: `text for ${id}`,
+        operator_user_id: 'op-1',
+        initial_state: 'queued',
+      });
+    }
+    // Per-item Send now claims exactly the selected entry.
+    await mockDeps.store.claimSteeringMessageForSoftInjection(runId, 'review', 'injected-2');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'operator_delivery_ack', messageId: 'injected-2' };
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'dag-session-id' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      createMockPlatform(),
+      'conv-dag',
+      testDir,
+      {
+        name: 'dag-soft-inject-ack',
+        nodes: [{ id: 'review', prompt: 'do the thing' }],
+      },
+      makeWorkflowRun(runId),
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await mockDeps.store.listSteeringQueue(runId, 'review');
+    expect(rows.find(r => r.message_id === 'injected-2')?.state).toBe('delivered');
+    expect(rows.find(r => r.message_id === 'queued-1')?.state).not.toBe('delivered');
+  });
+
+  it('never advances an id it did not echo', async () => {
+    const mockDeps = createMockDeps();
+    const runId = 'dag-test-run-id';
+    await mockDeps.store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: 'review',
+      message_id: 'other-msg',
+      message: 'unrelated',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await mockDeps.store.claimSteeringMessageForSoftInjection(runId, 'review', 'other-msg');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'operator_delivery_ack', messageId: 'never-queued-id' };
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'dag-session-id' };
+    });
+
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun(runId);
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      {
+        name: 'dag-delivery-ack-mismatch',
+        nodes: [{ id: 'review', prompt: 'do the thing' }],
+      },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await mockDeps.store.listSteeringQueue(runId, 'review');
+    expect(rows.find(r => r.message_id === 'other-msg')?.state).toBe('sent');
   });
 });
 
@@ -6873,6 +7309,266 @@ describe('executeDagWorkflow -- resume with priorCompletedNodes', () => {
     });
   });
 
+  // ─── Decoupled stream-cancel poller (silent tool call) ──────────────────
+
+  describe('executeDagWorkflow -- silent stream cancellation', () => {
+    const runSingleNode = async (
+      store: ReturnType<typeof createMockStore>,
+      platform: IWorkflowPlatform,
+      runId: string
+    ): Promise<void> => {
+      const mockDeps = createMockDeps(store);
+      const workflowRun = makeWorkflowRun(runId);
+      await executeDagWorkflow(
+        mockDeps,
+        platform,
+        'conv-silent-cancel',
+        testDir,
+        { name: 'silent-cancel-test', nodes: [{ id: 'step1', command: 'step1' }] },
+        workflowRun,
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+    };
+
+    const findFailedEvent = (
+      store: ReturnType<typeof createMockStore>
+    ): { data: Record<string, unknown> } | undefined => {
+      const eventCalls = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls;
+      const call = eventCalls.find(
+        (c: unknown[]) =>
+          (c[0] as { event_type: string }).event_type === 'node_failed' &&
+          (c[0] as { step_name: string }).step_name === 'step1'
+      );
+      return call?.[0] as { data: Record<string, unknown> } | undefined;
+    };
+
+    it('fails a node as cancelled while its tool call stays silent forever, even when the provider never reacts to the abort signal', async () => {
+      // No chunk ever arrives after the first one, and the mock generator
+      // never even looks at the abort signal — the in-loop cancel check
+      // (chunk-triggered) can never fire here, and neither can a provider
+      // that ignores the signal mid-tool-call. Only the decoupled poller
+      // racing `withIdleTimeout`'s own `.next()` pull can end this node.
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* () {
+        yield { type: 'assistant', content: 'partial' };
+        chunkYielded = true;
+        await new Promise<never>(() => {
+          // Intentionally never resolves — a genuinely unresponsive tool.
+        });
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      const startedAt = Date.now();
+      await runSingleNode(store, platform, 'silent-ai-run');
+      const elapsedMs = Date.now() - startedAt;
+
+      const failed = findFailedEvent(store);
+      expect(failed).toBeDefined();
+      expect(failed!.data.error).toBe('Cancelled by user');
+      const eventTypes = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+        call => (call[0] as { event_type: string }).event_type
+      );
+      expect(eventTypes).not.toContain('node_completed');
+      // Comfortably under the 10s in-loop-check throttle this closes the gap
+      // on — the decoupled poller's own interval is a couple of seconds.
+      expect(elapsedMs).toBeLessThan(8000);
+    }, 15_000);
+
+    it('still reaches the cancelled terminal path — not a generic failure — when the provider does react and throws after the abort', async () => {
+      // The orphaned generator's eventual throw must not surface as a second
+      // terminal event, an unhandled rejection, or a misclassified failure —
+      // the wrapper has already returned by the time this settles.
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* (
+        _prompt: string,
+        _cwd: string,
+        _resumeId: string | undefined,
+        options: SendQueryOptions
+      ) {
+        yield { type: 'assistant', content: 'partial' };
+        chunkYielded = true;
+        await new Promise<void>(resolve => {
+          if (options.abortSignal?.aborted) {
+            resolve();
+            return;
+          }
+          options.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+        throw new Error('Query aborted');
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      await runSingleNode(store, platform, 'silent-ai-throw-run');
+
+      const failedEvents = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls
+        .map(call => call[0])
+        .filter(
+          e =>
+            (e as { event_type: string }).event_type === 'node_failed' &&
+            (e as { step_name: string }).step_name === 'step1'
+        );
+      expect(failedEvents).toHaveLength(1);
+      expect((failedEvents[0] as { data: { error: string } }).data.error).toBe('Cancelled by user');
+    }, 15_000);
+
+    it('settles a still-open tool call to unknown when the provider throws after the abort', async () => {
+      // Same throw-after-abort shape as the previous test, but with an open
+      // tool call in flight when the throw happens (e.g. a structured-output
+      // node whose abort surfaces as a thrown validation error rather than a
+      // clean terminal 'result' chunk). The open tool must settle instead of
+      // ticking forever under a Failed pill.
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* (
+        _prompt: string,
+        _cwd: string,
+        _resumeId: string | undefined,
+        options: SendQueryOptions
+      ) {
+        yield { type: 'tool', toolName: 'Bash', toolCallId: 'call-open' };
+        chunkYielded = true;
+        await new Promise<void>(resolve => {
+          if (options.abortSignal?.aborted) {
+            resolve();
+            return;
+          }
+          options.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+        throw new Error('Query aborted');
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      await runSingleNode(store, platform, 'silent-ai-tool-throw-run');
+
+      const eventPayloads = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+        call => call[0] as { event_type: string; step_name: string; data: Record<string, unknown> }
+      );
+      const failedEvents = eventPayloads.filter(
+        e => e.event_type === 'node_failed' && e.step_name === 'step1'
+      );
+      expect(failedEvents).toHaveLength(1);
+      expect(failedEvents[0]?.data.error).toBe('Cancelled by user');
+
+      const settledTool = eventPayloads.find(
+        e => e.event_type === 'tool_completed' && e.data.tool_call_id === 'call-open'
+      );
+      expect(settledTool).toBeDefined();
+      expect(settledTool?.data.tool_outcome).toBe('unknown');
+    }, 15_000);
+
+    it('emits node_failed and settles an open tool when a structured-output node is abandoned mid-tool', async () => {
+      // The exact reported mechanism: an output_format node's stream ends via
+      // the external-abort race (a clean generator return, not a thrown
+      // provider error), but with no valid structured output ever produced.
+      // The structured-output-missing guard then throws its own error, which
+      // lands in the `dag_node_cancelled_via_abort` catch branch — the one
+      // that used to return without a node_failed event or an open-tool
+      // settle. A provider without a channel to prove its own interruption
+      // (mirrors Codex/Grok `--single`, i.e. `interruptedToolStatus: false`)
+      // settles 'unknown', matching every other Abandon path.
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* (
+        _prompt: string,
+        _cwd: string,
+        _resumeId: string | undefined,
+        options: SendQueryOptions
+      ) {
+        yield { type: 'tool', toolName: 'Bash', toolCallId: 'structured-call-open' };
+        chunkYielded = true;
+        // Never yields again — the stream only ends via the decoupled
+        // cancel poller aborting `nodeAbortController`, exactly like the
+        // "stays silent forever" test above.
+        await new Promise<never>(() => {});
+        void options;
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      const mockDeps = createMockDeps(store);
+      const workflowRun = makeWorkflowRun('structured-cancel-run');
+      await executeDagWorkflow(
+        mockDeps,
+        platform,
+        'conv-structured-cancel',
+        testDir,
+        {
+          name: 'structured-cancel-test',
+          nodes: [
+            {
+              id: 'step1',
+              command: 'step1',
+              output_format: { type: 'object', properties: { status: { type: 'string' } } },
+            },
+          ],
+        },
+        workflowRun,
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+
+      const eventPayloads = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+        call => call[0] as { event_type: string; step_name: string; data: Record<string, unknown> }
+      );
+      const failedEvents = eventPayloads.filter(
+        e => e.event_type === 'node_failed' && e.step_name === 'step1'
+      );
+      expect(failedEvents).toHaveLength(1);
+      expect(failedEvents[0]?.data.error).toBe('Cancelled by user');
+
+      const settledTool = eventPayloads.find(
+        e => e.event_type === 'tool_completed' && e.data.tool_call_id === 'structured-call-open'
+      );
+      expect(settledTool).toBeDefined();
+      expect(settledTool?.data.tool_outcome).toBe('unknown');
+    }, 15_000);
+
+    it('stops polling once the node completes normally (no leaked timer)', async () => {
+      mockSendQueryDag.mockImplementation(function* () {
+        yield { type: 'assistant', content: 'done' };
+        yield { type: 'result', sessionId: 'sid' };
+      });
+      const store = createMockStore();
+      let statusCalls = 0;
+      store.getWorkflowRunStatus = mock(() => {
+        statusCalls++;
+        return Promise.resolve('running' as const);
+      });
+      const platform = createMockPlatform();
+
+      await runSingleNode(store, platform, 'silent-ai-leak-run');
+      const countAtCompletion = statusCalls;
+      expect(countAtCompletion).toBeGreaterThan(0);
+
+      // A real wait past one full poll interval — a leaked timer would tick
+      // again and increment the count.
+      await new Promise(resolve => setTimeout(resolve, STREAM_CANCEL_POLL_INTERVAL_MS + 500));
+      expect(statusCalls).toBe(countAtCompletion);
+    }, 15_000);
+  });
+
   // ─── Loop Node Tests ─────────────────────────────────────────────────────
 
   describe('loop node execution', () => {
@@ -10042,6 +10738,237 @@ nodes:
       const data = (failed[0][0] as Record<string, unknown>).data as Record<string, unknown>;
       expect(String(data.error)).toContain('exceeded max iterations');
     });
+
+    it('stamps the durable steering settings row with the resolved provider, exactly like a prompt node', async () => {
+      mockSendQueryDag.mockImplementation(function* () {
+        yield { type: 'assistant', content: 'DONE' };
+        yield { type: 'result', sessionId: 'loop-steering-stamp' };
+      });
+
+      const store = createMockStore();
+      await executeDagWorkflow(
+        createMockDeps(store),
+        createMockPlatform(),
+        'conv-loop-steering-stamp',
+        testDir,
+        {
+          name: 'loop-steering-stamp-fixture',
+          nodes: [
+            {
+              id: 'steer-loop',
+              loop: {
+                prompt: 'Do the work until DONE.',
+                until: 'DONE',
+                max_iterations: 2,
+              },
+            },
+          ],
+        },
+        makeWorkflowRun('loop-steering-stamp-run'),
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+
+      // This durable stamp is what lets a restarted server classify the node
+      // as `recovery_required` (settings row exists, no live handle) instead
+      // of `not_steerable_here` (never registered) — see
+      // `classifySteeringLifecycle` in @archon/server.
+      const settings = await store.getSteeringNodeSettings('loop-steering-stamp-run', 'steer-loop');
+      expect(settings?.provider_id).toBe('claude');
+    });
+  });
+
+  // ─── Decoupled stream-cancel poller (silent tool call) — loop variant ────
+
+  describe('executeDagWorkflow -- loop node silent stream cancellation', () => {
+    const runLoopNode = async (
+      store: ReturnType<typeof createMockStore>,
+      platform: IWorkflowPlatform,
+      runId: string
+    ): Promise<void> => {
+      const mockDeps = createMockDeps(store);
+      const workflowRun = makeWorkflowRun(runId);
+      await executeDagWorkflow(
+        mockDeps,
+        platform,
+        'conv-silent-loop-cancel',
+        testDir,
+        {
+          name: 'silent-loop-cancel-test',
+          nodes: [
+            {
+              id: 'loop1',
+              loop: { prompt: 'Do the work until DONE.', until: 'DONE', max_iterations: 3 },
+            },
+          ],
+        },
+        workflowRun,
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+    };
+
+    const findFailedEvent = (
+      store: ReturnType<typeof createMockStore>
+    ): { data: Record<string, unknown> } | undefined => {
+      const eventCalls = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls;
+      const call = eventCalls.find(
+        (c: unknown[]) =>
+          (c[0] as { event_type: string }).event_type === 'node_failed' &&
+          (c[0] as { step_name: string }).step_name === 'loop1'
+      );
+      return call?.[0] as { data: Record<string, unknown> } | undefined;
+    };
+
+    it('fails a loop iteration as cancelled while its tool call stays silent forever, even when the provider never reacts to the abort signal', async () => {
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* () {
+        yield { type: 'assistant', content: 'partial' };
+        chunkYielded = true;
+        await new Promise<never>(() => {
+          // Intentionally never resolves — a genuinely unresponsive tool.
+        });
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      const startedAt = Date.now();
+      await runLoopNode(store, platform, 'silent-loop-run');
+      const elapsedMs = Date.now() - startedAt;
+
+      const failed = findFailedEvent(store);
+      expect(failed).toBeDefined();
+      expect(String(failed!.data.error)).toContain('Workflow cancelled');
+      const eventTypes = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+        call => (call[0] as { event_type: string }).event_type
+      );
+      expect(eventTypes).not.toContain('node_completed');
+      expect(elapsedMs).toBeLessThan(8000);
+    }, 15_000);
+
+    it('still reaches the cancelled terminal path — not a generic failure — when the provider does react and throws after the abort', async () => {
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* (
+        _prompt: string,
+        _cwd: string,
+        _resumeId: string | undefined,
+        options: SendQueryOptions
+      ) {
+        yield { type: 'assistant', content: 'partial' };
+        chunkYielded = true;
+        await new Promise<void>(resolve => {
+          if (options.abortSignal?.aborted) {
+            resolve();
+            return;
+          }
+          options.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+        throw new Error('Query aborted');
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      await runLoopNode(store, platform, 'silent-loop-throw-run');
+
+      const failedEvents = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls
+        .map(call => call[0])
+        .filter(
+          e =>
+            (e as { event_type: string }).event_type === 'node_failed' &&
+            (e as { step_name: string }).step_name === 'loop1'
+        );
+      expect(failedEvents).toHaveLength(1);
+      expect(String((failedEvents[0] as { data: { error: string } }).data.error)).toContain(
+        'Workflow cancelled'
+      );
+    }, 15_000);
+
+    it('settles a still-open tool call to unknown when a loop iteration is abandoned mid-tool', async () => {
+      // Abandon (not an operator Stop) on a loop iteration whose provider
+      // throws after the abort instead of yielding a clean terminal 'result'
+      // chunk — the loop-node counterpart of the prompt-node coverage above.
+      // The node must end promptly with a terminal event, and the open tool
+      // must settle instead of ticking forever.
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* (
+        _prompt: string,
+        _cwd: string,
+        _resumeId: string | undefined,
+        options: SendQueryOptions
+      ) {
+        yield { type: 'tool', toolName: 'Bash', toolCallId: 'loop-call-open' };
+        chunkYielded = true;
+        await new Promise<void>(resolve => {
+          if (options.abortSignal?.aborted) {
+            resolve();
+            return;
+          }
+          options.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+        throw new Error('Query aborted');
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      const startedAt = Date.now();
+      await runLoopNode(store, platform, 'silent-loop-tool-throw-run');
+      const elapsedMs = Date.now() - startedAt;
+
+      const eventPayloads = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+        call => call[0] as { event_type: string; step_name: string; data: Record<string, unknown> }
+      );
+      const failedEvents = eventPayloads.filter(
+        e => e.event_type === 'node_failed' && e.step_name === 'loop1'
+      );
+      expect(failedEvents).toHaveLength(1);
+      expect(String(failedEvents[0]?.data.error)).toContain('Workflow cancelled');
+
+      const settledTool = eventPayloads.find(
+        e => e.event_type === 'tool_completed' && e.data.tool_call_id === 'loop-call-open'
+      );
+      expect(settledTool).toBeDefined();
+      expect(settledTool?.data.tool_outcome).toBe('unknown');
+      expect(elapsedMs).toBeLessThan(8000);
+    }, 15_000);
+
+    it('stops polling once the loop iteration completes normally (no leaked timer)', async () => {
+      mockSendQueryDag.mockImplementation(function* () {
+        yield { type: 'assistant', content: 'DONE' };
+        yield { type: 'result', sessionId: 'sid' };
+      });
+      const store = createMockStore();
+      let statusCalls = 0;
+      store.getWorkflowRunStatus = mock(() => {
+        statusCalls++;
+        return Promise.resolve('running' as const);
+      });
+      const platform = createMockPlatform();
+
+      await runLoopNode(store, platform, 'silent-loop-leak-run');
+      const countAtCompletion = statusCalls;
+      expect(countAtCompletion).toBeGreaterThan(0);
+
+      await new Promise(resolve => setTimeout(resolve, STREAM_CANCEL_POLL_INTERVAL_MS + 500));
+      expect(statusCalls).toBe(countAtCompletion);
+    }, 15_000);
   });
 });
 
@@ -16612,6 +17539,150 @@ describe('shouldContinueStreamingForStatus', () => {
     const { shouldContinueStreamingForStatus } = await import('./dag-executor');
     expect(shouldContinueStreamingForStatus('pending')).toBe(false);
     expect(shouldContinueStreamingForStatus('invalid-status')).toBe(false);
+  });
+});
+
+describe('startStreamCancelPoller', () => {
+  it('checks the run status immediately, then re-arms on a continuable status', async () => {
+    const { startStreamCancelPoller, STREAM_CANCEL_POLL_INTERVAL_MS } =
+      await import('./dag-executor');
+    const store = createMockStore();
+    let callCount = 0;
+    let resolveStatus: ((status: string) => void) | undefined;
+    store.getWorkflowRunStatus = mock(() => {
+      callCount++;
+      return new Promise<string>(resolve => {
+        resolveStatus = resolve;
+      });
+    });
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    const setTimeoutSpy = spyOn(global, 'setTimeout');
+    const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller);
+    try {
+      // The first read is issued synchronously, with no setTimeout involved.
+      expect(callCount).toBe(1);
+      resolveStatus!('running');
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(setTimeoutSpy).toHaveBeenCalledWith(
+        expect.any(Function),
+        STREAM_CANCEL_POLL_INTERVAL_MS
+      );
+      expect(controller.signal.aborted).toBe(false);
+    } finally {
+      stop();
+      setTimeoutSpy.mockRestore();
+    }
+  });
+
+  it('aborts the controller once the status stops permitting streaming, and reports it via onDetected', async () => {
+    const { startStreamCancelPoller } = await import('./dag-executor');
+    const store = createMockStore();
+    store.getWorkflowRunStatus = mock(() => Promise.resolve('cancelled' as const));
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    let detected: string | null | undefined;
+    const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller, status => {
+      detected = status;
+    });
+    try {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(controller.signal.aborted).toBe(true);
+      expect(detected).toBe('cancelled');
+    } finally {
+      stop();
+    }
+  });
+
+  it('a deleted run (null status) also aborts the controller', async () => {
+    const { startStreamCancelPoller } = await import('./dag-executor');
+    const store = createMockStore();
+    store.getWorkflowRunStatus = mock(() => Promise.resolve(null));
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller);
+    try {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(controller.signal.aborted).toBe(true);
+    } finally {
+      stop();
+    }
+  });
+
+  it('stop() before an in-flight read resolves discards the result (no late abort)', async () => {
+    const { startStreamCancelPoller } = await import('./dag-executor');
+    const store = createMockStore();
+    let resolveStatus: ((status: string) => void) | undefined;
+    store.getWorkflowRunStatus = mock(
+      () =>
+        new Promise<string>(resolve => {
+          resolveStatus = resolve;
+        })
+    );
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller);
+    stop();
+    resolveStatus!('cancelled');
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(controller.signal.aborted).toBe(false);
+  });
+
+  it('stop() clears the pending re-arm timer — no leaked poller after the pass ends', async () => {
+    const { startStreamCancelPoller } = await import('./dag-executor');
+    const store = createMockStore();
+    let callCount = 0;
+    store.getWorkflowRunStatus = mock(() => {
+      callCount++;
+      return Promise.resolve('running' as const);
+    });
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    const clearTimeoutSpy = spyOn(global, 'clearTimeout');
+    try {
+      const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller);
+      // Let the immediate tick resolve and arm its re-check timer.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(callCount).toBe(1);
+      stop();
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      // A second, redundant stop() must not throw or double-clear anything odd.
+      expect(() => stop()).not.toThrow();
+      // No further status reads even across a real interval — the timer really
+      // was cleared, not just scheduled to no-op.
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(callCount).toBe(1);
+    } finally {
+      clearTimeoutSpy.mockRestore();
+    }
+  });
+
+  it('an already-aborted controller short-circuits every tick', async () => {
+    const { startStreamCancelPoller } = await import('./dag-executor');
+    const store = createMockStore();
+    let callCount = 0;
+    store.getWorkflowRunStatus = mock(() => {
+      callCount++;
+      return Promise.resolve('running' as const);
+    });
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    controller.abort();
+    const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(callCount).toBe(0);
+    stop();
   });
 });
 
@@ -24261,7 +25332,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
   it.each([
     { kind: 'command', node: { id: 'agent', command: 'my-cmd' } },
     { kind: 'prompt', node: { id: 'agent', prompt: 'Inspect a.ts' } },
-  ])('records $kind stream as started, text, tool, text, completed', async ({ node }) => {
+  ])('records $kind stream as started, prompt, text, tool, text, completed', async ({ node }) => {
     mockSendQueryDag.mockImplementation(function* () {
       yield { type: 'assistant', content: 'Reading file.' };
       yield {
@@ -24286,6 +25357,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
 
     expect(transcriptTimeline(rows)).toEqual([
       'started',
+      'text', // the prompt row
       'text',
       'tool',
       'tool',
@@ -24328,9 +25400,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const workflowRun = await runNodes(store, [{ id: 'agent', prompt: 'Inspect a.ts' }]);
     const rows = await store.listNodeMessages(workflowRun.id, 'agent');
 
-    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'tool', 'completed']);
-    expect(rows.filter(row => row.kind === 'text')).toHaveLength(1);
-    expect(rows.find(row => row.kind === 'text')?.payload).toEqual({ text: 'Reading file.' });
+    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'text', 'tool', 'completed']);
+    const textRows = rows.filter(row => row.kind === 'text');
+    expect(textRows).toHaveLength(2);
+    expect(textRows.find(row => row.metadata?.origin !== 'prompt')?.payload).toEqual({
+      text: 'Reading file.',
+    });
   });
 
   it('records started then failed with the command-load error', async () => {
@@ -24419,7 +25494,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const store = createMockStore();
     const workflowRun = await runNodes(store, [{ id: 'agent', command: 'my-cmd' }]);
     const rows = await store.listNodeMessages(workflowRun.id, 'agent');
-    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'completed']);
+    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'text', 'completed']);
     expect(
       rows.filter(row => row.kind === 'status' && row.payload.state === 'completed')
     ).toHaveLength(1);
@@ -24481,10 +25556,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'tool',
       'iteration_completed',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
       'completed',
@@ -24504,7 +25581,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(
       iterationCompletes.map(row => (row.kind === 'status' ? row.payload.detail : undefined))
     ).toEqual(['1', '2']);
-    const textRows = rows.filter(row => row.kind === 'text');
+    const textRows = rows.filter(row => row.kind === 'text' && row.metadata?.origin !== 'prompt');
     expect(textRows[0]?.payload).toEqual({ text: 'First pass.' });
     expect(textRows[1]?.payload).toEqual({ text: 'Second pass.' });
     expect(rows.find(row => row.kind === 'tool')?.payload).toEqual({
@@ -24530,10 +25607,11 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'iteration_failed',
       'failed',
     ]);
-    expect(rows[2]?.kind === 'status' ? rows[2].payload.detail : undefined).toBe('1');
+    expect(rows[3]?.kind === 'status' ? rows[3].payload.detail : undefined).toBe('1');
   });
 
   it('closes an in-flight iteration when structured output validation fails', async () => {
@@ -24562,6 +25640,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_failed',
       'failed',
@@ -24595,6 +25674,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
       expect(transcriptTimeline(rows)).toEqual([
         'started',
         'iteration_started',
+        'text', // the iteration's prompt row
         'text',
         'iteration_failed',
         'failed',
@@ -24668,9 +25748,11 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
       'failed',
@@ -24703,6 +25785,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
     ]);
@@ -24730,7 +25813,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     ]);
     expect(await store.listNodeMessages(workflowRun.id, 'grp')).toEqual([]);
     const bodyRows = await store.listNodeMessages(workflowRun.id, 'grp.body');
-    expect(transcriptTimeline(bodyRows)).toEqual(['started', 'text', 'completed']);
+    expect(transcriptTimeline(bodyRows)).toEqual(['started', 'text', 'text', 'completed']);
   });
 
   it('persists provider-declared text_mode on direct node text rows and leaves untagged text untagged', async () => {
@@ -24743,9 +25826,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
 
     const store = createMockStore();
     const workflowRun = await runNodes(store, [{ id: 'agent', prompt: 'Hi' }]);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'agent')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'agent')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    expect(promptRows.map(row => row.payload)).toEqual([{ text: 'Hi' }]);
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
 
     expect(textRows.map(row => row.payload)).toEqual([
       { text: 'Hel' },
@@ -24790,9 +25876,20 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     );
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'classify')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'classify')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    // The reask pass gets its own prompt row carrying the exact augmented text
+    // the model actually saw — never a duplicate of the first pass's prompt.
+    expect(promptRows).toHaveLength(2);
+    expect(promptRows[0]?.payload).toEqual({ text: 'Classify.' });
+    expect(promptRows[0]?.metadata?.prompt_source).toBe('node_prompt');
+    expect(promptRows[1]?.metadata?.prompt_source).toBe('reask');
+    expect((promptRows[1]?.payload as { text: string }).text).toContain('Classify.');
+    expect((promptRows[1]?.payload as { text: string }).text).not.toBe('Classify.');
+
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
     expect(textRows.map(row => row.payload)).toEqual([{ text: 'bad pass' }, { text: 'good pass' }]);
     expect(textRows[0]?.metadata?.text_mode).toBe('delta');
     expect(textRows[1]?.metadata?.text_mode).toBe('delta');
@@ -24800,6 +25897,9 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const secondScope = textRows[1]?.metadata?.execution;
     expect(firstScope?.occurrence_id).toBe(secondScope?.occurrence_id);
     expect(firstScope?.attempt_id).not.toBe(secondScope?.attempt_id);
+    // Each prompt row shares its pass's attempt scope with that pass's assistant text.
+    expect(promptRows[0]?.metadata?.execution?.attempt_id).toBe(firstScope?.attempt_id);
+    expect(promptRows[1]?.metadata?.execution?.attempt_id).toBe(secondScope?.attempt_id);
   });
 
   it('persists provider-declared text_mode on loop node text rows', async () => {
@@ -24816,10 +25916,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const workflowRun = await runNodes(store, [
       { id: 'refine', loop: { prompt: 'Iterate.', until: 'DONE', max_iterations: 3 } },
     ]);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
       row => row.kind === 'text'
     );
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
 
+    expect(allTextRows).toHaveLength(2);
     expect(textRows).toHaveLength(1);
     expect(textRows[0]?.payload).toEqual({ text: 'Iterated.' });
     expect(textRows[0]?.metadata?.text_mode).toBe('delta');
@@ -24861,9 +25963,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     );
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    expect(promptRows.map(row => row.metadata?.prompt_source)).toEqual(['node_prompt', 'reask']);
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
     expect(textRows.map(row => row.payload)).toEqual([{ text: 'bad pass' }, { text: 'good pass' }]);
     expect(textRows[0]?.metadata?.text_mode).toBe('delta');
     expect(textRows[1]?.metadata?.text_mode).toBe('delta');
@@ -24909,9 +26014,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     );
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    expect(promptRows.map(row => row.metadata?.prompt_source)).toEqual(['node_prompt', 'reask']);
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
     expect(textRows.map(row => row.payload)).toEqual([
       { text: 'prose pass' },
       { text: 'fixed pass' },
@@ -25983,6 +27091,42 @@ describe('executeDagWorkflow -- AskHuman resume re-entry', () => {
     ]);
   });
 
+  it('records no prompt row on an AskHuman-resume pass — the provider substitutes the human answers for the node prompt', async () => {
+    // The Claude provider swaps attemptPrompt for the mapped answers
+    // internally (buildClaudeAskResumePrompt); attemptPrompt itself is text
+    // the model never sees on this pass, so persisting it as a prompt row
+    // would misattribute the turn.
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'sess-ask' };
+    });
+    const store = createMockStore();
+    const row = makeAnsweredAsk({ node_id: 'review', tool_use_id: 'toolu_1' });
+    wireAnsweredAsks(store, [row]);
+
+    await invokeDag(store, [{ id: 'review', command: 'my-cmd' }]);
+
+    const rows = await store.listNodeMessages('ask-resume-run', 'review');
+    expect(rows.some(r => r.kind === 'text' && r.metadata?.origin === 'prompt')).toBe(false);
+  });
+
+  it('records no prompt row on a loop node AskHuman-resume pass either', async () => {
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'ok <promise>DONE</promise>' };
+      yield { type: 'result', sessionId: 'sess-ask' };
+    });
+    const store = createMockStore();
+    const row = makeAnsweredAsk({ node_id: 'review', tool_use_id: 'toolu_loop' });
+    wireAnsweredAsks(store, [row]);
+
+    await invokeDag(store, [
+      { id: 'review', loop: { prompt: 'Iterate.', until: 'DONE', max_iterations: 3 } },
+    ]);
+
+    const rows = await store.listNodeMessages('ask-resume-run', 'review');
+    expect(rows.some(r => r.kind === 'text' && r.metadata?.origin === 'prompt')).toBe(false);
+  });
+
   it('maps decline to declined payload', async () => {
     mockSendQueryDag.mockImplementation(function* () {
       yield { type: 'assistant', content: 'ok' };
@@ -26560,20 +27704,68 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     return handle;
   }
 
+  /**
+   * Durably enqueue guidance exactly like the send route would for
+   * `intent: 'queue'` — never wakes an idle handle. `initial_state` mirrors
+   * the live handle's current sub-state at insert time.
+   */
   function enqueue(
+    store: IWorkflowStore,
     runId: string,
     stepName: string,
     messageId: string,
     message: string,
     operatorUserId: string | null = 'op-1'
   ): void {
-    const result = liveHandle(runId, stepName).enqueue({
-      messageId,
+    const handle = liveHandle(runId, stepName);
+    const initialState =
+      handle.steeringSubState() === 'idle-after-interrupt' ? 'awaiting_send_now' : 'queued';
+    void store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: stepName,
+      message_id: messageId,
       message,
-      operatorUserId,
-      receivedAt: new Date().toISOString(),
+      operator_user_id: operatorUserId,
+      initial_state: initialState,
     });
-    if (!result.ok) throw new Error(`enqueue refused: ${result.reason}`);
+  }
+
+  /**
+   * Durably enqueue guidance exactly like the send route would for
+   * `intent: 'send_now'` — wakes an idle handle for a non-blank message,
+   * exactly like `NodeSteeringHandle.wakeForSendNow()`'s real caller.
+   */
+  function sendNow(
+    store: IWorkflowStore,
+    runId: string,
+    stepName: string,
+    messageId: string,
+    message: string,
+    operatorUserId: string | null = 'op-1'
+  ): void {
+    const handle = liveHandle(runId, stepName);
+    const idle = handle.steeringSubState() === 'idle-after-interrupt';
+    void store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: stepName,
+      message_id: messageId,
+      message,
+      operator_user_id: operatorUserId,
+      initial_state: idle ? 'awaiting_send_now' : 'queued',
+    });
+    if (idle && message.trim() !== '') {
+      handle.wakeForSendNow();
+    }
+  }
+
+  /** Poll until the handle projects the idle sub-state (or give up loudly). */
+  async function awaitIdle(runId: string, stepName: string): Promise<NodeSteeringHandle> {
+    for (let i = 0; i < 2000; i++) {
+      const handle = getSteeringRegistry().get(runId, stepName);
+      if (handle?.steeringSubState() === 'idle-after-interrupt') return handle;
+      await Bun.sleep(1);
+    }
+    throw new Error(`handle ${runId}/${stepName} never reached idle-after-interrupt`);
   }
 
   type SteeringNodeMsg = Awaited<ReturnType<IWorkflowStore['listNodeMessages']>>[number];
@@ -26649,10 +27841,10 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'a1', 'a1', 'op-a');
-        enqueue(RUN_ID, 'review', 'b1', 'b1', 'op-b');
-        enqueue(RUN_ID, 'review', 'a2', 'a2', 'op-a');
-        enqueue(RUN_ID, 'review', 'b2', 'b2', 'op-b');
+        enqueue(store, RUN_ID, 'review', 'a1', 'a1', 'op-a');
+        enqueue(store, RUN_ID, 'review', 'b1', 'b1', 'op-b');
+        enqueue(store, RUN_ID, 'review', 'a2', 'a2', 'op-a');
+        enqueue(store, RUN_ID, 'review', 'b2', 'b2', 'op-b');
         yield { type: 'assistant', content: 'turn one' };
         yield { type: 'result', sessionId: 'sess-turn-1' };
         return;
@@ -26705,7 +27897,55 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     const causedAttempt = secondTurnText!.metadata?.execution?.attempt_id;
     expect(causedAttempt).toBeDefined();
     expect(operatorRows.every(r => r.metadata.execution?.attempt_id === causedAttempt)).toBe(true);
-    expect(firstTurnText!.metadata?.execution?.attempt_id).not.toBe(causedAttempt);
+    // A steered node is one execution across several provider turns: every
+    // turn's rows share the SAME occurrence and attempt as the node's start.
+    expect(firstTurnText!.metadata?.execution?.attempt_id).toBe(causedAttempt);
+    expect(firstTurnText!.metadata?.execution?.occurrence_id).toBe(
+      secondTurnText!.metadata?.execution?.occurrence_id
+    );
+  });
+
+  it('stamps operatorMessageId when the guidance turn delivers exactly one durable message', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'solo-1', 'redirect the plan', 'op-a');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-turn-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-turn-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    const options = sendQueryArg<SendQueryOptions>(1, 3);
+    expect(options.operatorMessageId).toBe('solo-1');
+  });
+
+  it('omits operatorMessageId when a guidance turn combines more than one durable message', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'combo-1', 'first', 'op-a');
+        enqueue(store, RUN_ID, 'review', 'combo-2', 'second', 'op-b');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-turn-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-turn-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    const options = sendQueryArg<SendQueryOptions>(1, 3);
+    expect(options.operatorMessageId).toBeUndefined();
   });
 
   it('flushes batch output once per settled turn and folds usage across turns', async () => {
@@ -26713,7 +27953,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'more work');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'more work');
         yield { type: 'assistant', content: 'turn one' };
         yield { type: 'result', sessionId: 's-1', tokens: { input: 10, output: 5 }, cost: 0.01 };
         return;
@@ -26744,7 +27984,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'more work');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'more work');
         yield { type: 'assistant', content: 'turn one' };
         yield { type: 'result', sessionId: 's-1', tokens: { input: 10, output: 5 } };
         return;
@@ -26783,10 +28023,8 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
   });
 
   it('fails before draining when the settled turn returns no session id', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'stranded guidance');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'stranded guidance');
       yield { type: 'assistant', content: 'output' };
       yield { type: 'result' };
     });
@@ -26795,15 +28033,16 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toContain('no session id');
-    // The queue was left intact — never drained into a dead end.
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    // The entry was left intact, never drained into a dead end — terminal
+    // reconciliation then preserves it as a read-only never_sent record.
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('never drains on empty output', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'undrained');
       yield { type: 'result', sessionId: 's-1' };
     });
     const store = createMockStore();
@@ -26811,14 +28050,14 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toContain('produced no assistant output');
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('never drains on a provider error', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'undrained');
       yield { type: 'assistant', content: 'partial' };
       throw new Error('provider exploded');
     });
@@ -26827,17 +28066,17 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toBe('provider exploded');
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('never drains on cancel', async () => {
     let streaming = false;
-    let handleRef: NodeSteeringHandle | undefined;
     const store = createMockStore();
     store.getWorkflowRunStatus = mock(async () => (streaming ? 'cancelled' : 'running'));
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'undrained');
       streaming = true;
       yield { type: 'assistant', content: 'partial' };
       yield { type: 'result', sessionId: 's-1' };
@@ -26846,14 +28085,14 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toBe('Cancelled by user');
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('never drains on credit exhaustion', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'undrained');
       yield { type: 'assistant', content: 'credit balance exhausted' };
       yield { type: 'result', sessionId: 's-1' };
     });
@@ -26862,14 +28101,14 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toContain('Credit exhaustion');
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('never drains on idle timeout', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'undrained');
       yield { type: 'assistant', content: 'partial work' };
       await new Promise(() => {}); // hang — the idle watchdog owns the exit
     });
@@ -26877,10 +28116,12 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     await invokeDag(store, [{ id: 'review', prompt: 'do work', idle_timeout: 50 }]);
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
-  it('parks on AskHuman, refuses sends while parked, and the resumed execution inherits the queue', async () => {
+  it('parks on AskHuman, and the resumed execution inherits the durable queue', async () => {
     let calls = 0;
     mockSendQueryDag.mockImplementation(async function* (
       _prompt: string,
@@ -26891,7 +28132,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
       calls++;
       if (calls === 1) {
         // Guidance queued mid-turn survives the park on the same handle.
-        enqueue(RUN_ID, 'review', 'm-1', 'pre-park guidance');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'pre-park guidance');
         const ask = options?.nativeTools?.find(tool => tool.name === 'AskHuman');
         if (!ask) throw new Error('AskHuman was not injected');
         await ask.handler(
@@ -26906,17 +28147,13 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     const store = createMockStore();
     await invokeDag(store, [{ id: 'review', prompt: 'ask something' }]);
 
-    // Paused pending: the handle is parked and refuses new sends.
+    // Paused pending: the handle is parked. Whether a route refuses a new
+    // send while parked is server route policy now that content lives in
+    // the durable store, not a registry-level concern — covered by the
+    // server's own route tests.
     const parked = getSteeringRegistry().get(RUN_ID, 'review');
     expect(parked).toBeDefined();
     expect(parked!.snapshot().phase).toBe('parked');
-    const refused = parked!.enqueue({
-      messageId: 'm-2',
-      message: 'too late',
-      operatorUserId: 'op-1',
-      receivedAt: new Date().toISOString(),
-    });
-    expect(refused).toEqual({ ok: false, reason: 'not_live' });
 
     // Resume: the same run re-enters the node; register() revives the parked
     // handle with its retained queue, and the boundary drains it into a
@@ -26933,7 +28170,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'classify', 'm-1', 'steer the verdict');
+        enqueue(store, RUN_ID, 'classify', 'm-1', 'steer the verdict');
         yield { type: 'result', sessionId: 's-1', structuredOutput: { verdict: 'ok' } };
         return;
       }
@@ -26979,8 +28216,8 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'my-loop', 'm-a', 'adjust course a', 'op-a');
-        enqueue(RUN_ID, 'my-loop', 'm-b', 'adjust course b', 'op-b');
+        enqueue(store, RUN_ID, 'my-loop', 'm-a', 'adjust course a', 'op-a');
+        enqueue(store, RUN_ID, 'my-loop', 'm-b', 'adjust course b', 'op-b');
         yield { type: 'assistant', content: 'iteration one work' };
         yield { type: 'result', sessionId: 'loop-sess-1' };
         return;
@@ -27023,18 +28260,16 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
   it('fails without draining when the latest loop guidance turn omits a session id', async () => {
     let calls = 0;
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'my-loop', 'm-1', 'first follow-up');
+        enqueue(store, RUN_ID, 'my-loop', 'm-1', 'first follow-up');
         yield { type: 'assistant', content: 'iteration work' };
         yield { type: 'result', sessionId: 'loop-sess-1' };
         return;
       }
       if (calls === 2) {
-        handleRef = liveHandle(RUN_ID, 'my-loop');
-        enqueue(RUN_ID, 'my-loop', 'm-2', 'second follow-up');
+        enqueue(store, RUN_ID, 'my-loop', 'm-2', 'second follow-up');
         yield { type: 'assistant', content: 'first follow-up result' };
         yield { type: 'result' };
         return;
@@ -27052,9 +28287,13 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
     expect(nodeFailedError(store, 'my-loop')).toContain('no session id');
-    expect(handleRef!.snapshot().queued.map(message => message.message)).toEqual([
-      'second follow-up',
-    ]);
+    // 'first follow-up' was claimed and delivered in turn 2; 'second
+    // follow-up' was claimed for a turn 3 that never got a session id to
+    // resume, so it is preserved as never_sent rather than silently lost.
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'my-loop');
+    expect(queueAfter.map(entry => entry.message)).toEqual(['first follow-up', 'second follow-up']);
+    expect(queueAfter[0]?.state).toBe('sent');
+    expect(queueAfter[1]?.state).toBe('never_sent');
   });
 
   it('lets pending guidance win a completion boundary in a loop', async () => {
@@ -27062,7 +28301,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'my-loop', 'm-1', 'one more thing');
+        enqueue(store, RUN_ID, 'my-loop', 'm-1', 'one more thing');
         yield { type: 'assistant', content: 'done <promise>COMPLETE</promise>' };
         yield { type: 'result', sessionId: 'loop-sess-1' };
         return;
@@ -27089,7 +28328,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'my-loop', 'm-1', 'last word');
+        enqueue(store, RUN_ID, 'my-loop', 'm-1', 'last word');
         yield { type: 'assistant', content: 'work without signal' };
         yield { type: 'result', sessionId: 'loop-sess-1' };
         return;
@@ -27112,6 +28351,63 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(nodeFailedError(store, 'my-loop')).toContain('exceeded max iterations');
   });
 
+  it('a guidance turn that does real work can satisfy a read-only until_bash within the same iteration', async () => {
+    // Read-only completion check (the documented, recommended shape — see
+    // loop-nodes.md's until_bash caution block): true once a flag file
+    // exists, never mutating anything itself. The natural turn does no work
+    // (no flag); the drained guidance turn is where the real work happens.
+    const flagFile = join(testDir, 'guidance-flag');
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'my-loop', 'm-1', 'finish the task now');
+        yield { type: 'assistant', content: 'thinking about it' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      // The guidance turn's own (simulated) work is what makes the
+      // completion check true — nothing else in this test touches the file.
+      writeFileSync(flagFile, 'done');
+      yield { type: 'assistant', content: 'finished per the operator note' };
+      yield { type: 'result', sessionId: 'loop-sess-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: {
+          prompt: 'Do a task.',
+          until_bash: `test -f "${flagFile}"`,
+          max_iterations: 3,
+        },
+      },
+    ]);
+
+    // Two provider turns ran (natural + the drained guidance turn), but the
+    // guidance turn's own until_bash pass is what completed the node — the
+    // engine never held it back for a second, un-guided iteration. This is
+    // intentional (`dag-executor.ts`'s steering-boundary comment: "every
+    // completion channel re-evaluates on the newest turn's output") and
+    // matches the UX contract: `Queue` delivers guidance "as the next turn
+    // when the current turn ends naturally" — the same turn, not a later one.
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('finish the task now');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('loop-sess-1');
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    // `loop_iteration_completed` counts iterations, not provider turns: one
+    // iteration ran two turns, so exactly one such event exists, not two,
+    // and it reports iteration 1.
+    const iterationCompletedEvents = (
+      store.createWorkflowEvent as ReturnType<typeof mock>
+    ).mock.calls
+      .map(call => call[0] as { event_type: string; data: Record<string, unknown> })
+      .filter(event => event.event_type === 'loop_iteration_completed');
+    expect(iterationCompletedEvents).toHaveLength(1);
+    expect(iterationCompletedEvents[0]!.data.iteration).toBe(1);
+  });
+
   it('registers loop-group body prompt nodes under the namespaced step name', async () => {
     let calls = 0;
     let sawNamespaced: NodeSteeringHandle | undefined;
@@ -27121,7 +28417,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
       if (calls === 1) {
         sawNamespaced = getSteeringRegistry().get(RUN_ID, 'grp.body');
         sawBare = getSteeringRegistry().get(RUN_ID, 'body');
-        enqueue(RUN_ID, 'grp.body', 'm-1', 'guided');
+        enqueue(store, RUN_ID, 'grp.body', 'm-1', 'guided');
         yield { type: 'assistant', content: 'body output COMPLETE' };
         yield { type: 'result', sessionId: 'sess-body-1' };
         return;
@@ -27159,7 +28455,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-null', 'anonymous steer', null);
+        enqueue(store, RUN_ID, 'review', 'm-null', 'anonymous steer', null);
         yield { type: 'assistant', content: 'prior' };
         yield { type: 'result', sessionId: 's-1' };
         return;
@@ -27182,9 +28478,9 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'one');
-        enqueue(RUN_ID, 'review', 'm-2', 'two');
-        enqueue(RUN_ID, 'review', 'm-3', 'three');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'one');
+        enqueue(store, RUN_ID, 'review', 'm-2', 'two');
+        enqueue(store, RUN_ID, 'review', 'm-3', 'three');
         yield { type: 'assistant', content: 'prior' };
         yield { type: 'result', sessionId: 's-1' };
         return;
@@ -27212,23 +28508,208 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(operatorRows.map(r => r.payload.text)).toEqual(['one', 'three']);
   });
 
-  it('operator startup throw before first yield writes no operator row', async () => {
+  it('a guidance turn that throws before first yield reverts the entry to the front and parks idle, not fails the node', async () => {
     let calls = 0;
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'never written');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'never written');
         yield { type: 'assistant', content: 'prior' };
         yield { type: 'result', sessionId: 's-1' };
         return;
       }
-      throw new Error('provider startup boom');
+      if (calls === 2) {
+        throw new Error('provider startup boom');
+      }
+      // The Send-now-driven retry succeeds.
+      yield { type: 'assistant', content: 'redelivered' };
+      yield { type: 'result', sessionId: 's-3' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    const idle = await awaitIdle(RUN_ID, 'review');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    const queued = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.state).toBe('queued');
+    expect(queued[0]!.last_error).toBe('provider startup boom');
+    expect(queued[0]!.dispatch_failure_count).toBe(1);
+    // m-1 was drained by the executor's own automatic wake-and-claim after
+    // turn 1's natural boundary, never an operator Send now.
+    expect(queued[0]!.last_failure_kind).toBe('automatic');
+    const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(isOperatorTextRow);
+    expect(operatorRows).toHaveLength(0);
+
+    // Auto-send never fires from this parked state (same rule as after
+    // Stop): merely re-enqueuing does not wake the node.
+    enqueue(store, RUN_ID, 'review', 'm-2', 'queued while parked');
+    await Bun.sleep(5);
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+
+    // The operator's "Send now" retries on the exact same session the prior
+    // successful turn established, and it drains both the reverted entry
+    // (still at the front) and the one queued while parked, in order.
+    sendNow(store, RUN_ID, 'review', 'm-1', 'never written');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(3);
+    expect(sendQueryArg<string>(2, 0)).toBe('never written\n\nqueued while parked');
+    expect(sendQueryArg<string | undefined>(2, 2)).toBe('s-1');
+    expect(sendQueryArg<SendQueryOptions>(2, 3).forkSession).toBe(false);
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(idle.isClosed()).toBe(true);
+  });
+
+  it('a repeated retryable dispatch failure keeps incrementing the count and keeps the entry ahead of later guidance', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'm-1', 'first');
+        yield { type: 'assistant', content: 'prior' };
+        yield { type: 'result', sessionId: 's-1' };
+        return;
+      }
+      throw new Error(`dispatch boom ${String(calls)}`);
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+    await awaitIdle(RUN_ID, 'review');
+
+    // A second operator message queues behind the reverted one while parked.
+    enqueue(store, RUN_ID, 'review', 'm-2', 'second');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'first');
+    // Wait for the retry turn to actually run (substate briefly leaves
+    // idle-after-interrupt while generating) before polling for the SECOND
+    // idle-after-interrupt — otherwise a stale still-idle read races ahead
+    // of the second revert.
+    for (let i = 0; i < 2000 && mockSendQueryDag.mock.calls.length < 3; i++) {
+      await Bun.sleep(1);
+    }
+    expect(mockSendQueryDag.mock.calls.length).toBe(3);
+    await awaitIdle(RUN_ID, 'review');
+
+    const queued = await store.listSteeringQueue(RUN_ID, 'review');
+    const byId = new Map(queued.map(e => [e.message_id, e]));
+    expect(byId.get('m-1')!.dispatch_failure_count).toBe(2);
+    // The first failure was automatic (turn 1's own natural drain); the
+    // second was the operator's own Send now retry failing again — the
+    // durable record names the attempt that actually failed most recently.
+    expect(byId.get('m-1')!.last_failure_kind).toBe('send_now');
+    expect(byId.get('m-1')!.fifo_position).toBeLessThan(byId.get('m-2')!.fifo_position);
+
+    getSteeringRegistry().get(RUN_ID, 'review')?.expireIdleForTests();
+    await run;
+    expect(nodeFailedError(store, 'review')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
+    const finalQueue = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(finalQueue.every(e => e.state === 'never_sent')).toBe(true);
+  });
+
+  it('a guidance turn with no established session still fails the node outright (session-losing, not retryable)', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'm-1', 'guided');
+        yield { type: 'assistant', content: 'prior' };
+        // Turn 1 returns no session id: the executor never falls back to a
+        // fresh session, so it fails the node before any guidance turn
+        // could even start. This is the pre-existing session-losing path,
+        // unaffected by retryable classification.
+        yield { type: 'result' };
+        return;
+      }
+      throw new Error('unreachable: no guidance turn should start');
     });
     const store = createMockStore();
     await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
-    expect(nodeFailedError(store, 'review')).toBe('provider startup boom');
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(storedEventTypes(store)).toContain('node_failed');
+    const queued = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queued.every(e => e.state === 'never_sent')).toBe(true);
+  });
+
+  it('a mid-stream throw after the operator receipt already committed still parks idle, and the revert is a no-op on the already-sent entry', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'm-1', 'guided');
+        yield { type: 'assistant', content: 'prior' };
+        yield { type: 'result', sessionId: 's-1' };
+        return;
+      }
+      if (calls === 2) {
+        // At least one chunk streams (so the operator receipt commits and
+        // the entry advances dispatching -> sent) before the provider throws.
+        yield { type: 'assistant', content: 'partial guided output' };
+        throw new Error('mid-stream boom');
+      }
+      yield { type: 'assistant', content: 'redirected output' };
+      yield { type: 'result', sessionId: 's-3' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+    await awaitIdle(RUN_ID, 'review');
+
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    const queued = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queued).toHaveLength(1);
+    // Already 'sent' when the throw landed — the revert had nothing
+    // 'dispatching' to match, so it is a no-op; delivery is already proven
+    // and the node still parks for the operator to continue.
+    expect(queued[0]!.state).toBe('sent');
+    expect(queued[0]!.dispatch_failure_count).toBe(0);
     const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(isOperatorTextRow);
-    expect(operatorRows).toHaveLength(0);
+    expect(operatorRows).toHaveLength(1);
+
+    sendNow(store, RUN_ID, 'review', 'm-2', 'redirect');
+    await run;
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('a loop node guidance turn that throws reverts the entry and parks idle, not fails the node', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'my-loop', 'm-1', 'redirect the loop');
+        yield { type: 'assistant', content: 'iteration one work' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      if (calls === 2) {
+        throw new Error('loop dispatch boom');
+      }
+      yield { type: 'assistant', content: 'adjusted. <promise>COMPLETE</promise>' };
+      yield { type: 'result', sessionId: 'loop-sess-3' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+      },
+    ]);
+
+    await awaitIdle(RUN_ID, 'my-loop');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    const queued = await store.listSteeringQueue(RUN_ID, 'my-loop');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.state).toBe('queued');
+    expect(queued[0]!.last_error).toBe('loop dispatch boom');
+    expect(queued[0]!.dispatch_failure_count).toBe(1);
+
+    sendNow(store, RUN_ID, 'my-loop', 'm-1', 'redirect the loop');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(3);
+    expect(sendQueryArg<string>(2, 0)).toBe('redirect the loop');
+    expect(sendQueryArg<string | undefined>(2, 2)).toBe('loop-sess-1');
+    expect(sendQueryArg<SendQueryOptions>(2, 3).forkSession).toBe(false);
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
   });
 
   it('operator first-yield seam records rows before the caused assistant chunk', async () => {
@@ -27246,7 +28727,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'held note');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'held note');
         yield { type: 'assistant', content: 'prior' };
         yield { type: 'result', sessionId: 's-1' };
         return;
@@ -27322,30 +28803,29 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     return handle;
   }
 
-  function steeringMessage(
-    messageId: string,
-    message: string,
-    operatorUserId: string | null = 'op-1'
-  ) {
-    return {
-      messageId,
-      message,
-      operatorUserId,
-      receivedAt: new Date().toISOString(),
-    };
-  }
-
+  /**
+   * Durably enqueue guidance exactly like the send route would for
+   * `intent: 'queue'` — never wakes an idle handle.
+   */
   function enqueue(
+    store: IWorkflowStore,
     runId: string,
     stepName: string,
     messageId: string,
     message: string,
     operatorUserId: string | null = 'op-1'
   ): void {
-    const result = liveHandle(runId, stepName).enqueue(
-      steeringMessage(messageId, message, operatorUserId)
-    );
-    if (!result.ok) throw new Error(`enqueue refused: ${result.reason}`);
+    const handle = liveHandle(runId, stepName);
+    const initialState =
+      handle.steeringSubState() === 'idle-after-interrupt' ? 'awaiting_send_now' : 'queued';
+    void store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: stepName,
+      message_id: messageId,
+      message,
+      operator_user_id: operatorUserId,
+      initial_state: initialState,
+    });
   }
 
   type InterruptNodeMsg = Awaited<ReturnType<IWorkflowStore['listNodeMessages']>>[number];
@@ -27362,18 +28842,32 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     return row.kind === 'text' && row.metadata?.origin === 'operator';
   }
 
+  /**
+   * Durably enqueue guidance exactly like the send route would for
+   * `intent: 'send_now'` — wakes an idle handle for a non-blank message,
+   * exactly like `NodeSteeringHandle.wakeForSendNow()`'s real caller.
+   */
   function sendNow(
+    store: IWorkflowStore,
     runId: string,
     stepName: string,
     messageId: string,
     message: string,
     operatorUserId: string | null = 'op-1'
   ): void {
-    const result = liveHandle(runId, stepName).accept(
-      steeringMessage(messageId, message, operatorUserId),
-      'send_now'
-    );
-    if (!result.ok) throw new Error(`send_now refused: ${result.reason}`);
+    const handle = liveHandle(runId, stepName);
+    const idle = handle.steeringSubState() === 'idle-after-interrupt';
+    void store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: stepName,
+      message_id: messageId,
+      message,
+      operator_user_id: operatorUserId,
+      initial_state: idle ? 'awaiting_send_now' : 'queued',
+    });
+    if (idle && message.trim() !== '') {
+      handle.wakeForSendNow();
+    }
   }
 
   /** Poll until the handle projects the idle sub-state (or give up loudly). */
@@ -27427,7 +28921,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
   async function invokeDag(
     store: IWorkflowStore,
     nodes: DagNode[],
-    opts?: { runId?: string; assistant?: 'claude' | 'pi' | 'deepseek' }
+    opts?: { runId?: string; assistant?: 'claude' | 'pi' | 'deepseek' | 'codex' }
   ): Promise<IWorkflowPlatform> {
     const assistant = opts?.assistant ?? 'claude';
     const config =
@@ -27468,6 +28962,123 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     return mockSendQueryDag.mock.calls[callIndex][argIndex] as T;
   }
 
+  it('records an accepted soft injection at the echo, after the running tool, in the same turn', async () => {
+    let calls = 0;
+    let injectionOutcome: string | undefined;
+    let handlerSaw: { messageId: string; text: string } | undefined;
+    let queueDuringTurn: { id: string; state: string }[] = [];
+    let operatorRowsBeforeEcho = -1;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      calls++;
+      if (calls > 1) {
+        yield { type: 'result', sessionId: 'sess-2' };
+        return;
+      }
+      options?.softInjection?.ready(async request => {
+        handlerSaw = request;
+        return true;
+      });
+      yield { type: 'assistant', content: 'working' };
+      yield { type: 'tool', toolName: 'Bash', toolInput: { command: 'sleep 9' }, toolCallId: 't1' };
+      enqueue(store, RUN_ID, 'review', 'queued-1', 'stay queued', 'op-a');
+      enqueue(store, RUN_ID, 'review', 'inject-2', 'redirect inside the turn', 'op-b');
+      await store.claimSteeringMessageForSoftInjection(RUN_ID, 'review', 'inject-2');
+      injectionOutcome = await liveHandle(RUN_ID, 'review').softInject({
+        messageId: 'inject-2',
+        text: 'redirect inside the turn',
+        operatorUserId: 'op-b',
+      });
+      // Accepted by the transport, but the model has not read it yet.
+      operatorRowsBeforeEcho = (await store.listNodeMessages(RUN_ID, 'review')).filter(
+        isOperatorTextRow
+      ).length;
+      queueDuringTurn = (await store.listSteeringQueue(RUN_ID, 'review')).map(e => ({
+        id: e.message_id,
+        state: e.state,
+      }));
+      yield {
+        type: 'tool_result',
+        toolName: 'Bash',
+        toolOutput: 's1',
+        toolCallId: 't1',
+        toolOutcome: 'success',
+      };
+      yield { type: 'operator_delivery_ack', messageId: 'inject-2' };
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-1' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(injectionOutcome).toBe('delivered');
+    expect(handlerSaw).toEqual({ messageId: 'inject-2', text: 'redirect inside the turn' });
+    expect(operatorRowsBeforeEcho).toBe(0);
+    expect(queueDuringTurn).toEqual([
+      { id: 'queued-1', state: 'queued' },
+      { id: 'inject-2', state: 'sent' },
+    ]);
+    const rows = await store.listNodeMessages(RUN_ID, 'review');
+    const injectedRow = rows
+      .filter(isOperatorTextRow)
+      .find(r => r.metadata.message_id === 'inject-2');
+    expect(injectedRow?.payload.text).toBe('redirect inside the turn');
+    expect(injectedRow?.metadata.operator_user_id).toBe('op-b');
+    // The row sits after the tool that was running, never above it.
+    const toolRows = rows.filter(r => r.kind === 'tool');
+    expect(Math.max(...toolRows.map(r => r.seq))).toBeLessThan(injectedRow!.seq);
+    const queue = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queue.find(e => e.message_id === 'inject-2')?.state).toBe('delivered');
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('stay queued');
+    expect(storedEventTypes(store).filter(t => t === 'node_started')).toHaveLength(1);
+  });
+
+  it('returns a soft injection the transport never echoed to the queue when the turn ends, and it drains as its own turn', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      calls++;
+      if (calls > 1) {
+        yield { type: 'result', sessionId: 'sess-2' };
+        return;
+      }
+      options?.softInjection?.ready(async () => true);
+      yield { type: 'assistant', content: 'working' };
+      enqueue(store, RUN_ID, 'review', 'later-1', 'sent after the last step', 'op-a');
+      await store.claimSteeringMessageForSoftInjection(RUN_ID, 'review', 'later-1');
+      await liveHandle(RUN_ID, 'review').softInject({
+        messageId: 'later-1',
+        text: 'sent after the last step',
+        operatorUserId: 'op-a',
+      });
+      // The turn ends with no echo for it.
+      yield { type: 'result', sessionId: 'sess-1' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    // The normal drain delivered it as its own turn, with no error and no never-sent.
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('sent after the last step');
+    // The session already holds a message stamped with this id, so the redelivery must not reuse it.
+    expect(sendQueryArg<SendQueryOptions>(1, 3).operatorMessageId).toBeUndefined();
+    const queue = await store.listSteeringQueue(RUN_ID, 'review');
+    const entry = queue.find(e => e.message_id === 'later-1');
+    expect(entry).toMatchObject({ last_error: null, dispatch_failure_count: 0 });
+    expect(['sent', 'delivered']).toContain(entry?.state);
+    const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(isOperatorTextRow);
+    expect(operatorRows.filter(r => r.metadata.message_id === 'later-1')).toHaveLength(1);
+  });
+
   it('interrupt parks an abort-marked result in idle and Send now drains old + new receipts in order on the same session', async () => {
     let calls = 0;
     let interruptOutcome: Promise<string> | undefined;
@@ -27492,7 +29103,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const store = createMockStore();
     const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
-    const idle = await awaitIdle(RUN_ID, 'review');
+    await awaitIdle(RUN_ID, 'review');
     expect(await interruptOutcome).toBe('idle-after-interrupt');
     // One committed 'interrupted' status row precedes the idle projection.
     const states = await transcriptStates(store, RUN_ID, 'review');
@@ -27502,10 +29113,10 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     // Two queue-intent rows land as awaiting_send_now; send_now drains all
     // three in receipt order into ONE redirect turn.
-    enqueue(RUN_ID, 'review', 'm-old-1', 'old note one', 'op-a');
-    enqueue(RUN_ID, 'review', 'm-old-2', 'old note two', 'op-a');
-    expect(idle.snapshot().queued.length).toBe(2);
-    sendNow(RUN_ID, 'review', 'm-new', 'new instruction', 'op-b');
+    enqueue(store, RUN_ID, 'review', 'm-old-1', 'old note one', 'op-a');
+    enqueue(store, RUN_ID, 'review', 'm-old-2', 'old note two', 'op-a');
+    expect(await store.listSteeringQueue(RUN_ID, 'review')).toHaveLength(2);
+    sendNow(store, RUN_ID, 'review', 'm-new', 'new instruction', 'op-b');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -27540,7 +29151,69 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const resumedAttempt = resumed!.metadata?.execution?.attempt_id;
     expect(resumedAttempt).toBeDefined();
     expect(operatorRows.every(r => r.metadata.execution?.attempt_id === resumedAttempt)).toBe(true);
-    expect(interrupted!.metadata?.execution?.attempt_id).not.toBe(resumedAttempt);
+    // The redirect turn is the SAME execution as the interrupted turn — one
+    // occurrence and attempt spanning both, so the room never loses either
+    // turn's rows.
+    expect(interrupted!.metadata?.execution?.attempt_id).toBe(resumedAttempt);
+    expect(interrupted!.metadata?.execution?.occurrence_id).toBe(
+      resumed!.metadata?.execution?.occurrence_id
+    );
+  });
+
+  it('stamps the durable steering settings row with the resolved provider for a prompt node', async () => {
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'prompt-steering-stamp' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    // This durable stamp is what lets a restarted server classify the node
+    // as `recovery_required` (settings row exists, no live handle) instead
+    // of `not_steerable_here` (never registered) — see
+    // `classifySteeringLifecycle` in @archon/server. The loop-node path
+    // stamps identically through the same shared helper.
+    const settings = await store.getSteeringNodeSettings(RUN_ID, 'review');
+    expect(settings?.provider_id).toBe('claude');
+  });
+
+  it('emits node_turn_started on every pass and node_turn_interrupted on Stop, in order, so an observing tab always has a live refetch trigger', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      calls++;
+      if (calls === 1) {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial output' };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+        return;
+      }
+      yield { type: 'assistant', content: 'redirected output' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+
+    const captured: string[] = [];
+    const unsubscribe = getWorkflowEventEmitter().subscribe(e => {
+      if (e.runId === RUN_ID && e.nodeId === 'review') captured.push(e.type);
+    });
+
+    try {
+      const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+      await awaitIdle(RUN_ID, 'review');
+      sendNow(store, RUN_ID, 'review', 'm-new', 'new instruction', 'op-b');
+      await run;
+    } finally {
+      unsubscribe();
+    }
+
+    expect(
+      captured.filter(type => type === 'node_turn_started' || type === 'node_turn_interrupted')
+    ).toEqual(['node_turn_started', 'node_turn_interrupted', 'node_turn_started']);
   });
 
   it('interrupt marker wins over an isError/errorSubtype result — idles instead of failing', async () => {
@@ -27566,7 +29239,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
     await awaitIdle(RUN_ID, 'review');
-    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -27600,7 +29273,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
     await awaitIdle(RUN_ID, 'review');
-    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -27643,7 +29316,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'queued steer');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'queued steer');
         interruptOutcome = liveHandle(RUN_ID, 'review').interrupt() as Promise<string>;
         yield { type: 'assistant', content: 'turn one' };
         yield { type: 'result', sessionId: 'sess-1' };
@@ -27741,7 +29414,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     await awaitIdle(RUN_ID, 'classify');
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
-    sendNow(RUN_ID, 'classify', 'm-1', 'retry properly');
+    sendNow(store, RUN_ID, 'classify', 'm-1', 'retry properly');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -27803,7 +29476,34 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const outcomes = toolCompletedOutcomes(store);
     expect(outcomes.get('tool-done')).toEqual(['success']);
     expect(outcomes.get('tool-open')).toEqual(['interrupted']);
-    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
+    await run;
+
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('loop node: interrupt settles an outstanding tool interrupted when the provider proves it', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        void liveHandle(RUN_ID, 'my-loop').interrupt();
+        yield { type: 'tool', toolName: 'Bash', toolCallId: 'loop-tool-open', toolInput: {} };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_tools' };
+        return;
+      }
+      yield { type: 'assistant', content: 'redirected. <promise>COMPLETE</promise>' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [
+      { id: 'my-loop', loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 } },
+    ]);
+
+    await awaitIdle(RUN_ID, 'my-loop');
+    // Claude ties its interrupt marker to the exact tool call — settles proven.
+    expect(toolCompletedOutcomes(store).get('loop-tool-open')).toEqual(['interrupted']);
+    sendNow(store, RUN_ID, 'my-loop', 'm-1', 'redirect the loop');
     await run;
 
     expect(storedEventTypes(store)).toContain('node_completed');
@@ -27851,7 +29551,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       call => call[1] as string
     );
     expect(sent.some(text => text.includes('background agent task'))).toBe(false);
-    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
     await run;
     expect(storedEventTypes(store)).toContain('node_completed');
   });
@@ -27878,7 +29578,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
     await awaitIdle(RUN_ID, 'review');
-    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
     await run;
 
     const completedCall = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.find(
@@ -27890,11 +29590,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
   });
 
   it('interrupt without a session id fails explicitly instead of losing resumability', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'stranded');
-      void handleRef.interrupt();
+      enqueue(store, RUN_ID, 'review', 'm-1', 'stranded');
+      void liveHandle(RUN_ID, 'review').interrupt();
       yield { type: 'assistant', content: 'partial' };
       yield { type: 'result', terminalReason: 'aborted_streaming' };
     });
@@ -27903,7 +29601,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toContain('no session id');
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('interrupt twice uses a fresh token and controller per turn with no stale-flag contamination', async () => {
@@ -27929,10 +29629,17 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     await awaitIdle(RUN_ID, 'review');
     expect(await outcomes[0]).toBe('idle-after-interrupt');
-    sendNow(RUN_ID, 'review', 'm-1', 'first redirect');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'first redirect');
+    // Sub-state stays idle-after-interrupt across the claim round-trip until
+    // the redirected turn actually begins — wait for that turn's own
+    // interrupt() call (outcomes[1]) before polling idle again, so this
+    // doesn't observe the still-settling first redirect as the second one.
+    for (let i = 0; i < 2000 && outcomes.length < 2; i++) {
+      await Bun.sleep(1);
+    }
     await awaitIdle(RUN_ID, 'review');
     expect(await outcomes[1]).toBe('idle-after-interrupt');
-    sendNow(RUN_ID, 'review', 'm-2', 'second redirect');
+    sendNow(store, RUN_ID, 'review', 'm-2', 'second redirect');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(3);
@@ -27972,6 +29679,113 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(storedEventTypes(store)).toContain('node_completed');
   });
 
+  it('a provider-reported per-turn downgrade hides Stop for that turn only, and an interrupt AFTER the report settles safely without aborting', async () => {
+    let observedSubState: string | undefined;
+    let observedOutcome: string | undefined;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      yield { type: 'turn_not_interruptible', reason: 'legacy fallback transport' };
+      const handle = liveHandle(RUN_ID, 'review');
+      observedSubState = handle.steeringSubState();
+      observedOutcome = await handle.interrupt();
+      // An interrupt on an already-flagged turn must never abort the signal
+      // the provider was actually handed — nothing reads it, and the turn is
+      // left to run to completion.
+      expect(options?.interruptSignal?.aborted).toBe(false);
+      yield { type: 'assistant', content: 'ran to completion' };
+      yield { type: 'result', sessionId: 'sess-1' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(observedSubState).toBeUndefined();
+    expect(observedOutcome).toBe('not_steerable_here');
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    // A downgraded turn that never carries an abort marker is a plain
+    // natural completion, never reclassified as interrupted.
+    const states = await transcriptStates(store, RUN_ID, 'review');
+    expect(states).not.toContain('interrupted');
+  });
+
+  it('a Stop that races in BEFORE the provider reports the downgrade still resolves promptly once the report arrives, and never blocks the node', async () => {
+    let abortedBeforeReport: boolean | undefined;
+    let observedOutcome: string | undefined;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      // Simulates an HTTP interrupt request landing on the registry between
+      // beginTurn() and the executor ever seeing this turn's first chunk.
+      const pending = liveHandle(RUN_ID, 'review').interrupt();
+      abortedBeforeReport = options?.interruptSignal?.aborted;
+      yield { type: 'turn_not_interruptible', reason: 'legacy fallback transport' };
+      // Processing this chunk must resolve the ALREADY-pending interrupt
+      // right away — never leave it waiting on the turn's natural end.
+      observedOutcome = await pending;
+      yield { type: 'assistant', content: 'ran to completion' };
+      yield { type: 'result', sessionId: 'sess-1' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(abortedBeforeReport).toBe(true); // inert abort — nothing reads this signal
+    expect(observedOutcome).toBe('not_steerable_here');
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    const states = await transcriptStates(store, RUN_ID, 'review');
+    expect(states).not.toContain('interrupted');
+  });
+
+  it('queued guidance still drains at the natural boundary after a non-interruptible turn, and the next turn is interruptible again', async () => {
+    let calls = 0;
+    const subStates: (string | undefined)[] = [];
+    let secondTurnInterruptOutcome: Promise<string> | undefined;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      calls++;
+      if (calls === 1) {
+        yield { type: 'turn_not_interruptible', reason: 'legacy fallback transport' };
+        subStates.push(liveHandle(RUN_ID, 'review').steeringSubState());
+        enqueue(store, RUN_ID, 'review', 'm-1', 'go again');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-1' };
+        return;
+      }
+      // Turn two: a fresh token with no downgrade — Stop actually aborts the
+      // signal this time (it just doesn't carry an abort marker in the
+      // result below, so the turn still completes the node naturally).
+      subStates.push(liveHandle(RUN_ID, 'review').steeringSubState());
+      secondTurnInterruptOutcome = liveHandle(RUN_ID, 'review').interrupt() as Promise<string>;
+      expect(options?.interruptSignal?.aborted).toBe(true);
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('go again');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-1');
+    expect(subStates[0]).toBeUndefined(); // turn one: hidden
+    expect(subStates[1]).toBe('generating'); // turn two: interruptible again
+    // The natural (unmarked) result settles the racing interrupt as
+    // node_finished once the node's terminal close() seals the handle.
+    await expect(secondTurnInterruptOutcome).resolves.toBe('node_finished');
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+  });
+
   it('interrupt in an AI loop idles inside the iteration and Send now resumes without consuming one', async () => {
     let calls = 0;
     mockSendQueryDag.mockImplementation(async function* () {
@@ -27996,7 +29810,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     await awaitIdle(RUN_ID, 'my-loop');
     const states = await transcriptStates(store, RUN_ID, 'my-loop');
     expect(states).toContain('interrupted');
-    sendNow(RUN_ID, 'my-loop', 'm-1', 'redirect the loop');
+    sendNow(store, RUN_ID, 'my-loop', 'm-1', 'redirect the loop');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -28028,9 +29842,45 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(operatorRows[0]!.metadata.execution?.attempt_id).toBe(
       resumed!.metadata?.execution?.attempt_id
     );
-    expect(operatorRows[0]!.metadata.execution?.attempt_id).not.toBe(
+    // The redirected iteration is the SAME execution as the interrupted one —
+    // one occurrence and attempt spanning both turns.
+    expect(operatorRows[0]!.metadata.execution?.attempt_id).toBe(
       interrupted!.metadata?.execution?.attempt_id
     );
+    expect(operatorRows[0]!.metadata.execution?.occurrence_id).toBe(
+      interrupted!.metadata?.execution?.occurrence_id
+    );
+  });
+
+  it('a provider-reported per-turn downgrade inside an AI loop iteration hides Stop for that iteration only', async () => {
+    let calls = 0;
+    const subStates: (string | undefined)[] = [];
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        yield { type: 'turn_not_interruptible', reason: 'legacy fallback transport' };
+        subStates.push(liveHandle(RUN_ID, 'my-loop').steeringSubState());
+        yield { type: 'assistant', content: 'iteration work' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      // Iteration 2: a fresh turn with no downgrade — interruptible again.
+      subStates.push(liveHandle(RUN_ID, 'my-loop').steeringSubState());
+      yield { type: 'assistant', content: 'done. <promise>COMPLETE</promise>' };
+      yield { type: 'result', sessionId: 'loop-sess-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+      },
+    ]);
+
+    expect(subStates[0]).toBeUndefined(); // iteration 1: hidden
+    expect(subStates[1]).toBe('generating'); // iteration 2: interruptible again
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
   });
 
   it('interrupt throw in an AI loop resumes the threaded session, not the dead pass', async () => {
@@ -28060,7 +29910,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     ]);
 
     await awaitIdle(RUN_ID, 'my-loop');
-    sendNow(RUN_ID, 'my-loop', 'm-1', 'redirect');
+    sendNow(store, RUN_ID, 'my-loop', 'm-1', 'redirect');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(3);
@@ -28099,7 +29949,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     const idle = await awaitIdle(RUN_ID, 'grp.body');
     expect(idle.steeringSubState()).toBe('idle-after-interrupt');
-    sendNow(RUN_ID, 'grp.body', 'm-1', 'redirect the body');
+    sendNow(store, RUN_ID, 'grp.body', 'm-1', 'redirect the body');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -28237,7 +30087,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
       const idle = await awaitIdle(RUN_ID, 'review');
-      sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+      sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
       // Stale expiry after send_now must be inert.
       idle.expireIdleForTests();
       await run;
@@ -28517,18 +30367,21 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
       const idle = await awaitIdle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'held one');
-      enqueue(RUN_ID, 'review', 'm-2', 'held two');
-      expect(idle.snapshot().queued.length).toBe(2);
+      enqueue(store, RUN_ID, 'review', 'm-1', 'held one');
+      enqueue(store, RUN_ID, 'review', 'm-2', 'held two');
+      expect(await store.listSteeringQueue(RUN_ID, 'review')).toHaveLength(2);
       idle.expireIdleForTests();
       await run;
 
       expect(nodeFailedError(store, 'review')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
-      const unconsumed = mockLogFn.mock.calls.filter(
-        call => call[1] === 'dag.steering_queue_unconsumed'
+      const neverSent = mockLogFn.mock.calls.filter(
+        call => call[1] === 'dag.steering_queue_never_sent'
       );
-      expect(unconsumed.length).toBeGreaterThanOrEqual(1);
-      expect((unconsumed[0]![0] as { queuedCount: number }).queuedCount).toBe(2);
+      expect(neverSent.length).toBeGreaterThanOrEqual(1);
+      expect((neverSent[0]![0] as { neverSentCount: number }).neverSentCount).toBe(2);
+      const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+      expect(queueAfter).toHaveLength(2);
+      expect(queueAfter.every(entry => entry.state === 'never_sent')).toBe(true);
       const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(
         isOperatorTextRow
       );
@@ -28599,17 +30452,17 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
   });
 
   /**
-   * DeepSeek interrupt conformance (#187 / US-002).
-   *
-   * Phase 1 spike recorded Block (missing-env), so product
-   * `DEEPSEEK_CAPABILITIES.interrupt` stays `false`. This fixture temporarily
-   * replaces only the registered test capability so it can exercise the
-   * native path without adding a production capability override.
+   * DeepSeek interrupt conformance (#187). Verified against the real DSH
+   * `acp` profile binary on a live subscription: Stop cancels the in-flight
+   * prompt via ACP session/cancel, and the redirect resumes the same
+   * session id via session/resume. `DEEPSEEK_CAPABILITIES.interrupt` is
+   * `'stream-abort'` in production; this fixture exercises the exact abort
+   * triple the adapter emits.
    */
   describe('deepseek conformance', () => {
     const DEEPSEEK_RUN = 'deepseek-interrupt-run';
 
-    /** Exact Phase 1 abort result — no terminalReason. */
+    /** Exact abort result the adapter emits — no terminalReason. */
     function abortedResult(sessionId: string) {
       return {
         type: 'result' as const,
@@ -28620,15 +30473,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       };
     }
 
-    /** Test-local native interrupt; product capability remains false under Block. */
-    const deepseekTestCapabilities = {
-      ...DEEPSEEK_CAPABILITIES,
-      interrupt: 'native' as const,
-    };
-
     beforeEach(() => {
       const registered = getRegistration('deepseek');
-      Reflect.set(registered, 'capabilities', deepseekTestCapabilities);
+      Reflect.set(registered, 'capabilities', DEEPSEEK_CAPABILITIES);
       mockGetAgentProviderDag.mockImplementation(() => ({
         sendQuery: mockSendQueryDag,
         getType: () => 'deepseek',
@@ -28679,19 +30526,20 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
         { runId: DEEPSEEK_RUN, assistant: 'deepseek' }
       );
 
-      const idle = await awaitIdle(DEEPSEEK_RUN, 'review');
+      await awaitIdle(DEEPSEEK_RUN, 'review');
       expect(await interruptOutcome).toBe('idle-after-interrupt');
       const states = await transcriptStates(store, DEEPSEEK_RUN, 'review');
       expect(states.filter(s => s === 'interrupted').length).toBe(1);
       expect(storedEventTypes(store)).not.toContain('node_failed');
-      // Open tool settled interrupted exactly once.
-      expect(toolCompletedOutcomes(store).get('ds-tool-open')).toEqual(['interrupted']);
+      // No per-tool proof from a stream-abort provider — settles 'unknown'
+      // exactly once, never a guessed 'interrupted'.
+      expect(toolCompletedOutcomes(store).get('ds-tool-open')).toEqual(['unknown']);
       // Interrupted pass must not have re-asked structured output.
       expect(mockSendQueryDag.mock.calls.length).toBe(1);
 
-      enqueue(DEEPSEEK_RUN, 'review', 'm-old', 'older guidance');
-      expect(idle.snapshot().queued.length).toBe(1);
-      sendNow(DEEPSEEK_RUN, 'review', 'm-new', 'new instruction');
+      enqueue(store, DEEPSEEK_RUN, 'review', 'm-old', 'older guidance');
+      expect(await store.listSteeringQueue(DEEPSEEK_RUN, 'review')).toHaveLength(1);
+      sendNow(store, DEEPSEEK_RUN, 'review', 'm-new', 'new instruction');
       await run;
 
       expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -28775,7 +30623,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       await awaitIdle(DEEPSEEK_RUN, 'my-loop');
       const states = await transcriptStates(store, DEEPSEEK_RUN, 'my-loop');
       expect(states).toContain('interrupted');
-      sendNow(DEEPSEEK_RUN, 'my-loop', 'm-1', 'redirect the loop');
+      sendNow(store, DEEPSEEK_RUN, 'my-loop', 'm-1', 'redirect the loop');
       await run;
 
       expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -28784,6 +30632,404 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       expect(storedEventTypes(store)).toContain('node_completed');
       expect(storedEventTypes(store)).not.toContain('node_failed');
       expect(getSteeringRegistry().get(DEEPSEEK_RUN, 'my-loop')).toBeUndefined();
+    });
+  });
+
+  /**
+   * Codex Stop conformance (#8.4). The adapter yields a `stream_aborted`
+   * `terminalReason` marker (shared with any stream-abort provider) rather
+   * than the DeepSeek triple — proven separately in codex/provider.test.ts.
+   * This block proves the SHARED classification the coordinator required:
+   * `stream_aborted` is interrupted only when a Stop request was actually
+   * accepted; the identical result shape reaching the executor without one
+   * follows the normal SDK-error failure path.
+   */
+  describe('codex conformance', () => {
+    const CODEX_RUN = 'codex-interrupt-run';
+
+    /**
+     * Exact adapter-synthesized abort marker (matches codex/provider.ts's
+     * `buildInterruptedResult`). `isError`/`errorSubtype` ride alongside the
+     * terminal reason so the SAME shape fails loudly through the ordinary
+     * SDK-error path when the executor does not recognize an accepted Stop.
+     */
+    function streamAbortedResult(sessionId: string) {
+      return {
+        type: 'result' as const,
+        sessionId,
+        terminalReason: STREAM_ABORTED_TERMINAL_REASON,
+        isError: true as const,
+        errorSubtype: STREAM_ABORTED_TERMINAL_REASON,
+      };
+    }
+
+    /** Test-local stream-abort interrupt; product capability stays whatever it is. */
+    const codexTestCapabilities = {
+      ...CODEX_CAPABILITIES,
+      interrupt: 'stream-abort' as const,
+    };
+
+    beforeEach(() => {
+      const registered = getRegistration('codex');
+      Reflect.set(registered, 'capabilities', codexTestCapabilities);
+      mockGetAgentProviderDag.mockImplementation(() => ({
+        sendQuery: mockSendQueryDag,
+        getType: () => 'codex',
+        getCapabilities: () => CODEX_CAPABILITIES,
+      }));
+    });
+
+    afterEach(() => {
+      const registered = getRegistration('codex');
+      Reflect.set(registered, 'capabilities', CODEX_CAPABILITIES);
+      mockGetAgentProviderDag.mockImplementation(() => ({
+        sendQuery: mockSendQueryDag,
+        getType: () => 'claude',
+        getCapabilities: mockClaudeCapabilities,
+      }));
+    });
+
+    it('direct path: stream_aborted + operator flag idles, drains queue+Send now on same session, one interrupted tool, no re-ask', async () => {
+      let calls = 0;
+      let interruptOutcome: Promise<string> | undefined;
+      mockSendQueryDag.mockImplementation(async function* () {
+        calls++;
+        if (calls === 1) {
+          interruptOutcome = liveHandle(CODEX_RUN, 'review').interrupt() as Promise<string>;
+          yield { type: 'tool', toolName: 'sleep 30', toolCallId: 'codex-tool-open' };
+          // stream_aborted marker with NO structuredOutput — a natural miss
+          // would re-ask; interrupt must skip the re-ask entirely.
+          yield streamAbortedResult('codex-sess-1');
+          return;
+        }
+        yield { type: 'assistant', content: 'redirected' };
+        yield { type: 'result', sessionId: 'codex-sess-2', structuredOutput: { verdict: 'ok' } };
+      });
+      const store = createMockStore();
+      const run = invokeDag(
+        store,
+        [
+          {
+            id: 'review',
+            prompt: 'do work',
+            output_format: {
+              type: 'object',
+              properties: { verdict: { type: 'string' } },
+              required: ['verdict'],
+            },
+          },
+        ],
+        { runId: CODEX_RUN, assistant: 'codex' }
+      );
+
+      await awaitIdle(CODEX_RUN, 'review');
+      expect(await interruptOutcome).toBe('idle-after-interrupt');
+      const states = await transcriptStates(store, CODEX_RUN, 'review');
+      expect(states.filter(s => s === 'interrupted').length).toBe(1);
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      // Codex kills its whole stream/child on abort with no per-tool signal,
+      // so the still-open tool settles 'unknown' — proven independently of
+      // turn-level interruption, which the assertions above already cover.
+      expect(toolCompletedOutcomes(store).get('codex-tool-open')).toEqual(['unknown']);
+      // Interrupted pass must not have re-asked structured output.
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+
+      enqueue(store, CODEX_RUN, 'review', 'm-old', 'older guidance');
+      expect(await store.listSteeringQueue(CODEX_RUN, 'review')).toHaveLength(1);
+      sendNow(store, CODEX_RUN, 'review', 'm-new', 'new instruction');
+      await run;
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(2);
+      expect(sendQueryArg<string>(1, 0)).toBe('older guidance\n\nnew instruction');
+      // Same thread continues — no silent new conversation.
+      expect(sendQueryArg<string | undefined>(1, 2)).toBe('codex-sess-1');
+      expect(storedEventTypes(store)).toContain('node_completed');
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      expect(getSteeringRegistry().get(CODEX_RUN, 'review')).toBeUndefined();
+    });
+
+    it('stream_aborted without operator flag follows the normal SDK failure path', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        yield { type: 'assistant', content: 'partial' };
+        yield streamAbortedResult('codex-sess-fail');
+      });
+      const store = createMockStore();
+      await invokeDag(store, [{ id: 'review', prompt: 'do work' }], {
+        runId: CODEX_RUN,
+        assistant: 'codex',
+      });
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+      expect(nodeFailedError(store, 'review')).toContain(
+        `SDK returned ${STREAM_ABORTED_TERMINAL_REASON}`
+      );
+      expect(storedEventTypes(store)).toContain('node_failed');
+      expect(getSteeringRegistry().get(CODEX_RUN, 'review')).toBeUndefined();
+    });
+
+    it('AI loop: stream_aborted idles inside iteration, settles the open tool unknown; Send now resumes same session without consuming one', async () => {
+      let calls = 0;
+      mockSendQueryDag.mockImplementation(async function* () {
+        calls++;
+        if (calls === 1) {
+          void liveHandle(CODEX_RUN, 'my-loop').interrupt();
+          yield { type: 'tool', toolName: 'sleep 30', toolCallId: 'codex-loop-tool-open' };
+          yield streamAbortedResult('codex-loop-sess-1');
+          return;
+        }
+        yield { type: 'assistant', content: 'redirected. <promise>COMPLETE</promise>' };
+        yield { type: 'result', sessionId: 'codex-loop-sess-2' };
+      });
+      const store = createMockStore();
+      const run = invokeDag(
+        store,
+        [
+          {
+            id: 'my-loop',
+            loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+          },
+        ],
+        { runId: CODEX_RUN, assistant: 'codex' }
+      );
+
+      await awaitIdle(CODEX_RUN, 'my-loop');
+      const states = await transcriptStates(store, CODEX_RUN, 'my-loop');
+      expect(states).toContain('interrupted');
+      // No per-tool proof from a stream-abort provider — settles 'unknown',
+      // never a guessed 'interrupted'.
+      expect(toolCompletedOutcomes(store).get('codex-loop-tool-open')).toEqual(['unknown']);
+      sendNow(store, CODEX_RUN, 'my-loop', 'm-1', 'redirect the loop');
+      await run;
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(2);
+      expect(sendQueryArg<string>(1, 0)).toBe('redirect the loop');
+      expect(sendQueryArg<string | undefined>(1, 2)).toBe('codex-loop-sess-1');
+      expect(storedEventTypes(store)).toContain('node_completed');
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      expect(getSteeringRegistry().get(CODEX_RUN, 'my-loop')).toBeUndefined();
+    });
+  });
+});
+
+describe('executeDagWorkflow -- thinking, prompt, and advisor transcript rows', () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(
+      tmpdir(),
+      `dag-agent-context-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(join(testDir, '.archon', 'commands'), { recursive: true });
+    await writeFile(
+      join(testDir, '.archon', 'commands', 'my-cmd.md'),
+      'Command prompt body for $USER_MESSAGE'
+    );
+
+    mockSendQueryDag.mockClear();
+    mockGetAgentProviderDag.mockClear();
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+  });
+
+  afterEach(async () => {
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  });
+
+  function textRowsByOrigin(
+    store: IWorkflowStore,
+    runId: string,
+    nodeId: string
+  ): Promise<Awaited<ReturnType<IWorkflowStore['listNodeMessages']>>> {
+    return store.listNodeMessages(runId, nodeId).then(rows => rows.filter(r => r.kind === 'text'));
+  }
+
+  it('persists an inline prompt as a node_prompt row attributed to the run starter', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-node-prompt', { user_id: 'user-starter-1' });
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-1' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'prompt-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-node-prompt', 'my-node');
+    const promptRow = rows.find(r => r.metadata?.origin === 'prompt');
+    expect(promptRow).toMatchObject({
+      payload: { text: 'Say hello.' },
+      metadata: { origin: 'prompt', actor_user_id: 'user-starter-1', prompt_source: 'node_prompt' },
+    });
+    // Exactly one prompt row for a single-turn node — no reask, no duplicate.
+    expect(rows.filter(r => r.metadata?.origin === 'prompt')).toHaveLength(1);
+  });
+
+  it('persists a command-file turn as a command_file row', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-command-prompt');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'command-prompt-test-dag', nodes: [node('my-cmd')] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-command-prompt', 'my-cmd');
+    const promptRow = rows.find(r => r.metadata?.origin === 'prompt');
+    expect(promptRow?.metadata).toMatchObject({ prompt_source: 'command_file' });
+  });
+
+  it('persists a null actor when the run has no attributed starter', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-null-actor', { user_id: null });
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-3' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'null-actor-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-null-actor', 'my-node');
+    const promptRow = rows.find(r => r.metadata?.origin === 'prompt');
+    expect(promptRow?.metadata?.actor_user_id).toBeNull();
+  });
+
+  it('persists displayable thinking as its own row, in order, never joining $node.output', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-thinking');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'thinking', content: 'weighing two approaches' };
+      yield { type: 'assistant', content: 'final answer' };
+      yield { type: 'result', sessionId: 'sess-4' };
+    });
+
+    const result = await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'thinking-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-thinking', 'my-node');
+    const kinds = rows.map(r => r.metadata?.origin ?? 'assistant');
+    expect(kinds).toEqual(['prompt', 'thinking', 'assistant']);
+    const thinkingRow = rows.find(r => r.metadata?.origin === 'thinking');
+    expect(thinkingRow?.payload).toEqual({ text: 'weighing two approaches' });
+    // Thinking never joins the node's $node.output — only the assistant text does.
+    expect(result).toBe('final answer');
+  });
+
+  it('persists an advisor notification with the configured advisor model', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-advisor');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield {
+        type: 'advisor',
+        content: 'use a channel-based shutdown',
+        advisorModel: 'claude-opus-4-8',
+      };
+      yield { type: 'assistant', content: 'final answer' };
+      yield { type: 'result', sessionId: 'sess-5' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'advisor-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-advisor', 'my-node');
+    const advisorRow = rows.find(r => r.metadata?.origin === 'advisor');
+    expect(advisorRow).toMatchObject({
+      payload: { text: 'use a channel-based shutdown' },
+      metadata: { origin: 'advisor', advisor_model: 'claude-opus-4-8' },
     });
   });
 });

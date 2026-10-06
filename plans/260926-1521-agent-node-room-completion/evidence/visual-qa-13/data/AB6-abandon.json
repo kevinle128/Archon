@@ -1,0 +1,97 @@
+{
+  "post": 2,
+  "res": { "success": true, "message": "Abandoned workflow: vq13-abn" },
+  "C": {
+    "neverSentAt": 978,
+    "pillAt": 978,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": ["– Bash echo begin; end=$((SECONDS+60)); while [ $SECONDS  output unknown ·"],
+      "ta": false
+    },
+    "frames": [
+      [
+        -261,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · AB6-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        58,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · AB6-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [978, "NEVER SENT · 1", "", "Failed", 1],
+      [1459, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "L": {
+    "neverSentAt": 578,
+    "pillAt": 578,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": ["– Bash echo begin; end=$((SECONDS+60)); while [ $SECONDS  output unknown ·"],
+      "ta": false
+    },
+    "frames": [
+      [
+        -261,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · AB6-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        502,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · AB6-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [578, "NEVER SENT · 1", "", "Failed", 1],
+      [3579, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "raf": {
+    "c": [
+      [-298, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [955, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ],
+    "l": [
+      [-298, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [571, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ]
+  },
+  "gets": [
+    { "s": "l", "t": -1454, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -1055, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -506, "k": "r", "st": "running", "ns": "abn:running" },
+    { "s": "l", "t": -452, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -52, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": 552, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 556, "k": "r", "st": "cancelled", "ns": "abn:failed" },
+    { "s": "l", "t": 556, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 572, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 951, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 955, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 955, "k": "r", "st": "cancelled", "ns": "abn:failed" },
+    { "s": "c", "t": 964, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 1444, "k": "r", "st": "cancelled", "ns": "abn:failed" },
+    { "s": "l", "t": 3566, "k": "r", "st": "cancelled", "ns": "abn:failed" }
+  ]
+}

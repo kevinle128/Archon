@@ -1,0 +1,62 @@
+{
+  "tag": "GKS02",
+  "sender": "l",
+  "observer": "c",
+  "R": "2a6b30d40b2392257d1aa4b808435ed5",
+  "node": "grok-node",
+  "pre": {
+    "l": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||TEXTAREA|2",
+    "c": "Running||Stop,Queue|TA|QUEUED · 2|2 messages queued||-1|2|||BODY|2"
+  },
+  "click": { "status": 200, "resolvedMs": 23 },
+  "coldOpenedAt": 1790793380978,
+  "status": "completed",
+  "frames": {
+    "l": [
+      [1790793367641, "Running|Stop,Queue|0|0||||||||TEXTAREA"],
+      [1790793367665, "Running|Stop,Queue|0|0||||||||BUTTON:Queue · Cmd/Ct"],
+      [1790793367674, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs||||||TEXTAREA"],
+      [1790793367698, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs||||||BUTTON:Queue · Cmd/Ct"],
+      [1790793367707, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||TEXTAREA"],
+      [1790793368923, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||BUTTON:Send now · GKS"],
+      [1790793368932, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790793385107, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs|TWO:sent|||||BODY"],
+      [1790793457174, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:sent|||||BODY"],
+      [1790793462218, "Running|Stop,Queue|0|0|||TWO:sent,ONE:sent|||||BODY"],
+      [1790793473731, "Completed||0|0|||TWO:sent,ONE:sent|||||BODY"]
+    ],
+    "c": [
+      [1790793367640, "Running|Stop,Queue|0|0||||||||BODY"],
+      [1790793368075, "Running|Stop,Queue|2|2|QUEUED · 2|ONExs,TWOxs||||||BODY"],
+      [1790793369582, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790793385103, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs|TWO:sent|||||BODY"],
+      [1790793457174, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:sent|||||BODY"],
+      [1790793462217, "Running|Stop,Queue|0|0|||TWO:sent,ONE:sent|||||BODY"],
+      [1790793473732, "Completed||0|0|||TWO:sent,ONE:sent|||||BODY"]
+    ],
+    "x": [
+      [1790793381257, "NOROOM"],
+      [1790793381446, "Running||0|0||||||||BODY"],
+      [1790793381499, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs,TWO*||||||BODY"],
+      [1790793385108, "Running|Stop,Queue|1|1|QUEUED · 1|ONExs|TWO:sent|||||BODY"],
+      [1790793457170, "Running|Stop,Queue|0|0|SENDING · 1|ONE*|TWO:sent|||||BODY"],
+      [1790793462217, "Running|Stop,Queue|0|0|||TWO:sent,ONE:sent|||||BODY"],
+      [1790793473733, "Completed||0|0|||TWO:sent,ONE:sent|||||BODY"]
+    ]
+  },
+  "clickedAt": 1790793368902,
+  "roomWidth": { "l": 460, "c": 460 },
+  "queue": [
+    ["GKS02 ONE ke", "sent"],
+    ["GKS02 TWO: e", "sent"]
+  ],
+  "rowCount": 112,
+  "attempts": ["46ff1dc0-cf4a-44f9-b509-eaed88960887"],
+  "promptRows": 1,
+  "operatorRows": [
+    [24, "GKS02 TWO: end"],
+    [85, "GKS02 ONE keep"]
+  ],
+  "ackInAgentText": 1,
+  "toolRowsAfterInjection": 8
+}

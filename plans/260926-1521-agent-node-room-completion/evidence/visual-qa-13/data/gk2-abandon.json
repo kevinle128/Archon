@@ -1,0 +1,104 @@
+{
+  "post": 7,
+  "res": { "success": true, "message": "Abandoned workflow: vq13-grok" },
+  "C": {
+    "neverSentAt": 970,
+    "pillAt": 970,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": ["– run_terminal_command sleep 25 && echo step-1 output unknown ·"],
+      "ta": false
+    },
+    "frames": [
+      [
+        -268,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · gk2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        49,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · gk2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [970, "NEVER SENT · 1", "", "Failed", 1],
+      [2090, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "L": {
+    "neverSentAt": 571,
+    "pillAt": 571,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": ["– run_terminal_command sleep 25 && echo step-1 output unknown ·"],
+      "ta": false
+    },
+    "frames": [
+      [
+        -268,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · gk2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        490,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · gk2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        531,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · gk2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [571, "NEVER SENT · 1", "", "Failed", 1],
+      [3570, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "raf": {
+    "c": [
+      [-305, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [946, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ],
+    "l": [
+      [-305, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [543, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ]
+  },
+  "gets": [
+    { "s": "l", "t": -1474, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -1067, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -526, "k": "r", "st": "running", "ns": "long-grok:running" },
+    { "s": "l", "t": -469, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -63, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": 536, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 543, "k": "r", "st": "cancelled", "ns": "long-grok:failed" },
+    { "s": "l", "t": 544, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 563, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 941, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 946, "k": "r", "st": "cancelled", "ns": "long-grok:failed" },
+    { "s": "c", "t": 946, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 959, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 2067, "k": "r", "st": "cancelled", "ns": "long-grok:failed" },
+    { "s": "l", "t": 3548, "k": "r", "st": "cancelled", "ns": "long-grok:failed" }
+  ]
+}

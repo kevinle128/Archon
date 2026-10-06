@@ -245,7 +245,7 @@ export function AskCard(props: AskCardProps): React.ReactElement {
       aria-label={`question from agent, ${String(questions.length)} questions`}
       onSubmit={handleSubmit}
     >
-      <Card className="border-warning bg-surface-elevated shadow-sm">
+      <Card className="rounded-xl border-l-[3px] border-border border-l-accent bg-surface shadow-none">
         <CardHeader>
           <CardTitle className="text-sm font-medium text-text-primary">
             {`${agentDisplayName} is asking`}
@@ -411,7 +411,7 @@ export function InvalidAskCard(props: {
   return (
     <section
       role="alert"
-      className="rounded-lg border border-error bg-error/5 p-4 text-text-primary shadow-sm"
+      className="rounded-xl border border-error bg-error/5 p-4 text-text-primary"
     >
       <p className="text-sm font-medium">Invalid Ask payload</p>
       <p className="mt-1 text-xs text-text-secondary">{`${props.agentDisplayName} · ${props.nodeId}`}</p>

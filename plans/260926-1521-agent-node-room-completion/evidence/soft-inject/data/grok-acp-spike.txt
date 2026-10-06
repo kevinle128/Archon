@@ -1,0 +1,2 @@
+{'injectedAtToolCall': 1, 'injectResult': '{"result":{"status":"queued"}}', 'promptResponses': 1, 'stopReason': 'end_turn', 'finalHasMarker': True, 'outcome': 'ok'}
+{'injectedAtToolCall': 1, 'injectResult': '{"result":{"status":"queued"}}', 'promptResponses': 1, 'stopReason': 'end_turn', 'finalHasMarker': True, 'outcome': 'ok'}

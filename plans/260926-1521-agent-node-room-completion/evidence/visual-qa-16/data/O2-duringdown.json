@@ -1,0 +1,14 @@
+{
+  "Ac": {
+    "text": "prompt\nfake-node\nRunning\n✕\nstarted 01:38 · running… · e2e-fake · e2e-fake-model\nPROMPT · VQ16-OPERATOR\n<<E2E_SCENARIO>>{\"interruptible\":true,\"emitTool\":true,\"delayMs\":90000}<</E2E_SCENARIO>>\nO2 A run\nASSISTANT\n\n[e2e-fake] tool pass\n\n▶\nrunning\n◐\nRead\nHITL_TOOL_INPUT.txt\nrunning · 28.9s\n\nFailed to load node transcript\n\nAPI error 500 (/api/workflows/runs/ed87a9ef1bebbf6f145a18ec0ca0b4a6/nodes/fake-node/messages):\n\nRetry\nQUEUED · 1\nsaved to server\n▾\n1\nO2-A1 queued on live\n✕\nmessage to fake-node\nStop\n\nCmd/Ctrl+Enter to send · saved for you\n\nQueue\n1 message queued",
+    "retry": [
+      "PROMPT · VQ16-OPERATOR\n<<E2E_SCENARIO>>{\"interruptible\":true,\"emitTool\":true,\"delayMs\":90000}<</E2E_SCENARIO>>\nO2 A run\nASSISTANT\n\n[e2e-fake] tool pass\n\n▶\nrunning\n◐\nRead\nHITL_TOOL_INPUT.txt\nrunning · "
+    ]
+  },
+  "Cc": {
+    "text": "prompt\nfake-node\nRunning\n✕\nstarted 01:38 · running… · e2e-fake-soft-inject · e2e-fake-model\nPROMPT · VQ16-OPERATOR\n<<E2E_SCENARIO>>{\"interruptible\":true,\"emitTool\":true,\"delayMs\":30000}<</E2E_SCENARIO>>\nO2 C run\nASSISTANT\n\n[e2e-fake] tool pass\n\n▶\nrunning\n◐\nRead\nHITL_TOOL_INPUT.txt\nrunning · 27.4s\n\nFailed to load node transcript\n\nAPI error 500 (/api/workflows/runs/181f57282f2367af6c2fd9e09882e858/nodes/fake-node/messages):\n\nRetry\nQUEUED · 1\nsaved to server\n▾\n1\nO2-C1 queued one\nSend now\n✕\n2\nO2-C2 injected two\nsending…\nmessage to fake-node\nStop\n\nCmd/Ctrl+Enter to send · saved for you\n\nQueue\n1 message queued",
+    "retry": [
+      "PROMPT · VQ16-OPERATOR\n<<E2E_SCENARIO>>{\"interruptible\":true,\"emitTool\":true,\"delayMs\":30000}<</E2E_SCENARIO>>\nO2 C run\nASSISTANT\n\n[e2e-fake] tool pass\n\n▶\nrunning\n◐\nRead\nHITL_TOOL_INPUT.txt\nrunning · "
+    ]
+  }
+}

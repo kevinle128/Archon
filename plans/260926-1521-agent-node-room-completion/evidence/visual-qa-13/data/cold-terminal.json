@@ -1,0 +1,58 @@
+{
+  "B3Fc": [
+    [128, "NOROOM"],
+    [289, "Failed||||"],
+    [381, "Failed|NEVER SENT · 2|||node finished · none of this was sent"]
+  ],
+  "B3Fl": [
+    [122, "NOROOM"],
+    [264, "Failed||||"],
+    [357, "Failed|NEVER SENT · 2|||node finished · none of this was sent"]
+  ],
+  "AB1c": [
+    [122, "NOROOM"],
+    [293, "Failed||||"],
+    [360, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "AB1l": [
+    [126, "NOROOM"],
+    [271, "Failed||||"],
+    [323, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "NAT1c": [
+    [123, "NOROOM"],
+    [287, "Completed||||"]
+  ],
+  "NAT1l": [
+    [128, "NOROOM"],
+    [266, "Completed||||"]
+  ],
+  "capc": [
+    [149, "NOROOM"],
+    [327, "Completed||||"]
+  ],
+  "capl": [
+    [124, "NOROOM"],
+    [271, "Completed||||"]
+  ],
+  "B3LFc": [
+    [131, "NOROOM"],
+    [292, "Failed||||"],
+    [353, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "B3LFl": [
+    [140, "NOROOM"],
+    [282, "Failed||||"],
+    [351, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "dsc": [
+    [132, "NOROOM"],
+    [298, "Failed||||"],
+    [398, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "dsl": [
+    [142, "NOROOM"],
+    [280, "Failed||||"],
+    [369, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ]
+}

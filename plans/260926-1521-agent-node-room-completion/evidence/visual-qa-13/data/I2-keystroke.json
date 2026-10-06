@@ -1,0 +1,7 @@
+{
+  "typedAt": "2026-09-29T20:37:32.785Z",
+  "net": [
+    "2026-09-29T20:37:32.802Z POST /workflows/runs/d4af42c219d116c7beb073e7e4869a32/nodes/long-claude/keepalive 200",
+    "2026-09-29T20:37:33.404Z PUT /workflows/runs/d4af42c219d116c7beb073e7e4869a32/nodes/long-claude/draft 200"
+  ]
+}

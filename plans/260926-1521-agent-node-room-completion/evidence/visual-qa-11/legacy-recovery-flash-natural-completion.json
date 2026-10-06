@@ -1,0 +1,37 @@
+{
+  "note": "rAF samples of pill|band|status|alertCount, epoch ms. Natural completions with no steering. NAT1 = e2e-fake, NAT3 = Claude haiku (vq11-short).",
+  "NAT1": {
+    "c": [
+      [1790673800986, "|Running||0"],
+      [1790673839459, "|Completed||0"]
+    ],
+    "l": [
+      [1790673800985, "|Running||0"],
+      [1790673839685, "|Recovery required||0"],
+      [1790673841507, "|Completed||0"]
+    ]
+  },
+  "NAT3": {
+    "c": [
+      [1790673893438, "|Running||0"],
+      [1790673913708, "|Completed||0"]
+    ],
+    "l": [
+      [1790673893447, "|Running||0"],
+      [1790673914053, "|Recovery required||0"],
+      [1790673915979, "|Completed||0"]
+    ]
+  },
+  "G_autosend_claude": {
+    "l": [
+      [1790674829134, "|Running||0"],
+      [1790674831218, "|Recovery required||0"],
+      [1790674834136, "|Completed||0"]
+    ],
+    "c": [
+      [1790674828599, "|Running||0"],
+      [1790674831255, "|Completed||0"]
+    ]
+  },
+  "FIN4_screens": "app-legacy-FIN4-t2.png (+459 ms after Send now: Recovery required, meta 'restored after server restart', live dock with Queue) and app-legacy-FIN4-t6.png (+1112 ms: Completed)"
+}

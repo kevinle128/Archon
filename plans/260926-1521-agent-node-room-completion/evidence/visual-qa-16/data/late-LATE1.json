@@ -1,0 +1,31 @@
+{
+  "tag": "LATE1",
+  "sender": "c",
+  "R": "314550ba136f2db0bfca416b6313654b",
+  "node": "cl-node",
+  "click": { "status": 200, "afterToolMs": 9425 },
+  "status": "completed",
+  "clickedAt": 1790793194431,
+  "frames": {
+    "c": [
+      [1790793184979, "Running|Stop,Queue|0|0||||||||TEXTAREA"],
+      [1790793185004, "Running|Stop,Queue|0|0||||||||BUTTON:Queue · Cmd/Ct"],
+      [1790793185012, "Running|Stop,Queue|1|1|QUEUED · 1|TWOxs||||||TEXTAREA"],
+      [1790793194454, "Running|Stop,Queue|1|1|QUEUED · 1|TWOxs||||||BUTTON:Send now · LAT"],
+      [1790793194462, "Running|Stop,Queue|0|0|SENDING · 1|TWO*||||||BODY"],
+      [1790793199964, "Running|Stop,Queue|0|0|||TWO:sent||||below|BODY"],
+      [1790793202558, "Completed||0|0|||TWO:sent||||below|BODY"]
+    ],
+    "l": [
+      [1790793184979, "Running|Stop,Queue|0|0||||||||BODY"],
+      [1790793185129, "Running|Stop,Queue|1|1|QUEUED · 1|TWOxs||||||BODY"],
+      [1790793195421, "Running|Stop,Queue|0|0|SENDING · 1|TWO*||||||BODY"],
+      [1790793199971, "Running|Stop,Queue|0|0|||TWO:sent||||below|BODY"],
+      [1790793202561, "Completed||0|0|||TWO:sent||||below|BODY"]
+    ]
+  },
+  "queue": [["LATE1 LATE: be", "sent", null, 0]],
+  "operatorRows": [[8, "LATE1 LATE: begin yo"]],
+  "lastToolSeq": 5,
+  "attempts": 1
+}

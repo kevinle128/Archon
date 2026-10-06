@@ -550,4 +550,58 @@ describe('SlackWorkflowBridge', () => {
     expect(updated).toHaveLength(updatedAfterStart);
     expect(reactionsAdded).toHaveLength(reactionsAfterStart);
   });
+
+  test('node_turn_interrupted sends no Slack message', async () => {
+    const { adapter, posted, updated, reactionsAdded, triggerMap } = makeFakeAdapter();
+    triggerMap.set('C1:111.0', { channel: 'C1', ts: '111.0' });
+    mockGetConversationId.mockReturnValue('C1:111.0');
+
+    new SlackWorkflowBridge(adapter as never).attach();
+    await dispatchEvent({
+      type: 'workflow_started',
+      runId: 'r1',
+      workflowName: 'assist',
+      conversationId: 'conv-db-uuid',
+    });
+    const postedAfterStart = posted.length;
+    const updatedAfterStart = updated.length;
+    const reactionsAfterStart = reactionsAdded.length;
+
+    await dispatchEvent({
+      type: 'node_turn_interrupted',
+      runId: 'r1',
+      nodeId: 'review',
+    });
+
+    expect(posted).toHaveLength(postedAfterStart);
+    expect(updated).toHaveLength(updatedAfterStart);
+    expect(reactionsAdded).toHaveLength(reactionsAfterStart);
+  });
+
+  test('node_turn_started sends no Slack message', async () => {
+    const { adapter, posted, updated, reactionsAdded, triggerMap } = makeFakeAdapter();
+    triggerMap.set('C1:111.0', { channel: 'C1', ts: '111.0' });
+    mockGetConversationId.mockReturnValue('C1:111.0');
+
+    new SlackWorkflowBridge(adapter as never).attach();
+    await dispatchEvent({
+      type: 'workflow_started',
+      runId: 'r1',
+      workflowName: 'assist',
+      conversationId: 'conv-db-uuid',
+    });
+    const postedAfterStart = posted.length;
+    const updatedAfterStart = updated.length;
+    const reactionsAfterStart = reactionsAdded.length;
+
+    await dispatchEvent({
+      type: 'node_turn_started',
+      runId: 'r1',
+      nodeId: 'review',
+    });
+
+    expect(posted).toHaveLength(postedAfterStart);
+    expect(updated).toHaveLength(updatedAfterStart);
+    expect(reactionsAdded).toHaveLength(reactionsAfterStart);
+  });
 });

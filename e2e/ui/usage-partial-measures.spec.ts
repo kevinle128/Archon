@@ -17,9 +17,11 @@ test('[P1] absent token measures are counted as missing, not zero', async ({ pag
   await openCostForRun(page, runId);
 
   // The row is recorded with its reported cost...
-  await expect(page.getByText('$0.09').first()).toBeVisible({ timeout: T.medium });
+  await expect(page.locator('#set-usage').getByText('$0.09').first()).toBeVisible({
+    timeout: T.medium,
+  });
   // ...and the absent output measure is counted (out:1), while input is present (in:0).
-  const missing = page.getByTestId('missing-measures-totals');
+  const missing = page.locator('#set-usage').getByText(/missing measures/);
   await expect(missing).toContainText('out:1');
   await expect(missing).toContainText('in:0');
 });

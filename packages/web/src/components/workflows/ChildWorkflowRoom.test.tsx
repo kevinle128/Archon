@@ -25,7 +25,7 @@ describe('ChildWorkflowRoom', () => {
       <ChildWorkflowRoom nodeId="child" child={{ ...BASE, childRunId: 'child-1' }} />
     );
     expect(markup).toContain('Child run');
-    expect(markup).toContain('href="/legacy/workflows/runs/child-1"');
+    expect(markup).toContain('href="/workflows/runs/child-1"');
     expect(markup).toContain('Open child run');
     expect(markup).not.toContain('chat-markdown');
   });

@@ -1,153 +1,46 @@
-import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router';
-import { Plus, Loader2, ChevronDown, FolderGit2, MessageSquarePlus } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useState, useRef, useMemo } from 'react';
+import { NavLink, Link, useNavigate } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
+import { LayoutDashboard, MessageSquare, Plus, Settings, Workflow } from 'lucide-react';
+import { PixelLogo } from '@/components/brand/PixelLogo';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { SearchBar } from '@/components/sidebar/SearchBar';
-import { ProjectSelector } from '@/components/sidebar/ProjectSelector';
+import { SidebarProjects } from '@/components/sidebar/SidebarProjects';
+import { SidebarFooter } from '@/components/sidebar/SidebarFooter';
+import { NeedsYouSection } from '@/components/sidebar/NeedsYouSection';
 import { ProjectDetail } from '@/components/sidebar/ProjectDetail';
 import { AllConversationsView } from '@/components/sidebar/AllConversationsView';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useProject } from '@/contexts/ProjectContext';
-import { addCodebase, getCodebaseInput } from '@/lib/api';
+import { listDashboardRuns } from '@/lib/api';
+import { cn } from '@/lib/utils';
 
-const SIDEBAR_MIN = 240;
-const SIDEBAR_MAX = 400;
-const SIDEBAR_DEFAULT = 260;
-const STORAGE_KEY = 'archon-sidebar-width';
+const tabs = [
+  { to: '/chat', end: false, icon: MessageSquare, label: 'Chat' },
+  { to: '/dashboard', end: true, icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/workflows', end: false, icon: Workflow, label: 'Workflows' },
+  { to: '/settings', end: false, icon: Settings, label: 'Settings' },
+] as const;
 
-function getInitialWidth(): number {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = Number(stored);
-      if (parsed >= SIDEBAR_MIN && parsed <= SIDEBAR_MAX) return parsed;
-    }
-  } catch {
-    // localStorage unavailable (Safari private mode, Firefox privacy settings)
-  }
-  return SIDEBAR_DEFAULT;
-}
+/** How many paused runs the "Needs you" list loads. The badge shows the server total. */
+const NEEDS_YOU_LIMIT = 20;
 
-export function Sidebar(): React.ReactElement {
+export function Sidebar({ className }: { className?: string }): React.ReactElement {
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [width, setWidth] = useState(getInitialWidth);
-  const isResizing = useRef(false);
-  const [projectsExpanded, setProjectsExpanded] = useState(false);
-
   const navigate = useNavigate();
-  const {
-    selectedProjectId,
-    setSelectedProjectId,
-    codebases,
-    isLoadingCodebases,
-    isErrorCodebases,
-  } = useProject();
-
+  const { selectedProjectId, codebases } = useProject();
   const selectedProject = codebases?.find(cb => cb.id === selectedProjectId) ?? null;
 
-  // Add-project state
-  const [showAddInput, setShowAddInput] = useState(false);
-  const [addValue, setAddValue] = useState('');
-  const [addLoading, setAddLoading] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
-  const addInputRef = useRef<HTMLInputElement>(null);
-  const queryClient = useQueryClient();
-
-  // Focus input when shown
-  useEffect(() => {
-    if (showAddInput) {
-      addInputRef.current?.focus();
-    }
-  }, [showAddInput]);
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent): void => {
-      e.preventDefault();
-      isResizing.current = true;
-      const startX = e.clientX;
-      const startWidth = width;
-
-      document.body.style.userSelect = 'none';
-      document.body.style.cursor = 'col-resize';
-
-      let currentWidth = startWidth; // tracks the final dragged value
-
-      const onMouseMove = (moveEvent: MouseEvent): void => {
-        const newWidth = Math.min(
-          SIDEBAR_MAX,
-          Math.max(SIDEBAR_MIN, startWidth + moveEvent.clientX - startX)
-        );
-        currentWidth = newWidth; // keep in sync with latest dragged position
-        setWidth(newWidth);
-      };
-
-      const onMouseUp = (): void => {
-        isResizing.current = false;
-        document.body.style.userSelect = '';
-        document.body.style.cursor = '';
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-        // Persist only on mouseup to avoid 60-120Hz localStorage writes during drag
-        try {
-          localStorage.setItem(STORAGE_KEY, String(currentWidth)); // final dragged value
-        } catch {
-          // localStorage unavailable (Safari private mode, Firefox privacy settings)
-        }
-      };
-
-      document.addEventListener('mousemove', onMouseMove);
-      document.addEventListener('mouseup', onMouseUp);
-    },
-    [width]
-  );
-
-  const handleSelectProject = useCallback(
-    (id: string | null): void => {
-      setSelectedProjectId(id);
-      setProjectsExpanded(false);
-    },
-    [setSelectedProjectId]
-  );
-
-  const handleAddSubmit = useCallback((): void => {
-    const trimmed = addValue.trim();
-    if (!trimmed || addLoading) return;
-
-    setAddLoading(true);
-    setAddError(null);
-
-    void addCodebase(getCodebaseInput(trimmed))
-      .then(codebase => {
-        void queryClient.invalidateQueries({ queryKey: ['codebases'] });
-        handleSelectProject(codebase.id);
-        setShowAddInput(false);
-        setAddValue('');
-        setAddError(null);
-      })
-      .catch((err: Error) => {
-        setAddError(err.message);
-      })
-      .finally(() => {
-        setAddLoading(false);
-      });
-  }, [addValue, addLoading, queryClient, handleSelectProject]);
-
-  const handleAddKeyDown = useCallback(
-    (e: React.KeyboardEvent): void => {
-      if (e.key === 'Enter') {
-        handleAddSubmit();
-      } else if (e.key === 'Escape') {
-        setShowAddInput(false);
-        setAddValue('');
-        setAddError(null);
-      }
-    },
-    [handleAddSubmit]
-  );
+  // One request feeds both the "Needs you" list and the running badge: `counts`
+  // is a server-side aggregate over every status, independent of the filter.
+  const { data: dashboardRuns } = useQuery({
+    queryKey: ['dashboardRuns', { status: 'paused', forSidebar: true }],
+    queryFn: () => listDashboardRuns({ status: 'paused', limit: NEEDS_YOU_LIMIT }),
+    refetchInterval: 10_000,
+  });
+  const runningCount = dashboardRuns?.counts.running ?? 0;
+  const pausedCount = dashboardRuns?.counts.paused ?? 0;
 
   const shortcuts = useMemo(
     () => ({
@@ -159,165 +52,96 @@ export function Sidebar(): React.ReactElement {
     }),
     []
   );
-
-  const handleNewOrchestratorChat = useCallback((): void => {
-    setSelectedProjectId(null);
-    navigate('/legacy/chat');
-  }, [navigate, setSelectedProjectId]);
-
   useKeyboardShortcuts(shortcuts);
 
   return (
     <aside
-      className="relative flex h-full flex-col border-r border-border bg-surface"
-      style={{ width: `${String(width)}px` }}
+      aria-label="Sidebar"
+      className={cn(
+        'flex h-full w-[248px] shrink-0 flex-col gap-2 border-r border-border bg-surface px-3 pb-2 pt-3',
+        className
+      )}
     >
-      {/* Logo */}
-      <div className="flex flex-col gap-3 p-4">
-        <Link to="/legacy" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <span className="text-sm font-semibold text-primary-foreground">A</span>
-          </div>
-          <span className="text-base font-semibold text-text-primary">Archon</span>
-        </Link>
-      </div>
+      <Link
+        to="/chat"
+        aria-label="Archon home"
+        className="flex min-h-11 items-center gap-3 rounded-lg px-2 text-text-primary"
+      >
+        <PixelLogo active={runningCount > 0} label="" />
+        <span className="text-base font-semibold">Archon</span>
+      </Link>
 
-      <Separator className="bg-border" />
+      <button
+        type="button"
+        onClick={(): void => {
+          void navigate('/chat');
+        }}
+        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 text-sm font-medium text-text-primary transition-colors duration-150 hover:bg-surface-elevated"
+      >
+        <Plus className="h-4 w-4" strokeWidth={1.5} aria-hidden />
+        New chat
+      </button>
 
-      {/* Search - always visible */}
-      <div className="px-3 py-2">
-        <SearchBar
-          value={searchQuery}
-          onChange={setSearchQuery}
-          placeholder="Search..."
-          inputRef={searchInputRef}
-        />
-      </div>
-
-      {/* Orchestrator (unscoped) new chat */}
-      <div className="px-3 pb-2">
-        <button
-          onClick={handleNewOrchestratorChat}
-          className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-surface-elevated hover:text-text-primary transition-colors"
-        >
-          <MessageSquarePlus className="h-4 w-4 shrink-0" />
-          New Chat
-        </button>
-      </div>
-
-      <Separator className="bg-border" />
-
-      {/* Collapsible Project Selector */}
-      <div className="px-2 py-2">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-            Projects
-          </span>
-          <button
-            onClick={(): void => {
-              setShowAddInput(prev => !prev);
-              setAddError(null);
-              setAddValue('');
-            }}
-            className="p-1 rounded hover:bg-surface-elevated transition-colors"
-            title="Add project"
+      <nav aria-label="Main" className="grid gap-0.5">
+        {tabs.map(({ to, end, icon: Icon, label }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            className={({ isActive }: { isActive: boolean }): string =>
+              cn(
+                'flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors duration-150',
+                isActive
+                  ? 'bg-accent-muted text-accent'
+                  : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
+              )
+            }
           >
-            <Plus className="h-4 w-4 text-text-tertiary hover:text-primary" />
-          </button>
-        </div>
+            <Icon className="h-5 w-5" strokeWidth={1.5} aria-hidden />
+            {label}
+            {to === '/dashboard' && runningCount > 0 && (
+              <span
+                className="ml-auto font-mono text-xs font-medium"
+                title="Running workflows"
+                aria-label={`${String(runningCount)} workflows running`}
+              >
+                {runningCount}
+              </span>
+            )}
+          </NavLink>
+        ))}
+      </nav>
 
-        {showAddInput && (
-          <div className="mt-1.5 px-1">
-            <div className="flex items-center gap-1">
-              <input
-                ref={addInputRef}
-                value={addValue}
-                onChange={(e): void => {
-                  setAddValue(e.target.value);
-                }}
-                onKeyDown={handleAddKeyDown}
-                onBlur={(): void => {
-                  // Close on blur only if empty and no error
-                  if (!addValue.trim() && !addError) {
-                    setShowAddInput(false);
-                  }
-                }}
-                placeholder="GitHub URL or local path"
-                disabled={addLoading}
-                className="w-full rounded-md border border-border bg-surface-elevated px-2 py-1 text-xs text-text-primary placeholder:text-text-tertiary focus:border-primary focus:outline-none disabled:opacity-50"
+      <div className="min-h-0 flex-1">
+        {/* Radix wraps the viewport content in a table-layout div that grows with its widest
+            child; forcing block layout keeps long titles truncating inside the sidebar. */}
+        <ScrollArea className="h-full [&_[data-slot=scroll-area-viewport]>div]:block!">
+          <div className="grid grid-cols-[minmax(0,1fr)] content-start gap-0.5 pb-2">
+            <NeedsYouSection runs={dashboardRuns?.runs ?? []} total={pausedCount} />
+            <div className="pt-2">
+              <SearchBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="Search..."
+                inputRef={searchInputRef}
               />
-              {addLoading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
             </div>
-            {addError && <p className="mt-1 text-[10px] text-error line-clamp-2">{addError}</p>}
-          </div>
-        )}
-
-        <Collapsible open={projectsExpanded} onOpenChange={setProjectsExpanded}>
-          {selectedProjectId && !projectsExpanded ? (
-            <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 mt-1 text-left text-sm text-primary hover:bg-surface-elevated transition-colors">
-              <FolderGit2 className="h-4 w-4 shrink-0" />
-              <span className="truncate flex-1">{selectedProject?.name ?? 'Project'}</span>
-              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
-            </CollapsibleTrigger>
-          ) : (
-            <CollapsibleTrigger className="hidden" />
-          )}
-          <CollapsibleContent>
-            <div className="max-h-[35vh] overflow-y-auto">
-              <ProjectSelector
-                projects={codebases ?? []}
-                selectedProjectId={selectedProjectId}
-                onSelectProject={handleSelectProject}
-                isLoading={isLoadingCodebases}
+            <SidebarProjects searchQuery={searchQuery} />
+            {selectedProjectId ? (
+              <ProjectDetail
+                codebaseId={selectedProjectId}
+                projectName={selectedProject?.name ?? ''}
+                repositoryUrl={selectedProject?.repository_url}
                 searchQuery={searchQuery}
               />
-            </div>
-          </CollapsibleContent>
-          {/* Show full list when no project selected (not inside collapsible content) */}
-        </Collapsible>
-        {!selectedProjectId && (
-          <div className="max-h-[35vh] overflow-y-auto">
-            <ProjectSelector
-              projects={codebases ?? []}
-              selectedProjectId={selectedProjectId}
-              onSelectProject={handleSelectProject}
-              isLoading={isLoadingCodebases}
-              searchQuery={searchQuery}
-            />
+            ) : (
+              <AllConversationsView searchQuery={searchQuery} />
+            )}
           </div>
-        )}
-        {isErrorCodebases && (
-          <p className="px-2 text-[10px] text-error mt-1">Failed to load projects — retrying</p>
-        )}
+        </ScrollArea>
       </div>
 
-      <Separator className="bg-border" />
-
-      {/* Project-scoped or all-conversations content */}
-      {selectedProjectId ? (
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <ScrollArea className="h-full px-2 py-2">
-            <ProjectDetail
-              codebaseId={selectedProjectId}
-              projectName={selectedProject?.name ?? ''}
-              repositoryUrl={selectedProject?.repository_url}
-              searchQuery={searchQuery}
-            />
-          </ScrollArea>
-        </div>
-      ) : (
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <ScrollArea className="h-full px-2 py-2">
-            <AllConversationsView searchQuery={searchQuery} />
-          </ScrollArea>
-        </div>
-      )}
-
-      {/* Resize handle */}
-      <div
-        onMouseDown={handleMouseDown}
-        className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize bg-border/50 hover:bg-primary/40 transition-colors"
-      />
+      <SidebarFooter />
     </aside>
   );
 }

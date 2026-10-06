@@ -1,13 +1,46 @@
+import { randomUUID } from 'node:crypto';
+
 import type { ContentBlock, SessionUpdate, ToolCallContent } from '@agentclientprotocol/sdk';
 
 import type { MessageChunk } from '../../types';
 
 export interface DeepseekEventState {
   readonly tools: Map<string, { name: string; input?: Record<string, unknown> }>;
+  /**
+   * The currently open assistant/thinking span, if any. ACP streams both as
+   * raw per-delta chunks with no block boundary of their own, so consecutive
+   * chunks of the SAME kind fold into one row only while this stays open;
+   * a chunk of the other kind, or a tool call starting, closes it so the
+   * next chunk (of either kind) opens a fresh span instead of reviving a
+   * stale one out of order.
+   */
+  openTextBlock: { kind: 'assistant' | 'thinking'; blockId: string } | undefined;
+  textBlockSeq: number;
+  /**
+   * Identifies this turn. A fresh state is created for every turn, and each
+   * turn's block-id counter restarts at 1 — so this id must be unique per
+   * turn for the id to stay unique across an execution that runs several
+   * turns (e.g. a redirected operator message resuming the same session).
+   * Without it, a later turn's first thinking/assistant block would carry
+   * the exact id a prior turn already used.
+   */
+  readonly turnId: string;
 }
 
-export function createDeepseekEventState(): DeepseekEventState {
-  return { tools: new Map() };
+export function createDeepseekEventState(turnId: string = randomUUID()): DeepseekEventState {
+  return { tools: new Map(), openTextBlock: undefined, textBlockSeq: 0, turnId };
+}
+
+/** Mints a fresh block id only when the open span's kind changes. */
+function textBlockId(state: DeepseekEventState, kind: 'assistant' | 'thinking'): string {
+  if (state.openTextBlock?.kind !== kind) {
+    state.textBlockSeq += 1;
+    state.openTextBlock = {
+      kind,
+      blockId: `deepseek-${state.turnId}-${kind}-${String(state.textBlockSeq)}`,
+    };
+  }
+  return state.openTextBlock.blockId;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -68,13 +101,31 @@ export function mapDeepseekSessionUpdate(
   switch (update.sessionUpdate) {
     case 'agent_message_chunk': {
       if (update.content.type !== 'text') return [];
-      return [{ type: 'assistant', content: update.content.text, textMode: 'delta' }];
+      return [
+        {
+          type: 'assistant',
+          content: update.content.text,
+          textMode: 'delta',
+          blockId: textBlockId(state, 'assistant'),
+        },
+      ];
     }
     case 'agent_thought_chunk': {
       if (update.content.type !== 'text') return [];
-      return [{ type: 'thinking', content: update.content.text }];
+      return [
+        {
+          type: 'thinking',
+          content: update.content.text,
+          textMode: 'delta',
+          blockId: textBlockId(state, 'thinking'),
+        },
+      ];
     }
     case 'tool_call': {
+      // A tool call starting ends whichever text span was open — the next
+      // assistant/thinking chunk (of either kind) starts a fresh block
+      // rather than resuming one from before the call.
+      state.openTextBlock = undefined;
       const name = update.name ?? update.title;
       const input = asToolInput(update.rawInput);
       state.tools.set(update.toolCallId, {

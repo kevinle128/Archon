@@ -1,0 +1,24 @@
+{
+  "R": "9ba35b9040000bd7912d915d18024f01",
+  "post": 5,
+  "abandonAt": 1790752163912,
+  "k0": { "c": "Running||Queue|TA||||-1|0|||BODY", "l": "Running||Queue|TA||||-1|0|||BODY" },
+  "raf": {
+    "c": [
+      [-1510, "Running||Queue|TA|QUEUED · 1|1 message queued||1|1|||TEXTAREA"],
+      [
+        514,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ],
+    "l": [
+      [-1500, "Running||Queue|TA|QUEUED · 1|1 message queued||1|1|||BODY"],
+      [355, "Failed||||QUEUED · 1|||1|0|||BODY"],
+      [
+        363,
+        "Failed||||NEVER SENT · 1|node finished · none of this was sent|node finished · none of this was sent|1|0|||DIV[room]"
+      ]
+    ]
+  },
+  "gets": []
+}

@@ -1,0 +1,33 @@
+{
+  "R": "a0afa86c6b19193b8b2200db839fe614",
+  "o": {
+    "c": {
+      "head": "loop\ncap-loop\nFailed\n✕\nstarted 01:47 · Loop node 'cap-loop' exceeded max iterations (10) without completion signal 'E2E_LOOP_DONE' · e2e-fake · e2e-fake-model\nexecution\nIteration 3\nIteration 4\nIterati",
+      "options": [
+        "Iteration 3",
+        "Iteration 4",
+        "Iteration 5",
+        "Iteration 6",
+        "Iteration 7",
+        "Iteration 8",
+        "Iteration 9",
+        "Iteration 10"
+      ],
+      "selects": ["Execution"]
+    },
+    "l": {
+      "head": "loop\ncap-loop\nFailed\n✕\nstarted 01:47 · Loop node 'cap-loop' exceeded max iterations (10) without completion signal 'E2E_LOOP_DONE' · e2e-fake · e2e-fake-model\nexecution\nIteration 3\nIteration 4\nIterati",
+      "options": [
+        "Iteration 3",
+        "Iteration 4",
+        "Iteration 5",
+        "Iteration 6",
+        "Iteration 7",
+        "Iteration 8",
+        "Iteration 9",
+        "Iteration 10"
+      ],
+      "selects": ["Execution"]
+    }
+  }
+}

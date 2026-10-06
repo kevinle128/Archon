@@ -17,7 +17,7 @@ function severityIcon(severity: ValidationIssue['severity']): React.ReactElement
     case 'warning':
       return <span className="text-warning text-xs leading-none">▲</span>;
     case 'info':
-      return <span className="text-[oklch(0.62_0.18_250)] text-xs leading-none">ℹ</span>;
+      return <span className="text-accent text-xs leading-none">ℹ</span>;
   }
 }
 
@@ -41,16 +41,16 @@ export function ValidationPanel({
   return (
     <div className="border-t border-border bg-surface" style={{ maxHeight: 200 }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-text-primary">Problems</span>
+          <span className="text-sm font-medium text-text-primary">Problems</span>
           {errorCount > 0 && (
-            <span className="inline-flex items-center justify-center rounded-full bg-error/20 px-1.5 py-0.5 text-[10px] font-medium text-error min-w-[18px]">
+            <span className="inline-flex items-center justify-center rounded-full bg-error/15 px-1.5 py-0.5 text-xs font-medium text-error min-w-[18px]">
               {errorCount}
             </span>
           )}
           {warningCount > 0 && (
-            <span className="inline-flex items-center justify-center rounded-full bg-warning/20 px-1.5 py-0.5 text-[10px] font-medium text-warning min-w-[18px]">
+            <span className="inline-flex items-center justify-center rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning min-w-[18px]">
               {warningCount}
             </span>
           )}
@@ -97,7 +97,7 @@ export function ValidationPanel({
             {issues.map((issue, index) => (
               <div
                 key={`${issue.severity}-${issue.nodeId ?? ''}-${issue.message}-${String(index)}`}
-                className="flex items-start gap-2 px-3 py-1.5 hover:bg-surface-hover text-xs"
+                className="flex items-start gap-2 px-4 py-2 hover:bg-surface-hover text-sm"
               >
                 <span className="mt-0.5 shrink-0">{severityIcon(issue.severity)}</span>
                 <div className="flex flex-col gap-0.5 min-w-0">
@@ -110,8 +110,8 @@ export function ValidationPanel({
                           if (issue.nodeId != null) onFocusNode?.(issue.nodeId);
                         }}
                         className={cn(
-                          'inline-flex items-center rounded px-1.5 py-0.5',
-                          'font-mono text-[10px] text-text-secondary',
+                          'inline-flex items-center rounded-md px-1.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                          'font-mono text-xs text-text-secondary',
                           'bg-surface-elevated hover:bg-surface-hover',
                           'cursor-pointer transition-colors'
                         )}

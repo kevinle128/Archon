@@ -1,0 +1,180 @@
+{
+  "out": {
+    "tag": "cx-c1",
+    "st": "c",
+    "sd": "l",
+    "ob": "c",
+    "stop": {
+      "post": 25,
+      "st": 200,
+      "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+    },
+    "send": {
+      "post": 25,
+      "st": 200,
+      "body": "{\"success\":true,\"message_id\":\"88c6e104-13ee-4ffe-baca-b5ef62152113\",\"state\":\"sent\"}"
+    },
+    "probe": null,
+    "C": {
+      "stoppingAt": null,
+      "sendNowAt": 28,
+      "stopAgainAt": 118,
+      "sendingAt": 118,
+      "flipBacks": 0,
+      "staleQueued": [],
+      "gaps": [],
+      "overlap": [],
+      "last": {
+        "bands": "SENDING · 1",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "✓ shell sleep 25 && echo step-1 exit 0 ·",
+          "– shell sleep 25 && echo step-2 output unknown ·"
+        ]
+      }
+    },
+    "L": {
+      "stoppingAt": null,
+      "sendNowAt": 242,
+      "stopAgainAt": 30,
+      "sendingAt": 30,
+      "flipBacks": 0,
+      "staleQueued": [],
+      "gaps": [],
+      "overlap": [],
+      "last": {
+        "bands": "SENDING · 1",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "✓ shell sleep 25 && echo step-1 exit 0 ·",
+          "– shell sleep 25 && echo step-2 output unknown ·"
+        ]
+      }
+    }
+  },
+  "lc": [
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · cx-c1-Q1 queued: reply with the word cx-c1ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "◐ shell sleep 25 && echo step-2 running · 2.4s WILL SEND · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790729082702
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · cx-c1-Q1 queued: reply with the word cx-c1ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790729082825
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790729083551
+    }
+  ],
+  "ll": [
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · cx-c1-Q1 queued: reply with the word cx-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "◐ shell sleep 25 && echo step-2 running · 2.5s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790729082702
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · cx-c1-Q1 queued: reply with the word cx-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "◐ shell sleep 25 && echo step-2 running · 2.9s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790729082862
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · cx-c1-Q1 queued: reply with the word cx-c1ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790729082902
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ shell sleep 25 && echo step-1 exit 0 ·",
+        "– shell sleep 25 && echo step-2 output unknown ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790729083463
+    }
+  ],
+  "T": 1790729083433,
+  "stop": {
+    "clicked": 1790729082661,
+    "resolved": 1790729082686,
+    "st": 200,
+    "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+  },
+  "send": {
+    "clicked": 1790729083408,
+    "sendResolved": 1790729083433,
+    "st": 200,
+    "url": "/api/workflows/runs/2be1baa69b46c1d0c54a895af48c9e37/nodes/long-codex/send",
+    "body": "{\"success\":true,\"message_id\":\"88c6e104-13ee-4ffe-baca-b5ef62152113\",\"state\":\"sent\"}"
+  }
+}

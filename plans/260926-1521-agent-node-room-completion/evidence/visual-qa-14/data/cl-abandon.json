@@ -1,0 +1,127 @@
+{
+  "post": 4,
+  "res": { "success": true, "message": "Abandoned workflow: vq14-claude" },
+  "C": {
+    "neverSentAt": 887,
+    "pillAt": 887,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ TaskUpdate todo updated 59ms ▶",
+        "– Bash echo begin-step-5; end=$((SECONDS+25)); while [ $S output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -265,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        335,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [887, "NEVER SENT · 1", "", "Failed", 1],
+      [1393, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "L": {
+    "neverSentAt": 554,
+    "pillAt": 554,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ TaskUpdate todo updated 59ms ▶",
+        "– Bash echo begin-step-5; end=$((SECONDS+25)); while [ $S output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -264,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        216,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        505,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [554, "NEVER SENT · 1", "", "Failed", 1],
+      [593, "NEVER SENT · 1", "", "Failed", 1],
+      [975, "NEVER SENT · 1", "", "Failed", 1],
+      [1315, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "raf": {
+    "c": [
+      [-297, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [839, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ],
+    "l": [
+      [-298, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [539, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ]
+  },
+  "gets": [
+    { "s": "c", "t": -1188, "k": "q", "es": "live", "no": null, "n": 4 },
+    { "s": "l", "t": -1034, "k": "q", "es": "live", "no": null, "n": 4 },
+    { "s": "l", "t": -542, "k": "r", "st": "running", "ns": "long-claude:running" },
+    { "s": "l", "t": -542, "k": "r", "st": "running", "ns": "long-claude:running" },
+    { "s": "l", "t": -524, "k": "q", "es": "live", "no": null, "n": 4 },
+    { "s": "c", "t": -185, "k": "q", "es": "live", "no": null, "n": 4 },
+    { "s": "l", "t": 506, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "l", "t": 540, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 540, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "l", "t": 595, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "c", "t": 819, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "c", "t": 839, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "c", "t": 839, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "c", "t": 890, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "l", "t": 953, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 953, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 1278, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "c", "t": 1366, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 2464, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 2464, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 2464, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 3965, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 3965, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 3966, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 5467, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 5467, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 5467, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 6971, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 6971, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 6971, "k": "r", "st": "cancelled", "ns": "long-claude:failed" }
+  ]
+}

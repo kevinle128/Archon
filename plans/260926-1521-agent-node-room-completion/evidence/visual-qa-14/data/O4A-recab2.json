@@ -1,0 +1,43 @@
+{
+  "post": 67,
+  "res": { "success": true, "message": "Abandoned workflow: vq14-fake" },
+  "survC": [
+    [
+      -667,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [116, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue|"],
+    [126, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "survCFailedAt": 116,
+  "survCRunning": [],
+  "survL": [
+    [
+      -667,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [481, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "survLFailedAt": 481,
+  "survLRunning": [],
+  "freshC": [
+    [
+      -667,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [272, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "freshCFailedAt": 272,
+  "freshCRunning": [],
+  "freshL": [
+    [
+      -667,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [24, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue|"],
+    [34, "Failed|NEVER SENT · 1|node finished · none of this was sent|"]
+  ],
+  "freshLFailedAt": 24,
+  "freshLRunning": [],
+  "status": "cancelled"
+}

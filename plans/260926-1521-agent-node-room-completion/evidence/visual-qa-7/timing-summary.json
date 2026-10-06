@@ -1,0 +1,476 @@
+{
+  "cycles": {
+    "A-c1": {
+      "stopPostMs": 71,
+      "sendPostMs": 39,
+      "sendState": "sent",
+      "console": {
+        "idleShownAfterStopClickMs": 172,
+        "generatingAfterSendMs": 25,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 81,
+        "generatingAfterSendMs": 832,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    },
+    "A-c2": {
+      "stopPostMs": 73,
+      "sendPostMs": 27,
+      "sendState": "awaiting_send_now",
+      "console": {
+        "idleShownAfterStopClickMs": 80,
+        "generatingAfterSendMs": 128,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 441,
+        "generatingAfterSendMs": 33,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    },
+    "A-c3": {
+      "stopPostMs": 79,
+      "sendPostMs": 23,
+      "sendState": "awaiting_send_now",
+      "console": {
+        "idleShownAfterStopClickMs": 179,
+        "generatingAfterSendMs": 30,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [[1071, 86]],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 80,
+        "generatingAfterSendMs": 689,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    },
+    "A-c4": {
+      "stopPostMs": 76,
+      "sendPostMs": 101,
+      "sendState": "awaiting_send_now",
+      "console": {
+        "idleShownAfterStopClickMs": 80,
+        "generatingAfterSendMs": 132,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [[1319, 363]],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 166,
+        "generatingAfterSendMs": 36,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    },
+    "H-c3": {
+      "stopPostMs": 72,
+      "sendPostMs": 29,
+      "sendState": "awaiting_send_now",
+      "console": {
+        "idleShownAfterStopClickMs": 80,
+        "generatingAfterSendMs": 140,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 732,
+        "generatingAfterSendMs": 21,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    },
+    "H-c4": {
+      "stopPostMs": 740,
+      "sendPostMs": 21,
+      "sendState": "awaiting_send_now",
+      "console": {
+        "idleShownAfterStopClickMs": 886,
+        "generatingAfterSendMs": 11,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 766,
+        "generatingAfterSendMs": 111,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [[1091, 720]],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    },
+    "H-c5": {
+      "stopPostMs": 80,
+      "sendPostMs": 27,
+      "sendState": "awaiting_send_now",
+      "console": {
+        "idleShownAfterStopClickMs": 132,
+        "generatingAfterSendMs": 143,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 691,
+        "generatingAfterSendMs": 25,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [[1275, 674]],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    },
+    "cx2-c1": {
+      "stopPostMs": 26,
+      "sendPostMs": 22,
+      "sendState": "sent",
+      "console": {
+        "idleShownAfterStopClickMs": 40,
+        "generatingAfterSendMs": 113,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [[113, 876]],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 889,
+        "generatingAfterSendMs": 30,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    },
+    "ds-c1": {
+      "stopPostMs": 1239,
+      "sendPostMs": 20,
+      "sendState": "sent",
+      "console": {
+        "idleShownAfterStopClickMs": 1241,
+        "generatingAfterSendMs": 139,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [[139, 241]],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 1920,
+        "generatingAfterSendMs": 20,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    },
+    "gk-c1": {
+      "stopPostMs": 2780,
+      "sendPostMs": 26,
+      "sendState": "sent",
+      "console": {
+        "idleShownAfterStopClickMs": 2801,
+        "generatingAfterSendMs": 131,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [[4010, 160]],
+        "staleQueuedAfterSend": [[131, 841]],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 2921,
+        "generatingAfterSendMs": 11,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    },
+    "omp-c1": {
+      "stopPostMs": 64,
+      "sendPostMs": 28,
+      "sendState": "sent",
+      "console": {
+        "idleShownAfterStopClickMs": 81,
+        "generatingAfterSendMs": 131,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [[131, 800]],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 881,
+        "generatingAfterSendMs": 11,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    },
+    "omp2-c1": {
+      "stopPostMs": 63,
+      "sendPostMs": 22,
+      "sendState": "sent",
+      "console": {
+        "idleShownAfterStopClickMs": 160,
+        "generatingAfterSendMs": 12,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      },
+      "legacy": {
+        "idleShownAfterStopClickMs": 80,
+        "generatingAfterSendMs": 453,
+        "flipBackToIdle": 0,
+        "overlapFrames": 0,
+        "vanishGaps": [],
+        "staleQueuedAfterSend": [],
+        "badBandFrames": 0
+      }
+    }
+  },
+  "abandons": {
+    "B": {
+      "postMs": 5,
+      "res": "200 {\"success\":true,\"message\":\"Abandoned workflow: vq7-claud",
+      "console": {
+        "neverSentAtMs": 688,
+        "terminalPillAtMs": 688,
+        "queuedItemMissing": [],
+        "lastTool": "sSUKPcu7kTpx43wjee | \u25b6 unknown \u2013 Bash echo begin-step-2; end=$((SECONDS+25)); while [ $SECONDS -lt $end ]; do :; done; echo step-2 output unknown \u00b7 5.3s"
+      },
+      "legacy": {
+        "neverSentAtMs": 377,
+        "terminalPillAtMs": 377,
+        "queuedItemMissing": [],
+        "lastTool": "sSUKPcu7kTpx43wjee | \u25b6 unknown \u2013 Bash echo begin-step-2; end=$((SECONDS+25)); while [ $SECONDS -lt $end ]; do :; done; echo step-2 output unknown \u00b7 5.3s"
+      }
+    },
+    "cl3": {
+      "postMs": 8,
+      "res": "200 {\"success\":true,\"message\":\"Abandoned workflow: vq7-claud",
+      "console": {
+        "neverSentAtMs": 738,
+        "terminalPillAtMs": 738,
+        "queuedItemMissing": [],
+        "lastTool": "hEKuVTraUMhK4LTfZp | \u25b6 succeeded \u2713 TaskUpdate todo updated 66ms"
+      },
+      "legacy": {
+        "neverSentAtMs": 733,
+        "terminalPillAtMs": 1663,
+        "queuedItemMissing": [],
+        "lastTool": "hEKuVTraUMhK4LTfZp | \u25b6 succeeded \u2713 TaskUpdate todo updated 66ms"
+      }
+    },
+    "cx2": {
+      "postMs": 8,
+      "res": "200 {\"success\":true,\"message\":\"Abandoned workflow: vq7-codex",
+      "console": {
+        "neverSentAtMs": 410,
+        "terminalPillAtMs": 410,
+        "queuedItemMissing": [],
+        "lastTool": "7ab7b27e89c:item_3 | \u25b6 unknown \u2013 shell sleep 25 && echo step-3 output unknown \u00b7 4.0s"
+      },
+      "legacy": {
+        "neverSentAtMs": 51,
+        "terminalPillAtMs": 1857,
+        "queuedItemMissing": [],
+        "lastTool": "7ab7b27e89c:item_3 | \u25b6 unknown \u2013 shell sleep 25 && echo step-3 output unknown \u00b7 4.0s"
+      }
+    },
+    "cx3": {
+      "postMs": 7,
+      "res": "200 {\"success\":true,\"message\":\"Abandoned workflow: vq7-codex",
+      "console": {
+        "neverSentAtMs": 1899,
+        "terminalPillAtMs": 1899,
+        "queuedItemMissing": [],
+        "lastTool": "7c1eb597a89:item_0 | \u25b6 unknown \u2013 shell sleep 25 && echo step-1 output unknown \u00b7 8.3s"
+      },
+      "legacy": {
+        "neverSentAtMs": 732,
+        "terminalPillAtMs": 1666,
+        "queuedItemMissing": [],
+        "lastTool": "7c1eb597a89:item_0 | \u25b6 unknown \u2013 shell sleep 25 && echo step-1 output unknown \u00b7 8.3s"
+      }
+    },
+    "cx4": {
+      "postMs": 4,
+      "res": "200 {\"success\":true,\"message\":\"Abandoned workflow: vq7-codex",
+      "console": {
+        "neverSentAtMs": 694,
+        "terminalPillAtMs": 694,
+        "queuedItemMissing": [],
+        "lastTool": "478c600fef7:item_1 | \u25b6 unknown \u2013 shell sleep 25 && echo step-1 output unknown \u00b7 7.2s"
+      },
+      "legacy": {
+        "neverSentAtMs": 736,
+        "terminalPillAtMs": 1696,
+        "queuedItemMissing": [],
+        "lastTool": "478c600fef7:item_1 | \u25b6 unknown \u2013 shell sleep 25 && echo step-1 output unknown \u00b7 7.2s"
+      }
+    },
+    "ds": {
+      "postMs": 5,
+      "res": "200 {\"success\":true,\"message\":\"Abandoned workflow: vq7-deeps",
+      "console": {
+        "neverSentAtMs": 1255,
+        "terminalPillAtMs": 1255,
+        "queuedItemMissing": [],
+        "lastTool": "565f5d425f805fdf6d | \u25b6 unknown \u2013 bash sleep 25 && echo step-2 output unknown \u00b7 4.5s"
+      },
+      "legacy": {
+        "neverSentAtMs": 214,
+        "terminalPillAtMs": 1058,
+        "queuedItemMissing": [],
+        "lastTool": "565f5d425f805fdf6d | \u25b6 unknown \u2013 bash sleep 25 && echo step-2 output unknown \u00b7 4.5s"
+      }
+    },
+    "gk": {
+      "postMs": 3,
+      "res": "200 {\"success\":true,\"message\":\"Abandoned workflow: vq7-grok\"",
+      "console": {
+        "neverSentAtMs": 1909,
+        "terminalPillAtMs": 1909,
+        "queuedItemMissing": [],
+        "lastTool": "75c-46c0f4df44a9-3 | \u25b6 unknown \u2013 run_terminal_command sleep 25 && echo step-2 output unknown \u00b7 5.1s"
+      },
+      "legacy": {
+        "neverSentAtMs": 576,
+        "terminalPillAtMs": 1417,
+        "queuedItemMissing": [],
+        "lastTool": "75c-46c0f4df44a9-3 | \u25b6 unknown \u2013 run_terminal_command sleep 25 && echo step-2 output unknown \u00b7 5.1s"
+      }
+    },
+    "gk2": {
+      "postMs": 10,
+      "res": "200 {\"success\":true,\"message\":\"Abandoned workflow: vq7-grok\"",
+      "console": {
+        "neverSentAtMs": 1849,
+        "terminalPillAtMs": 1849,
+        "queuedItemMissing": [],
+        "lastTool": "a50-b3a1582dcc6f-0 | \u25b6 unknown \u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7 7.9s"
+      },
+      "legacy": {
+        "neverSentAtMs": 729,
+        "terminalPillAtMs": 1689,
+        "queuedItemMissing": [],
+        "lastTool": "a50-b3a1582dcc6f-0 | \u25b6 unknown \u2013 run_terminal_command sleep 25 && echo step-1 output unknown \u00b7 7.9s"
+      }
+    },
+    "gs": {
+      "postMs": 6,
+      "res": "200 {\"success\":true,\"message\":\"Abandoned workflow: vq7-grok-",
+      "console": {
+        "neverSentAtMs": null,
+        "terminalPillAtMs": 1213,
+        "queuedItemMissing": "n/a (no queued item)",
+        "lastTool": "b74-d3a3bd8648af-0 | \u25b6 unknown \u2013 run_terminal_command sleep 20 && echo a output unknown \u00b7 11.5s"
+      },
+      "legacy": {
+        "neverSentAtMs": null,
+        "terminalPillAtMs": 1094,
+        "queuedItemMissing": "n/a (no queued item)",
+        "lastTool": "b74-d3a3bd8648af-0 | \u25b6 unknown \u2013 run_terminal_command sleep 20 && echo a output unknown \u00b7 11.5s"
+      }
+    },
+    "lp": {
+      "postMs": 5,
+      "res": "200 {\"success\":true,\"message\":\"Abandoned workflow: vq7-loop\"",
+      "console": {
+        "neverSentAtMs": 1254,
+        "terminalPillAtMs": 1254,
+        "queuedItemMissing": [],
+        "lastTool": "Uq9Rq3REUgC1uU3HZD | \u25b6 unknown \u2013 Bash echo begin-iteration-end; end=$((SECONDS+24)); while [ $SECONDS -lt $end ]; do :; done; echo iteration-end output unknown \u00b7 20.7s"
+      },
+      "legacy": {
+        "neverSentAtMs": 374,
+        "terminalPillAtMs": 374,
+        "queuedItemMissing": [],
+        "lastTool": "Uq9Rq3REUgC1uU3HZD | \u25b6 unknown \u2013 Bash echo begin-iteration-end; end=$((SECONDS+24)); while [ $SECONDS -lt $end ]; do :; done; echo iteration-end output unknown \u00b7 20.7s"
+      }
+    },
+    "omp": {
+      "postMs": 5,
+      "res": "200 {\"success\":true,\"message\":\"Abandoned workflow: vq7-omp\"}",
+      "console": {
+        "neverSentAtMs": 2055,
+        "terminalPillAtMs": 2055,
+        "queuedItemMissing": [[1975, 80]],
+        "lastTool": "a1f-418efefe50ea_0 | \u25b6 unknown \u2013 bash sleep 25 && echo step-3 output unknown \u00b7 5.6s"
+      },
+      "legacy": {
+        "neverSentAtMs": 472,
+        "terminalPillAtMs": 472,
+        "queuedItemMissing": [],
+        "lastTool": "a1f-418efefe50ea_0 | \u25b6 unknown \u2013 bash sleep 25 && echo step-3 output unknown \u00b7 5.6s"
+      }
+    }
+  },
+  "handoffs": {
+    "cx2": {
+      "console": [],
+      "legacy": []
+    },
+    "ds": {
+      "console": [],
+      "legacy": []
+    },
+    "gk": {
+      "console": [],
+      "legacy": []
+    },
+    "omp": {
+      "console": [],
+      "legacy": []
+    }
+  }
+}

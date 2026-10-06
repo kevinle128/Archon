@@ -89,6 +89,7 @@ export {
   resolveFromPath as grokResolveFromPath,
 } from './grok/binary-resolver';
 export { GROK_CAPABILITIES } from './grok/capabilities';
+export { CODEX_CAPABILITIES } from './codex/capabilities';
 
 // Skills resolution
 export { claudeSkillSearchRoots, findInstalledSkillNames, skillSearchRoots } from './shared/skills';
@@ -150,9 +151,9 @@ export {
   buildOmpArgs,
   parseOmpConfig,
   registerOmpProvider,
-  type OmpProcess,
+  type OmpRpcProcess,
   type OmpProviderDefaults,
-  type OmpSpawner,
+  type OmpRpcSpawner,
 } from './community/omp';
 export {
   resolveOmpBinaryPath,

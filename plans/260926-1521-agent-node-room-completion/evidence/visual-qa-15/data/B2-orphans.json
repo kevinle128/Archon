@@ -1,0 +1,11 @@
+{
+  "prekill": [
+    {
+      "pid": 29588,
+      "cmd": "omp --mode rpc --cwd thread-885f5e55 --yolo --no-title --no-",
+      "first": 1790752011794,
+      "last": 1790752012685
+    }
+  ],
+  "aliveAfterRestart": []
+}

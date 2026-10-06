@@ -1,0 +1,128 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793786885,
+  "end": 1790793796017,
+  "procs": [
+    {
+      "pid": 167,
+      "cmd": "node bin.js --profile acp",
+      "first": 1790793786885,
+      "last": 1790793789502
+    },
+    {
+      "pid": 335,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793786885,
+      "last": 1790793794481
+    },
+    {
+      "pid": 1205,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793786885,
+      "last": 1790793790907
+    },
+    {
+      "pid": 1212,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793786885,
+      "last": 1790793790907
+    },
+    {
+      "pid": 1216,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793786885,
+      "last": 1790793790907
+    },
+    {
+      "pid": 1218,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793786885,
+      "last": 1790793790907
+    },
+    {
+      "pid": 1221,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793786885,
+      "last": 1790793790907
+    },
+    {
+      "pid": 1223,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793786885,
+      "last": 1790793790907
+    },
+    {
+      "pid": 1224,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793786885,
+      "last": 1790793790907
+    },
+    {
+      "pid": 2583,
+      "cmd": "node context7-mcp",
+      "first": 1790793786885,
+      "last": 1790793790907
+    },
+    {
+      "pid": 2101,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793786885,
+      "last": 1790793790907
+    },
+    {
+      "pid": 2632,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793786885,
+      "last": 1790793790907
+    },
+    {
+      "pid": 5558,
+      "cmd": "bash -c sleep 25; echo s1",
+      "first": 1790793786885,
+      "last": 1790793788239
+    },
+    {
+      "pid": 5559,
+      "cmd": "sleep 25",
+      "first": 1790793786885,
+      "last": 1790793788239
+    },
+    {
+      "pid": 6956,
+      "cmd": "(node)",
+      "first": 1790793790907,
+      "last": 1790793790907
+    },
+    {
+      "pid": 7111,
+      "cmd": "<defunct>",
+      "first": 1790793791283,
+      "last": 1790793791283
+    },
+    {
+      "pid": 7183,
+      "cmd": "(sh)",
+      "first": 1790793791626,
+      "last": 1790793791959
+    },
+    {
+      "pid": 7186,
+      "cmd": "<defunct>",
+      "first": 1790793792281,
+      "last": 1790793792612
+    },
+    {
+      "pid": 7220,
+      "cmd": "<defunct>",
+      "first": 1790793792935,
+      "last": 1790793792935
+    },
+    {
+      "pid": 7253,
+      "cmd": "<defunct>",
+      "first": 1790793793248,
+      "last": 1790793793556
+    }
+  ]
+}

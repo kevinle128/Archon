@@ -1,0 +1,14 @@
+name: e2e-soft-inject-late
+description: "E2E — one delayed direct node on the soft-injectable fake provider for a soft injection the transport never echoes."
+mutates_checkout: false
+
+nodes:
+  - id: inject-me
+    provider: e2e-fake-soft-inject
+    model: e2e-fake-model
+    # The wait ends at the delay ceiling or as soon as a test writes the
+    # releaseSignal marker (see softInjectReleasePath). Messages accepted
+    # during the wait are echoed and answered when it ends.
+    prompt: |
+      <<E2E_SCENARIO>>{"interruptible":true,"emitTool":true,"delayMs":30000,"releaseSignal":"soft-inject-release","dropSoftInjected":true}<</E2E_SCENARIO>>
+      $ARGUMENTS

@@ -189,6 +189,38 @@ interface WorkflowCancelledEvent {
   reason: string;
 }
 
+/**
+ * The operator's Stop settled the current turn — the node's steering
+ * sub-state moved to idle-after-interrupt. Fired even when no tool call was
+ * open at the moment Stop landed, which otherwise leaves nothing else to
+ * notify an observer: `ToolCompletedEvent` only fires for a call that was
+ * genuinely still running, and the transcript's own `interrupted` status row
+ * is a durable write with no live signal of its own. An observing tab with
+ * no other reason to refetch the run would otherwise wait for the next
+ * unrelated event or the connection's own safety-net refetch.
+ */
+interface NodeTurnInterruptedEvent {
+  type: 'node_turn_interrupted';
+  runId: string;
+  nodeId: string;
+}
+
+/**
+ * A live interruptible handle just began a provider pass — the node's
+ * steering sub-state is (re)projecting `generating`, whether this is the
+ * node's very first turn, a re-ask, a loop iteration, or a redirect resuming
+ * from idle-after-interrupt. Fired unconditionally on every pass so an
+ * observing tab always has a cheap trigger to refetch instead of guessing
+ * which passes are "interesting" — the idle→generating flip a Send-now
+ * dispatch causes has no other live signal, the same gap
+ * `NodeTurnInterruptedEvent` closes for the opposite direction.
+ */
+interface NodeTurnStartedEvent {
+  type: 'node_turn_started';
+  runId: string;
+  nodeId: string;
+}
+
 // ─── Subagent Task Lifecycle (aggregated from Claude provider task_* chunks) ──
 // Forwarded by the dag-executor whenever a `task_started` / `task_progress` /
 // `task_notification` MessageChunk arrives from the provider. The bridge maps
@@ -269,6 +301,8 @@ export type WorkflowEmitterEvent =
   | NodeAwaitingEvent
   | InteractionResolvedEvent
   | WorkflowCancelledEvent
+  | NodeTurnInterruptedEvent
+  | NodeTurnStartedEvent
   | TaskActivityEvent
   | HookActivityEvent
   | ContainerLifecycleEvent;

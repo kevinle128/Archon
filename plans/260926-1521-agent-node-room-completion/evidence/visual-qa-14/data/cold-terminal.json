@@ -1,0 +1,92 @@
+{
+  "FAB1c0": [
+    [144, "NOROOM"],
+    [313, "Failed||||"],
+    [386, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FAB1c1": [
+    [122, "NOROOM"],
+    [278, "Failed||||"],
+    [329, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FAB1c2": [
+    [106, "NOROOM"],
+    [258, "Failed||||"],
+    [316, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FAB1l0": [
+    [151, "NOROOM"],
+    [288, "Failed||||"],
+    [343, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FAB1l1": [
+    [110, "NOROOM"],
+    [245, "Failed||||"],
+    [302, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FAB1l2": [
+    [105, "NOROOM"],
+    [241, "Failed||||"],
+    [300, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FAB2c0": [
+    [108, "NOROOM"],
+    [269, "Failed||||"],
+    [335, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FAB2c1": [
+    [118, "NOROOM"],
+    [276, "Failed||||"],
+    [351, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FAB2c2": [
+    [108, "NOROOM"],
+    [265, "Failed||||"],
+    [331, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FAB2l0": [
+    [111, "NOROOM"],
+    [250, "Failed||||"],
+    [310, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FAB2l1": [
+    [128, "NOROOM"],
+    [266, "Failed||||"],
+    [330, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FAB2l2": [
+    [124, "NOROOM"],
+    [263, "Failed||||"],
+    [320, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FABL1c0": [
+    [114, "NOROOM"],
+    [269, "Failed||||"],
+    [347, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FABL1c1": [
+    [123, "NOROOM"],
+    [278, "Failed||||"],
+    [334, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FABL1c2": [
+    [106, "NOROOM"],
+    [258, "Failed||||"],
+    [298, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FABL1l0": [
+    [119, "NOROOM"],
+    [253, "Failed||||"],
+    [314, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FABL1l1": [
+    [120, "NOROOM"],
+    [259, "Failed||||"],
+    [317, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ],
+  "FABL1l2": [
+    [114, "NOROOM"],
+    [259, "Failed||||"],
+    [316, "Failed|NEVER SENT · 1|||node finished · none of this was sent"]
+  ]
+}

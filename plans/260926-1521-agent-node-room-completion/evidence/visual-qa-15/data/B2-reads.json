@@ -1,0 +1,38 @@
+{
+  "F": {
+    "es": "recovery_required",
+    "auto": true,
+    "queued": [["B2F-Q1 queued before", "queued"]],
+    "interrupt": 409,
+    "send": 409,
+    "sendErr": "recovery_required",
+    "draft": "{\"message\":\"B2F draft typed before restart\",\"updated_at\":\"20"
+  },
+  "L": {
+    "es": "recovery_required",
+    "auto": false,
+    "queued": [["B2L-Q1 queued before", "queued"]],
+    "interrupt": 409,
+    "send": 409,
+    "sendErr": "recovery_required",
+    "draft": "{\"success\":true,\"draft\":null,\"auto_send\":false,\"__status\":200}"
+  },
+  "O": {
+    "es": "recovery_required",
+    "auto": false,
+    "queued": [["B2O-Q1 queued before", "queued"]],
+    "interrupt": 409,
+    "send": 409,
+    "sendErr": "recovery_required",
+    "draft": "{\"success\":true,\"draft\":null,\"auto_send\":false,\"__status\":200}"
+  },
+  "X": {
+    "es": "recovery_required",
+    "auto": false,
+    "queued": [["B2X-Q1 queued before", "queued"]],
+    "interrupt": 409,
+    "send": 409,
+    "sendErr": "recovery_required",
+    "draft": "{\"success\":true,\"draft\":null,\"auto_send\":false,\"__status\":200}"
+  }
+}

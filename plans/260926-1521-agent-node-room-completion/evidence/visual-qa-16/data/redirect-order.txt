@@ -1,0 +1,10 @@
+cx OP cx-c1 -> OP cx-c1b -> cx-c1ACK -> cx-c1bACK -> OP cx-c2 -> cx-c2ACK -> OP cx-c3 -> cx-c3ACK
+   raw text rows per kind {'assistant': 3} distinct blocks {'assistant': 3}
+omp OP omp-c1 -> OP omp-c1b -> omp-c1ACK -> omp-c1ACK -> omp-c1bACK -> OP omp-c2 -> omp-c2ACK -> OP omp-c3 -> omp-c3ACK
+   raw text rows per kind {'thinking': 2, 'assistant': 4} distinct blocks {'thinking': 2, 'assistant': 4}
+ds OP ds-c1 -> OP ds-c1b -> ds-c1ACK -> ds-c1bACK -> OP ds-c2 -> ds-c2ACK -> ds-c2ACK -> OP ds-c3 -> ds-c3ACK -> ds-c3ACK
+   raw text rows per kind {'thinking': 4, 'assistant': 3} distinct blocks {'thinking': 4, 'assistant': 3}
+gk OP gk-c1 -> OP gk-c1b -> gk-c1ACK -> gk-c1bACK -> OP gk-c2 -> gk-c2ACK -> gk-c2ACK -> OP gk-c3 -> gk-c3ACK
+   raw text rows per kind {'thinking': 58, 'assistant': 77} distinct blocks {'thinking': 4, 'assistant': 4}
+cl OP cl-c1 -> OP cl-c1b -> cl-c1ACK -> cl-c1ACK -> cl-c1bACK -> OP cl-c2 -> cl-c2ACK -> cl-c2ACK -> OP cl-c3 -> cl-c3ACK -> cl-c3ACK
+   raw text rows per kind {'thinking': 4, 'assistant': 4} distinct blocks {'thinking': 4, 'assistant': 4}

@@ -1,0 +1,392 @@
+{
+  "root": 82644,
+  "mark": null,
+  "start": 1790793643577,
+  "end": 1790793653764,
+  "procs": [
+    {
+      "pid": 66224,
+      "cmd": "grok agent --always-approve --no-leader stdio",
+      "first": 1790793643577,
+      "last": 1790793653457
+    },
+    {
+      "pid": 76671,
+      "cmd": "codex exec --experimental-json --model gpt-5.5 --sandbox dan",
+      "first": 1790793643577,
+      "last": 1790793646217
+    },
+    {
+      "pid": 76722,
+      "cmd": "(claude)",
+      "first": 1790793643577,
+      "last": 1790793643577
+    },
+    {
+      "pid": 78459,
+      "cmd": "(zsh)",
+      "first": 1790793643577,
+      "last": 1790793643577
+    },
+    {
+      "pid": 78517,
+      "cmd": "(ps)",
+      "first": 1790793643577,
+      "last": 1790793643577
+    },
+    {
+      "pid": 78461,
+      "cmd": "(sleep)",
+      "first": 1790793643577,
+      "last": 1790793643577
+    },
+    {
+      "pid": 77169,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790793643577,
+      "last": 1790793646217
+    },
+    {
+      "pid": 77170,
+      "cmd": "node_repl",
+      "first": 1790793643577,
+      "last": 1790793646217
+    },
+    {
+      "pid": 77181,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790793643577,
+      "last": 1790793646217
+    },
+    {
+      "pid": 77182,
+      "cmd": "node_repl",
+      "first": 1790793643577,
+      "last": 1790793646217
+    },
+    {
+      "pid": 66290,
+      "cmd": "node ccs-image-analysis-server.cjs",
+      "first": 1790793643577,
+      "last": 1790793653457
+    },
+    {
+      "pid": 66292,
+      "cmd": "node ccs-websearch-server.cjs",
+      "first": 1790793643577,
+      "last": 1790793653457
+    },
+    {
+      "pid": 66293,
+      "cmd": "npm exec @upstash/context7-mcp",
+      "first": 1790793643577,
+      "last": 1790793653457
+    },
+    {
+      "pid": 66294,
+      "cmd": "npm exec firecrawl-mcp",
+      "first": 1790793643577,
+      "last": 1790793653457
+    },
+    {
+      "pid": 66295,
+      "cmd": "node gitnexus mcp",
+      "first": 1790793643577,
+      "last": 1790793653457
+    },
+    {
+      "pid": 66296,
+      "cmd": "python3 notebooklm-mcp",
+      "first": 1790793643577,
+      "last": 1790793653457
+    },
+    {
+      "pid": 66298,
+      "cmd": "uv tool uvx nanobanana-mcp-server@latest",
+      "first": 1790793643577,
+      "last": 1790793653457
+    },
+    {
+      "pid": 77074,
+      "cmd": "zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>n",
+      "first": 1790793643577,
+      "last": 1790793646871
+    },
+    {
+      "pid": 77210,
+      "cmd": "sleep 9",
+      "first": 1790793643577,
+      "last": 1790793646871
+    },
+    {
+      "pid": 66867,
+      "cmd": "python nanobanana-mcp-server",
+      "first": 1790793643577,
+      "last": 1790793653457
+    },
+    {
+      "pid": 67266,
+      "cmd": "node firecrawl-mcp",
+      "first": 1790793643577,
+      "last": 1790793653457
+    },
+    {
+      "pid": 67216,
+      "cmd": "node context7-mcp",
+      "first": 1790793643577,
+      "last": 1790793653457
+    },
+    {
+      "pid": 78548,
+      "cmd": "node session-init.cjs",
+      "first": 1790793644521,
+      "last": 1790793644521
+    },
+    {
+      "pid": 78667,
+      "cmd": "node dev-rules-reminder.cjs",
+      "first": 1790793644835,
+      "last": 1790793644835
+    },
+    {
+      "pid": 78668,
+      "cmd": "node",
+      "first": 1790793644835,
+      "last": 1790793644835
+    },
+    {
+      "pid": 78670,
+      "cmd": "node usage-quota-cache-refresh.cjs",
+      "first": 1790793644835,
+      "last": 1790793644835
+    },
+    {
+      "pid": 78783,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790793645247,
+      "last": 1790793653457
+    },
+    {
+      "pid": 78785,
+      "cmd": "(security)",
+      "first": 1790793645247,
+      "last": 1790793645247
+    },
+    {
+      "pid": 78786,
+      "cmd": "(security)",
+      "first": 1790793645247,
+      "last": 1790793645247
+    },
+    {
+      "pid": 78799,
+      "cmd": "<defunct>",
+      "first": 1790793645558,
+      "last": 1790793645558
+    },
+    {
+      "pid": 78800,
+      "cmd": "<defunct>",
+      "first": 1790793645558,
+      "last": 1790793645558
+    },
+    {
+      "pid": 78801,
+      "cmd": "<defunct>",
+      "first": 1790793645558,
+      "last": 1790793645558
+    },
+    {
+      "pid": 78802,
+      "cmd": "<defunct>",
+      "first": 1790793645558,
+      "last": 1790793645558
+    },
+    {
+      "pid": 78803,
+      "cmd": "<defunct>",
+      "first": 1790793645558,
+      "last": 1790793645558
+    },
+    {
+      "pid": 78804,
+      "cmd": "<defunct>",
+      "first": 1790793645558,
+      "last": 1790793645558
+    },
+    {
+      "pid": 78805,
+      "cmd": "<defunct>",
+      "first": 1790793645558,
+      "last": 1790793645558
+    },
+    {
+      "pid": 78949,
+      "cmd": "(node)",
+      "first": 1790793646529,
+      "last": 1790793646529
+    },
+    {
+      "pid": 78950,
+      "cmd": "(node)",
+      "first": 1790793646529,
+      "last": 1790793646529
+    },
+    {
+      "pid": 78951,
+      "cmd": "(node)",
+      "first": 1790793646529,
+      "last": 1790793646529
+    },
+    {
+      "pid": 78952,
+      "cmd": "(node)",
+      "first": 1790793646529,
+      "last": 1790793646529
+    },
+    {
+      "pid": 78954,
+      "cmd": "(bash)",
+      "first": 1790793646529,
+      "last": 1790793646529
+    },
+    {
+      "pid": 78955,
+      "cmd": "(bash)",
+      "first": 1790793646529,
+      "last": 1790793646529
+    },
+    {
+      "pid": 78963,
+      "cmd": "(curl)",
+      "first": 1790793646529,
+      "last": 1790793646529
+    },
+    {
+      "pid": 79107,
+      "cmd": "zsh -c snap=$(command cat <&3); builtin setopt nonomatch 2>n",
+      "first": 1790793649063,
+      "last": 1790793653457
+    },
+    {
+      "pid": 79158,
+      "cmd": "zsh -c -l SNAPSHOT_FILE=snapshot-zsh-1790793649472-r4tu6u.sh",
+      "first": 1790793649724,
+      "last": 1790793651004
+    },
+    {
+      "pid": 79179,
+      "cmd": "(mkdir)",
+      "first": 1790793649724,
+      "last": 1790793649724
+    },
+    {
+      "pid": 79156,
+      "cmd": "sleep 9",
+      "first": 1790793649724,
+      "last": 1790793653457
+    },
+    {
+      "pid": 79319,
+      "cmd": "(bash)",
+      "first": 1790793650037,
+      "last": 1790793650037
+    },
+    {
+      "pid": 79343,
+      "cmd": "(bash)",
+      "first": 1790793650037,
+      "last": 1790793650037
+    },
+    {
+      "pid": 79345,
+      "cmd": "(bash)",
+      "first": 1790793650037,
+      "last": 1790793650037
+    },
+    {
+      "pid": 79347,
+      "cmd": "(bash)",
+      "first": 1790793650037,
+      "last": 1790793650037
+    },
+    {
+      "pid": 79382,
+      "cmd": "zsh -c -l SNAPSHOT_FILE=snapshot-zsh-1790793649472-r4tu6u.sh",
+      "first": 1790793650377,
+      "last": 1790793650377
+    },
+    {
+      "pid": 79383,
+      "cmd": "(zsh)",
+      "first": 1790793650377,
+      "last": 1790793650377
+    },
+    {
+      "pid": 79384,
+      "cmd": "(zsh)",
+      "first": 1790793650377,
+      "last": 1790793650377
+    },
+    {
+      "pid": 79385,
+      "cmd": "(zsh)",
+      "first": 1790793650377,
+      "last": 1790793650377
+    },
+    {
+      "pid": 79386,
+      "cmd": "(zsh)",
+      "first": 1790793650377,
+      "last": 1790793650377
+    },
+    {
+      "pid": 79387,
+      "cmd": "(head)",
+      "first": 1790793650377,
+      "last": 1790793650377
+    },
+    {
+      "pid": 79389,
+      "cmd": "(tail)",
+      "first": 1790793650377,
+      "last": 1790793650377
+    },
+    {
+      "pid": 79400,
+      "cmd": "(awk)",
+      "first": 1790793650377,
+      "last": 1790793650377
+    },
+    {
+      "pid": 79610,
+      "cmd": "(zsh)",
+      "first": 1790793650698,
+      "last": 1790793650698
+    },
+    {
+      "pid": 79611,
+      "cmd": "(printf)",
+      "first": 1790793650698,
+      "last": 1790793650698
+    },
+    {
+      "pid": 79796,
+      "cmd": "(zsh)",
+      "first": 1790793651004,
+      "last": 1790793651004
+    },
+    {
+      "pid": 79860,
+      "cmd": "zsh -c source snapshot-zsh-1790793649472-r4tu6u.sh 2>null ||",
+      "first": 1790793651316,
+      "last": 1790793653457
+    },
+    {
+      "pid": 79862,
+      "cmd": "sleep 6",
+      "first": 1790793651316,
+      "last": 1790793653457
+    }
+  ]
+}

@@ -29,8 +29,9 @@ import {
   resolveFinishedIterationView,
   roomOpenerId,
   type ExecutionHeaderModel,
+  type RunOfTotal,
 } from '@/lib/execution-room-model';
-import { clampRoomRatio, roomPanelSizes } from '@/lib/room-split-layout';
+import { LEGACY_ROOM_WIDTH_PX, clampRoomRatio, roomPanelSizes } from '@/lib/room-split-layout';
 import type { WorkflowRunStatus } from '@/lib/types';
 import { useContainerSplitMode, type ContainerSplitMode } from '@/lib/use-container-split-mode';
 
@@ -60,6 +61,15 @@ export interface LegacyGraphLogsPaneProps {
   }) => ReactNode;
   selectedNodeId: string | null;
   selectedLogRowId: string | null;
+  /**
+   * True while the room is following the live execution rather than pinned
+   * to an explicit pick — see `RoomVisitSelection.followingLive`. Feeds the
+   * gap-hold override that keeps the dock in composer mode between one
+   * loop iteration's row completing and the next iteration's row starting,
+   * when `selectedLogRowId` resolves to that just-finished row because
+   * nothing live exists yet to follow.
+   */
+  followingLive?: boolean;
   lastExplicitRowByNode?: Record<string, string>;
   onOpenRoom: (
     rowId: string,
@@ -99,12 +109,26 @@ export interface LegacyGraphLogsPaneProps {
   onSubmitAsk: (requestId: string, body: AskAnswerBody) => Promise<void>;
   headerModel?: ExecutionHeaderModel;
   headerOptions?: readonly ExecutionHeaderOption[];
+  /** Uncapped execution total for the node, for the header's "of N · max 8" caption. */
+  executionCount?: number;
+  /** Retry position/count for the selected row, from the parent pane. */
+  runOfTotal?: RunOfTotal | null;
   onSelectExecution?: (rowId: string) => void;
   scopeKey?: string;
   initialScrollTop?: number;
   onScrollTopChange?: (scrollTop: number) => void;
   askDrafts?: AskDraftByRequest;
   onAskDraftChange?: (requestId: string, draft: AskDraft) => void;
+  /**
+   * Invalidate the cached run entity on the exact edge a node room's own
+   * dock learns (via its faster-cadenced queue read) that the node just
+   * settled, before the run's own status poll/SSE has caught up — see
+   * `shouldRefetchRunOnDockFinished`. Omitted in a context with no run-entity
+   * cache to invalidate (e.g. a standalone render in tests).
+   */
+  onRunSettleHint?: () => void;
+  /** Forwarded to the composer dock; see its own doc comment. Default 0. */
+  terminalEdgeKick?: number;
 }
 
 export function runChatMessagesRefetchInterval(status: WorkflowRunStatus): 3000 | false {
@@ -191,6 +215,7 @@ export function LegacyGraphLogsPane({
   renderGraph,
   selectedNodeId,
   selectedLogRowId,
+  followingLive = false,
   lastExplicitRowByNode = {},
   onOpenRoom,
   onCloseRoom,
@@ -222,12 +247,16 @@ export function LegacyGraphLogsPane({
   onSubmitAsk,
   headerModel,
   headerOptions,
+  executionCount,
+  runOfTotal = null,
   onSelectExecution,
   scopeKey,
   initialScrollTop,
   onScrollTopChange,
   askDrafts,
   onAskDraftChange,
+  onRunSettleHint,
+  terminalEdgeKick = 0,
 }: LegacyGraphLogsPaneProps): React.ReactElement {
   const stacked = useStackedViewport();
   const paneRef = useRef<HTMLDivElement>(null);
@@ -532,8 +561,11 @@ export function LegacyGraphLogsPane({
         actionStates={actionStates}
         onSubmitAsk={onSubmitAsk}
         nodeState={selectedNodeState}
+        followingLive={followingLive}
         headerModel={headerModel}
         headerOptions={headerOptions}
+        executionCount={executionCount}
+        runOfTotal={runOfTotal}
         onSelectRow={onSelectExecution}
         finishedIteration={finishedIteration}
         nodeTerminal={nodeTerminal}
@@ -546,64 +578,90 @@ export function LegacyGraphLogsPane({
         onScrollTopChange={onScrollTopChange}
         askDrafts={askDrafts}
         onAskDraftChange={onAskDraftChange}
+        onRunSettleHint={onRunSettleHint}
+        terminalEdgeKick={terminalEdgeKick}
       />
       {roomFooter}
     </div>
   );
 
-  const handleLayoutChanged = (layout: Record<string, number>): void => {
-    if (mode !== 'split') return;
-    const roomSize = layout['legacy-run-room'];
-    if (typeof roomSize !== 'number') return;
-    onRoomRatioChange(clampRoomRatio(roomSize));
-  };
+  // A narrow-but-not-single viewport stacks the room under the graph/logs
+  // pane by height. That split still resizes by drag, unrelated to the node
+  // panel's own fixed width, and keeps its existing percentage layout.
+  if (mode === 'split' && stacked && roomOpen) {
+    const handleLayoutChanged = (layout: Record<string, number>): void => {
+      const roomSize = layout['legacy-run-room'];
+      if (typeof roomSize !== 'number') return;
+      onRoomRatioChange(clampRoomRatio(roomSize));
+    };
 
+    return (
+      <div ref={paneRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <ResizablePanelGroup
+          orientation="vertical"
+          className="min-h-0 flex-1"
+          defaultLayout={{
+            'legacy-run-view': 100 - clampRoomRatio(roomRatio),
+            'legacy-run-room': clampRoomRatio(roomRatio),
+          }}
+          onLayoutChanged={handleLayoutChanged}
+        >
+          <PercentResizablePanel
+            id="legacy-run-view"
+            className="flex min-h-0 flex-col"
+            defaultSize={sizes.view.defaultSize}
+            minSize={sizes.view.minSize}
+          >
+            {wrappedLeft}
+          </PercentResizablePanel>
+          <ResizableHandle withHandle aria-label="Resize node room" />
+          <PercentResizablePanel
+            id="legacy-run-room"
+            className="min-h-0 min-w-0 overflow-hidden"
+            style={{ overflow: 'hidden' }}
+            defaultSize={sizes.room.defaultSize}
+            minSize={sizes.room.minSize}
+            maxSize={sizes.room.maxSize}
+          >
+            {roomPane}
+          </PercentResizablePanel>
+        </ResizablePanelGroup>
+      </div>
+    );
+  }
+
+  // The approved node panel is a fixed 460px, not a user-resizable share of
+  // the window, and carries no drag handle; only the room's own close
+  // affordance changes its width, by leaving the split entirely.
   return (
     <div ref={paneRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <ResizablePanelGroup
-        orientation={mode === 'split' && stacked ? 'vertical' : 'horizontal'}
-        className="min-h-0 flex-1"
-        defaultLayout={
-          mode === 'single'
-            ? roomOpen
-              ? { 'legacy-run-view': 0, 'legacy-run-room': 100 }
-              : { 'legacy-run-view': 100 }
-            : roomOpen
-              ? {
-                  'legacy-run-view': 100 - clampRoomRatio(roomRatio),
-                  'legacy-run-room': clampRoomRatio(roomRatio),
-                }
-              : { 'legacy-run-view': 100 }
-        }
-        onLayoutChanged={handleLayoutChanged}
-      >
-        <PercentResizablePanel
+      <div className="flex min-h-0 flex-1" style={{ overflow: 'hidden' }}>
+        <div
           id="legacy-run-view"
-          className="flex min-h-0 flex-col"
-          hidden={mode === 'single' && roomOpen}
-          defaultSize={
-            mode === 'single' && roomOpen ? '0%' : roomOpen ? sizes.view.defaultSize : '100%'
+          // The `hidden` attribute alone does not hide a `.flex` element:
+          // Tailwind preflight gives `[hidden]` zero specificity, so the
+          // display utility must change as well.
+          className={
+            mode === 'single' && roomOpen
+              ? 'hidden min-h-0 min-w-0 flex-1 flex-col'
+              : 'flex min-h-0 min-w-0 flex-1 flex-col'
           }
-          minSize={mode === 'single' && roomOpen ? '0%' : sizes.view.minSize}
+          hidden={mode === 'single' && roomOpen}
         >
           {wrappedLeft}
-        </PercentResizablePanel>
+        </div>
         {roomOpen ? (
-          <>
-            {mode === 'split' ? <ResizableHandle withHandle aria-label="Resize node room" /> : null}
-            <PercentResizablePanel
-              id="legacy-run-room"
-              className="min-h-0 min-w-0 overflow-hidden"
-              style={{ overflow: 'hidden' }}
-              defaultSize={mode === 'single' ? '100%' : sizes.room.defaultSize}
-              minSize={mode === 'single' ? '100%' : sizes.room.minSize}
-              maxSize={mode === 'single' ? '100%' : sizes.room.maxSize}
-            >
-              {roomPane}
-            </PercentResizablePanel>
-          </>
+          <div
+            id="legacy-run-room"
+            className="min-h-0 min-w-0 overflow-hidden"
+            style={
+              mode === 'single' ? { width: '100%' } : { width: LEGACY_ROOM_WIDTH_PX, flexShrink: 0 }
+            }
+          >
+            {roomPane}
+          </div>
         ) : null}
-      </ResizablePanelGroup>
+      </div>
     </div>
   );
 }

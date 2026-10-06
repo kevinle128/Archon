@@ -1,0 +1,25 @@
+{
+  "i": 4,
+  "st": "l",
+  "sd": "c",
+  "sendAt": 722,
+  "actStop": "DIV[data-last-row]",
+  "iters": [
+    [4, -19802],
+    [5, 4198]
+  ],
+  "sel": { "c": "Iteration 5 · running", "l": "Iteration 5 · running" },
+  "C": [
+    [0, "DIV#m0", true],
+    [752, "BUTTON[Send now · Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+    [782, "TEXTAREA#m0", "prevConnected=true"]
+  ],
+  "L": [
+    [0, "TEXTAREA#m0", true],
+    [32, "BUTTON#m1", "prevConnected=true"],
+    [122, "DIV[last-row]#m2", "prevConnected=false"],
+    [5257, "DIV#m3{node-transcript-scroll}", "prevConnected=false"],
+    [6271, "DIV[last-row]#m3", "prevConnected=true"]
+  ],
+  "body": { "c": 0, "l": 0 }
+}

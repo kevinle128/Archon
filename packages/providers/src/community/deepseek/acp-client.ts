@@ -33,6 +33,14 @@ const STDERR_CAP = 4096;
 const DEFAULT_TERMINATE_GRACE_MS = 2000;
 /** Post-cancel window for a compliant agent to flush trailing updates and settle the prompt before a hung one is released. Matches Devin ACP. */
 const CANCEL_DRAIN_GRACE_MS = 500;
+/**
+ * How long, after `abortSignal` fires, `runDeepseekAcpTurn` waits before
+ * concluding the ACP protocol itself is stuck and force-killing the process
+ * — well past `CANCEL_DRAIN_GRACE_MS`, the graceful in-flight-prompt cancel
+ * path's own expected settlement time, so a normally responsive agent's
+ * cancel always wins first and never trips this fallback.
+ */
+const DEFAULT_ABORT_STUCK_GRACE_MS = 3_000;
 
 type DeepseekCancellationCause = 'node-cancel' | 'operator-interrupt' | 'cleanup';
 
@@ -68,6 +76,8 @@ export interface DeepseekProcessInput extends DeepseekAcpTurnInput {
 export interface DeepseekProcessDependencies {
   spawn?: typeof spawn;
   terminateGraceMs?: number;
+  /** See `DEFAULT_ABORT_STUCK_GRACE_MS`. Overridable for tests only. */
+  abortStuckGraceMs?: number;
 }
 
 function errorMessage(error: unknown): string {
@@ -107,6 +117,26 @@ function requireAgentCapabilities(init: InitializeResponse, mcpServers: McpServe
       'DeepSeek ACP agent must advertise HTTP MCP support when HTTP MCP servers are declared.'
     );
   }
+}
+
+/**
+ * A tool the ACP agent reports as `failed` while an operator Stop is in
+ * flight almost always failed BECAUSE the session was cancelled, not on its
+ * own — DeepSeek's ACP transport exposes no distinct "cancelled" tool
+ * status. Remap only for this exact cause (never node-level Cancel or
+ * process cleanup) so the transcript records an honest operator-interrupted
+ * tool instead of a misleading generic error. This is the conditional
+ * bridge mapping the interrupt/resume measurement deferred until live
+ * evidence showed a cancelled in-flight tool arriving as ACP `status:
+ * 'failed'` ahead of the abort result (verified: it does).
+ */
+function applyOperatorInterruptToolMapping(
+  chunk: MessageChunk,
+  cause: DeepseekCancellationCause | undefined
+): MessageChunk {
+  if (cause !== 'operator-interrupt') return chunk;
+  if (chunk.type !== 'tool_result' || chunk.toolOutcome !== 'error') return chunk;
+  return { ...chunk, toolOutcome: 'interrupted' };
 }
 
 function abortedResult(sessionId: string): Extract<MessageChunk, { type: 'result' }> {
@@ -314,7 +344,8 @@ export async function* driveDeepseekAcpTurn(
     .onRequest(methods.client.session.requestPermission, () => answerDeepseekPermissionRequest())
     .onNotification(methods.client.session.update, ({ params }) => {
       if (params.sessionId !== activeSessionId) return;
-      for (const chunk of mapDeepseekSessionUpdate(params.update, eventState)) {
+      for (const rawChunk of mapDeepseekSessionUpdate(params.update, eventState)) {
+        const chunk = applyOperatorInterruptToolMapping(rawChunk, cancellationCause);
         if (chunk.type === 'assistant') transcript += chunk.content;
         queue.push(chunk);
       }
@@ -475,6 +506,7 @@ export async function* runDeepseekAcpTurn(
 ): AsyncGenerator<MessageChunk> {
   const spawnFn = dependencies?.spawn ?? spawn;
   const terminateGraceMs = dependencies?.terminateGraceMs ?? DEFAULT_TERMINATE_GRACE_MS;
+  const abortStuckGraceMs = dependencies?.abortStuckGraceMs ?? DEFAULT_ABORT_STUCK_GRACE_MS;
   // The floor is applied here as well as at each call site: a value shorter than
   // it matches ordinary output and would shred every message it appeared in.
   const secrets = [
@@ -549,19 +581,53 @@ export async function* runDeepseekAcpTurn(
   );
   const gen = driveDeepseekAcpTurn(stream, input);
 
+  // Reaping the child must never depend on THIS generator being resumed
+  // again. `driveDeepseekAcpTurn` races `input.abortSignal` against its own
+  // in-flight `session/prompt` request and settles gracefully within
+  // `CANCEL_DRAIN_GRACE_MS`, but every OTHER ACP round trip it awaits
+  // (`initialize`, `session/new`, `session/resume`, `session/close`) is not
+  // raced against anything — a DSH subprocess that stops responding during
+  // one of those leaves that `await`, and therefore this loop's `gen.next()`,
+  // permanently pending. A caller that stops pulling once it sees
+  // `input.abortSignal` fire (`withIdleTimeout`'s external-abort branch is
+  // exactly this) never issues that next `.next()`, so any cleanup living
+  // inside the loop below — a `finally` included — would never run either.
+  // This reap is armed instead as a plain listener on the signal itself: it
+  // fires `abortStuckGraceMs` after abort, well past the graceful path's own
+  // expected settlement time, so a normally responsive agent's cancel always
+  // wins and clears it first, and it kills the child directly as a
+  // generator-independent side effect. `reapOnce` is idempotent with the
+  // `finally` block's own reap below, so both can fire without conflict;
+  // killing the process also unblocks whatever ACP request `gen` was stuck
+  // awaiting, letting its own cleanup settle in the background even though
+  // nothing is consuming its output anymore.
+  let reaped = false;
+  const reapOnce = async (): Promise<void> => {
+    if (reaped) return;
+    reaped = true;
+    await reapChild(child, terminateGraceMs);
+  };
+  let abortStuckTimer: ReturnType<typeof setTimeout> | undefined;
+  const abortSignal = input.abortSignal;
+  const armAbortStuckReap = (): void => {
+    abortStuckTimer = setTimeout(() => {
+      if (finished) return;
+      void reapOnce();
+    }, abortStuckGraceMs);
+  };
+  if (abortSignal !== undefined) {
+    if (abortSignal.aborted) armAbortStuckReap();
+    else abortSignal.addEventListener('abort', armAbortStuckReap, { once: true });
+  }
+
   try {
-    while (true) {
+    for (;;) {
       const next = gen.next();
       const winner = await Promise.race([
-        next.then((result: IteratorResult<MessageChunk>) => ({
-          kind: 'chunk' as const,
-          result,
-        })),
+        next.then((result: IteratorResult<MessageChunk>) => ({ kind: 'chunk' as const, result })),
         death.then((error: Error) => ({ kind: 'death' as const, error })),
       ]);
-      if (winner.kind === 'death') {
-        throw winner.error;
-      }
+      if (winner.kind === 'death') throw winner.error;
       if (winner.result.done) break;
       yield winner.result.value;
     }
@@ -584,11 +650,18 @@ export async function* runDeepseekAcpTurn(
     throw toAcpFailed(error, stderr);
   } finally {
     finished = true;
+    if (abortStuckTimer !== undefined) clearTimeout(abortStuckTimer);
+    // `{ once: true }` self-removes once fired, but a turn that completes
+    // (or fails) BEFORE abort ever fires leaves the listener attached — the
+    // dag-executor reuses one AbortController across every turn of a node,
+    // so a long-running node would otherwise accumulate one dead listener
+    // per turn.
+    abortSignal?.removeEventListener('abort', armAbortStuckReap);
     try {
       await gen.return(undefined);
     } catch {
       // Turn already failed or completed.
     }
-    await reapChild(child, terminateGraceMs);
+    await reapOnce();
   }
 }

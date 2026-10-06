@@ -1,3 +1,5 @@
+import { useCallback, useRef, useState } from 'react';
+
 import {
   getWorkflowNodeMessages,
   type AskAnswerBody,
@@ -6,7 +8,14 @@ import {
   type WorkflowEventResponse,
   type WorkflowNodeStateResponse,
 } from '@/lib/api';
-import { type ExecutionHeaderModel, type FinishedIterationView } from '@/lib/execution-room-model';
+import {
+  nodeKindChip,
+  shouldRefetchRunOnDockFinished,
+  type ExecutionHeaderModel,
+  type FinishedIterationView,
+  type RunOfTotal,
+} from '@/lib/execution-room-model';
+import type { SteeringExecutionState, SteeringNodeOutcome } from '@/lib/steering-dock';
 import type { WorkflowRunStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -14,6 +23,7 @@ import type { AskActionStateByRequest } from './ask-answer-controller';
 import { nodeStatusLabel } from './awaiting-chrome';
 import type { LogRow } from './build-log-rows';
 import { ChildWorkflowRoom } from './ChildWorkflowRoom';
+import { NodeUsageDisclosure } from '@/components/run-usage/NodeUsageDisclosure';
 import { GateRoom } from './GateRoom';
 import { LoopGroupRoom } from './LoopGroupRoom';
 import { NodeRoomHeader, type ExecutionHeaderOption } from './NodeRoomHeader';
@@ -49,8 +59,14 @@ export interface LegacyNodeRoomProps {
   actionStates: AskActionStateByRequest;
   onSubmitAsk: (requestId: string, body: AskAnswerBody) => Promise<void>;
   nodeState: WorkflowNodeStateResponse | undefined;
+  /** See `LegacyGraphLogsPaneProps.followingLive`. */
+  followingLive?: boolean;
   headerModel?: ExecutionHeaderModel;
   headerOptions?: readonly ExecutionHeaderOption[];
+  /** Uncapped execution total for the node, for the header's "of N · max 8" caption. */
+  executionCount?: number;
+  /** Retry position/count for the selected row, from the parent pane. */
+  runOfTotal?: RunOfTotal | null;
   onSelectRow?: (rowId: string) => void;
   /** Proven finished-iteration descriptor; pass-through only. */
   finishedIteration?: FinishedIterationView | null;
@@ -60,8 +76,6 @@ export interface LegacyNodeRoomProps {
   idleAwaitExpired?: boolean;
   /** Logical execution key from ordered events. Default null. */
   nodeExecutionKey?: string | null;
-  /** Node-wide written operator ids for terminal reconciliation. Default null. */
-  writtenOperatorMessageIds?: ReadonlySet<string> | null;
   onClose?: () => void;
   closeLabel?: 'Close' | 'Back';
   scopeKey?: string;
@@ -69,6 +83,16 @@ export interface LegacyNodeRoomProps {
   onScrollTopChange?: (scrollTop: number) => void;
   askDrafts?: AskDraftByRequest;
   onAskDraftChange?: (requestId: string, draft: AskDraft) => void;
+  /**
+   * Invalidate the cached run entity on the exact edge this room's own dock
+   * learns (via its faster-cadenced queue read) that the node just settled,
+   * before the run's own status poll/SSE has caught up — see
+   * `shouldRefetchRunOnDockFinished`. Omitted in a context with no run-entity
+   * cache to invalidate.
+   */
+  onRunSettleHint?: () => void;
+  /** Forwarded to the composer dock; see its own doc comment. Default 0. */
+  terminalEdgeKick?: number;
 }
 
 const TYPE_LABELS: Record<NodeBodyKind, string> = {
@@ -116,14 +140,16 @@ export function LegacyNodeRoom({
   actionStates,
   onSubmitAsk,
   nodeState,
+  followingLive = false,
   headerModel,
   headerOptions,
+  executionCount,
+  runOfTotal = null,
   onSelectRow,
   finishedIteration = null,
   nodeTerminal = false,
   idleAwaitExpired = false,
   nodeExecutionKey = null,
-  writtenOperatorMessageIds = null,
   onClose,
   closeLabel = 'Close',
   scopeKey,
@@ -131,7 +157,42 @@ export function LegacyNodeRoom({
   onScrollTopChange,
   askDrafts,
   onAskDraftChange,
+  onRunSettleHint,
+  terminalEdgeKick = 0,
 }: LegacyNodeRoomProps): React.ReactElement {
+  // Reported by the dock's own queue poll — the only place restart recovery
+  // is currently observable. A fresh dock mount reports null immediately, so
+  // switching rows/nodes clears a stale recovery pill without extra plumbing.
+  const [dockExecutionState, setDockExecutionState] = useState<SteeringExecutionState | null>(null);
+  // Tracks the dock's own PREVIOUS execution_state so the edge into
+  // `finished` can be detected without depending on `dockExecutionState`
+  // itself (a state setter's read of its own current value only reflects
+  // last render, not necessarily the most recent report when several land
+  // before this component re-renders).
+  const previousDockExecutionStateRef = useRef<SteeringExecutionState | null>(null);
+  const handleDockExecutionStateChange = useCallback(
+    (next: SteeringExecutionState | null): void => {
+      const previous = previousDockExecutionStateRef.current;
+      previousDockExecutionStateRef.current = next;
+      // The dock's own ~1s queue poll routinely learns a node settled before
+      // the run entity cache does (SSE can miss a tab whose stream lost the
+      // single-connection-per-conversation slot to a sibling tab on the same
+      // run; the heartbeat fallback can take up to 30s). Durable terminal
+      // state takes precedence the instant this dock itself learns it,
+      // regardless of when the tab was opened.
+      if (shouldRefetchRunOnDockFinished(previous, next, runStatus)) {
+        onRunSettleHint?.();
+      }
+      setDockExecutionState(next);
+    },
+    [onRunSettleHint, runStatus]
+  );
+  // Reported by the dock's own queue read the instant the node is known
+  // terminal — the header pill folds this onto its own row/run status so it
+  // never shows `Running` beside the dock's own `node finished` disclosure.
+  // Same fresh-mount-reports-null reasoning as `dockExecutionState` above.
+  const [dockNodeOutcome, setDockNodeOutcome] = useState<SteeringNodeOutcome | null>(null);
+
   if (row === null) return <RoomPlaceholder>Select a node</RoomPlaceholder>;
 
   const resolution = resolveRoomKind(row.nodeId, definitionNodes, events, approval);
@@ -140,16 +201,33 @@ export function LegacyNodeRoom({
     resolution.definitionNode === null &&
     resolution.kind === 'agent' &&
     resolution.nodeType === 'unknown';
+  const resolvedOptions = headerOptions ?? [];
+  const resolvedExecutionCount = executionCount ?? resolvedOptions.length;
+  const kindChip = nodeKindChip(resolution.nodeType);
+  // Viewing a proven-finished iteration while the node still runs live
+  // elsewhere: the header leads with that iteration number and drops the
+  // run count, matching the mockup's stale-history reading.
+  const iterationPrefix =
+    finishedIteration !== null && row.selection.kind === 'occurrence'
+      ? (row.selection.iteration ?? null)
+      : null;
 
   const header =
     headerModel !== undefined && onSelectRow !== undefined && onClose !== undefined ? (
       <NodeRoomHeader
         model={headerModel}
-        options={headerOptions ?? []}
+        options={resolvedOptions}
         selectedRowId={row.id}
         onSelectRow={onSelectRow}
         onClose={onClose}
         closeLabel={closeLabel}
+        kindChip={kindChip}
+        executionCount={resolvedExecutionCount}
+        runOfTotal={runOfTotal}
+        idleAwaitExpired={idleAwaitExpired}
+        iterationPrefix={iterationPrefix}
+        recoveryRequired={dockExecutionState === 'recovery_required'}
+        terminalOutcome={dockNodeOutcome}
       />
     ) : (
       <div className="flex items-center gap-2 border-b border-border px-4 py-2">
@@ -197,6 +275,7 @@ export function LegacyNodeRoom({
             starterDisplayName={starterDisplayName}
             actionStates={actionStates}
             nodeState={nodeState}
+            followingLive={followingLive}
             outputFormat={resolution.definitionNode?.output_format}
             onSubmitAsk={onSubmitAsk}
             events={events}
@@ -209,8 +288,11 @@ export function LegacyNodeRoom({
             nodeTerminal={nodeTerminal}
             idleAwaitExpired={idleAwaitExpired}
             nodeExecutionKey={nodeExecutionKey}
-            writtenOperatorMessageIds={writtenOperatorMessageIds}
             onSelectLiveRow={onSelectRow}
+            onExecutionStateChange={handleDockExecutionStateChange}
+            onNodeOutcomeChange={setDockNodeOutcome}
+            recoveryRequired={dockExecutionState === 'recovery_required'}
+            terminalEdgeKick={terminalEdgeKick}
           />
         );
         break;
@@ -269,6 +351,7 @@ export function LegacyNodeRoom({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {header}
+      <NodeUsageDisclosure nodeId={row.nodeId} />
       {body}
     </div>
   );

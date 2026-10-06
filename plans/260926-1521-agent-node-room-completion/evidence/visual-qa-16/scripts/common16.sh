@@ -1,0 +1,3 @@
+LOAD='if (!G.reap) await (new (Object.getPrototypeOf(async function(){}).constructor)("G", G.fs.readFileSync(G.S + "/../prov.js","utf8")))(G);'
+drv() { local b o; b=$(cat); for i in $(seq 1 90); do o=$(printf "%s" "$b" | ./dr.sh ${DRV:-real2}); [ "$o" != busy ] && { echo "$o"; return; }; sleep 2; done; }
+waitst() { for i in $(seq 1 $3); do s=$(curl -s localhost:3455/api/workflows/runs/$1 -H 'X-Archon-User: vq16-operator' | python3 -c "import json,sys; print(json.load(sys.stdin)['run']['status'])"); [ "$s" = "$2" ] && return 0; case "$s" in completed|failed|cancelled) echo "status $s"; return 1;; esac; sleep 2; done; return 1; }

@@ -1,0 +1,67 @@
+{
+  "R": "70a78506a2eb7384764a5f37380eb27e",
+  "sd": "c",
+  "send": {
+    "clicked": 1790712920648,
+    "sendResolved": 1790712920670,
+    "st": 200,
+    "url": "/api/workflows/runs/70a78506a2eb7384764a5f37380eb27e/nodes/fake-node/send",
+    "body": "{\"success\":true,\"message_id\":\"103275cc-539c-46cd-b27c-70cbf2e6f94d\",\"state\":\"awaiting_send_now\"}"
+  },
+  "gets": [
+    { "s": "l", "t": -1915, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "l", "t": -1854, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -1617, "k": "r", "st": "running", "ns": "fake-node:running" },
+    { "s": "c", "t": -1475, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -849, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -472, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": 4, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "c", "t": 15, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "c", "t": 16, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "c", "t": 28, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "c", "t": 104, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 156, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "l", "t": 166, "k": "r", "st": "completed", "ns": "fake-node:completed" },
+    { "s": "l", "t": 166, "k": "q", "es": "finished", "no": "completed", "n": 2 },
+    { "s": "l", "t": 189, "k": "q", "es": "finished", "no": "completed", "n": 2 }
+  ],
+  "status": "completed",
+  "q": [
+    {
+      "message_id": "697c7190-2168-4940-bf9b-16c58df1da9b",
+      "message": "FIN13-Q1 queued item",
+      "operator_user_id": "33257cb53b4db99044ded87876b437c9",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    },
+    {
+      "message_id": "103275cc-539c-46cd-b27c-70cbf2e6f94d",
+      "message": "FIN13 typed redirect",
+      "operator_user_id": "33257cb53b4db99044ded87876b437c9",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    }
+  ],
+  "c": [
+    [-19, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [-2, "SENDING · 2|Running|agent idle · Send now delivers|0"],
+    [10, "|Completed||0"]
+  ],
+  "l": [
+    [-19, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [165, "|Completed||0"]
+  ],
+  "tc": [
+    [-18, "Running||delete,Send|TA|WILL SEND · 1|agent idle · Send now delivers|0|-1"],
+    [-2, "Running||Send|TA|SENDING · 2|agent idle · Send now delivers|0|-1"],
+    [10, "Completed||||||0|-1"]
+  ],
+  "tl": [
+    [-19, "Running||delete,Send|TA|WILL SEND · 1|agent idle · Send now delivers|0|-1"],
+    [165, "Completed||||||0|-1"]
+  ]
+}

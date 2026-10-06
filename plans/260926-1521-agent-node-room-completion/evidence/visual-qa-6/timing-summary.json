@@ -1,0 +1,391 @@
+{
+  "cycles": [
+    {
+      "file": "A-cycle1-full.json",
+      "stop": "l",
+      "send": "c",
+      "send_post_ms": 33,
+      "console": {
+        "gen_ms_from_send_resp": 22,
+        "meta_clear_ms": 124,
+        "idle_ms_from_stop_click": 177,
+        "stopping_ms": null
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 174,
+        "meta_clear_ms": 1810,
+        "idle_ms_from_stop_click": 108,
+        "stopping_ms": 57
+      }
+    },
+    {
+      "file": "A-cycle2-full.json",
+      "stop": "c",
+      "send": "l",
+      "send_post_ms": 25,
+      "console": {
+        "gen_ms_from_send_resp": 141,
+        "meta_clear_ms": 141,
+        "idle_ms_from_stop_click": 1192,
+        "stopping_ms": 59
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 23,
+        "meta_clear_ms": 23,
+        "idle_ms_from_stop_click": 2101,
+        "stopping_ms": null
+      }
+    },
+    {
+      "file": "B-cycle1-full.json",
+      "stop": "l",
+      "send": "c",
+      "send_post_ms": 52,
+      "console": {
+        "gen_ms_from_send_resp": 34,
+        "meta_clear_ms": 136,
+        "idle_ms_from_stop_click": 171,
+        "stopping_ms": null
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 73,
+        "meta_clear_ms": 2887,
+        "idle_ms_from_stop_click": 106,
+        "stopping_ms": 56
+      }
+    },
+    {
+      "file": "B-cycle2-full.json",
+      "stop": "c",
+      "send": "l",
+      "send_post_ms": 35,
+      "console": {
+        "gen_ms_from_send_resp": 135,
+        "meta_clear_ms": 135,
+        "idle_ms_from_stop_click": 106,
+        "stopping_ms": 56
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 29,
+        "meta_clear_ms": -23,
+        "idle_ms_from_stop_click": 575,
+        "stopping_ms": null
+      }
+    },
+    {
+      "file": "B-cycle3-full.json",
+      "stop": "l",
+      "send": "c",
+      "send_post_ms": 27,
+      "console": {
+        "gen_ms_from_send_resp": 18,
+        "meta_clear_ms": 128,
+        "idle_ms_from_stop_click": 212,
+        "stopping_ms": null
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 1002,
+        "meta_clear_ms": 1002,
+        "idle_ms_from_stop_click": 158,
+        "stopping_ms": 56
+      }
+    },
+    {
+      "file": "B-cycle4-full.json",
+      "stop": "c",
+      "send": "l",
+      "send_post_ms": 23,
+      "console": {
+        "gen_ms_from_send_resp": 169,
+        "meta_clear_ms": 118,
+        "idle_ms_from_stop_click": 107,
+        "stopping_ms": 57
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 20,
+        "meta_clear_ms": 2702,
+        "idle_ms_from_stop_click": 229,
+        "stopping_ms": null
+      }
+    },
+    {
+      "file": "B-cycle5-full.json",
+      "stop": "l",
+      "send": "c",
+      "send_post_ms": 26,
+      "console": {
+        "gen_ms_from_send_resp": 23,
+        "meta_clear_ms": 132,
+        "idle_ms_from_stop_click": 181,
+        "stopping_ms": null
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 973,
+        "meta_clear_ms": 973,
+        "idle_ms_from_stop_click": 109,
+        "stopping_ms": 58
+      }
+    },
+    {
+      "file": "B-cycle6-full.json",
+      "stop": "c",
+      "send": "l",
+      "send_post_ms": 29,
+      "console": {
+        "gen_ms_from_send_resp": 145,
+        "meta_clear_ms": 145,
+        "idle_ms_from_stop_click": 109,
+        "stopping_ms": 58
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 27,
+        "meta_clear_ms": 27,
+        "idle_ms_from_stop_click": 479,
+        "stopping_ms": null
+      }
+    },
+    {
+      "file": "codex-cycle1-full.json",
+      "stop": "c",
+      "send": "l",
+      "send_post_ms": 26,
+      "console": {
+        "gen_ms_from_send_resp": 60,
+        "meta_clear_ms": 115,
+        "idle_ms_from_stop_click": 60,
+        "stopping_ms": null
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 10,
+        "meta_clear_ms": 10,
+        "idle_ms_from_stop_click": 625,
+        "stopping_ms": null
+      }
+    },
+    {
+      "file": "codex-cycle2-full.json",
+      "stop": "l",
+      "send": "c",
+      "send_post_ms": 22,
+      "console": {
+        "gen_ms_from_send_resp": 4,
+        "meta_clear_ms": 116,
+        "idle_ms_from_stop_click": 162,
+        "stopping_ms": null
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 205,
+        "meta_clear_ms": 205,
+        "idle_ms_from_stop_click": 58,
+        "stopping_ms": null
+      }
+    },
+    {
+      "file": "deepseek-cycle1-full.json",
+      "stop": "l",
+      "send": "c",
+      "send_post_ms": 26,
+      "console": {
+        "gen_ms_from_send_resp": 25,
+        "meta_clear_ms": 127,
+        "idle_ms_from_stop_click": 1338,
+        "stopping_ms": null
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 853,
+        "meta_clear_ms": 1770,
+        "idle_ms_from_stop_click": 1233,
+        "stopping_ms": 59
+      }
+    },
+    {
+      "file": "grok-cycle1-full.json",
+      "stop": "c",
+      "send": "l",
+      "send_post_ms": 27,
+      "console": {
+        "gen_ms_from_send_resp": 86,
+        "meta_clear_ms": 137,
+        "idle_ms_from_stop_click": 2914,
+        "stopping_ms": 56
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 52,
+        "meta_clear_ms": 2714,
+        "idle_ms_from_stop_click": 3542,
+        "stopping_ms": null
+      }
+    },
+    {
+      "file": "loop-cycle-full.json",
+      "stop": "c",
+      "send": "l",
+      "send_post_ms": 23,
+      "console": {
+        "gen_ms_from_send_resp": 154,
+        "meta_clear_ms": 154,
+        "idle_ms_from_stop_click": 107,
+        "stopping_ms": 57
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 50,
+        "meta_clear_ms": 2908,
+        "idle_ms_from_stop_click": 1025,
+        "stopping_ms": null
+      }
+    },
+    {
+      "file": "omp1-cycle-full.json",
+      "stop": "c",
+      "send": "l",
+      "send_post_ms": 24,
+      "console": {
+        "gen_ms_from_send_resp": 63,
+        "meta_clear_ms": 116,
+        "idle_ms_from_stop_click": 107,
+        "stopping_ms": 55
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 13,
+        "meta_clear_ms": 13,
+        "idle_ms_from_stop_click": 160,
+        "stopping_ms": null
+      }
+    },
+    {
+      "file": "omp2-cycle-full.json",
+      "stop": "l",
+      "send": "c",
+      "send_post_ms": 32,
+      "console": {
+        "gen_ms_from_send_resp": 19,
+        "meta_clear_ms": 126,
+        "idle_ms_from_stop_click": 165,
+        "stopping_ms": null
+      },
+      "legacy": {
+        "gen_ms_from_send_resp": 726,
+        "meta_clear_ms": 726,
+        "idle_ms_from_stop_click": 58,
+        "stopping_ms": null
+      }
+    }
+  ],
+  "abandons": [
+    {
+      "file": "B-abandon.json",
+      "api": [[6, "cancelled|task_activity"]],
+      "console": {
+        "terminal_ms": 1358,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      },
+      "legacy": {
+        "terminal_ms": 880,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      }
+    },
+    {
+      "file": "codex-abandon.json",
+      "api": [[3, "cancelled|tool_called"]],
+      "console": {
+        "terminal_ms": 314,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      },
+      "legacy": {
+        "terminal_ms": 1083,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": 772,
+        "item_hidden_ms": 311
+      }
+    },
+    {
+      "file": "codexab2-abandon.json",
+      "api": [[3, "cancelled|tool_called"]],
+      "console": {
+        "terminal_ms": 1844,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      },
+      "legacy": {
+        "terminal_ms": 2707,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": 1736,
+        "item_hidden_ms": 971
+      }
+    },
+    {
+      "file": "codexab3-abandon.json",
+      "api": [[3, "cancelled|tool_called"]],
+      "console": {
+        "terminal_ms": 254,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      },
+      "legacy": {
+        "terminal_ms": 151,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      }
+    },
+    {
+      "file": "deepseek-abandon.json",
+      "api": [[7, "cancelled|tool_called"]],
+      "console": {
+        "terminal_ms": 2096,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      },
+      "legacy": {
+        "terminal_ms": 1747,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      }
+    },
+    {
+      "file": "grok-abandon.json",
+      "api": [[4, "cancelled|tool_called"]],
+      "console": {
+        "terminal_ms": 313,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      },
+      "legacy": {
+        "terminal_ms": 1964,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": 208,
+        "item_hidden_ms": 1756
+      }
+    },
+    {
+      "file": "grokS-abandon.json",
+      "api": [[2, "cancelled|tool_called"]],
+      "console": {
+        "terminal_ms": 259,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      },
+      "legacy": {
+        "terminal_ms": 1996,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      }
+    },
+    {
+      "file": "omp3-abandon.json",
+      "api": [[3, "cancelled|tool_called"]],
+      "console": {
+        "terminal_ms": 576,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      },
+      "legacy": {
+        "terminal_ms": 522,
+        "band": "NEVER SENT \u00b7 1",
+        "item_hidden_from_ms": null
+      }
+    }
+  ]
+}

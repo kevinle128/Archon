@@ -1,0 +1,336 @@
+{
+  "R": "3fdb85ac16c06469ac82b461d7774e47",
+  "sd": "c",
+  "dl": 0,
+  "send": { "clicked": 1790792516856, "sendResolved": 1790792516877, "st": 200 },
+  "gets": [
+    { "t": -1898, "s": "c", "k": "r", "http": 200, "st": "running" },
+    { "t": -1897, "s": "l", "k": "r", "http": 200, "st": "running" },
+    { "t": -1896, "s": "l", "k": "r", "http": 200, "st": "running" },
+    { "t": -1893, "s": "c", "k": "r", "http": 200, "st": "running" },
+    { "t": -1892, "s": "x2", "k": "r", "http": 200, "st": "running" },
+    { "t": -1892, "s": "x2", "k": "r", "http": 200, "st": "running" },
+    {
+      "t": -1891,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "generating",
+      "nq": 1
+    },
+    {
+      "t": -1890,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "generating",
+      "nq": 1
+    },
+    {
+      "t": -1889,
+      "s": "x2",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "generating",
+      "nq": 1
+    },
+    {
+      "t": -889,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "idle-after-interrupt",
+      "nq": 1
+    },
+    {
+      "t": -887,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "idle-after-interrupt",
+      "nq": 1
+    },
+    {
+      "t": -886,
+      "s": "x2",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "idle-after-interrupt",
+      "nq": 1
+    },
+    { "t": -398, "s": "l", "k": "r", "http": 200, "st": "running" },
+    { "t": -397, "s": "l", "k": "r", "http": 200, "st": "running" },
+    { "t": -398, "s": "x2", "k": "r", "http": 200, "st": "running" },
+    { "t": -398, "s": "x2", "k": "r", "http": 200, "st": "running" },
+    { "t": -399, "s": "c", "k": "r", "http": 200, "st": "running" },
+    { "t": -398, "s": "c", "k": "r", "http": 200, "st": "running" },
+    {
+      "t": -385,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "idle-after-interrupt",
+      "nq": 1
+    },
+    {
+      "t": -386,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "idle-after-interrupt",
+      "nq": 1
+    },
+    {
+      "t": -385,
+      "s": "x2",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "idle-after-interrupt",
+      "nq": 1
+    },
+    { "t": 11, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 11, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    {
+      "t": 13,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    { "t": 13, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 20, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    {
+      "t": 20,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    { "t": 21, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    {
+      "t": 21,
+      "s": "x2",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    {
+      "t": 23,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    { "t": 23, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 47, "s": "x2", "k": "q", "http": 200 },
+    { "t": 48, "s": "c", "k": "q", "http": 200 },
+    {
+      "t": 53,
+      "s": "x2",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    {
+      "t": 53,
+      "s": "x2",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    {
+      "t": 48,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    {
+      "t": 48,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    { "t": 45, "s": "l", "k": "q", "http": 200 },
+    {
+      "t": 46,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    {
+      "t": 46,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    { "t": 1104, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 1105, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 1105, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 1105, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 1106, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 1106, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 1106, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 1106, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 1106, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 1107, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 1107, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 1108, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2606, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2606, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2609, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2611, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2610, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2612, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2621, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2623, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2624, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2625, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2628, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2633, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4107, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4108, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4108, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4108, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4108, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4108, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4109, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4109, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4109, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4109, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4109, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 4109, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5608, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5609, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5609, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5609, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5609, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5609, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5609, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5609, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5610, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5610, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5610, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5610, "s": "l", "k": "r", "http": 200, "st": "completed" }
+  ],
+  "status": "completed",
+  "nodeDone": ["2026-09-30 18:21:56"],
+  "q": [
+    {
+      "message_id": "a1e3599b-a7ff-426f-8ca2-e764422ae8e1",
+      "message": "FIN5-Q1 queued item",
+      "operator_user_id": "22f075564d293463bf37a391f28f452e",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    },
+    {
+      "message_id": "fc122efe-171b-4d10-ad1e-3f6b086747e2",
+      "message": "FIN5 typed redirect",
+      "operator_user_id": "22f075564d293463bf37a391f28f452e",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    }
+  ],
+  "c": [
+    [22, "Running||Stop,Queue|TA|SENDING · 2|agent generating||1|0|||TEXTAREA|0"],
+    [58, "Completed|||||||1|0|||DIV[room]|0"]
+  ],
+  "l": [
+    [21, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||BODY|0"],
+    [60, "Completed|||||||1|0|||BODY|0"]
+  ],
+  "tc": [
+    [-17, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||TEXTAREA|0"],
+    [-1, "Running||Send now|TA|SENDING · 2|agent idle · Send now delivers||1|0|||BUTTON|0"],
+    [11, "Running||Stop,Queue|TA|SENDING · 2|agent generating||1|0|||TEXTAREA|0"],
+    [45, "Completed||||SENDING · 2|||1|0|||DIV[room]|0"],
+    [56, "Completed|||||||1|0|||DIV[room]|0"]
+  ],
+  "tl": [
+    [-17, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||BODY|0"],
+    [43, "Completed||||QUEUED · 1|||1|0|||BODY|0"],
+    [59, "Completed|||||||1|0|||BODY|0"]
+  ],
+  "es": {
+    "c": [
+      [-5198, "new", "__dashboard__", "localhost:5324"],
+      [-5198, "close", "__dashboard__"],
+      [-5198, "new", "__dashboard__", "localhost:5324"],
+      [-5125, "open", "__dashboard__", 1]
+    ],
+    "l": [
+      [-4153, "new", "__dashboard__", "localhost:5324"],
+      [-4152, "close", "__dashboard__"],
+      [-4152, "new", "__dashboard__", "localhost:5324"],
+      [-4142, "open", "__dashboard__", 1]
+    ],
+    "l2": [
+      [-2747, "new", "__dashboard__", "localhost:5324"],
+      [-2746, "close", "__dashboard__"],
+      [-2746, "new", "__dashboard__", "localhost:5324"],
+      [-2603, "open", "__dashboard__", 1]
+    ],
+    "dash": [
+      [-80231, "new", "__dashboard__", "localhost:5324"],
+      [-80231, "close", "__dashboard__"],
+      [-80230, "new", "__dashboard__", "localhost:5324"],
+      [-80100, "open", "__dashboard__", 1]
+    ]
+  },
+  "dashChurn": { "c": 0, "l": 0, "l2": 0, "dash": 0 }
+}

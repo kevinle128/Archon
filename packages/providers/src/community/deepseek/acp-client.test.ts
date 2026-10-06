@@ -24,6 +24,10 @@ import {
 import { DeepseekProviderError } from './errors';
 
 const CWD = '/tmp/archon-deepseek-cwd';
+/** Matches a block id minted for the first assistant block of a turn: a
+ * random turn id sits between the fixed prefix and the kind/sequence
+ * suffix, so a real turn's id can never be asserted as a literal. */
+const ASSISTANT_BLOCK_1 = /^deepseek-[0-9a-f-]{36}-assistant-1$/;
 const STDIO_MCP: McpServer[] = [
   {
     name: 'demo',
@@ -93,6 +97,9 @@ interface RecordedCall {
   params: unknown;
 }
 
+/** Sends a `client.session.update` notification for the active session, as if the agent pushed it. */
+type NotifySessionUpdate = (sessionId: string, update: SessionUpdate) => Promise<void>;
+
 interface FakeDsh {
   app: AgentApp;
   calls: RecordedCall[];
@@ -132,7 +139,7 @@ function createFakeDsh(options?: {
   requestPermission?: boolean;
   onPromptStart?: () => void;
   onPromptSettled?: () => void;
-  onCancel?: () => void;
+  onCancel?: (notify: NotifySessionUpdate) => void | Promise<void>;
 }): FakeDsh {
   const calls: RecordedCall[] = [];
   const permissionResponses: unknown[] = [];
@@ -211,10 +218,13 @@ function createFakeDsh(options?: {
     })
     .onNotification(methods.agent.session.cancel, c => {
       calls.push({ method: methods.agent.session.cancel, params: c.params });
-      options?.onCancel?.();
-      if (options?.resolvePromptHoldOnCancel !== false) {
-        options?.promptHold?.resolve();
-      }
+      const notify: NotifySessionUpdate = (targetSessionId, update) =>
+        c.client.notify(methods.client.session.update, { sessionId: targetSessionId, update });
+      void Promise.resolve(options?.onCancel?.(notify)).then(() => {
+        if (options?.resolvePromptHoldOnCancel !== false) {
+          options?.promptHold?.resolve();
+        }
+      });
     });
 
   return {
@@ -250,6 +260,14 @@ class FakeChild extends EventEmitter {
     queueMicrotask(() => {
       if (this.exitCode !== null || this.signalCode !== null) return;
       this.signalCode = sig as NodeJS.Signals;
+      // A real OS kill closes the process's own file descriptors, which is
+      // what actually unblocks a pending ACP request stuck reading from
+      // stdout (mirrors `crash()` below, which destroys the same streams
+      // for the same reason) — without this a simulated "kill" never
+      // unblocks the generator the way a real kill does, and a test built
+      // on this fixture hangs instead of failing.
+      this.stdin.destroy();
+      this.stdout.destroy();
       this.emit('exit', null, sig);
     });
     return true;
@@ -423,10 +441,13 @@ describe('driveDeepseekAcpTurn', () => {
     });
     const gen = driveDeepseekAcpTurn(fake.app, baseInput());
     const first = await gen.next();
-    expect(first).toEqual({
-      done: false,
-      value: { type: 'assistant', content: 'streaming', textMode: 'delta' },
+    expect(first.done).toBe(false);
+    expect(first.value).toMatchObject({
+      type: 'assistant',
+      content: 'streaming',
+      textMode: 'delta',
     });
+    expect((first.value as { blockId: string }).blockId).toMatch(ASSISTANT_BLOCK_1);
     expect(promptSettled).toBe(false);
     hold.resolve();
     const rest = await collect(gen);
@@ -565,6 +586,94 @@ describe('driveDeepseekAcpTurn', () => {
       stopReason: 'aborted',
       isError: true,
       errorSubtype: 'deepseek_aborted',
+    });
+  });
+
+  test('a tool cancelled by operator Stop is reported interrupted, not error', async () => {
+    // Measured live behavior: DSH's ACP transport reports the in-flight tool
+    // as status:'failed' before the abort result settles — there is no
+    // distinct "cancelled" tool status. Story 8.6's conditional bridge
+    // mapping applies here: remap error -> interrupted only when the cause
+    // was an operator Stop.
+    const hold = createDeferred<void>();
+    const fake = createFakeDsh({
+      promptHold: hold,
+      sessionId: 'sess-tool-interrupt',
+      promptUpdates: [
+        { sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'bash', name: 'bash' },
+      ],
+      onCancel: async notify => {
+        await notify('sess-tool-interrupt', {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'call-1',
+          status: 'failed',
+        });
+      },
+    });
+    const interrupt = new AbortController();
+    const gen = driveDeepseekAcpTurn(fake.app, baseInput({ interruptSignal: interrupt.signal }));
+    const chunksPromise = collect(gen);
+    await new Promise<void>(resolve => {
+      const check = (): void => {
+        if (fake.methodsCalled().includes(methods.agent.session.prompt)) resolve();
+        else setTimeout(check, 1);
+      };
+      check();
+    });
+    interrupt.abort();
+    const chunks = await chunksPromise;
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'bash',
+      toolCallId: 'call-1',
+      toolOutput: '',
+      toolOutcome: 'interrupted',
+    });
+    expect(chunks.find(chunk => chunk.type === 'result')).toEqual({
+      type: 'result',
+      sessionId: 'sess-tool-interrupt',
+      stopReason: 'aborted',
+      isError: true,
+      errorSubtype: 'deepseek_aborted',
+    });
+  });
+
+  test('a tool that fails on node-level Cancel keeps its error outcome (no remap)', async () => {
+    const hold = createDeferred<void>();
+    const fake = createFakeDsh({
+      promptHold: hold,
+      sessionId: 'sess-tool-cancel',
+      promptUpdates: [
+        { sessionUpdate: 'tool_call', toolCallId: 'call-2', title: 'bash', name: 'bash' },
+      ],
+      onCancel: async notify => {
+        await notify('sess-tool-cancel', {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'call-2',
+          status: 'failed',
+        });
+      },
+    });
+    const nodeCancel = new AbortController();
+    const gen = driveDeepseekAcpTurn(fake.app, baseInput({ abortSignal: nodeCancel.signal }));
+    const chunksPromise = collect(gen);
+    await new Promise<void>(resolve => {
+      const check = (): void => {
+        if (fake.methodsCalled().includes(methods.agent.session.prompt)) resolve();
+        else setTimeout(check, 1);
+      };
+      check();
+    });
+    nodeCancel.abort();
+    const chunks = await chunksPromise;
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'bash',
+      toolCallId: 'call-2',
+      toolOutput: '',
+      toolOutcome: 'error',
     });
   });
 
@@ -878,7 +987,12 @@ describe('driveDeepseekAcpTurn', () => {
     });
     const gen = driveDeepseekAcpTurn(fake.app, baseInput());
     const first = await gen.next();
-    expect(first.value).toEqual({ type: 'assistant', content: 'partial', textMode: 'delta' });
+    expect(first.value).toMatchObject({
+      type: 'assistant',
+      content: 'partial',
+      textMode: 'delta',
+    });
+    expect((first.value as { blockId: string }).blockId).toMatch(ASSISTANT_BLOCK_1);
     await gen.return(undefined);
     expect(fake.methodsCalled()).toContain(methods.agent.session.cancel);
     hold.resolve();
@@ -942,10 +1056,15 @@ describe('runDeepseekAcpTurn', () => {
     const chunks = await collect(
       runDeepseekAcpTurn(processInput(), { spawn: spawnImpl, terminateGraceMs: 0 })
     );
-    expect(chunks.slice(0, 2)).toEqual([
+    expect(chunks.slice(0, 2)).toMatchObject([
       { type: 'assistant', content: 'Hel', textMode: 'delta' },
       { type: 'assistant', content: 'lo', textMode: 'delta' },
     ]);
+    const [helBlockId, loBlockId] = chunks
+      .slice(0, 2)
+      .map(chunk => (chunk as { blockId: string }).blockId);
+    expect(helBlockId).toMatch(ASSISTANT_BLOCK_1);
+    expect(helBlockId).toBe(loBlockId);
     expect(
       chunks
         .filter(chunk => chunk.type === 'assistant')
@@ -1280,5 +1399,90 @@ describe('runDeepseekAcpTurn', () => {
         expect(message).not.toContain(secret.slice(0, length));
       }
     }
+  });
+
+  test('an abort while stuck on an unanswered ACP request still reaps the child', async () => {
+    // No agent attached — nothing ever responds to `initialize`, simulating
+    // a subprocess that is alive but has stopped answering the ACP
+    // protocol. `driveDeepseekAcpTurn`'s own cancel race only covers an
+    // in-flight `session/prompt`, which is never even sent here; without a
+    // reap armed directly off `abortSignal` (independent of this generator
+    // ever being resumed again) the turn would hang forever and the child
+    // would never be reaped (the process leak this guards). The reap kills
+    // the child, which resolves the outer `death` race with DSH's own
+    // early-exit error — the same shape any other unexpected mid-turn exit
+    // produces, so it is classified the same way (`deepseek_spawn_failed`)
+    // rather than a distinct abort subtype.
+    const child = new FakeChild();
+    const spawnImpl = (() => child as unknown as ChildProcess) as typeof spawn;
+    const controller = new AbortController();
+    const promise = collect(
+      runDeepseekAcpTurn(processInput({ abortSignal: controller.signal }), {
+        spawn: spawnImpl,
+        terminateGraceMs: 0,
+        // A responsive agent's graceful cancel is expected to win this race
+        // within CANCEL_DRAIN_GRACE_MS (500ms); this test's agent is never
+        // even attached, so it can never win, and a short grace here just
+        // keeps the test fast instead of waiting out the 3s production default.
+        abortStuckGraceMs: 5,
+      })
+    );
+    controller.abort();
+    const error = await promise.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(DeepseekProviderError);
+    expect((error as DeepseekProviderError).subtype).toBe('deepseek_spawn_failed');
+    expect((error as Error).message).toContain('exited before the ACP turn completed');
+    expect(child.signals).toContain('SIGTERM');
+  });
+
+  test('a caller that stops pulling after abort still gets the child reaped, with no further .next() call', async () => {
+    // This reproduces the exact shape a caller like `withIdleTimeout`
+    // produces in production: it pulls one chunk, observes the node's
+    // AbortController fire, and never calls `.next()` again. An async
+    // generator that has just yielded is suspended AT that yield — any
+    // cleanup living inside its own loop (a `finally` included) requires a
+    // further `.next()` to even reach, so a reap wired only into the loop's
+    // own race can never fire here. This differs from the "unanswered ACP
+    // request" test above, where the outer generator is still parked INSIDE
+    // its very first, still-running `gen.next()`/`Promise.race` call — an
+    // in-loop race can still resolve that specific await. Here the loop has
+    // already produced one chunk and stopped being resumed entirely, which
+    // is what the reap must not depend on.
+    const hold = createDeferred<void>();
+    const fake = createFakeDsh({
+      sessionId: 'sess-parked',
+      promptUpdates: [
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'partial' } },
+      ],
+      promptHold: hold,
+      // `session/cancel` is acknowledged but never resolves `promptHold`, so
+      // the graceful cancel path can never win either — only the
+      // generator-independent stuck-reap listener can end this.
+      resolvePromptHoldOnCancel: false,
+    });
+    const child = new FakeChild();
+    const spawnImpl = (() => {
+      attachAgent(child, fake);
+      return child as unknown as ChildProcess;
+    }) as typeof spawn;
+    const controller = new AbortController();
+    const gen = runDeepseekAcpTurn(processInput({ abortSignal: controller.signal }), {
+      spawn: spawnImpl,
+      terminateGraceMs: 0,
+      abortStuckGraceMs: 5,
+    });
+
+    const first = await gen.next();
+    expect(first.done).toBe(false);
+    expect(first.value).toMatchObject({ type: 'assistant', content: 'partial' });
+
+    controller.abort();
+    // Deliberately never call gen.next() again below — proving the reap
+    // does not depend on it.
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(child.signals).toContain('SIGTERM');
+
+    hold.resolve();
+    await gen.return(undefined).catch(() => undefined);
   });
 });

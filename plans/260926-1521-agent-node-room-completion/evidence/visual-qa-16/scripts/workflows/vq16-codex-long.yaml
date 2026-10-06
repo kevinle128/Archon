@@ -1,0 +1,11 @@
+name: vq16-codex-long
+description: "Scratch - Codex with a 90 s sleep for reap checks."
+mutates_checkout: false
+nodes:
+  - id: codex-node
+    provider: codex
+    model: gpt-5.5
+    effort: low
+    prompt: |
+      Run exactly this shell command: sleep 90; echo long
+      Then reply with one short line. If an operator message arrives, follow it exactly and include any ACK token it asks for.

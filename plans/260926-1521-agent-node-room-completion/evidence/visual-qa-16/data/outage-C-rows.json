@@ -1,0 +1,38 @@
+{
+  "O1": {
+    "run": "ccf5debf1001dee06a79f98754449946",
+    "operatorRows": [],
+    "twoOperatorRows": 0,
+    "queue": [
+      ["O1-C1 queued one", "queued"],
+      ["O1-C2 injected two", "sent"]
+    ]
+  },
+  "O2": {
+    "run": "181f57282f2367af6c2fd9e09882e858",
+    "operatorRows": [],
+    "twoOperatorRows": 0,
+    "queue": [
+      ["O2-C1 queued one", "queued"],
+      ["O2-C2 injected two", "sent"]
+    ]
+  },
+  "O3": {
+    "run": "0b0135a791e10e12bc0c69c141b11fa6",
+    "operatorRows": [],
+    "twoOperatorRows": 0,
+    "queue": [
+      ["O3-C1 queued one", "queued"],
+      ["O3-C2 injected two", "sent"]
+    ]
+  },
+  "O4": {
+    "run": "8aad08d648921c6ce2c35656ea9bbd1a",
+    "operatorRows": [],
+    "twoOperatorRows": 0,
+    "queue": [
+      ["O4-C1 queued one", "queued"],
+      ["O4-C2 injected two", "sent"]
+    ]
+  }
+}

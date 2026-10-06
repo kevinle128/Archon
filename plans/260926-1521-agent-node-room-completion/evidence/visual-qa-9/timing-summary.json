@@ -1,0 +1,817 @@
+{
+  "cycles": {
+    "cl-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPost": 64,
+      "sendPost": 37,
+      "probe": null,
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 83,
+        "stopAgainAt": 116,
+        "sendingAt": 116,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 604,
+        "stopAgainAt": 17,
+        "sendingAt": 17,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "senderRafFirstSendingMs": 24,
+      "senderRafBlankFrames": [],
+      "focusC": [
+        [0, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [90, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "focusL": [
+        [0, "BODY", true],
+        [1145, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m0", "prevConnected=true"],
+        [1171, "TEXTAREA#m1", "prevConnected=true"]
+      ]
+    },
+    "cl-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPost": 79,
+      "sendPost": 45,
+      "probe": {
+        "clickedRel": 13,
+        "label": "delete \u00b7 cl-c2-Q1 queued: reply with the word cl-c2ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"9cd3ce14-e7ef-42bd-94c1-b162cdf79be8\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 172,
+        "stopAgainAt": 40,
+        "sendingAt": 0,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 42,
+        "sendNowAt": 172,
+        "stopAgainAt": 47,
+        "sendingAt": 47,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "senderRafFirstSendingMs": 25,
+      "senderRafBlankFrames": [],
+      "focusC": [
+        [0, "DIV#m0", true],
+        [721, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+        [751, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "focusL": [
+        [0, "TEXTAREA#m0", true],
+        [32, "BUTTON#m1", "prevConnected=true"],
+        [93, "DIV[last-row]#m2", "prevConnected=false"],
+        [768, "TEXTAREA#m0", "prevConnected=true"]
+      ]
+    },
+    "cx-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPost": 25,
+      "sendPost": 31,
+      "probe": null,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 28,
+        "stopAgainAt": 144,
+        "sendingAt": 144,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 158,
+        "stopAgainAt": 24,
+        "sendingAt": 24,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "senderRafFirstSendingMs": 29,
+      "senderRafBlankFrames": [],
+      "focusC": [
+        [-6, "TEXTAREA#m0", true],
+        [25, "DIV[last-row]#m1", "prevConnected=true"]
+      ],
+      "focusL": [
+        [0, "BODY", true],
+        [721, "TEXTAREA#m0", "prevConnected=true"]
+      ]
+    },
+    "cx-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPost": 30,
+      "sendPost": 32,
+      "probe": {
+        "clickedRel": 16,
+        "label": "delete \u00b7 cx-c2-Q1 queued: reply with the word cx-c2ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"d159f8d6-4429-4f73-a1ee-5ca3476a63d1\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 171,
+        "stopAgainAt": 17,
+        "sendingAt": 17,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 172,
+        "stopAgainAt": 54,
+        "sendingAt": 54,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "senderRafFirstSendingMs": 24,
+      "senderRafBlankFrames": [],
+      "focusC": [
+        [-1, "DIV#m0", true],
+        [724, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "focusL": [
+        [-1, "TEXTAREA#m0", true],
+        [31, "DIV[last-row]#m1", "prevConnected=true"],
+        [751, "TEXTAREA#m0", "prevConnected=true"]
+      ]
+    },
+    "ds-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPost": 1075,
+      "sendPost": 55,
+      "probe": null,
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 1084,
+        "stopAgainAt": 110,
+        "sendingAt": 110,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 1694,
+        "stopAgainAt": 29,
+        "sendingAt": 29,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "senderRafFirstSendingMs": 44,
+      "senderRafBlankFrames": [],
+      "focusC": [
+        [0, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [1080, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "focusL": [
+        [0, "BODY", true],
+        [2252, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m0", "prevConnected=true"],
+        [2281, "TEXTAREA#m1", "prevConnected=true"]
+      ]
+    },
+    "ds-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPost": 1077,
+      "sendPost": 35,
+      "probe": {
+        "clickedRel": 10,
+        "label": "delete \u00b7 ds-c2-Q1 queued: reply with the word ds-c2ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true}",
+          "200 {\"success\":true,\"message_id\":\"aa282ffc-dfdd-4900-8844-af0b2fbb3437\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 1212,
+        "stopAgainAt": 18,
+        "sendingAt": 18,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 40,
+        "sendNowAt": 1212,
+        "stopAgainAt": 51,
+        "sendingAt": 51,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "senderRafFirstSendingMs": 20,
+      "senderRafBlankFrames": [],
+      "focusC": [
+        [-2, "DIV#m0", true],
+        [1750, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+        [1769, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "focusL": [
+        [0, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [1081, "DIV[last-row]#m2", "prevConnected=false"],
+        [1788, "TEXTAREA#m0", "prevConnected=true"]
+      ]
+    },
+    "gk-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPost": 3051,
+      "sendPost": 36,
+      "probe": null,
+      "C": {
+        "stoppingAt": 40,
+        "sendNowAt": 3057,
+        "stopAgainAt": 122,
+        "sendingAt": 122,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 3142,
+        "stopAgainAt": 40,
+        "sendingAt": 40,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "senderRafFirstSendingMs": 25,
+      "senderRafBlankFrames": [],
+      "focusC": [
+        [-1, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [3061, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "focusL": [
+        [0, "BODY", true],
+        [3699, "TEXTAREA#m0", "prevConnected=true"]
+      ]
+    },
+    "gk-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPost": 3000,
+      "sendPost": 37,
+      "probe": {
+        "clickedRel": 12,
+        "label": "delete \u00b7 gk-c2-Q1 queued: reply with the word gk-c2ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"cd8f541a-17cf-4e5d-92c3-f81ffd1c7684\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 3140,
+        "stopAgainAt": 38,
+        "sendingAt": 38,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 3141,
+        "stopAgainAt": 38,
+        "sendingAt": 38,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "senderRafFirstSendingMs": 27,
+      "senderRafBlankFrames": [],
+      "focusC": [
+        [0, "DIV#m0", true],
+        [3699, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "focusL": [
+        [0, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [3031, "DIV[last-row]#m2", "prevConnected=false"],
+        [3722, "TEXTAREA#m0", "prevConnected=true"]
+      ]
+    },
+    "omp-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPost": 58,
+      "sendPost": 24,
+      "probe": null,
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 60,
+        "stopAgainAt": 129,
+        "sendingAt": 129,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 188,
+        "stopAgainAt": 7,
+        "sendingAt": 7,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "senderRafFirstSendingMs": 21,
+      "senderRafBlankFrames": [],
+      "focusC": [
+        [-1, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [60, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "focusL": [
+        [0, "BODY", true],
+        [721, "TEXTAREA#m0", "prevConnected=true"]
+      ]
+    },
+    "omp-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPost": 50,
+      "sendPost": 42,
+      "probe": {
+        "clickedRel": 12,
+        "label": "delete \u00b7 omp-c2-Q1 queued: reply with the word omp-c2ACK then continue with the remaining steps",
+        "deleteResp": [
+          "200 {\"success\":true,\"message_id\":\"b65d4dea-de8b-4079-920f-6e03f78e178e\"}"
+        ]
+      },
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 148,
+        "stopAgainAt": 26,
+        "sendingAt": 26,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 149,
+        "stopAgainAt": 67,
+        "sendingAt": 67,
+        "flipBacks": 0,
+        "staleQueued": [],
+        "gaps": [[31, 67]],
+        "overlap": []
+      },
+      "senderRafFirstSendingMs": 27,
+      "senderRafBlankFrames": [],
+      "focusC": [
+        [-1, "DIV#m0", true],
+        [694, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+        [721, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "focusL": [
+        [-1, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [60, "DIV[last-row]#m2", "prevConnected=false"],
+        [726, "TEXTAREA#m0", "prevConnected=true"]
+      ]
+    }
+  },
+  "abandons": {
+    "cl": {
+      "post": 2,
+      "C": {
+        "neverSentAt": 328,
+        "pillAt": 429,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 904,
+        "pillAt": 2712,
+        "missing": []
+      }
+    },
+    "cx": {
+      "post": 12,
+      "C": {
+        "neverSentAt": 572,
+        "pillAt": 572,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 466,
+        "pillAt": 466,
+        "missing": []
+      }
+    },
+    "ds": {
+      "post": 11,
+      "C": {
+        "neverSentAt": 209,
+        "pillAt": 1386,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 710,
+        "pillAt": 710,
+        "missing": []
+      }
+    },
+    "ds2": {
+      "post": 5,
+      "C": {
+        "neverSentAt": 173,
+        "pillAt": 1934,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 738,
+        "pillAt": 1584,
+        "missing": []
+      }
+    },
+    "gk": {
+      "post": 4,
+      "C": {
+        "neverSentAt": 243,
+        "pillAt": 1887,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 817,
+        "pillAt": 2743,
+        "missing": []
+      }
+    },
+    "gs": {
+      "post": 7,
+      "C": {
+        "neverSentAt": 659,
+        "pillAt": 659,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 533,
+        "pillAt": 1456,
+        "missing": []
+      }
+    },
+    "ls": {
+      "post": 7,
+      "C": {
+        "neverSentAt": 972,
+        "pillAt": 1331,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 573,
+        "pillAt": 1493,
+        "missing": []
+      }
+    },
+    "omp": {
+      "post": 3,
+      "C": {
+        "neverSentAt": 310,
+        "pillAt": 876,
+        "missing": []
+      },
+      "L": {
+        "neverSentAt": 867,
+        "pillAt": 1718,
+        "missing": []
+      }
+    }
+  },
+  "reap": {
+    "cl-reap": {
+      "dead_ms": {
+        "91538": 2832,
+        "88995": 3338
+      },
+      "still_alive": []
+    },
+    "cx-reap": {
+      "dead_ms": {
+        "72415": 796,
+        "72569": 796,
+        "72570": 796,
+        "72571": 796,
+        "72834": 796,
+        "75419": 21806,
+        "75420": 21806
+      },
+      "still_alive": []
+    },
+    "cx2-stop-reap": {
+      "dead_ms": {
+        "90557": 21822,
+        "90558": 21822
+      },
+      "still_alive": []
+    },
+    "ds-reap": {
+      "dead_ms": {
+        "40799": 1814,
+        "40801": 1814,
+        "38592": 5661
+      },
+      "still_alive": []
+    },
+    "ds2-reap": {
+      "dead_ms": {
+        "989": 2325,
+        "990": 2326,
+        "98924": 6167
+      },
+      "still_alive": []
+    },
+    "ds2-stop-reap": {
+      "dead_ms": {
+        "97823": 275,
+        "97835": 275
+      },
+      "still_alive": []
+    },
+    "gk-reap": {
+      "dead_ms": {
+        "60526": 2328,
+        "60531": 2328,
+        "60536": 2328,
+        "60537": 2328,
+        "60540": 2328,
+        "60541": 2328,
+        "60543": 2328,
+        "62783": 2328,
+        "62822": 2328,
+        "61519": 2328,
+        "61230": 2328,
+        "61554": 2328,
+        "60270": 5917
+      },
+      "still_alive": []
+    },
+    "gs-reap": {
+      "dead_ms": {
+        "40358": 1031,
+        "41866": 1031,
+        "41869": 1031,
+        "41870": 1031,
+        "41872": 1031,
+        "41873": 1031,
+        "41884": 1031,
+        "41885": 1031,
+        "42893": 1031,
+        "43250": 1031,
+        "43226": 1031,
+        "47860": 5388
+      },
+      "still_alive": [28443]
+    },
+    "ls-reap": {
+      "dead_ms": {
+        "59665": 3616,
+        "56851": 4136
+      },
+      "still_alive": []
+    },
+    "omp-reap": {
+      "dead_ms": {
+        "43091": 1309
+      },
+      "still_alive": []
+    }
+  },
+  "focus_keyboard": {
+    "FX-c": {
+      "sendAt": 752,
+      "C": [
+        [-1, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [90, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "L": [
+        [0, "BODY", true],
+        [804, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m0", "prevConnected=true"],
+        [812, "TEXTAREA#m1", "prevConnected=true"]
+      ]
+    },
+    "FX-l": {
+      "sendAt": 784,
+      "C": [
+        [-1, "DIV#m0", true],
+        [823, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+        [840, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "L": [
+        [0, "TEXTAREA#m0", true],
+        [32, "BUTTON#m1", "prevConnected=true"],
+        [60, "DIV[last-row]#m2", "prevConnected=false"]
+      ]
+    }
+  },
+  "loop_boundaries": {
+    "LP-b1": {
+      "C": [
+        [1790637632606, "-", true, "half-typed VQ9 consol", "TEXTAREA", "", ""],
+        [1790637632646, "-", true, "half-typed VQ9 console", "TEXTAREA", "", ""],
+        [1790637632686, "-", true, "half-typed VQ9 console ", "TEXTAREA", "", ""],
+        [1790637632727, "-", true, "half-typed VQ9 console d", "TEXTAREA", "", ""],
+        [1790637632772, "-", true, "half-typed VQ9 console dra", "TEXTAREA", "", ""],
+        [1790637632806, "-", true, "half-typed VQ9 console draf", "TEXTAREA", "", ""],
+        [1790637632846, "-", true, "half-typed VQ9 console draft", "TEXTAREA", "", ""],
+        [
+          1790637655686,
+          "Iteration 2 \u00b7 running",
+          true,
+          "half-typed VQ9 console draft",
+          "TEXTAREA",
+          "",
+          ""
+        ]
+      ],
+      "L": [
+        [1790637631968, "-", true, "", "BODY", "", ""],
+        [1790637632887, "-", true, "", "TEXTAREA", "", ""],
+        [1790637657456, "Iteration 2 \u00b7 running", true, "", "TEXTAREA", "", ""]
+      ]
+    },
+    "LP-b2": {
+      "C": [
+        [
+          1790637671835,
+          "Iteration 1",
+          false,
+          null,
+          "BODY",
+          "Go to iteration 2",
+          "reading a finished iteration \u00b7 the agent is working in iteration 2"
+        ],
+        [
+          1790637687242,
+          "Iteration 1",
+          false,
+          null,
+          "BODY",
+          "Go to iteration 3",
+          "reading a finished iteration \u00b7 the agent is working in iteration 3"
+        ]
+      ],
+      "L": [
+        [
+          1790637673316,
+          "Iteration 2 \u00b7 running",
+          true,
+          "half-typed VQ9 legac",
+          "TEXTAREA",
+          "",
+          ""
+        ],
+        [
+          1790637673361,
+          "Iteration 2 \u00b7 running",
+          true,
+          "half-typed VQ9 legacy ",
+          "TEXTAREA",
+          "",
+          ""
+        ],
+        [
+          1790637673395,
+          "Iteration 2 \u00b7 running",
+          true,
+          "half-typed VQ9 legacy d",
+          "TEXTAREA",
+          "",
+          ""
+        ],
+        [
+          1790637673436,
+          "Iteration 2 \u00b7 running",
+          true,
+          "half-typed VQ9 legacy dr",
+          "TEXTAREA",
+          "",
+          ""
+        ],
+        [
+          1790637673476,
+          "Iteration 2 \u00b7 running",
+          true,
+          "half-typed VQ9 legacy dra",
+          "TEXTAREA",
+          "",
+          ""
+        ],
+        [
+          1790637673516,
+          "Iteration 2 \u00b7 running",
+          true,
+          "half-typed VQ9 legacy draf",
+          "TEXTAREA",
+          "",
+          ""
+        ],
+        [
+          1790637673560,
+          "Iteration 2 \u00b7 running",
+          true,
+          "half-typed VQ9 legacy draft",
+          "TEXTAREA",
+          "",
+          ""
+        ],
+        [
+          1790637687515,
+          "Iteration 3 \u00b7 running",
+          true,
+          "half-typed VQ9 legacy draft",
+          "TEXTAREA",
+          "",
+          ""
+        ]
+      ]
+    }
+  },
+  "recovered_abandon": {
+    "R2": {
+      "note": "ms after the Abandon POST; [ms, pill, band]",
+      "C": [
+        [-269, "Recovery required", "QUEUED \u00b7 1"],
+        [689, "Running", "NEVER SENT \u00b7 1"],
+        [25570, "Failed", "NEVER SENT \u00b7 1"]
+      ],
+      "L": [
+        [-269, "Recovery required", "QUEUED \u00b7 1"],
+        [213, "Failed", "NEVER SENT \u00b7 1"]
+      ],
+      "lastEventBeforeKill": "tool_completed 2026-09-29 00:01:31 (no node terminal event after Abandon)"
+    },
+    "LFab": {
+      "post": 15,
+      "C": {
+        "neverSentAt": 604,
+        "pillAt6s": "Running"
+      },
+      "L": {
+        "neverSentAt": 245,
+        "pillAt": 1205
+      }
+    },
+    "Fab": {
+      "post": 4,
+      "C": {
+        "neverSentAt": 695,
+        "pillAt6s": "Running",
+        "pillAt26s": "Failed"
+      },
+      "L": {
+        "neverSentAt": 256,
+        "pillAt": 1228
+      }
+    }
+  }
+}

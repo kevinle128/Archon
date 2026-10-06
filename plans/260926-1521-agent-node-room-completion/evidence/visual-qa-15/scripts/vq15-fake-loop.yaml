@@ -1,0 +1,13 @@
+name: vq15-fake-loop
+description: "Scratch - steerable loop node on the fake provider."
+mutates_checkout: false
+nodes:
+  - id: fake-loop
+    provider: e2e-fake
+    model: e2e-fake-model
+    loop:
+      prompt: |
+        <<E2E_SCENARIO>>{"interruptible":true,"emitTool":true,"delayMs":90000}<</E2E_SCENARIO>>
+        $LOOP_PREV_OUTPUT
+      until: E2E_LOOP_DONE
+      max_iterations: 3

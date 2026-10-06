@@ -1,0 +1,270 @@
+{
+  "R": "a67d77df03181c1ef265546411db05db",
+  "sd": "l",
+  "dl": 100,
+  "send": { "clicked": 1790745763457, "sendResolved": 1790745763479, "st": 200 },
+  "gets": [
+    {
+      "t": -1482,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "generating",
+      "nq": 1
+    },
+    {
+      "t": -1140,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "generating",
+      "nq": 1
+    },
+    {
+      "t": -1139,
+      "s": "x2",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "generating",
+      "nq": 1
+    },
+    { "t": -848, "s": "c", "k": "r", "http": 200, "st": "running" },
+    { "t": -648, "s": "l", "k": "r", "http": 200, "st": "running" },
+    { "t": -647, "s": "l", "k": "r", "http": 200, "st": "running" },
+    { "t": -647, "s": "x2", "k": "r", "http": 200, "st": "running" },
+    { "t": -647, "s": "x2", "k": "r", "http": 200, "st": "running" },
+    {
+      "t": -631,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "idle-after-interrupt",
+      "nq": 1
+    },
+    {
+      "t": -631,
+      "s": "x2",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "idle-after-interrupt",
+      "nq": 1
+    },
+    {
+      "t": -478,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "idle-after-interrupt",
+      "nq": 1
+    },
+    {
+      "t": 3,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "live",
+      "no": null,
+      "ss": "generating",
+      "nq": 2
+    },
+    { "t": 101, "s": "c", "k": "r", "http": 200, "st": "running" },
+    { "t": 114, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 124, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 115, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    {
+      "t": 124,
+      "s": "x2",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    { "t": 146, "s": "x2", "k": "q", "http": 200 },
+    {
+      "t": 125,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    { "t": 125, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 149, "s": "l", "k": "q", "http": 200 },
+    {
+      "t": 150,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    {
+      "t": 150,
+      "s": "l",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    {
+      "t": 146,
+      "s": "x2",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    {
+      "t": 148,
+      "s": "x2",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    { "t": 211, "s": "c", "k": "r", "http": 200, "st": "completed" },
+    {
+      "t": 227,
+      "s": "c",
+      "k": "q",
+      "http": 200,
+      "es": "finished",
+      "no": "completed",
+      "ss": null,
+      "nq": 2
+    },
+    { "t": 853, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 914, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 916, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 917, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 918, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 919, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 921, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 922, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2351, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2351, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2352, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2352, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2352, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2353, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2354, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 2355, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 3855, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 3855, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 3856, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 3859, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 3856, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 3857, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 3857, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 3859, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5355, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5355, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5355, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5355, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5356, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5358, "s": "x2", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5363, "s": "l", "k": "r", "http": 200, "st": "completed" },
+    { "t": 5363, "s": "x2", "k": "r", "http": 200, "st": "completed" }
+  ],
+  "status": "completed",
+  "nodeDone": ["2026-09-30 05:22:43"],
+  "q": [
+    {
+      "message_id": "12223cd2-e621-4910-aec9-0317d161441d",
+      "message": "FIN3-Q1 queued item",
+      "operator_user_id": "6d890aa02bd0c251a3791ad99b08b50a",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    },
+    {
+      "message_id": "9738a13e-81b9-4fd1-badb-60ef788049ea",
+      "message": "FIN3 typed redirect <<E2E_SCENARIO>>{\"delayMs\":100}<</E2E_SCENARIO>>",
+      "operator_user_id": "6d890aa02bd0c251a3791ad99b08b50a",
+      "state": "sent",
+      "last_error": null,
+      "dispatch_failure_count": 0,
+      "last_failure_kind": null
+    }
+  ],
+  "c": [
+    [10, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||BODY"],
+    [131, "Running||Stop,Queue|TA||agent generating||1|0|||BODY"],
+    [250, "Completed|||||||1|0|||BODY"]
+  ],
+  "l": [
+    [11, "Running||Stop,Queue|TA|SENDING · 2|agent generating||1|0|||TEXTAREA"],
+    [150, "Completed||||SENDING · 2|||1|0|||DIV[room]"],
+    [172, "Completed|||||||1|0|||DIV[room]"]
+  ],
+  "tc": [
+    [-27, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||BODY"],
+    [117, "Running||Stop,Queue|TA|SENDING · 1|agent generating||1|0|||BODY"],
+    [123, "Running||Stop,Queue|TA||agent generating||1|0|||BODY"],
+    [221, "Completed|||||||1|0|||BODY"]
+  ],
+  "tl": [
+    [-26, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||DIV[room]"],
+    [-19, "Running||Send now|TA|WILL SEND · 1|agent idle · Send now delivers||1|1|||TEXTAREA"],
+    [-2, "Running||Send now|TA|SENDING · 2|agent idle · Send now delivers||1|0|||BUTTON"],
+    [9, "Running||Stop,Queue|TA|SENDING · 2|agent generating||1|0|||TEXTAREA"],
+    [148, "Completed||||SENDING · 2|||1|0|||DIV[room]"],
+    [157, "Completed|||||||1|0|||DIV[room]"]
+  ],
+  "es": {
+    "c": [
+      [-4552, "new", "web-worker-1790745755456-tvkris", "localhost:3426"],
+      [-4537, "open", "web-worker-1790745755456-tvkris", 1]
+    ],
+    "l": [
+      [-3617, "new", "__dashboard__", "localhost:5294"],
+      [-3617, "close", "__dashboard__"],
+      [-3617, "new", "__dashboard__", "localhost:5294"],
+      [-3612, "open", "__dashboard__", 1]
+    ],
+    "l2": [
+      [-2543, "new", "__dashboard__", "localhost:5294"],
+      [-2543, "close", "__dashboard__"],
+      [-2543, "new", "__dashboard__", "localhost:5294"],
+      [-2529, "open", "__dashboard__", 1]
+    ],
+    "runs": [
+      [-47783, "new", "__dashboard__", "localhost:3426"],
+      [-47782, "close", "__dashboard__"],
+      [-47782, "new", "__dashboard__", "localhost:3426"],
+      [-47758, "open", "__dashboard__", 1]
+    ],
+    "dash": [
+      [-47626, "new", "__dashboard__", "localhost:5294"],
+      [-47625, "close", "__dashboard__"],
+      [-47625, "new", "__dashboard__", "localhost:5294"],
+      [-47612, "open", "__dashboard__", 1]
+    ]
+  },
+  "dashChurn": { "l": 0, "l2": 0, "runs": 0, "dash": 0 }
+}

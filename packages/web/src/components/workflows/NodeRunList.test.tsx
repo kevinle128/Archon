@@ -81,7 +81,7 @@ describe('NodeRunList', () => {
     expect(visibleText(markup)).toBe('Review running Loop ×2 completed Router #4 failed');
   });
 
-  test('renders awaiting status with warning tokens and waiting on you', () => {
+  test('renders awaiting status with accent tokens and waiting on you', () => {
     const awaitingRow = row({
       id: 'start-ask',
       nodeId: 'ask',
@@ -102,7 +102,7 @@ describe('NodeRunList', () => {
     );
 
     expect(markup).toContain('waiting on you');
-    expect(markup).toContain('text-warning');
+    expect(markup).toContain('text-accent');
     expect(markup).toContain('running');
     expect(markup).toContain('text-accent');
     expect(markup).toContain('failed');

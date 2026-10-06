@@ -1,0 +1,48 @@
+{
+  "root": 53226,
+  "mark": null,
+  "procs": [
+    {
+      "pid": 64266,
+      "cmd": "claude --output-format stream-json --verbose --input-format ",
+      "first": 1790746933296,
+      "last": 1790746936108
+    },
+    {
+      "pid": 65253,
+      "cmd": "zsh -c source snapshot-zsh-1790746931495-hx5ka7.sh 2>null ||",
+      "first": 1790746933296,
+      "last": 1790746935472
+    },
+    {
+      "pid": 65255,
+      "cmd": "sleep 6",
+      "first": 1790746933296,
+      "last": 1790746935472
+    },
+    {
+      "pid": 65358,
+      "cmd": "(bash)",
+      "first": 1790746935799,
+      "last": 1790746935799
+    },
+    {
+      "pid": 65360,
+      "cmd": "(bash)",
+      "first": 1790746935799,
+      "last": 1790746935799
+    },
+    {
+      "pid": 65361,
+      "cmd": "(bash)",
+      "first": 1790746935799,
+      "last": 1790746935799
+    },
+    {
+      "pid": 65362,
+      "cmd": "node session-lifecycle-hook.mjs SessionEnd",
+      "first": 1790746935799,
+      "last": 1790746935799
+    }
+  ]
+}

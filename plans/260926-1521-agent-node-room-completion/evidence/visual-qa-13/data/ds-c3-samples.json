@@ -1,0 +1,1279 @@
+{
+  "out": {
+    "tag": "ds-c3",
+    "st": "l",
+    "sd": "c",
+    "ob": "l",
+    "stop": {
+      "post": 1224,
+      "st": 200,
+      "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+    },
+    "send": {
+      "post": 32,
+      "st": 200,
+      "body": "{\"success\":true,\"message_id\":\"3a5b130f-6d5f-4e89-acd6-38433492a7ec\",\"state\":\"sent\"}"
+    },
+    "probe": {
+      "clickedRel": 23,
+      "label": "delete · ds-c3-Q1 queued: reply with the word ds-c3ACK then continue with the remaining steps",
+      "deleteResp": [
+        "200 {\"success\":true,\"message_id\":\"d4f7d6ec-a09f-45d7-824b-ea2e2b1f4e4c\"}"
+      ]
+    },
+    "C": {
+      "stoppingAt": null,
+      "sendNowAt": 1359,
+      "stopAgainAt": 26,
+      "sendingAt": 26,
+      "flipBacks": 0,
+      "staleQueued": [],
+      "gaps": [],
+      "overlap": [],
+      "last": {
+        "bands": "",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "⚠ bash sleep 25 && echo step-3 interrupted ·",
+          "✓ bash sleep 25 && echo step-3 25.0s ▶",
+          "⚠ bash sleep 25 && echo step-4 interrupted ·",
+          "◐ bash sleep 25 && echo step-4 running · 16.7s message to long-deepseek"
+        ]
+      }
+    },
+    "L": {
+      "stoppingAt": 41,
+      "sendNowAt": 1359,
+      "stopAgainAt": 68,
+      "sendingAt": 68,
+      "flipBacks": 0,
+      "staleQueued": [
+        [
+          27,
+          "WILL SEND · 1",
+          "delete · ds-c3-Q1 queued: reply with the word ds-c3ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send"
+        ]
+      ],
+      "gaps": [],
+      "overlap": [],
+      "last": {
+        "bands": "",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "⚠ bash sleep 25 && echo step-3 interrupted ·",
+          "✓ bash sleep 25 && echo step-3 25.0s ▶",
+          "⚠ bash sleep 25 && echo step-4 interrupted ·",
+          "◐ bash sleep 25 && echo step-4 running · 17.2s message to long-deepseek"
+        ]
+      }
+    }
+  },
+  "lc": [
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · ds-c3-Q1 queued: reply with the word ds-c3ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "◐ bash sleep 25 && echo step-4 running · 2.5s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712769736
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · ds-c3-Q1 queued: reply with the word ds-c3ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712769857
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · ds-c3-Q1 queued: reply with the word ds-c3ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712771055
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Send now · Cmd/Ctrl+Enter to send · 0 messages will send",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "BUTTON[Send now · Cmd/Ctrl+Enter to send · 0 messages will send]",
+      "t": 1790712771587
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712771614
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 547ms message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712774576
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 602ms message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712774615
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 1.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712775575
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 2.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712776575
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 3.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712777577
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 4.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712778615
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 5.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712779615
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 6.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712780615
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 7.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712781620
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 8.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712782622
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 9.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712783655
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 10.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712784655
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 11.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712785656
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 11.7s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712785695
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 12.7s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712786695
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 13.7s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712787695
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 14.7s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712788699
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 15.7s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712789735
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 16.7s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712790735
+    }
+  ],
+  "ll": [
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · ds-c3-Q1 queued: reply with the word ds-c3ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "◐ bash sleep 25 && echo step-4 running · 2.4s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790712769736
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · ds-c3-Q1 queued: reply with the word ds-c3ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "◐ bash sleep 25 && echo step-4 running · 3.2s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790712770256
+    },
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · ds-c3-Q1 queued: reply with the word ds-c3ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790712770456
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · ds-c3-Q1 queued: reply with the word ds-c3ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted WILL SEND · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790712770939
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · ds-c3-Q1 queued: reply with the word ds-c3ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790712771428
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · ds-c3-Q1 queued: reply with the word ds-c3ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712771615
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712771656
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712774495
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 3.4s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712777455
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 4.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712778256
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 4.5s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712778462
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 5.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712779255
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 5.5s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712779495
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 6.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712780256
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 6.5s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712780495
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 7.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712781255
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 7.5s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712781500
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 8.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712782255
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 8.5s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712782535
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 9.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712783256
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 9.5s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712783536
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 10.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712784256
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 10.5s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712784535
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 11.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712785255
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 11.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712785577
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 12.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712786256
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 12.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712786576
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 13.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712787255
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 13.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712787581
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 14.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712788256
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 14.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712788590
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 15.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712789256
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 15.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712789615
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 16.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712790256
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 16.6s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712790620
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ bash sleep 25 && echo step-1 25.1s THINKING",
+        "⚠ bash sleep 25 && echo step-2 interrupted ·",
+        "✓ bash sleep 25 && echo step-2 25.0s THINKING",
+        "⚠ bash sleep 25 && echo step-3 interrupted ·",
+        "✓ bash sleep 25 && echo step-3 25.0s ▶",
+        "⚠ bash sleep 25 && echo step-4 interrupted ·",
+        "◐ bash sleep 25 && echo step-4 running · 17.2s message to long-deepseek"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790712791255
+    }
+  ],
+  "T": 1790712771588,
+  "stop": {
+    "clicked": 1790712769695,
+    "resolved": 1790712770919,
+    "st": 200,
+    "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+  },
+  "send": {
+    "clicked": 1790712771556,
+    "sendResolved": 1790712771588,
+    "st": 200,
+    "url": "/api/workflows/runs/23ff2e5b435bc4713cf5e1bb4cf35e5d/nodes/long-deepseek/send",
+    "body": "{\"success\":true,\"message_id\":\"3a5b130f-6d5f-4e89-acd6-38433492a7ec\",\"state\":\"sent\"}"
+  }
+}

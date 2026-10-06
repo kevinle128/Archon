@@ -176,7 +176,7 @@ describe('reduceNodeMessagePage', () => {
 });
 
 describe('drainNodeMessages', () => {
-  test('requests limit 100 one page at a time and passes occurrence selection', async () => {
+  test('requests limit 100 one page at a time, scoped to occurrence only', async () => {
     const calls: Array<{
       afterSeq: number;
       limit: number;
@@ -212,6 +212,10 @@ describe('drainNodeMessages', () => {
       };
     };
     const states: NodeMessageState[] = [];
+    // attemptId travels on the selection (e.g. from a projected execution's
+    // current attempt) but must never reach the loader — CAP-6 scopes the
+    // fetch to the occurrence, so a guidance turn's rows under a different
+    // attempt are never filtered out of the page.
     const result = await drainNodeMessages({
       runId: 'run-1',
       nodeId: 'review',
@@ -223,8 +227,8 @@ describe('drainNodeMessages', () => {
     });
     expect(maxInFlight).toBe(1);
     expect(calls).toEqual([
-      { afterSeq: 0, limit: 100, occurrenceId: 'occ-1', attemptId: 'att-1' },
-      { afterSeq: 1, limit: 100, occurrenceId: 'occ-1', attemptId: 'att-1' },
+      { afterSeq: 0, limit: 100, occurrenceId: 'occ-1', attemptId: undefined },
+      { afterSeq: 1, limit: 100, occurrenceId: 'occ-1', attemptId: undefined },
     ]);
     expect(result.complete).toBe(true);
     expect(result.rows.map(row => row.seq)).toEqual([1, 2]);

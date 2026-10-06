@@ -1,0 +1,9 @@
+SAB1 c q0 [['SAB1 ONE kee', 'queued'], ['SAB1 TWO inj', 'sent']] q1 [['SAB1 ONE kee', 'never_sent'], ['SAB1 TWO inj', 'never_sent']] nowhereFrames 0
+     [-1205, 'Running', 'QUEUED · 2', 'ONExs,TWOxs', '', '']
+     [-1196, 'Running', 'QUEUED · 1', 'ONExs,TWO*', '', '']
+     [185, 'Failed', 'QUEUED · 1', 'ONE,TWO*', '', '']
+     [194, 'Failed', '', '', '', 'NEVER']
+SAB1 l q0 [['SAB1 ONE kee', 'queued'], ['SAB1 TWO inj', 'sent']] q1 [['SAB1 ONE kee', 'never_sent'], ['SAB1 TWO inj', 'never_sent']] nowhereFrames 0
+     [-1162, 'Running', 'QUEUED · 1', 'ONExs,TWO*', '', '']
+     [185, 'Failed', 'QUEUED · 1', 'ONE,TWO*', '', '']
+     [197, 'Failed', '', '', '', 'NEVER']

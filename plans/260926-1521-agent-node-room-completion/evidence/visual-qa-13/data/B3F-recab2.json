@@ -1,0 +1,42 @@
+{
+  "post": 54,
+  "res": { "success": true, "message": "Abandoned workflow: vq13-claude" },
+  "survC": [
+    [
+      -653,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [912, "Failed|NEVER SENT · 2|node finished · none of this was sent|"]
+  ],
+  "survCFailedAt": 912,
+  "survCRunning": [],
+  "survL": [
+    [
+      -646,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [486, "Failed|NEVER SENT · 2|node finished · none of this was sent|"]
+  ],
+  "survLFailedAt": 486,
+  "survLRunning": [],
+  "freshC": [
+    [
+      -653,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [333, "Failed|NEVER SENT · 2|node finished · none of this was sent|"]
+  ],
+  "freshCFailedAt": 333,
+  "freshCRunning": [],
+  "freshL": [
+    [
+      -653,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue|"
+    ],
+    [855, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue|"],
+    [891, "Failed|NEVER SENT · 2|node finished · none of this was sent|"]
+  ],
+  "freshLFailedAt": 855,
+  "freshLRunning": [],
+  "status": "cancelled"
+}

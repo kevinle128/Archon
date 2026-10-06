@@ -1035,6 +1035,55 @@ describe('ClaudeProvider', () => {
       });
     });
 
+    test('yields displayable thinking as its own chunk', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'thinking', thinking: 'weighing two approaches' }],
+          },
+        };
+      });
+
+      const chunks = [];
+      for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+      expect(chunks).toEqual([{ type: 'thinking', content: 'weighing two approaches' }]);
+    });
+
+    test('drops a thinking block whose text is empty (display not requested)', async () => {
+      // Proven empirically: Settings.showThinkingSummaries unset returns the
+      // block with an EMPTY `thinking` field, not an absent block.
+      mockQuery.mockImplementation(async function* () {
+        yield {
+          type: 'assistant',
+          message: { content: [{ type: 'thinking', thinking: '' }] },
+        };
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'answer' }] } };
+      });
+
+      const chunks = [];
+      for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+      expect(chunks).toEqual([{ type: 'assistant', content: 'answer', textMode: 'complete' }]);
+    });
+
+    test('drops a redacted_thinking block entirely — never displayable', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield {
+          type: 'assistant',
+          message: { content: [{ type: 'redacted_thinking', data: 'ENCRYPTED_BLOB' }] },
+        };
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'answer' }] } };
+      });
+
+      const chunks = [];
+      for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+      expect(chunks).toEqual([{ type: 'assistant', content: 'answer', textMode: 'complete' }]);
+      expect(JSON.stringify(chunks)).not.toContain('ENCRYPTED_BLOB');
+    });
+
     test('enriches and logs error on SDK failure', async () => {
       const error = new Error('API connection failed');
       mockQuery.mockImplementation(async function* () {
@@ -1302,6 +1351,42 @@ describe('ClaudeProvider', () => {
       expect(mockQuery).toHaveBeenCalledTimes(1);
       const callArgs = mockQuery.mock.calls[0][0] as { options: Record<string, unknown> };
       expect(callArgs.options.settingSources).toEqual(['project', 'user']);
+    });
+
+    test('always requests thinking summaries, with no advisorModel by default', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield { type: 'result', session_id: 'test-session' };
+      });
+
+      for await (const _ of client.sendQuery('test', '/tmp')) {
+        // consume
+      }
+
+      const callArgs = mockQuery.mock.calls[0][0] as {
+        options: { settings?: { showThinkingSummaries?: boolean; advisorModel?: string } };
+      };
+      expect(callArgs.options.settings?.showThinkingSummaries).toBe(true);
+      expect(callArgs.options.settings?.advisorModel).toBeUndefined();
+    });
+
+    test('forwards advisorModel from assistantConfig into settings', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield { type: 'result', session_id: 'test-session' };
+      });
+
+      for await (const _ of client.sendQuery('test', '/tmp', undefined, {
+        assistantConfig: { advisorModel: 'claude-opus-4-8' },
+      })) {
+        // consume
+      }
+
+      const callArgs = mockQuery.mock.calls[0][0] as {
+        options: { settings?: { showThinkingSummaries?: boolean; advisorModel?: string } };
+      };
+      expect(callArgs.options.settings).toEqual({
+        showThinkingSummaries: true,
+        advisorModel: 'claude-opus-4-8',
+      });
     });
 
     test('defaults settingSources to project + user when not provided', async () => {
@@ -2148,6 +2233,379 @@ describe('sendQuery decomposition behaviors', () => {
     ]);
   });
 
+  test('a failure the SDK reports with is_interrupt false still settles interrupted once the operator signal is already aborted', async () => {
+    const interruptController = new AbortController();
+    mockQuery.mockImplementation(
+      (args: {
+        options: {
+          hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+        };
+      }) => {
+        const fake = new FakeQuery();
+        const failureHook = args.options.hooks?.PostToolUseFailure?.[0]?.hooks?.[0];
+        void (async () => {
+          // The operator's Stop is already in effect when this tool's own
+          // failure reaches the hook, but the SDK's own is_interrupt flag
+          // missed it (the exact live evidence: a plain error whose text is
+          // the SDK's own "the user doesn't want to proceed" wording).
+          interruptController.abort();
+          await failureHook?.({
+            tool_name: 'Bash',
+            tool_use_id: 'missed-flag-id',
+            error: "The user doesn't want to proceed with this tool use.",
+            is_interrupt: false,
+          });
+          fake.push({
+            done: false,
+            value: { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } },
+          });
+          fake.push({ done: true, value: undefined });
+        })();
+        return fake;
+      }
+    );
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks[0]).toEqual({
+      type: 'tool_result',
+      toolName: 'Bash',
+      toolOutput: "⚠️ Interrupted: The user doesn't want to proceed with this tool use.",
+      toolCallId: 'missed-flag-id',
+      toolOutcome: 'interrupted',
+      outputState: 'full',
+    });
+  });
+
+  test('a failure before the operator signal aborts stays a plain error even with interruptSignal wired', async () => {
+    const interruptController = new AbortController();
+    mockQuery.mockImplementation(
+      (args: {
+        options: {
+          hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+        };
+      }) => {
+        const fake = new FakeQuery();
+        const failureHook = args.options.hooks?.PostToolUseFailure?.[0]?.hooks?.[0];
+        void (async () => {
+          // No abort() call here — a genuine failure during ordinary
+          // generation, unrelated to any operator interrupt, must not be
+          // swept up by having an interruptSignal wired at all.
+          await failureHook?.({
+            tool_name: 'Bash',
+            tool_use_id: 'genuine-error-id',
+            error: 'exit 1',
+            is_interrupt: false,
+          });
+          fake.push({
+            done: false,
+            value: { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } },
+          });
+          fake.push({ done: true, value: undefined });
+        })();
+        return fake;
+      }
+    );
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks[0]).toEqual({
+      type: 'tool_result',
+      toolName: 'Bash',
+      toolOutput: '❌ Error: exit 1',
+      toolCallId: 'genuine-error-id',
+      toolOutcome: 'error',
+      outputState: 'full',
+    });
+  });
+
+  test('a PermissionDenied hook settles the denied call as a terminal error result', async () => {
+    // A tool the SDK denies (a built-in guard bypassing canUseTool, or any
+    // other deny source) never runs, so PostToolUse never fires for it. The
+    // room must still see a terminal row instead of an open call stuck
+    // `◐ running` for the rest of the turn.
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      const deniedHook = args.options.hooks?.PermissionDenied?.[0]?.hooks?.[0];
+      await deniedHook?.({
+        tool_name: 'Bash',
+        tool_use_id: 'denied-id',
+        tool_input: { command: 'sleep 999 &' },
+        reason: 'leading background sleep is blocked',
+      });
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'Bash',
+      toolOutput: '⛔ Blocked: leading background sleep is blocked',
+      toolCallId: 'denied-id',
+      toolOutcome: 'error',
+      outputState: 'full',
+    });
+  });
+
+  test('a PermissionDenied hook without a reason still settles with a generic message', async () => {
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      const deniedHook = args.options.hooks?.PermissionDenied?.[0]?.hooks?.[0];
+      await deniedHook?.({ tool_name: 'Write', tool_use_id: 'denied-no-reason' });
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'Write',
+      toolOutput: '⛔ Blocked: denied by a permission hook',
+      toolCallId: 'denied-no-reason',
+      toolOutcome: 'error',
+      outputState: 'full',
+    });
+  });
+
+  test('a built-in CLI guard denial with no hook settles via the plain Messages API tool_result', async () => {
+    // The leading-sleep guard (and similar built-in denials) blocks a call
+    // before it ever reaches execution, so it fires neither PostToolUse,
+    // PostToolUseFailure, nor PermissionDenied — Archon's only signal is a
+    // plain `user`-turn tool_result with is_error: true, exactly as the real
+    // Claude CLI emits it.
+    mockQuery.mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_blocked',
+              name: 'Bash',
+              input: { command: 'sleep 25 && echo done' },
+            },
+          ],
+        },
+      };
+      yield {
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_blocked',
+              content: '<tool_use_error>Blocked: sleep 25 followed by: echo done</tool_use_error>',
+              is_error: true,
+            },
+          ],
+        },
+      };
+      yield {
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'blocked, moving on' }] },
+      };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({
+      type: 'tool',
+      toolName: 'Bash',
+      toolInput: { command: 'sleep 25 && echo done' },
+      toolCallId: 'toolu_blocked',
+    });
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'Bash',
+      toolOutput: '<tool_use_error>Blocked: sleep 25 followed by: echo done</tool_use_error>',
+      toolCallId: 'toolu_blocked',
+      toolOutcome: 'error',
+      outputState: 'full',
+    });
+  });
+
+  test('a tool cut off by the operator settles interrupted through the same plain tool_result path, when no hook ever touches it', async () => {
+    // Verified live: the SDK settles an aborted mid-flight tool call here,
+    // through the plain Messages API tool_result on a 'user' turn — never
+    // through PostToolUseFailure. The operator's interrupt signal already
+    // being aborted at this point is the only proof available.
+    const interruptController = new AbortController();
+    mockQuery.mockImplementation((args: { prompt: unknown }) => {
+      const fake = new FakeQuery();
+      void (async () => {
+        fake.push({
+          done: false,
+          value: {
+            type: 'assistant',
+            message: {
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'toolu_cutoff',
+                  name: 'Bash',
+                  input: { command: 'sleep 25 && echo done' },
+                },
+              ],
+            },
+          },
+        });
+        interruptController.abort();
+        fake.push({
+          done: false,
+          value: {
+            type: 'user',
+            message: {
+              content: [
+                {
+                  type: 'tool_result',
+                  tool_use_id: 'toolu_cutoff',
+                  content: "The user doesn't want to proceed with this tool use.",
+                  is_error: true,
+                },
+              ],
+            },
+          },
+        });
+        fake.push({ done: true, value: undefined });
+      })();
+      // Streaming-input mode (prompt is an AsyncIterable) needs its single
+      // message drained or the provider's held-open gate never resolves.
+      void (async () => {
+        const iterator = (args.prompt as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+        await iterator.next();
+      })();
+      return fake;
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'Bash',
+      toolOutput: "The user doesn't want to proceed with this tool use.",
+      toolCallId: 'toolu_cutoff',
+      toolOutcome: 'interrupted',
+      outputState: 'full',
+    });
+  });
+
+  test('a denial whose tool_result content is an array of text blocks is flattened to plain text', async () => {
+    mockQuery.mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'toolu_arr', name: 'Write', input: {} }],
+        },
+      };
+      yield {
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_arr',
+              content: [{ type: 'text', text: 'denied by policy' }],
+              is_error: true,
+            },
+          ],
+        },
+      };
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'Write',
+      toolOutput: 'denied by policy',
+      toolCallId: 'toolu_arr',
+      toolOutcome: 'error',
+      outputState: 'full',
+    });
+  });
+
+  test('a genuinely executed failure already settled by PostToolUseFailure is never double-counted from its own user-turn tool_result', async () => {
+    // The Messages API always echoes a tool_result back as a user turn,
+    // including for calls that DID execute and already went through a hook.
+    // The hook-drain must be the one and only source for those.
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'toolu_ran', name: 'Bash', input: {} }],
+        },
+      };
+      const failureHook = args.options.hooks?.PostToolUseFailure?.[0]?.hooks?.[0];
+      await failureHook?.({
+        tool_name: 'Bash',
+        tool_use_id: 'toolu_ran',
+        error: 'exit 1',
+        is_interrupt: false,
+      });
+      yield {
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_ran',
+              content: 'exit 1',
+              is_error: true,
+            },
+          ],
+        },
+      };
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    const results = chunks.filter(
+      c => c.type === 'tool_result' && (c as { toolCallId?: string }).toolCallId === 'toolu_ran'
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({
+      type: 'tool_result',
+      toolName: 'Bash',
+      toolOutput: '❌ Error: exit 1',
+      toolCallId: 'toolu_ran',
+      toolOutcome: 'error',
+      outputState: 'full',
+    });
+  });
+
   test('terminal tool result queue drain preserves hook outcome', async () => {
     mockQuery.mockImplementation(async function* (args: {
       options: {
@@ -2170,6 +2628,248 @@ describe('sendQuery decomposition behaviors', () => {
       toolOutcome: 'success',
       outputState: 'full',
     });
+  });
+
+  test('an advisor-tagged subagent dispatch also yields an advisor notification', async () => {
+    // Empirically observed shape: Claude Code's advisorModel setting resolves
+    // to an ordinary Task/Agent dispatch with `subagent_type: 'advisor'`, not
+    // the raw Messages API's server_tool_use block. Its eventual tool_result
+    // (delivered the same way any other tool result is, via the PostToolUse
+    // hook queue) becomes the advisor notification.
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'Agent',
+              id: 'advisor-call-1',
+              input: { subagent_type: 'advisor', description: 'consult', prompt: 'help' },
+            },
+          ],
+        },
+      };
+      const successHook = args.options.hooks?.PostToolUse?.[0]?.hooks?.[0];
+      await successHook?.({
+        tool_name: 'Agent',
+        tool_use_id: 'advisor-call-1',
+        tool_response: 'use a channel-based shutdown pattern',
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+      assistantConfig: { advisorModel: 'claude-opus-4-8' },
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toContainEqual({
+      type: 'tool',
+      toolName: 'Agent',
+      toolInput: { subagent_type: 'advisor', description: 'consult', prompt: 'help' },
+      toolCallId: 'advisor-call-1',
+    });
+    expect(chunks).toContainEqual({
+      type: 'advisor',
+      content: 'use a channel-based shutdown pattern',
+      advisorModel: 'claude-opus-4-8',
+    });
+  });
+
+  test('reads the report text out of an AgentToolCompletedOutput envelope', async () => {
+    // Empirically observed real-world shape: the hook-captured tool_response
+    // is JSON-serialized AgentToolCompletedOutput, not plain prose.
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'Agent',
+              id: 'advisor-call-2',
+              input: { subagent_type: 'advisor' },
+            },
+          ],
+        },
+      };
+      const successHook = args.options.hooks?.PostToolUse?.[0]?.hooks?.[0];
+      await successHook?.({
+        tool_name: 'Agent',
+        tool_use_id: 'advisor-call-2',
+        tool_response: JSON.stringify({
+          status: 'completed',
+          agentId: 'afb44f8a751ce4231',
+          agentType: 'advisor',
+          content: [{ type: 'text', text: 'Your reasoning is correct.' }],
+        }),
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    const advisorChunk = chunks.find(chunk => chunk.type === 'advisor');
+    expect(advisorChunk).toEqual({ type: 'advisor', content: 'Your reasoning is correct.' });
+    // The ordinary tool_result row still carries the full raw envelope behind
+    // its own Raw toggle; only the advisor notification strips it.
+    expect(JSON.stringify(advisorChunk)).not.toContain('agentId');
+  });
+
+  test('falls back to the raw string when the envelope has no readable content', async () => {
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'Agent',
+              id: 'advisor-call-3',
+              input: { subagent_type: 'advisor' },
+            },
+          ],
+        },
+      };
+      const successHook = args.options.hooks?.PostToolUse?.[0]?.hooks?.[0];
+      await successHook?.({
+        tool_name: 'Agent',
+        tool_use_id: 'advisor-call-3',
+        tool_response: JSON.stringify({ status: 'completed', content: [] }),
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({
+      type: 'advisor',
+      content: JSON.stringify({ status: 'completed', content: [] }),
+    });
+  });
+
+  test('a non-advisor subagent dispatch never yields an advisor notification', async () => {
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'Agent',
+              id: 'reviewer-call-1',
+              input: { subagent_type: 'code-reviewer' },
+            },
+          ],
+        },
+      };
+      const successHook = args.options.hooks?.PostToolUse?.[0]?.hooks?.[0];
+      await successHook?.({
+        tool_name: 'Agent',
+        tool_use_id: 'reviewer-call-1',
+        tool_response: 'looks fine',
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks.some(chunk => chunk.type === 'advisor')).toBe(false);
+  });
+
+  test('the raw Messages API advisor_tool_result block yields an advisor notification', async () => {
+    mockQuery.mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'server_tool_use', id: 'srvtoolu-1', name: 'advisor', input: {} },
+            {
+              type: 'advisor_tool_result',
+              tool_use_id: 'srvtoolu-1',
+              content: { type: 'advisor_result', text: 'use a worker pool' },
+            },
+          ],
+        },
+      };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+      assistantConfig: { advisorModel: 'claude-opus-4-8' },
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      { type: 'advisor', content: 'use a worker pool', advisorModel: 'claude-opus-4-8' },
+    ]);
+  });
+
+  test('a redacted advisor_tool_result reports that the answer is not readable', async () => {
+    mockQuery.mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'advisor_tool_result',
+              tool_use_id: 'srvtoolu-2',
+              content: { type: 'advisor_redacted_result', encrypted_content: 'BLOB' },
+            },
+          ],
+        },
+      };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.type).toBe('advisor');
+    expect((chunks[0] as { content: string }).content).toContain('encrypted');
+    expect(JSON.stringify(chunks)).not.toContain('BLOB');
+  });
+
+  test('an advisor_tool_result error reports the error code, not a fabricated answer', async () => {
+    mockQuery.mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'advisor_tool_result',
+              tool_use_id: 'srvtoolu-3',
+              content: { type: 'advisor_tool_result_error', error_code: 'overloaded' },
+            },
+          ],
+        },
+      };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toHaveLength(1);
+    expect((chunks[0] as { content: string }).content).toContain('overloaded');
   });
 
   test('PostToolUse hook handles circular reference without crashing', async () => {
@@ -2916,6 +3616,259 @@ describe('turn interrupt (native seam)', () => {
       message: { role: 'user', content: 'test prompt' },
       parent_tool_use_id: null,
     });
+  });
+
+  test('operatorMessageId stamps the streamed user message uuid and requests --replay-user-messages', async () => {
+    const interruptController = new AbortController();
+    let inputIterator: AsyncIterator<unknown> | undefined;
+    let capturedExtraArgs: Record<string, string | null> | undefined;
+    mockQuery.mockImplementation((args: { prompt: unknown; options: { extraArgs?: unknown } }) => {
+      inputIterator = (args.prompt as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+      capturedExtraArgs = args.options.extraArgs as Record<string, string | null> | undefined;
+      const fake = new FakeQuery();
+      fake.push({ done: true, value: undefined });
+      return fake;
+    });
+
+    for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+      operatorMessageId: 'msg-op-1',
+    })) {
+      // consume
+    }
+
+    const first = await inputIterator!.next();
+    expect(first.value).toMatchObject({ uuid: 'msg-op-1' });
+    expect(capturedExtraArgs).toEqual({ 'replay-user-messages': null });
+  });
+
+  test('without operatorMessageId no uuid is stamped and --replay-user-messages is not requested', async () => {
+    const interruptController = new AbortController();
+    let capturedExtraArgs: Record<string, string | null> | undefined;
+    mockQuery.mockImplementation((args: { options: { extraArgs?: unknown } }) => {
+      capturedExtraArgs = args.options.extraArgs as Record<string, string | null> | undefined;
+      const fake = new FakeQuery();
+      fake.push({ done: true, value: undefined });
+      return fake;
+    });
+
+    for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      // consume
+    }
+
+    expect(capturedExtraArgs).toBeUndefined();
+  });
+
+  describe('soft injection', () => {
+    type Handler = (request: { messageId: string; text: string }) => Promise<boolean>;
+
+    /** Minimal read-only channel that records registration like the executor's. */
+    function makeChannel(): {
+      channel: { ready(handler: Handler): () => void };
+      current: () => Handler | undefined;
+      registrations: () => number;
+    } {
+      let handler: Handler | undefined;
+      let registrations = 0;
+      return {
+        channel: {
+          ready(next): () => void {
+            handler = next;
+            registrations += 1;
+            return (): void => {
+              if (handler === next) handler = undefined;
+            };
+          },
+        },
+        current: () => handler,
+        registrations: () => registrations,
+      };
+    }
+
+    test('registers a handler once the query exists and requests --replay-user-messages', async () => {
+      const interruptController = new AbortController();
+      const { channel, current } = makeChannel();
+      let capturedExtraArgs: Record<string, string | null> | undefined;
+      const fake = new FakeQuery();
+      let registeredAtQueryTime = false;
+      mockQuery.mockImplementation((args: { options: { extraArgs?: unknown } }) => {
+        capturedExtraArgs = args.options.extraArgs as Record<string, string | null> | undefined;
+        registeredAtQueryTime = current() !== undefined;
+        return fake;
+      });
+
+      const drain = (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+          interruptSignal: interruptController.signal,
+          softInjection: channel,
+        })) {
+          // consume
+        }
+      })();
+      await flushMicrotasks();
+
+      expect(registeredAtQueryTime).toBe(false);
+      expect(current()).toBeDefined();
+      expect(capturedExtraArgs).toEqual({ 'replay-user-messages': null });
+
+      fake.push({ done: true, value: undefined });
+      await drain;
+    });
+
+    test('an accepted injection pushes one user message stamped with the request id and does not end the turn', async () => {
+      const interruptController = new AbortController();
+      const { channel, current } = makeChannel();
+      const fake = new FakeQuery();
+      let inputIterator: AsyncIterator<unknown> | undefined;
+      mockQuery.mockImplementation((args: { prompt: unknown }) => {
+        inputIterator = (args.prompt as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+        return fake;
+      });
+
+      const chunks: unknown[] = [];
+      const drain = (async (): Promise<void> => {
+        for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+          interruptSignal: interruptController.signal,
+          softInjection: channel,
+        })) {
+          chunks.push(chunk);
+        }
+      })();
+      await flushMicrotasks();
+
+      await inputIterator!.next(); // the SDK consumes the prompt message
+      const accepted = await current()!({ messageId: 'msg-inject-1', text: 'also do X' });
+      const injected = await inputIterator!.next();
+
+      expect(accepted).toBe(true);
+      expect(injected.value).toEqual({
+        type: 'user',
+        message: { role: 'user', content: 'also do X' },
+        parent_tool_use_id: null,
+        uuid: 'msg-inject-1',
+      });
+      expect(interruptController.signal.aborted).toBe(false);
+      expect(fake.interrupt).not.toHaveBeenCalled();
+      expect(fake.close).not.toHaveBeenCalled();
+      // No steering-owned event is produced by the push itself.
+      expect(chunks).toEqual([]);
+
+      fake.push({
+        done: false,
+        value: { type: 'user', isReplay: true, uuid: 'msg-inject-1', session_id: 'sid-1' },
+      });
+      fake.push({ done: true, value: undefined });
+      await drain;
+      // The echo of the injected id is the delivery acknowledgement.
+      expect(chunks).toEqual([{ type: 'operator_delivery_ack', messageId: 'msg-inject-1' }]);
+    });
+
+    test('unregisters and rejects injections once the turn produced its result', async () => {
+      const interruptController = new AbortController();
+      const { channel, current } = makeChannel();
+      const fake = new FakeQuery();
+      mockQuery.mockImplementation(() => fake);
+
+      const drain = (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+          interruptSignal: interruptController.signal,
+          softInjection: channel,
+        })) {
+          // consume
+        }
+      })();
+      await flushMicrotasks();
+      const handler = current()!;
+
+      fake.push({
+        done: false,
+        value: { type: 'result', subtype: 'success', session_id: 'sid-1' },
+      });
+      fake.push({ done: true, value: undefined });
+      await drain;
+
+      expect(current()).toBeUndefined();
+      expect(await handler({ messageId: 'late', text: 'too late' })).toBe(false);
+    });
+
+    test('unregisters when the stream fails', async () => {
+      const interruptController = new AbortController();
+      const { channel, current } = makeChannel();
+      const fake = new FakeQuery();
+      mockQuery.mockImplementation(() => fake);
+
+      const drain = (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+          interruptSignal: interruptController.signal,
+          softInjection: channel,
+        })) {
+          // consume
+        }
+      })();
+      const settled = drain.then(
+        () => 'resolved',
+        () => 'rejected'
+      );
+      await flushMicrotasks();
+      expect(current()).toBeDefined();
+
+      fake.pushError(new Error('invalid api key'));
+      expect(await settled).toBe('rejected');
+      expect(current()).toBeUndefined();
+    });
+
+    test('refuses an injection after the turn is interrupted', async () => {
+      const interruptController = new AbortController();
+      const { channel, current } = makeChannel();
+      const fake = new FakeQuery();
+      mockQuery.mockImplementation(() => fake);
+
+      const drain = (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+          interruptSignal: interruptController.signal,
+          softInjection: channel,
+        })) {
+          // consume
+        }
+      })();
+      await flushMicrotasks();
+      const handler = current()!;
+
+      interruptController.abort();
+      expect(await handler({ messageId: 'after-stop', text: 'x' })).toBe(false);
+
+      fake.push({ done: true, value: undefined });
+      await drain;
+    });
+  });
+
+  test('a replayed user message carrying the injected uuid yields operator_delivery_ack; a non-replay user message does not', async () => {
+    const interruptController = new AbortController();
+    mockQuery.mockImplementation(() => {
+      const fake = new FakeQuery();
+      fake.push({
+        done: false,
+        value: { type: 'user', isReplay: true, uuid: 'msg-op-1', session_id: 'sid-1' },
+      });
+      fake.push({
+        done: false,
+        value: { type: 'user', uuid: 'msg-op-2', session_id: 'sid-1' },
+      });
+      fake.push({ done: true, value: undefined });
+      return fake;
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+      operatorMessageId: 'msg-op-1',
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([{ type: 'operator_delivery_ack', messageId: 'msg-op-1' }]);
   });
 
   test('interrupt abort calls native interrupt() exactly once and never aborts the SDK controller or closes the query', async () => {

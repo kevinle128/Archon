@@ -58,9 +58,12 @@ const SCROLLER_TESTID: Record<Surface, string> = {
   legacy: 'node-transcript-scroll',
 };
 const ASK_BLOCKED_REASON = "answer the agent's question first";
-const DETACHED_DISCLOSURE =
-  'not steerable here · this run was started detached, so its live session is not in this process';
-const SEND_HINT = 'Cmd/Ctrl+Enter to send · this tab only';
+// A CLI-detached run's node has no live handle in this server process, the
+// same durable-node-no-live-handle state a server restart produces
+// (steering-dock.ts STEERING_RECOVERY_DISCLOSURE).
+const STEERING_RECOVERY_DISCLOSURE =
+  'restored after server restart · Resume the workflow to continue';
+const SEND_HINT = 'Cmd/Ctrl+Enter to send · saved for you';
 const FIRST_CORRECTION = 'first correction';
 const SECOND_CORRECTION = '<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>second correction';
 const GUIDANCE_ECHO_TEXT = '[e2e-fake] resumed echo: first correction\n\nsecond correction';
@@ -319,8 +322,9 @@ async function transcriptTexts(page: Page, runId: string, nodeId: string): Promi
     .map(message => message.payload.text as string);
 }
 
-for (const surface of ['console', 'legacy'] as const) {
-  test(`[P1] [V:steer.direct-${surface}] queue guidance drains at the natural boundary on ${surface}`, async ({
+const surface = 'legacy' as const;
+{
+  test(`[P1] [V:steer.direct-legacy] queue guidance drains at the natural boundary on legacy`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -375,7 +379,10 @@ for (const surface of ['console', 'legacy'] as const) {
       const items = queueList(room).getByRole('listitem');
       await expect(items).toHaveCount(1);
       await expect(items.first()).toContainText(FIRST_CORRECTION);
-      await expect(items.first()).toContainText('sent');
+      // Delivery is never inferred from prose: a queued/sent item carries no
+      // per-item status suffix (only the ambiguous delivery_unknown state
+      // does); this is a regression guard, not a proof of delivery.
+      await expect(items.first()).not.toContainText('sent');
       await expect(room.locator('[role="status"]')).toContainText('1 message queued');
       expect(await field.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
 
@@ -389,7 +396,7 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(items).toHaveCount(2);
       await expect(items.nth(0)).toContainText(FIRST_CORRECTION);
       await expect(items.nth(1)).toContainText('second correction');
-      await expect(items.nth(1)).toContainText('sent');
+      await expect(items.nth(1)).not.toContainText('sent');
       expect(await field.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
       expect(sends.count()).toBe(2);
       expect(sends.messageIds()).toHaveLength(2);
@@ -429,7 +436,7 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(operatorRows[0]!.metadata?.execution?.attempt_id).toBe(causedAttempt);
       expect(operatorRows[1]!.metadata?.execution?.attempt_id).toBe(causedAttempt);
 
-      const priorAttempt = messages
+      const priorRow = messages
         .filter(
           message =>
             message.kind === 'text' &&
@@ -437,11 +444,20 @@ for (const surface of ['console', 'legacy'] as const) {
             message.seq < operatorRows[0]!.seq &&
             typeof message.metadata?.execution?.attempt_id === 'string'
         )
-        .at(-1)?.metadata?.execution?.attempt_id;
-      if (priorAttempt !== undefined) {
-        expect(priorAttempt, 'operator rows use the caused attempt, not the prior turn').not.toBe(
-          causedAttempt
-        );
+        .at(-1);
+      if (priorRow !== undefined) {
+        // A steered node is one execution with several provider turns on one
+        // live session: the turn that opened the node and the guidance turn
+        // it steers into share the same occurrence and attempt, so the room
+        // keeps projecting every turn's rows together while the node runs.
+        expect(
+          priorRow.metadata?.execution?.attempt_id,
+          'the drained guidance turn keeps the attempt that opened the node'
+        ).toBe(causedAttempt);
+        expect(
+          priorRow.metadata?.execution?.occurrence_id,
+          'the drained guidance turn keeps the occurrence that opened the node'
+        ).toBe(echoRow!.metadata?.execution?.occurrence_id);
       }
 
       const detail = await getRunDetail(page, run.runId);
@@ -502,7 +518,7 @@ for (const surface of ['console', 'legacy'] as const) {
     });
   });
 
-  test(`[P1] [V:steer.loop-${surface}] queue guidance drains inside the loop iteration on ${surface}`, async ({
+  test(`[P1] [V:steer.loop-legacy] queue guidance drains inside the loop iteration on legacy`, async ({
     page,
     archon,
   }) => {
@@ -550,29 +566,9 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(page.getByText(LOOP_ECHO_TEXT).first()).toBeVisible({ timeout: T.medium });
     await expect(page.getByText(LOOP_DONE_TEXT).first()).toBeVisible();
     await expect(page.getByText('×2')).toHaveCount(0);
-    if (surface === 'console') {
-      // In the console log stream the echo and sentinel sit inside the ×1
-      // group, after its header and before the node's completion row.
-      const order = await page.evaluate(() => {
-        const text = (document.querySelector('main') ?? document.body).textContent ?? '';
-        return {
-          text,
-          group: text.indexOf('steer-loop ×1'),
-          echo: text.indexOf('[e2e-fake] resumed echo: finish now'),
-          done: text.indexOf('E2E_LOOP_DONE'),
-        };
-      });
-      expect(order.group, '×1 group header exists').toBeGreaterThanOrEqual(0);
-      expect(order.echo).toBeGreaterThan(order.group);
-      expect(order.done).toBeGreaterThan(order.echo);
-      expect(
-        order.text.match(/steer-loop ×/g)?.length ?? 0,
-        'exactly one iteration group for steer-loop'
-      ).toBe(1);
-    }
   });
 
-  test(`[P1] [V:steer.blocked-${surface}] a pending Ask blocks queue guidance on ${surface}`, async ({
+  test(`[P1] [V:steer.blocked-legacy] a pending Ask blocks queue guidance on legacy`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -623,7 +619,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await captureEvidence(room, `us-005-${surface}-ask-blocked.png`, testInfo);
   });
 
-  test(`[P1] [V:steer.detached-${surface}] queue guidance discloses a detached run after a 422 on ${surface}`, async ({
+  test(`[P1] [V:steer.detached-legacy] queue guidance discloses a CLI-detached run as recovery-required on legacy`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -633,47 +629,75 @@ for (const surface of ['console', 'legacy'] as const) {
     await archon.waitForRunStatus(runId, 'running', T.long);
     await waitForNodeStarted(page, runId, QUEUE_GUIDANCE_NODE);
     const room = await openGuidanceRoom(page, surface, runId, QUEUE_GUIDANCE_NODE);
-    const field = guidanceField(room);
-    // No queue read exists yet, so the composer cannot know it is detached;
-    // the 422 response is what discloses it.
-    await expect(field).toBeVisible({ timeout: T.medium });
-    const response = page.waitForResponse(
-      res => new URL(res.url()).pathname === sendPathname(runId, QUEUE_GUIDANCE_NODE)
-    );
-    await field.fill('detach probe');
-    await field.press('Meta+Enter');
-    expect((await response).status()).toBe(422);
-
+    // The CLI process's own executor durably stamped a provider_id for this
+    // node when it registered its live handle; this server process just has
+    // no in-memory handle for it — the durable queue read on mount already
+    // reports execution_state: 'recovery_required' (classifySteeringLifecycle,
+    // api.ts), so the dock renders read-only from the first paint. There is
+    // no field to compose in and nothing to send; a durable draft was never
+    // written for this run, so there is nothing to verify surviving a
+    // refusal (be35cdb2 replaced the sessionStorage-era draft with the
+    // server-persisted one this scenario never touches).
     const disclosure = room.getByRole('alert');
-    await expect(disclosure).toContainText(DETACHED_DISCLOSURE);
-    await expect(field).toHaveCount(0);
+    await expect(disclosure).toContainText(STEERING_RECOVERY_DISCLOSURE);
+    await expect(guidanceField(room)).toHaveCount(0);
+    await expect(queueButton(room)).toHaveCount(0);
     await expect(room.getByText(/^queued ·/)).toHaveCount(0);
 
-    const stored = await page.evaluate(
-      key => sessionStorage.getItem(key),
-      `archon:steering-draft:${runId}:${QUEUE_GUIDANCE_NODE}`
-    );
-    expect(stored, 'draft + retry id persist in sessionStorage after the refusal').toBeTruthy();
-    const record = JSON.parse(stored ?? '{}') as {
-      draft?: string;
-      pendingRetry?: { messageId?: string; message?: string };
-    };
-    expect(record.draft).toBe('detach probe');
-    expect(record.pendingRetry?.message).toBe('detach probe');
-    expect(record.pendingRetry?.messageId).toMatch(/^[0-9a-f-]{36}$/);
-
     const alert = await textContrast(disclosure);
-    expect(alert.ratio, 'detached disclosure text contrast ≥ 4.5:1').toBeGreaterThanOrEqual(4.5);
+    expect(alert.ratio, 'recovery disclosure text contrast ≥ 4.5:1').toBeGreaterThanOrEqual(4.5);
     mergeMeasurements(`detached-${surface}`, {
-      disclosure: DETACHED_DISCLOSURE,
+      disclosure: STEERING_RECOVERY_DISCLOSURE,
       textColor: alert.color,
       background: alert.bg,
       contrastRatio: Number(alert.ratio.toFixed(2)),
     });
-    await captureEvidence(room, `us-005-${surface}-detached-422.png`, testInfo);
+    await captureEvidence(room, `us-005-${surface}-detached-recovery-required.png`, testInfo);
   });
 
-  test(`[P1] [V:steer.visual-${surface}] queue guidance dock geometry, contrast, and reduced-motion evidence on ${surface}`, async ({
+  test(`[P1] [V:steer.detached-loop-legacy] a CLI-detached LOOP run discloses recovery-required, not a live composer, on legacy`, async ({
+    page,
+    archon,
+  }, testInfo: TestInfo) => {
+    test.setTimeout(T.xlong * 2);
+    // A CLI-detached run's executor registers its own live handle and
+    // durably stamps `provider_id` on the node's steering settings row in
+    // ITS OWN process. From this server's perspective the row looks exactly
+    // like a node whose process crashed and restarted: a durable stamp with
+    // no in-memory handle. The loop-node executor path used to skip that
+    // stamp entirely (only the prompt-node path wrote it), so a loop node
+    // in this exact state rendered a live, steerable composer instead of
+    // the read-only recovery band — this is the regression guard for that.
+    const detached = await archon.startDetachedWorkflow(E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME);
+    const runId = await detached.runId;
+    await archon.waitForRunStatus(runId, 'running', T.long);
+    await waitForNodeStarted(page, runId, QUEUE_GUIDANCE_LOOP_NODE);
+    const room = await openGuidanceRoom(page, surface, runId, QUEUE_GUIDANCE_LOOP_NODE);
+    const disclosure = room.getByRole('alert');
+    await expect(disclosure).toContainText(STEERING_RECOVERY_DISCLOSURE);
+    await expect(guidanceField(room)).toHaveCount(0);
+    await expect(queueButton(room)).toHaveCount(0);
+    await expect(room.getByText(/^queued ·/)).toHaveCount(0);
+
+    const queueAttempt = await archon.starterFetch(sendPathname(runId, QUEUE_GUIDANCE_LOOP_NODE), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'detached loop guidance',
+        message_id: randomUUID(),
+        intent: 'queue',
+      }),
+    });
+    expect(queueAttempt.status).toBe(409);
+    expect(await queueAttempt.json()).toMatchObject({
+      success: false,
+      error: { code: 'recovery_required' },
+    });
+
+    await captureEvidence(room, `us-005-${surface}-detached-loop-recovery-required.png`, testInfo);
+  });
+
+  test(`[P1] [V:steer.visual-legacy] queue guidance dock geometry, contrast, and reduced-motion evidence on legacy`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -696,7 +720,11 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(items).toHaveCount(2);
 
     await test.step('contrast: receipts, sent badges, hint, and field focus ring', async () => {
-      const receiptText = await textContrast(items.first().locator('span').first());
+      // The decorative 1-based position number is the row's first span
+      // (aria-hidden); the message-text span is the first non-decorative one.
+      const receiptText = await textContrast(
+        items.first().locator('span:not([aria-hidden="true"])').first()
+      );
       const sentBadge = await textContrast(items.first().locator('span').last());
       const hint = await textContrast(room.getByText(SEND_HINT));
       const queueLabel = await textContrast(queue);
@@ -779,24 +807,15 @@ for (const surface of ['console', 'legacy'] as const) {
         })
         .toBeLessThanOrEqual(460);
       await expectNoRoomDrivenOverflow(room, `${surface}@460`);
-      await captureEvidence(room, `us-005-${surface}-460-queued-2.png`, testInfo);
+      await captureEvidence(room, `us-005-legacy-460-queued-2.png`, testInfo);
       const narrowWidth = (await room.boundingBox())?.width ?? 0;
-      if (surface === 'console') {
-        await page.setViewportSize({ width: 1440, height: 900 });
-        await expect(items).toHaveCount(2);
-        await expectNoRoomDrivenOverflow(room, 'console@1440');
-        const roomWidth = (await room.boundingBox())?.width ?? 0;
-        await captureEvidence(room, 'us-005-console-1440-queued-2.png', testInfo);
-        mergeMeasurements('console-viewports', { narrow460: narrowWidth, wide1440: roomWidth });
-      } else {
-        mergeMeasurements('legacy-viewports', { narrow460: narrowWidth });
-      }
+      mergeMeasurements('legacy-viewports', { narrow460: narrowWidth });
     });
 
     await test.step('reduced-motion parity', async () => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await expect(items).toHaveCount(2);
-      await expect(items.first()).toContainText('sent');
+      await expect(items.first()).not.toContainText('sent');
       await captureEvidence(room, `us-005-${surface}-queued-2-reduced-motion.png`, testInfo);
       await page.emulateMedia({ reducedMotion: 'no-preference' });
     });
@@ -829,7 +848,7 @@ for (const surface of ['console', 'legacy'] as const) {
   });
 }
 
-test('[P1] [V:steer.route-smoke] queue guidance send route ladder: 200 live, 400 malformed, 404 unknown, 409 finished, 422 detached', async ({
+test('[P1] [V:steer.route-smoke] queue guidance send route ladder: 200 live, 400 malformed, 404 unknown, 409 recovery required, 409 finished', async ({
   page,
   archon,
 }) => {
@@ -886,6 +905,14 @@ test('[P1] [V:steer.route-smoke] queue guidance send route ladder: 200 live, 400
     error: { code: 'not_found' },
   });
 
+  // A CLI-detached run's node DOES have a durably-stamped provider_id (the
+  // CLI process's own executor registered a live handle and wrote it) — the
+  // server process fielding this request just has no in-memory handle for
+  // it, which is exactly recovery_required, not not_steerable_here
+  // (classifySteeringLifecycle, api.ts: not_steerable_here is reserved for a
+  // node that never registered a live handle anywhere). The API never infers
+  // process origin from a missing live handle; the durable stamp is what
+  // makes the distinction honest.
   const detached = await archon.startDetachedWorkflow(E2E_QUEUE_GUIDANCE_WORKFLOW_NAME);
   const detachedRunId = await detached.runId;
   await archon.waitForRunStatus(detachedRunId, 'running', T.long);
@@ -895,10 +922,10 @@ test('[P1] [V:steer.route-smoke] queue guidance send route ladder: 200 live, 400
     message_id: randomUUID(),
     intent: 'queue',
   });
-  expect(detachedRes.status).toBe(422);
+  expect(detachedRes.status).toBe(409);
   expect(await detachedRes.json()).toMatchObject({
     success: false,
-    error: { code: 'not_steerable_here' },
+    error: { code: 'recovery_required' },
   });
 
   await archon.waitForRunStatus(run.runId, 'completed', T.xlong);

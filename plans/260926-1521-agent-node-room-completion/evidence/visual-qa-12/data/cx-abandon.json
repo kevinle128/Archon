@@ -1,0 +1,66 @@
+{
+  "post": 15,
+  "res": { "success": true, "message": "Abandoned workflow: vq12-codex" },
+  "C": {
+    "neverSentAt": 88,
+    "pillAt": 123,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -277,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cx-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [88, "NEVER SENT · 1", "", "Running", 1],
+      [123, "NEVER SENT · 1", "", "Failed", 1],
+      [1727, "NEVER SENT · 1", "", "Failed", 1]
+    ]
+  },
+  "L": {
+    "neverSentAt": 566,
+    "pillAt": 566,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "– shell sleep 25 && echo step-2 output unknown ·",
+        "– shell sleep 25 && echo step-2 output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -276,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cx-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        523,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cx-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [566, "NEVER SENT · 1", "", "Failed", 1],
+      [3567, "NEVER SENT · 1", "", "Failed", 1]
+    ]
+  }
+}

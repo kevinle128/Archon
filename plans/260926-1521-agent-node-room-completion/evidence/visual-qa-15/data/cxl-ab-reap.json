@@ -1,0 +1,50 @@
+{
+  "root": 53226,
+  "mark": null,
+  "start": 1790747994001,
+  "end": 1790748004195,
+  "procs": [
+    {
+      "pid": 75151,
+      "cmd": "codex exec --experimental-json --config skills.include_instr",
+      "first": 1790747994001,
+      "last": 1790747995547
+    },
+    {
+      "pid": 75360,
+      "cmd": "node_repl",
+      "first": 1790747994001,
+      "last": 1790747995547
+    },
+    {
+      "pid": 75361,
+      "cmd": "node cua-repl.mjs",
+      "first": 1790747994001,
+      "last": 1790747995547
+    },
+    {
+      "pid": 75362,
+      "cmd": "ak codex-agent-runtime serve",
+      "first": 1790747994001,
+      "last": 1790747995547
+    },
+    {
+      "pid": 77781,
+      "cmd": "zsh -c sleep 90; echo again2",
+      "first": 1790747994001,
+      "last": 1790747995547
+    },
+    {
+      "pid": 77782,
+      "cmd": "sleep 90",
+      "first": 1790747994001,
+      "last": 1790747995547
+    },
+    {
+      "pid": 75612,
+      "cmd": "node_repl",
+      "first": 1790747994001,
+      "last": 1790747995547
+    }
+  ]
+}

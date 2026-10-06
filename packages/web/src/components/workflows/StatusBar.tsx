@@ -22,7 +22,7 @@ export function StatusBar({
   const isValid = errorCount === 0 && warningCount === 0;
 
   return (
-    <div className="flex h-7 items-center justify-between border-t border-border bg-surface px-3 text-xs text-text-tertiary">
+    <div className="flex min-h-9 items-center justify-between border-t border-border bg-background px-4 text-xs text-text-tertiary">
       {/* Left side */}
       <div className="flex items-center gap-3">
         {/* Validation badge */}
@@ -30,7 +30,7 @@ export function StatusBar({
           type="button"
           onClick={onValidationClick}
           className={cn(
-            'flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-surface-hover',
+            'flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 transition-colors duration-200 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
             isValid && 'text-success'
           )}
         >

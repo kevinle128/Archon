@@ -1,0 +1,90 @@
+{
+  "post": 6,
+  "res": { "success": true, "message": "Abandoned workflow: vq13-fake-loop" },
+  "C": {
+    "neverSentAt": 132,
+    "pillAt": 132,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": ["– Read HITL_TOOL_INPUT.txt output unknown ·"],
+      "ta": false
+    },
+    "frames": [
+      [
+        -269,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · FABL2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [132, "NEVER SENT · 1", "", "Failed", 1],
+      [1972, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "L": {
+    "neverSentAt": 695,
+    "pillAt": 695,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": ["– Read HITL_TOOL_INPUT.txt output unknown ·"],
+      "ta": false
+    },
+    "frames": [
+      [
+        -268,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · FABL2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        652,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · FABL2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [695, "NEVER SENT · 1", "", "Failed", 1],
+      [732, "NEVER SENT · 1", "", "Failed", 1],
+      [3732, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "raf": {
+    "c": [
+      [-305, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [108, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ],
+    "l": [
+      [-306, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [720, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ]
+  },
+  "gets": [
+    { "s": "l", "t": -1359, "k": "r", "st": "running", "ns": "fake-loop:running" },
+    { "s": "l", "t": -1318, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -902, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -310, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": 101, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 108, "k": "r", "st": "cancelled", "ns": "fake-loop:failed" },
+    { "s": "c", "t": 109, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 120, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 695, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 700, "k": "r", "st": "cancelled", "ns": "fake-loop:failed" },
+    { "s": "l", "t": 700, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 722, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 1964, "k": "r", "st": "cancelled", "ns": "fake-loop:failed" },
+    { "s": "l", "t": 3706, "k": "r", "st": "cancelled", "ns": "fake-loop:failed" }
+  ]
+}

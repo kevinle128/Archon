@@ -9,7 +9,7 @@ interface ErrorCardProps {
 
 export function ErrorCard({ error, onRetry }: ErrorCardProps): React.ReactElement {
   return (
-    <div className="rounded-lg border border-border border-l-[3px] border-l-error bg-surface p-4">
+    <div className="rounded-xl border border-border border-l-[3px] border-l-error bg-surface p-4">
       <div className="flex items-start gap-3">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-error" />
         <div className="flex-1">

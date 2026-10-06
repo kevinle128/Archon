@@ -1,0 +1,179 @@
+{
+  "run": "0a11de6c03e3f3834d31b4982008000c",
+  "parked": {
+    "q": {
+      "es": "live",
+      "sub": "idle-after-interrupt",
+      "auto": true,
+      "items": [
+        ["F75-Q1 <<E", "queued", 1, "automatic", "e2e-fake: found <<E2E_USAGE>> without a "],
+        ["F75-Q2 sec", "queued", 0, null, ""]
+      ]
+    },
+    "c": {
+      "alerts": [
+        {
+          "role": "alert",
+          "live": "assertive",
+          "inPanel": true,
+          "text": "automatic dispatch failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>> in the usage directive · Send now to retry"
+        }
+      ],
+      "pill": "Running",
+      "btns": "delete · F75-Q1 <<E2E_USAGE>>malformed, never closes,delete · F75-Q2 second item,Send now · Cmd/Ctrl+Enter to send · 2 messages will send",
+      "bands": "WILL SEND · 2",
+      "status": "agent idle · Send now delivers",
+      "ta": true
+    },
+    "l": {
+      "alerts": [
+        {
+          "role": "alert",
+          "live": "assertive",
+          "inPanel": true,
+          "text": "automatic dispatch failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>> in the usage directive · Send now to retry"
+        }
+      ],
+      "pill": "Running",
+      "btns": "delete · F75-Q1 <<E2E_USAGE>>malformed, never closes,delete · F75-Q2 second item,Send now · Cmd/Ctrl+Enter to send · 2 messages will send",
+      "bands": "WILL SEND · 2",
+      "status": "agent idle · Send now delivers",
+      "ta": true
+    }
+  },
+  "stillParked": {
+    "es": "live",
+    "sub": "idle-after-interrupt",
+    "auto": true,
+    "items": [
+      ["F75-Q1 <<E", "queued", 1, "automatic", "e2e-fake: found <<E2E_USAGE>> without a "],
+      ["F75-Q2 sec", "queued", 0, null, ""]
+    ]
+  },
+  "s1": [200, "/api/workflows/runs/0a11de6c03e3f3834d31b4982008000c/nodes/fake-node/send"],
+  "retryFailed": {
+    "q": {
+      "es": "live",
+      "sub": "idle-after-interrupt",
+      "auto": true,
+      "items": [
+        ["F75-Q1 <<E", "queued", 2, "send_now", "e2e-fake: found <<E2E_USAGE>> without a "],
+        ["F75-Q2 sec", "queued", 1, "send_now", "e2e-fake: found <<E2E_USAGE>> without a "]
+      ]
+    },
+    "c": {
+      "alerts": [
+        {
+          "role": "alert",
+          "live": "assertive",
+          "inPanel": true,
+          "text": "Send now failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>> in the usage directive · Send now to retry"
+        }
+      ],
+      "pill": "Running",
+      "btns": "delete · F75-Q1 <<E2E_USAGE>>malformed, never closes,delete · F75-Q2 second item,Send now · Cmd/Ctrl+Enter to send · 2 messages will send",
+      "bands": "WILL SEND · 2",
+      "status": "agent idle · Send now delivers",
+      "ta": true
+    },
+    "l": {
+      "alerts": [
+        {
+          "role": "alert",
+          "live": "assertive",
+          "inPanel": true,
+          "text": "Send now failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>> in the usage directive · Send now to retry"
+        }
+      ],
+      "pill": "Running",
+      "btns": "delete · F75-Q1 <<E2E_USAGE>>malformed, never closes,delete · F75-Q2 second item,Send now · Cmd/Ctrl+Enter to send · 2 messages will send",
+      "bands": "WILL SEND · 2",
+      "status": "agent idle · Send now delivers",
+      "ta": true
+    }
+  },
+  "al": {
+    "c": [
+      [
+        -35056,
+        "0|QUEUED · 2||delete · F75-Q1 <<E2E_USAGE>>malformed, never closes,delete · F75-Q2 second item,Stop,Queue · Cmd/Ctrl+Enter to send · 2 messages queued"
+      ],
+      [
+        144,
+        "0|WILL SEND · 2|agent idle · Send now delivers|delete · F75-Q1 <<E2E_USAGE>>malformed, never closes,delete · F75-Q2 second item,Send now · Cmd/Ctrl+Enter to send · 2 messages will send"
+      ],
+      [
+        504,
+        "1|WILL SEND · 2|agent idle · Send now delivers|delete · F75-Q1 <<E2E_USAGE>>malformed, never closes,delete · F75-Q2 second item,Send now · Cmd/Ctrl+Enter to send · 2 messages will send"
+      ]
+    ],
+    "l": [
+      [
+        -35055,
+        "0|QUEUED · 2||delete · F75-Q1 <<E2E_USAGE>>malformed, never closes,delete · F75-Q2 second item,Stop,Queue · Cmd/Ctrl+Enter to send · 2 messages queued"
+      ],
+      [
+        24,
+        "0|WILL SEND · 2|agent idle · Send now delivers|delete · F75-Q1 <<E2E_USAGE>>malformed, never closes,delete · F75-Q2 second item,Send now · Cmd/Ctrl+Enter to send · 2 messages will send"
+      ],
+      [
+        184,
+        "1|WILL SEND · 2|agent idle · Send now delivers|delete · F75-Q1 <<E2E_USAGE>>malformed, never closes,delete · F75-Q2 second item,Send now · Cmd/Ctrl+Enter to send · 2 messages will send"
+      ]
+    ]
+  },
+  "withdraw": { "success": true, "message_id": "256f0fd4-2bce-44d7-8ff8-52cae3d6a73f" },
+  "afterW": {
+    "q": {
+      "es": "live",
+      "sub": "idle-after-interrupt",
+      "auto": true,
+      "items": [["F75-Q2 sec", "queued", 1, "send_now", "e2e-fake: found <<E2E_USAGE>> without a "]]
+    },
+    "c": {
+      "alerts": [
+        {
+          "role": "alert",
+          "live": "assertive",
+          "inPanel": true,
+          "text": "Send now failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>> in the usage directive · Send now to retry"
+        }
+      ],
+      "pill": "Running",
+      "btns": "delete · F75-Q2 second item,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "bands": "WILL SEND · 1",
+      "status": "agent idle · Send now delivers",
+      "ta": true
+    },
+    "l": {
+      "alerts": [
+        {
+          "role": "alert",
+          "live": "assertive",
+          "inPanel": true,
+          "text": "Send now failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>> in the usage directive · Send now to retry"
+        }
+      ],
+      "pill": "Running",
+      "btns": "delete · F75-Q2 second item,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "bands": "WILL SEND · 1",
+      "status": "agent idle · Send now delivers",
+      "ta": true
+    }
+  },
+  "s2": [200, "/api/workflows/runs/0a11de6c03e3f3834d31b4982008000c/nodes/fake-node/send"],
+  "fin": {
+    "q": {
+      "es": "finished",
+      "sub": null,
+      "auto": true,
+      "items": [
+        ["F75-Q2 sec", "sent", 1, "send_now", "e2e-fake: found <<E2E_USAGE>> without a "],
+        ["F75 typed ", "sent", 0, null, ""]
+      ]
+    },
+    "c": { "alerts": [], "pill": "Completed", "btns": "", "bands": "", "status": "", "ta": false },
+    "l": { "alerts": [], "pill": "Completed", "btns": "", "bands": "", "status": "", "ta": false }
+  },
+  "status": "completed"
+}

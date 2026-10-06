@@ -11,7 +11,12 @@ import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
-import type { AgentHistoryItem } from '@/lib/agent-history';
+import {
+  operatorDeliveryPresentation,
+  promptActorLabel,
+  promptSourceLabel,
+  type AgentHistoryItem,
+} from '@/lib/agent-history';
 import { getWorkflowNodeMessage, type WorkflowNodeMessageResponse } from '@/lib/api';
 import { toHunkData } from '@/lib/git-hunk-adapter';
 import type { OccurrenceGrouping } from '@/lib/occurrence-groups';
@@ -22,6 +27,7 @@ import {
   type FileDiff,
   type TaskSubtaskCard,
   type ToolBody,
+  headlineAfterLabel,
   type ToolFamily,
   type ToolOutcome,
   type ToolPresentationInput,
@@ -29,10 +35,12 @@ import {
   type ToolRowBadgeTone,
   type ToolRowPresentation,
 } from '@/lib/tool-presentation';
+import type { TodoPhase } from '@/lib/todo-state';
 import { cn } from '@/lib/utils';
 
 import type { LogRowSelection } from './build-log-rows';
 import { RoomIncompleteNotice } from './RoomIncompleteNotice';
+import { TodoChecklist } from './TodoStrip';
 
 export interface NodeRoomProps {
   nodeId: string | null;
@@ -59,6 +67,12 @@ export interface NodeRoomProps {
   occurrenceGrouping?: OccurrenceGrouping;
   /** useId-owned namespace for occurrence heading DOM ids (navigator targets). */
   headingIdPrefix?: string;
+  /**
+   * The node's folded todo state. When set, the latest todo-family tool row
+   * exposes this same projection as its expanded body, instead of an empty
+   * one — every earlier todo call still folds to a plain one-line row.
+   */
+  todos?: readonly TodoPhase[];
 }
 
 const UNKNOWN_SCOPE_NOTICE =
@@ -291,6 +305,12 @@ function AssistantHistory({
   );
 }
 
+const OPERATOR_DELIVERY_TONE: Record<'neutral' | 'success' | 'warning', string> = {
+  neutral: 'text-text-secondary',
+  success: 'text-success',
+  warning: 'text-warning',
+};
+
 function OperatorHistory({
   item,
 }: {
@@ -298,6 +318,7 @@ function OperatorHistory({
 }): React.ReactElement {
   const label =
     item.operatorDisplayName === null ? 'operator' : `operator · ${item.operatorDisplayName}`;
+  const delivery = operatorDeliveryPresentation(item.delivery);
   return (
     <div data-operator-row="" style={{ overflowWrap: 'anywhere' }}>
       <div
@@ -307,15 +328,96 @@ function OperatorHistory({
         <span data-operator-label="">{label}</span>
         <span
           data-operator-delivery=""
-          className="ml-auto shrink-0 text-[11px] normal-case tracking-normal text-text-secondary"
+          className={cn(
+            'ml-auto shrink-0 text-[11px] normal-case tracking-normal',
+            OPERATOR_DELIVERY_TONE[delivery.tone]
+          )}
         >
-          sent
+          {delivery.label}
         </span>
       </div>
       <div
         data-operator-body=""
         className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
         style={{ margin: '0 2px 6px' }}
+      >
+        {item.text}
+      </div>
+    </div>
+  );
+}
+
+function ThinkingHistory({
+  item,
+}: {
+  item: Extract<AgentHistoryItem, { kind: 'thinking' }>;
+}): React.ReactElement {
+  return (
+    <details data-thinking-row="" style={{ overflowWrap: 'anywhere' }}>
+      <summary
+        className="cursor-pointer text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+        style={{ margin: '10px 2px 3px' }}
+      >
+        thinking
+      </summary>
+      <div
+        data-thinking-body=""
+        className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-secondary whitespace-pre-wrap"
+        style={{ margin: '4px 2px 6px' }}
+      >
+        {item.text}
+      </div>
+    </details>
+  );
+}
+
+function PromptHistory({
+  item,
+}: {
+  item: Extract<AgentHistoryItem, { kind: 'prompt' }>;
+}): React.ReactElement {
+  return (
+    <div data-prompt-row="" style={{ overflowWrap: 'anywhere' }}>
+      <div
+        className="text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+        style={{ margin: '10px 2px 3px' }}
+      >
+        <span data-prompt-label="">
+          prompt · {promptActorLabel(item.actorUserId, item.actorDisplayName)}
+          {promptSourceLabel(item.source) !== null ? ` · ${promptSourceLabel(item.source)}` : ''}
+        </span>
+      </div>
+      <div
+        data-prompt-body=""
+        className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
+        style={{ margin: '0 2px 6px' }}
+      >
+        {item.text}
+      </div>
+    </div>
+  );
+}
+
+function AdvisorHistory({
+  item,
+}: {
+  item: Extract<AgentHistoryItem, { kind: 'advisor' }>;
+}): React.ReactElement {
+  return (
+    <div
+      data-advisor-row=""
+      className="rounded-[6px] border border-border bg-surface-elevated px-2.5 py-2"
+      style={{ overflowWrap: 'anywhere', margin: '10px 2px 6px' }}
+    >
+      <div
+        data-advisor-label=""
+        className="text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+      >
+        advisor{item.advisorModel !== null ? ` · ${item.advisorModel}` : ''}
+      </div>
+      <div
+        data-advisor-body=""
+        className="mt-1 font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
       >
         {item.text}
       </div>
@@ -413,7 +515,8 @@ function splitHeadline(headline: string): { head: string; tail: string } | null 
 }
 
 function ToolHeadline({ presentation }: { presentation: ToolRowPresentation }): React.ReactElement {
-  const split = presentation.headlineKind === 'path' ? splitHeadline(presentation.headline) : null;
+  const headline = headlineAfterLabel(presentation);
+  const split = presentation.headlineKind === 'path' ? splitHeadline(headline) : null;
   if (split === null) {
     return (
       <span
@@ -422,7 +525,7 @@ function ToolHeadline({ presentation }: { presentation: ToolRowPresentation }): 
           presentation.family === 'todo' ? 'text-text-secondary' : 'text-text-primary'
         )}
       >
-        {presentation.headline}
+        {headline}
       </span>
     );
   }
@@ -883,11 +986,14 @@ function ToolHistory({
   runId,
   nodeId,
   loadMessage,
+  checklist,
 }: {
   item: Extract<AgentHistoryItem, { kind: 'tool' }>;
   runId: string;
   nodeId: string;
   loadMessage: typeof getWorkflowNodeMessage;
+  /** Non-null only for the latest todo-family row; renders in place of the body. */
+  checklist: readonly TodoPhase[] | null;
 }): React.ReactElement {
   const [open, setOpen] = useState<boolean>(item.presentation.initialOpen);
   const [touched, setTouched] = useState<boolean>(false);
@@ -1004,8 +1110,11 @@ function ToolHistory({
         <div className="mb-2 ml-[29px] mt-0.5 border-l-2 border-border pl-2.5">
           <div className="mb-1.5 flex items-center gap-2 font-mono text-[10.5px] text-text-secondary">
             <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-              {presentation.bodyBarText}
+              {presentation.bodyBar.label}
             </span>
+            {presentation.bodyBar.badges.length > 0 ? (
+              <span className="shrink-0 whitespace-nowrap">{presentation.bodyBar.badges}</span>
+            ) : null}
             <button
               type="button"
               aria-expanded={rawOpen}
@@ -1031,6 +1140,8 @@ function ToolHistory({
             >
               {toolRawPayloadJson(presentation.rawPayload)}
             </pre>
+          ) : checklist !== null && checklist.length > 0 ? (
+            <TodoChecklist phases={checklist} />
           ) : presentation.body?.kind === 'task' ? (
             <TaskBody body={presentation.body} />
           ) : presentation.body?.kind === 'generic' ? (
@@ -1087,6 +1198,7 @@ export function NodeRoom({
   embedded = false,
   occurrenceGrouping,
   headingIdPrefix,
+  todos = [],
 }: NodeRoomProps): React.ReactElement {
   const generatedHeadingPrefix = useId();
   if (nodeId === null) {
@@ -1096,15 +1208,46 @@ export function NodeRoom({
   const headingPrefix = headingIdPrefix ?? generatedHeadingPrefix;
   const grouping = occurrenceGrouping?.showHeaders ? occurrenceGrouping : null;
 
-  // Only the actual last rendered history item is programmatically focusable
-  // (the steering dock's Stop-removal focus target); it never joins Tab order.
-  const lastItemId = items.length === 0 ? null : items[items.length - 1].id;
-  const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> =>
-    item.id === lastItemId ? { 'data-last-row': '', tabIndex: -1 } : {};
+  // Every history row is programmatically focusable (never joining Tab
+  // order) so that losing `data-last-row` status on a later render — a new
+  // item becomes the anchor — never strips the tabIndex a still-focused row
+  // depends on. A `tabIndex` that vanishes out from under the focused
+  // element forces the browser to blur it with nothing left to receive
+  // focus, which is exactly how focus used to fall to `<body>` when a
+  // turn resumed after Stop. A trailing lifecycle/status row (e.g. the
+  // terminal node-failure notice) must not become the ANCHOR on its own,
+  // though: it can arrive after focus already landed on the preceding
+  // substantive row, and — before this row stayed focusable regardless —
+  // that was the only thing standing between the anchor and the same blur.
+  // Console's history list keeps the same anchor by hiding lifecycle rows
+  // behind a toggle; Legacy renders every row unconditionally, so it skips
+  // lifecycle rows when choosing the anchor instead, unless one carries its
+  // own attached content.
+  let lastItemId: string | null = null;
+  for (const item of items) {
+    if (item.kind !== 'lifecycle') {
+      lastItemId = item.id;
+      continue;
+    }
+    const after = renderAfterItem?.(item);
+    if (after !== undefined && after !== null) lastItemId = item.id;
+  }
+  const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> => ({
+    tabIndex: -1,
+    ...(item.id === lastItemId ? { 'data-last-row': '' } : {}),
+  });
   const lastRowRing = (item: AgentHistoryItem): string | undefined =>
     item.id === lastItemId
       ? 'focus-visible:outline-2 focus-visible:outline-accent-bright'
       : undefined;
+  // The latest todo call is where the folded checklist reads best; every
+  // earlier call stays a plain "todo updated" row with no expandable body.
+  let latestTodoItemId: string | null = null;
+  for (const item of items) {
+    if (item.kind === 'tool' && item.presentation.family === 'todo') {
+      latestTodoItemId = item.id;
+    }
+  }
 
   const renderItem = (item: AgentHistoryItem): React.ReactElement => {
     if (item.kind === 'assistant') {
@@ -1123,10 +1266,40 @@ export function NodeRoom({
         </div>
       );
     }
+    if (item.kind === 'thinking') {
+      return (
+        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
+          <ThinkingHistory item={item} />
+          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
+        </div>
+      );
+    }
+    if (item.kind === 'prompt') {
+      return (
+        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
+          <PromptHistory item={item} />
+          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
+        </div>
+      );
+    }
+    if (item.kind === 'advisor') {
+      return (
+        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
+          <AdvisorHistory item={item} />
+          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
+        </div>
+      );
+    }
     if (item.kind === 'tool') {
       return (
         <div key={item.id} className={lastRowRing(item)} {...lastRowMarker(item)}>
-          <ToolHistory item={item} runId={runId} nodeId={nodeId} loadMessage={loadMessage} />
+          <ToolHistory
+            item={item}
+            runId={runId}
+            nodeId={nodeId}
+            loadMessage={loadMessage}
+            checklist={item.id === latestTodoItemId ? todos : null}
+          />
           {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
         </div>
       );

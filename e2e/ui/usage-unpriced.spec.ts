@@ -19,12 +19,12 @@ test('[P1] a tokens-only run with no known rate is unpriced, not $0', async ({ p
   await openCostForRun(page, runId);
 
   // Tokens are recorded...
-  await expect(page.getByText('1,234').first()).toBeVisible({ timeout: T.medium });
+  await expect(page.locator('#set-usage').getByText('1,234').first()).toBeVisible({
+    timeout: T.medium,
+  });
   // ...and the row is counted as unpriced (one row, no cost).
-  const unpricedValue = page
-    .getByText('Unpriced rows', { exact: true })
-    .locator('xpath=following-sibling::span');
-  await expect(unpricedValue).toHaveText('1');
+  const row = page.getByRole('row').filter({ hasText: '1,234' }).first();
+  await expect(row.getByRole('cell').last()).toHaveText('1');
   // No cost is shown at all — neither a reported "$x" nor an estimated "≈$x".
-  await expect(page.getByText(/\$[0-9]/)).toHaveCount(0);
+  await expect(page.locator('#set-usage').getByText(/\$[0-9]/)).toHaveCount(0);
 });

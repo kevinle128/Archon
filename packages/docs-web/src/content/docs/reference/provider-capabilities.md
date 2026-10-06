@@ -57,7 +57,10 @@ per-node YAML field for that provider; a ❌ means the field is accepted but ign
 | In-process native tools | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Container exec (folder-project container backend) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | AskHuman mid-turn questions | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅⁴ |
-| Turn interrupt (operator Stop) | **native** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Turn interrupt (operator Stop) | **native** | **stream-abort** | **stream-abort** | ❌ | ❌ | ❌ | ❌ | **stream-abort** | **stream-abort** | ❌ |
+| Interrupted tool status (per-tool proof) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Soft injection (per-item Send now while generating) | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Delivery acknowledgement (message-id echo) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ## Caveats
 
@@ -81,6 +84,9 @@ per-node YAML field for that provider; a ❌ means the field is accepted but ign
   in-process, keeping the session resumable on the same id — e.g. Claude
   `Query.interrupt()`), `stream-abort` (the turn ends by aborting the provider's
   stream), or ❌ (no turn interrupt; operator guidance queues for the next turn).
+- **Interrupted tool status** — whether the provider ties an interrupt marker to
+  the exact tool call that was cut short. A still-open tool at turn end settles as
+  unknown output rather than a claimed interruption when this is ❌.
 
 For per-provider field-level notes (YAML syntax, caveats), see the
 [AI Assistants guide](/getting-started/ai-assistants/).

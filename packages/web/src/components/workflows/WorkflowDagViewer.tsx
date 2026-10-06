@@ -85,6 +85,10 @@ export function WorkflowDagViewer({
           fitView
           fitViewOptions={{ padding: 0.15 }}
           panOnDrag
+          // The default Space pan key calls preventDefault on every Space
+          // keydown, which stops a focused tool row or card summary in the open
+          // node room from toggling while the graph is mounted beside it.
+          panActivationKeyCode={null}
           zoomOnScroll
           className="bg-background"
         >

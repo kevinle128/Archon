@@ -1,0 +1,29 @@
+{
+  "tag": "late3",
+  "sender": "c",
+  "R": "5e1a77368eace77b8097fa192247bc06",
+  "node": "cl-node",
+  "click": { "status": 200, "afterToolMs": 8054 },
+  "status": "completed",
+  "clickedAt": 1790773381568,
+  "frames": {
+    "c": [
+      [1790773373487, "Running|Stop,Queue|0|0|||||||"],
+      [1790773373523, "Running|Stop,Queue|1|1|QUEUED · 1|TWO|||||"],
+      [1790773381600, "Running|Stop,Queue|0|0|SENDING · 1|TWO*|||||"],
+      [1790773387982, "Running|Stop,Queue|0|0|||TWO:sent||||below"],
+      [1790773390291, "Completed||0|0|||TWO:sent||||below"]
+    ],
+    "l": [
+      [1790773373487, "Running|Stop,Queue|0|0|||||||"],
+      [1790773373714, "Running|Stop,Queue|1|1|QUEUED · 1|TWO|||||"],
+      [1790773381755, "Running|Stop,Queue|0|0|SENDING · 1|TWO*|||||"],
+      [1790773388730, "Running|Stop,Queue|0|0|||TWO:sent||||below"],
+      [1790773390217, "Completed||0|0|||TWO:sent||||below"]
+    ]
+  },
+  "queue": [["late3 LATE: be", "sent", null, 0]],
+  "operatorRows": [[8, "late3 LATE: begin yo"]],
+  "lastToolSeq": 5,
+  "attempts": 1
+}

@@ -1,0 +1,37 @@
+{
+  "R": "3808c0066cb02f88e161df7fba9d99ce",
+  "status": "running",
+  "h": {
+    "c": "loop\nflaky-loop\nRunning\n✕\nstarted 01:47 · running… · claude · haiku\nexecution\nIteration 1\nIteration 1 · running\nof 2 · max 1\nShow usage breakdown\n$0.05 · n/a\nPROMPT · VQ16-OPERATOR\nAppend the line \"edited by flaky-loop\" to notes.md with your Edit tool. Reply \"",
+    "l": "loop\nflaky-loop\nRunning\n✕\nstarted 01:47 · running… · claude · haiku\nexecution\nIteration 1\nIteration 1 · running\nof 2 · max 1\nShow usage breakdown\n$0.05 · n/a\nPROMPT · VQ16-OPERATOR\nAppend the line \"edited by flaky-loop\" to notes.md with your Edit tool. Reply \""
+  },
+  "fc": {
+    "files": [
+      {
+        "path": "app.ts",
+        "status": "M",
+        "executions": [
+          {
+            "nodeId": "edit-a",
+            "retryEpoch": 0,
+            "startedAt": "2026-09-30T18:46:56.093Z",
+            "endedAt": "2026-09-30T18:47:04.976Z"
+          }
+        ]
+      },
+      {
+        "path": "notes.md",
+        "status": "M",
+        "executions": [
+          {
+            "nodeId": "flaky-loop",
+            "retryEpoch": 0,
+            "startedAt": "2026-09-30T18:47:05.069Z",
+            "endedAt": "2026-09-30T18:47:13.928Z"
+          }
+        ]
+      }
+    ],
+    "__status": 200
+  }
+}

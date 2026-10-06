@@ -616,6 +616,26 @@ export class SqliteAdapter implements IDatabase {
       allApplied = false;
     }
 
+    try {
+      const steeringQueueCols = this.queryRows<{ name: string }>(
+        "PRAGMA table_info('remote_agent_steering_queue_entries')"
+      );
+      const steeringQueueColNames = new Set(steeringQueueCols.map(c => c.name));
+      if (!steeringQueueColNames.has('dispatch_failure_count')) {
+        this.db.run(
+          'ALTER TABLE remote_agent_steering_queue_entries ADD COLUMN dispatch_failure_count INTEGER NOT NULL DEFAULT 0'
+        );
+      }
+      if (!steeringQueueColNames.has('last_failure_kind')) {
+        this.db.run(
+          'ALTER TABLE remote_agent_steering_queue_entries ADD COLUMN last_failure_kind TEXT'
+        );
+      }
+    } catch (e: unknown) {
+      getLog().warn({ err: e as Error }, 'db.sqlite_migration_steering_queue_columns_failed');
+      allApplied = false;
+    }
+
     // #1955: credential rows are vendor-keyed (claude→anthropic, codex→openai,
     // copilot→github-copilot). Idempotent data fix mirroring
     // migrations/000_combined.sql: where both a legacy and a vendor row exist
@@ -892,6 +912,25 @@ export class SqliteAdapter implements IDatabase {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- One row per node execution attempt (a node can execute more than once
+      -- within a run: a loop body, a reactivated route target, a retried
+      -- node). start_* is recorded before the execution begins; end_* is
+      -- filled in after it finishes and stays NULL when the execution never
+      -- reached that point. Read by the server to compute which repository
+      -- paths that execution changed.
+      CREATE TABLE IF NOT EXISTS remote_agent_workflow_node_execution_evidence (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        workflow_run_id TEXT NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+        node_id TEXT NOT NULL,
+        retry_epoch INTEGER NOT NULL DEFAULT 0,
+        start_checkpoint_ref TEXT NOT NULL,
+        start_commit_sha TEXT NOT NULL,
+        started_at TEXT DEFAULT (datetime('now')),
+        end_checkpoint_ref TEXT,
+        end_commit_sha TEXT,
+        ended_at TEXT
+      );
+
       -- Per-node provider session IDs persisted across workflow re-runs
       CREATE TABLE IF NOT EXISTS remote_agent_workflow_node_sessions (
         workflow_name TEXT NOT NULL,
@@ -920,6 +959,10 @@ export class SqliteAdapter implements IDatabase {
       CREATE INDEX IF NOT EXISTS idx_workflow_node_checkpoints_run ON remote_agent_workflow_node_checkpoints(workflow_run_id);
       CREATE INDEX IF NOT EXISTS idx_workflow_node_checkpoints_run_node_epoch
         ON remote_agent_workflow_node_checkpoints(workflow_run_id, node_id, retry_epoch DESC);
+      CREATE INDEX IF NOT EXISTS idx_node_execution_evidence_run
+        ON remote_agent_workflow_node_execution_evidence(workflow_run_id);
+      CREATE INDEX IF NOT EXISTS idx_node_execution_evidence_run_node_epoch
+        ON remote_agent_workflow_node_execution_evidence(workflow_run_id, node_id, retry_epoch DESC);
       -- NOTE: the idx_workflow_events_run_order index and the assign_order trigger
       -- are deliberately NOT created here. Both reference event_order, which does
       -- not exist on databases created before it was introduced — and CREATE INDEX
@@ -1131,6 +1174,58 @@ export class SqliteAdapter implements IDatabase {
         execution_scope TEXT,
         CONSTRAINT uq_pending_interactions_run_tool_use
           UNIQUE (workflow_run_id, tool_use_id)
+      );
+
+      -- Steering drafts (per-author composer draft, per node)
+      CREATE TABLE IF NOT EXISTS remote_agent_steering_drafts (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        workflow_run_id TEXT NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+        node_id TEXT NOT NULL,
+        operator_user_id TEXT NOT NULL DEFAULT '',
+        message TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CONSTRAINT uq_steering_drafts_run_node_operator
+          UNIQUE (workflow_run_id, node_id, operator_user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_steering_drafts_run_node
+        ON remote_agent_steering_drafts(workflow_run_id, node_id);
+
+      -- Steering queue entries (durable node-scoped guidance queue)
+      CREATE TABLE IF NOT EXISTS remote_agent_steering_queue_entries (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        workflow_run_id TEXT NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+        node_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        message TEXT NOT NULL,
+        operator_user_id TEXT NOT NULL DEFAULT '',
+        fifo_position INTEGER NOT NULL CHECK (fifo_position >= 1),
+        state TEXT NOT NULL DEFAULT 'queued',
+        last_error TEXT,
+        dispatch_failure_count INTEGER NOT NULL DEFAULT 0,
+        last_failure_kind TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CONSTRAINT uq_steering_queue_run_node_message
+          UNIQUE (workflow_run_id, node_id, message_id),
+        CONSTRAINT uq_steering_queue_run_node_position
+          UNIQUE (workflow_run_id, node_id, fifo_position)
+      );
+      CREATE INDEX IF NOT EXISTS idx_steering_queue_run_node_position
+        ON remote_agent_steering_queue_entries(workflow_run_id, node_id, fifo_position);
+      CREATE INDEX IF NOT EXISTS idx_steering_queue_state
+        ON remote_agent_steering_queue_entries(state);
+
+      -- Steering node settings (durable per-node auto-send + provider)
+      CREATE TABLE IF NOT EXISTS remote_agent_steering_node_settings (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        workflow_run_id TEXT NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+        node_id TEXT NOT NULL,
+        auto_send_enabled INTEGER NOT NULL DEFAULT 0,
+        updated_by_user_id TEXT,
+        provider_id TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CONSTRAINT uq_steering_node_settings_run_node
+          UNIQUE (workflow_run_id, node_id)
       );
     `);
     getLog().info('db.sqlite_schema_initialized');

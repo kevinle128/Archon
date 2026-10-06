@@ -23,7 +23,7 @@ export function ChildWorkflowRoom({ nodeId, child }: ChildWorkflowRoomProps): Re
         )}
         {child.childRunId !== null && (
           <a
-            href={`/legacy/workflows/runs/${encodeURIComponent(child.childRunId)}`}
+            href={`/workflows/runs/${encodeURIComponent(child.childRunId)}`}
             className="text-sm text-primary hover:underline"
           >
             Open child run

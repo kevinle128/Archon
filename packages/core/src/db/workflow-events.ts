@@ -300,6 +300,143 @@ export async function getDagResumeSnapshot(workflowRunId: string): Promise<{
 }
 
 /**
+ * Node-lifecycle events that OPEN an execution, and the terminal event type
+ * that closes each — mirrors `START_EVENTS`/`TERMINAL_EVENTS` in the server's
+ * `projectWorkflowExecutionHistory` read model, which pairs the exact same
+ * events by `occurrence_id`. A loop container's own `node_started` (never
+ * closed until the whole node settles) and its current iteration's
+ * `loop_iteration_started` (a fresh occurrence every iteration) are two
+ * INDEPENDENT open executions and close with different event types.
+ */
+const START_TO_TERMINAL_EVENT_TYPE: Readonly<
+  Record<string, 'node_failed' | 'loop_iteration_failed'>
+> = {
+  node_started: 'node_failed',
+  loop_iteration_started: 'loop_iteration_failed',
+};
+
+/** Node-lifecycle event types that CLOSE an open execution (by occurrence_id, or by step_name when unscoped). */
+const CLOSING_NODE_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'node_completed',
+  'node_failed',
+  'node_skipped',
+  'node_routed',
+  'node_skipped_prior_success',
+  'loop_iteration_completed',
+  'loop_iteration_failed',
+]);
+
+/**
+ * Execution-scope keys `executionScopeEventFields`/loop-iteration bookkeeping
+ * write onto a node's own lifecycle events (`transcript-execution-scope.ts`,
+ * `dag-executor.ts`'s `iterationData`). Carried forward verbatim so a
+ * synthesized terminal event attaches to the same execution/iteration row a
+ * live cancel's own write would have, instead of landing unscoped.
+ */
+const SCOPE_DATA_KEYS = [
+  'occurrence_id',
+  'attempt_id',
+  'retry_epoch',
+  'loop_ancestry',
+  'route_activation_seq',
+  'iteration',
+] as const;
+
+function extractScopeData(data: Record<string, unknown>): Record<string, unknown> {
+  const scope: Record<string, unknown> = {};
+  for (const key of SCOPE_DATA_KEYS) {
+    if (data[key] !== undefined) scope[key] = data[key];
+  }
+  return scope;
+}
+
+export interface NonTerminalNode {
+  readonly nodeId: string;
+  /** This node's own execution-scope fields, read off the START event that opened it (never a later, scope-less event). */
+  readonly scope: Record<string, unknown>;
+  /** The terminal event type that closes THIS specific open execution. */
+  readonly terminalEventType: 'node_failed' | 'loop_iteration_failed';
+}
+
+function asDataRecord(data: WorkflowEventRow['data']): Record<string, unknown> {
+  return typeof data === 'object' && data !== null ? data : {};
+}
+
+/**
+ * Every still-OPEN execution across this run's lifecycle events — a node (or
+ * loop iteration) started but never reached one of its terminal event types.
+ * Used to detect work an executor abandoned mid-flight without ever writing
+ * its own terminal event, typically because the process running it exited
+ * (crash or restart) before it could.
+ *
+ * Pairs START events (`node_started`, `loop_iteration_started`) with their
+ * closing terminal event by `occurrence_id` — the same identity
+ * `projectWorkflowExecutionHistory` uses to build the execution-history read
+ * model — instead of reading whichever event happens to be LATEST for a
+ * step_name. An agent node's latest event before a crash is routinely a
+ * `tool_called`/`tool_completed`/`node_usage_recorded` row, none of which
+ * carry execution-scope fields; reading scope off that event instead of the
+ * START event that actually owns the open occurrence produced an unscoped
+ * (or partially-scoped) synthesized terminal write that the execution-history
+ * projector could not pair back to the open row, leaving it stuck `running`
+ * forever and adding a phantom `unknown_scope` row alongside it.
+ *
+ * A loop container's own `node_started` and its current iteration's
+ * `loop_iteration_started` are separate, independently-scoped open
+ * executions (the container's occurrence never closes until the whole loop
+ * settles), so a mid-iteration crash reports BOTH — the caller must close
+ * both rows, not just one.
+ *
+ * Legacy rows minted before `occurrence_id` existed carry no scope at all;
+ * those fall back to the same "latest unscoped start per step_name" pairing
+ * the pre-occurrence design used, scoped to that narrow case only.
+ */
+export async function findNonTerminalNodes(
+  workflowRunId: string
+): Promise<readonly NonTerminalNode[]> {
+  const events = await listWorkflowEvents(workflowRunId);
+  const openByOccurrence = new Map<string, NonTerminalNode>();
+  const openUnscopedByStep = new Map<string, NonTerminalNode>();
+
+  for (const event of events) {
+    const stepName = event.step_name;
+    if (stepName === null || stepName === undefined) continue;
+    const data = asDataRecord(event.data);
+    const occurrenceId = typeof data.occurrence_id === 'string' ? data.occurrence_id : undefined;
+
+    const terminalEventType = START_TO_TERMINAL_EVENT_TYPE[event.event_type];
+    if (terminalEventType !== undefined) {
+      const open: NonTerminalNode = {
+        nodeId: stepName,
+        scope: extractScopeData(data),
+        terminalEventType,
+      };
+      if (occurrenceId !== undefined) openByOccurrence.set(occurrenceId, open);
+      else openUnscopedByStep.set(stepName, open);
+      continue;
+    }
+
+    if (!CLOSING_NODE_EVENT_TYPES.has(event.event_type)) continue;
+    if (occurrenceId !== undefined) openByOccurrence.delete(occurrenceId);
+    else openUnscopedByStep.delete(stepName);
+  }
+
+  // A loop's own container and its current iteration are two independent
+  // open executions for the same nodeId. Order the iteration's close before
+  // the container's — mirroring the live executor's own sequence
+  // (`failLoopIteration` writes `loop_iteration_failed`, then calls
+  // `failLoopNode`, which writes `node_failed`) — rather than Map insertion
+  // order, which would write the container (inserted first, at
+  // `node_started`) ahead of the iteration.
+  const scoped = [...openByOccurrence.values()];
+  const iterationCloses = scoped.filter(
+    entry => entry.terminalEventType === 'loop_iteration_failed'
+  );
+  const nodeCloses = scoped.filter(entry => entry.terminalEventType === 'node_failed');
+  return [...iterationCloses, ...nodeCloses, ...openUnscopedByStep.values()];
+}
+
+/**
  * Return node outputs from the latest effective retry epoch projection.
  *
  * Unlike getCompletedDagNodeOutputs(), this entry point reads the complete run

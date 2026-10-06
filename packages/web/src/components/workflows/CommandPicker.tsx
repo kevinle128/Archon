@@ -52,7 +52,7 @@ export function CommandPicker({
   return (
     <div
       ref={containerRef}
-      className="w-72 max-h-96 bg-surface-elevated border border-border rounded-lg shadow-lg overflow-hidden flex flex-col"
+      className="w-72 max-h-96 bg-surface-elevated border border-border rounded-xl overflow-hidden flex flex-col"
     >
       {/* Search input */}
       <div className="px-3 py-2 border-b border-border">
