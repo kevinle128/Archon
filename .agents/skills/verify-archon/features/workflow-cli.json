@@ -23,7 +23,7 @@
     },
     {
       "id": "workflow.governance",
-      "description": "Approval records a decision without inline JSON execution; resume, reject, and cancel persist.",
+      "description": "Approval records a decision without inline JSON execution; resume and reject persist; cancel requires --json.",
       "priority": 1,
       "impact_paths": [
         "packages/cli/src/commands/workflow.ts",

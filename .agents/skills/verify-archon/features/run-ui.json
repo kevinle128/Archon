@@ -1,9 +1,9 @@
 {
   "id": "run-ui",
-  "description": "Console and Legacy workflow rooms, tools and Ask with visual proof",
+  "description": "Workflow run room, tools, Ask, and visual proof",
   "impact_paths": [
     "packages/web/src/components/workflows/",
-    "packages/web/src/experiments/console/",
+    "packages/web/src/components/run-artifacts/",
     "packages/web/src/lib/",
     "packages/web/src/index.css",
     "e2e/",
@@ -16,11 +16,11 @@
   "behaviors": [
     {
       "id": "ui.rooms",
-      "description": "Rooms preserve navigation, Log/Graph/Artifacts state, deep links and narrow layout.",
+      "description": "The run room preserves Graph, Logs, and Chat navigation, deep links, narrow layout, and the Artifacts header panel.",
       "priority": 1,
       "impact_paths": [
         "packages/web/src/components/workflows/",
-        "packages/web/src/experiments/console/components/inspect/",
+        "packages/web/src/components/run-artifacts/",
         "packages/web/src/lib/room-split-layout.ts"
       ],
       "scenarios": [
@@ -34,7 +34,6 @@
       "priority": 1,
       "impact_paths": [
         "packages/web/src/components/workflows/NodeRoom.tsx",
-        "packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx",
         "packages/web/src/lib/tool-presentation.ts",
         "e2e/ui/agent-tool-row-visual.spec.ts"
       ],
@@ -48,8 +47,7 @@
       "description": "An operator answers real Ask cards and sees retained decisions and the correct resume behavior.",
       "priority": 1,
       "impact_paths": [
-        "packages/web/src/components/workflows/",
-        "packages/web/src/experiments/console/components/ask/"
+        "packages/web/src/components/workflows/"
       ],
       "scenarios": [
         "ui.ask",
@@ -58,7 +56,7 @@
     },
     {
       "id": "ui.transcript-display",
-      "description": "Streamed ACP text groups into one answer per execution attempt, a canonical one-string report renders unwrapped in every transcript mount, the Legacy transcript stays inside the run shell, and the runtime graph has no minimap.",
+      "description": "Streamed ACP text groups into one answer per execution attempt, a canonical one-string report renders unwrapped, a canonical multi-field result shows labeled values with collapsed Raw JSON, the Legacy transcript stays inside the run shell, and the runtime graph has no minimap.",
       "priority": 1,
       "impact_paths": [
         "packages/providers/src/community/",
@@ -70,10 +68,6 @@
         "packages/web/src/components/workflows/WorkflowExecution.tsx",
         "packages/web/src/components/workflows/WorkflowDagViewer.tsx",
         "packages/web/src/lib/agent-history.ts",
-        "packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx",
-        "packages/web/src/experiments/console/components/ConsoleInspectPane.tsx",
-        "packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx",
-        "packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx",
         "e2e/ui/workflow-transcript-display.spec.ts",
         "e2e/ui/workflow-run-hitl-room.spec.ts",
         "e2e/lib/playwright/archon-runtime.ts",
@@ -87,11 +81,10 @@
     },
     {
       "id": "ui.queue-guidance",
-      "description": "Queued guidance keeps its functional delivery contract and the approved waiting-queue anatomy on Console and Legacy.",
+      "description": "Queued guidance keeps its functional delivery contract and the approved waiting-queue anatomy on the run room.",
       "priority": 1,
       "impact_paths": [
         "packages/web/src/components/workflows/ComposerDock.tsx",
-        "packages/web/src/experiments/console/components/ConsoleComposerDock.tsx",
         "packages/web/src/lib/steering-dock.ts",
         "packages/workflows/src/steering-registry.ts",
         "e2e/ui/agent-queue-guidance.spec.ts",
@@ -166,7 +159,7 @@
       ],
       "proof_obligations": [
         "Each mapped transcript-display test executes exactly once and passes",
-        "Structured unwrap, viewport containment, and graph checks run against real seeded runs",
+        "One-string unwrap, multi-field labeled values, viewport containment, and graph checks run against real seeded runs",
         "Fresh browser evidence is retained"
       ]
     },
@@ -183,7 +176,7 @@
       "proof_obligations": [
         "Direct and loop guidance reaches the same provider session at a natural boundary",
         "Blocked and detached states preserve their refusal behavior",
-        "Queue geometry, accessibility, and route checks execute on both product surfaces",
+        "Queue geometry, accessibility, and route checks execute on the run room",
         "Fresh browser evidence is retained"
       ]
     },
@@ -191,7 +184,7 @@
       "id": "ui.visual",
       "runner": {
         "kind": "browser",
-        "id": "visual-1a141953a52b15333d95a67d17a60b676dbd435c7df2812e92c5e66c919400dc"
+        "id": "visual-2aa50b916a839bc86ffc158984c2728659d6349635bc8315c140e84e649ff423"
       },
       "prerequisites": [
         "Bun and installed target dependencies",
