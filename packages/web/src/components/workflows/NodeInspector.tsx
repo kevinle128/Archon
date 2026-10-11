@@ -675,7 +675,7 @@ export function ToolsTab({
               onClick={(): void => {
                 onUpdate({ allowed_tools: preset.allowed, denied_tools: undefined });
               }}
-              className="rounded-full border border-border px-2 py-0.5 text-[10px] text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
+              className="rounded-none border border-border px-2 py-0.5 text-[10px] text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
             >
               {preset.label}
             </button>

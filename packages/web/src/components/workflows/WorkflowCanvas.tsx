@@ -548,7 +548,7 @@ export function WorkflowCanvas({
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <MiniMap
-          className="!rounded-[10px] !border !border-border !bg-surface"
+          className="!rounded-none !border !border-border !bg-surface"
           style={{ width: 144, height: 96 }}
           nodeColor="var(--text-tertiary)"
           nodeStrokeWidth={0}
@@ -569,7 +569,7 @@ export function WorkflowCanvas({
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 min-w-[140px] rounded-[10px] border border-border bg-surface-elevated py-1"
+          className="fixed z-50 min-w-[140px] rounded-none border border-border bg-surface-elevated py-1"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button

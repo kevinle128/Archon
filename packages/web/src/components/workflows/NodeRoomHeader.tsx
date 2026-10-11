@@ -105,7 +105,9 @@ export function NodeRoomHeader({
       <div className="flex min-w-0 items-start gap-3 px-6 pt-4">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {kindChip !== null ? (
-            <span className="text-xs text-text-secondary">{kindChip.label}</span>
+            <span className="block text-xs text-text-secondary first-letter:uppercase">
+              {model.model !== null ? `${kindChip.label} · ${model.model}` : kindChip.label}
+            </span>
           ) : null}
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
             <h2 className="min-w-0 text-xl font-extrabold break-words text-text-primary">

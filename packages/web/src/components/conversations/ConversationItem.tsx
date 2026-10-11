@@ -4,6 +4,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ConversationResponse } from '@/lib/api';
 import { deleteConversation, updateConversation } from '@/lib/api';
+import { ensureUtc } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -21,6 +22,25 @@ interface ConversationItemProps {
   badge?: number;
   projectName?: string;
   status?: 'idle' | 'running' | 'failed';
+}
+
+const WEEK_MS = 6 * 24 * 60 * 60 * 1000;
+
+/** Short activity time for a conversation row: "10:03" today, "Fri" this week, else "Sep 29". */
+export function shortActivityTime(iso: string, now: Date = new Date()): string {
+  const date = new Date(ensureUtc(iso));
+  if (Number.isNaN(date.getTime())) return '';
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  }
+  if (now.getTime() - date.getTime() < WEEK_MS) {
+    return date.toLocaleDateString(undefined, { weekday: 'short' });
+  }
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 export function ConversationItem({
@@ -42,16 +62,7 @@ export function ConversationItem({
   const displayName = conversation.title ?? 'Untitled conversation';
 
   const lastActivity = conversation.last_activity_at
-    ? new Date(
-        conversation.last_activity_at.endsWith('Z')
-          ? conversation.last_activity_at
-          : conversation.last_activity_at + 'Z'
-      ).toLocaleString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
+    ? shortActivityTime(conversation.last_activity_at)
     : 'No activity';
 
   const handleDelete = useCallback((): void => {

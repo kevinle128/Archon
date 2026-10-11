@@ -217,7 +217,7 @@ function WorkflowResultCard({
             </span>
           )}
           {!fetchFailed && duration != null && (
-            <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] text-text-secondary shrink-0">
+            <span className="rounded-none bg-surface px-2 py-0.5 text-[10px] text-text-secondary shrink-0">
               {formatDurationMs(duration)}
             </span>
           )}
@@ -381,7 +381,7 @@ function MessageListRaw({
             onClick={scrollToBottom}
             size="sm"
             variant="secondary"
-            className="rounded-full border border-border bg-surface-elevated"
+            className="border border-border bg-surface-elevated"
           >
             <ArrowDown className="mr-1 h-3 w-3" />
             Jump to bottom

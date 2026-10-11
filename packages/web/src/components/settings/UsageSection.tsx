@@ -250,7 +250,7 @@ export function UsageSection(): ReactElement {
   return (
     <SettingsSection
       id="set-usage"
-      title="Usage and cost"
+      title="Usage"
       description="Token usage and spend reported by providers. Estimated USD applies list prices where the provider reports none. Reported and estimated USD are never combined."
     >
       <form

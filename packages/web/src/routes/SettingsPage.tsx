@@ -55,7 +55,7 @@ export function SettingsPage(): ReactElement {
         ? null
         : {
             id: 'providers',
-            label: 'AI providers',
+            label: 'Providers',
             hint: notReady > 0 ? `${String(notReady)} not set` : undefined,
             hintAttention: notReady > 0,
           },
@@ -66,7 +66,7 @@ export function SettingsPage(): ReactElement {
       hideGithub
         ? null
         : { id: 'github', label: 'GitHub', hint: github?.connected === true ? 'On' : 'Off' },
-      { id: 'usage', label: 'Usage and cost' },
+      { id: 'usage', label: 'Usage' },
       { id: 'system', label: 'System' },
     ];
     return all.filter((item): item is SettingsNavItem => item !== null);

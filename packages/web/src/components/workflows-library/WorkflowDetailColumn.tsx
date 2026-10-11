@@ -9,11 +9,7 @@ import { groupNodesIntoSteps, summarizeNodeKinds, type StepNode } from '@/lib/no
 import { hasStatus } from '@/lib/settings/http';
 import { cn } from '@/lib/utils';
 import { inputLabel, workflowFilePath } from '@/lib/workflows-library/workflow-facts';
-import {
-  getWorkflowCategory,
-  getWorkflowDisplayName,
-  parseWorkflowDescription,
-} from '@/lib/workflow-metadata';
+import { getWorkflowCategory, parseWorkflowDescription } from '@/lib/workflow-metadata';
 import type { NodeBodyKind } from '@/components/workflows/resolve-room-kind';
 
 const KIND_LABEL: Readonly<Record<NodeBodyKind, string>> = {
@@ -153,7 +149,7 @@ export function WorkflowDetailColumn({
           {category} · {workflowFilePath(workflow.name, source, detail?.filename)}
         </div>
         <h2 className="mt-0.5 text-2xl leading-[1.15] font-extrabold break-words">
-          {getWorkflowDisplayName(workflow.name)}
+          {workflow.name}
         </h2>
         {description !== '' ? (
           <p className="mt-2 max-w-[64ch] text-sm leading-[1.55]">{description}</p>

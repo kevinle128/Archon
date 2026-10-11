@@ -92,11 +92,11 @@ The `/settings` page configures the install without editing YAML files. A sectio
 
 - **Projects** -- Register and manage codebases.
 - **Assistant defaults** -- The default assistant and the default model for each provider.
-- **AI providers** -- Connect provider API keys or subscription logins for the current user.
+- **Providers** -- Connect provider API keys or subscription logins for the current user.
 - **GitHub** -- Connect the current user's GitHub identity.
 - **Model tiers** -- Set the `small`, `medium`, and `large` model presets.
 - **Aliases** -- Define `@custom` model aliases.
-- **Usage and cost** -- Token usage and estimated cost for workflow runs.
+- **Usage** -- Token usage and estimated cost for workflow runs.
 - **System** -- Install and database status.
 
 ## Chat Interface

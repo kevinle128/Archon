@@ -27,7 +27,7 @@ export function RunEnvOverlayMeta({ overlay }: { overlay: RunEnvOverlay }): Reac
           onClick={(): void => {
             setExpanded(open => !open);
           }}
-          className="inline-flex min-h-6 cursor-pointer items-center gap-1 rounded-[10px] font-mono text-text-primary transition-colors duration-150 hover:text-accent focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
+          className="inline-flex min-h-6 cursor-pointer items-center gap-1 rounded-none font-mono text-text-primary transition-colors duration-150 hover:text-accent focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
         >
           {overlay.envName}
           {overlay.complete ? '' : ' (pending)'}

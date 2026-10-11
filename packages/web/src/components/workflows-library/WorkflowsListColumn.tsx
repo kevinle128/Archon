@@ -6,7 +6,6 @@ import { cn } from '@/lib/utils';
 import {
   CATEGORIES,
   getWorkflowCategory,
-  getWorkflowDisplayName,
   parseWorkflowDescription,
   type WorkflowCategory,
 } from '@/lib/workflow-metadata';
@@ -61,9 +60,7 @@ function WorkflowRow({
         selected ? 'border-l-accent bg-selection' : 'border-l-transparent'
       )}
     >
-      <span className="text-sm font-bold break-words text-text-primary">
-        {getWorkflowDisplayName(workflow.name)}
-      </span>
+      <span className="text-sm font-bold break-words text-text-primary">{workflow.name}</span>
       {workflow.description !== '' ? (
         <span className="line-clamp-2 text-xs leading-[1.45] text-text-secondary">
           {rowDescription(workflow.description)}

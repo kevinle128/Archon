@@ -1132,6 +1132,43 @@ describe('ComposerDock', () => {
     expect(saved).toEqual(['typed text']);
   });
 
+  test('a dock that unmounts inside the save debounce flushes the draft and a remount restores it', async () => {
+    const saved: string[] = [];
+    const inFlight = deferred<SteeringDraftResponse>();
+    const save: SaveNodeDraft = async (_runId, _nodeId, body) => {
+      saved.push(body.message);
+      return inFlight.promise;
+    };
+    const first = draftReader(null);
+    await renderDock({ runId: 'run-flush', readDraft: first.read, saveDraft: save });
+    await first.settle();
+    await setDraft('half typed');
+    expect(saved).toHaveLength(0);
+
+    await act(async () => {
+      root.render(null);
+    });
+    await flush();
+    expect(saved).toEqual(['half typed']);
+
+    // The save has not landed yet, so the server still reads empty; the next
+    // dock for the same scope shows the unsaved text at once.
+    const second = draftReader(null);
+    // A fresh mount starts a fresh queue bootstrap, as a new scope would.
+    coldStartResolves = 0;
+    await renderDock({ runId: 'run-flush', readDraft: second.read, saveDraft: save });
+    expect(field().value).toBe('half typed');
+    await second.settle();
+    expect(field().value).toBe('half typed');
+
+    inFlight.resolve({
+      success: true,
+      draft: { message: 'half typed', updated_at: '2026-09-26T00:00:00.000Z' },
+      auto_send: false,
+    });
+    await flush();
+  });
+
   function buttonByText(text: string): HTMLButtonElement {
     const match = [...host.querySelectorAll('button')].find(
       button => (button.textContent ?? '').trim() === text

@@ -243,7 +243,7 @@ export function LegacyNodeRoom({
         <span className="rounded bg-surface-elevated px-2 py-0.5 text-xs text-text-secondary">
           {waitingForDefinition ? 'Loading' : TYPE_LABELS[resolution.nodeType]}
         </span>
-        <span className={cn('rounded-full px-2 py-0.5 text-xs', STATUS_COLORS[row.status])}>
+        <span className={cn('rounded-none px-2 py-0.5 text-xs', STATUS_COLORS[row.status])}>
           {nodeStatusLabel(row.status)}
         </span>
         {onClose !== undefined ? (

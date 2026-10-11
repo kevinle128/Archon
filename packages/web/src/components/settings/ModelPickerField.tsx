@@ -26,7 +26,7 @@ const PI_SUGGESTION_LIMIT = 30;
 
 const DROPDOWN_CLASS =
   // Flat popover: a border separates it from the page, no shadow.
-  'absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-[10px] border border-border bg-background';
+  'absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-none border border-border bg-background';
 const OPTION_CLASS =
   // Stacked two-line row: the model name keeps the full row width and the
   // cost/context hint rides a muted second line so it never crowds the name out.
@@ -375,7 +375,7 @@ function CopilotModelSelect({
             if (!inList) onChange('');
           }}
           disabled={disabled}
-          className="shrink-0 min-h-11 rounded-[10px] border border-border px-3 text-xs text-text-secondary transition-colors hover:text-text-primary disabled:opacity-40"
+          className="shrink-0 min-h-11 rounded-none border border-border px-3 text-xs text-text-secondary transition-colors hover:text-text-primary disabled:opacity-40"
         >
           List
         </button>

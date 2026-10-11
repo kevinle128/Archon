@@ -649,7 +649,7 @@ describe('NodeRoom tool rows', () => {
     const summary = summaryMarkup(row);
     const group = /<span class="([^"]*)"[^>]*><span class="contents">/.exec(summary);
     expect(group?.[1]).toContain('whitespace-nowrap');
-    expect(group?.[1]).toContain('text-[11px]');
+    expect(group?.[1]).toContain('text-[12px]');
     expect(badgeMarkup(summary, 'truncated')).toContain('flex-none');
     expect(badgeMarkup(summary, '1.5s')).toContain('flex-[0_1_auto]');
     expect(badgeMarkup(summary, '1.5s')).toContain('min-w-0');
@@ -699,7 +699,7 @@ describe('NodeRoom tool rows', () => {
     expect(badgeMarkup(plainSummary, '—')).toContain('aria-hidden="true"');
   });
 
-  test('family chips carry their token tone and the summary carries row geometry', () => {
+  test('tool names are heavy plain labels and the summary carries row geometry', () => {
     const items: AgentHistoryItem[] = [
       toolItem({ toolUseId: 't-shell', name: 'Bash', input: { command: 'ls' } }),
       toolItem({ toolUseId: 't-file', name: 'Read', input: { path: 'a.ts' } }),
@@ -718,13 +718,12 @@ describe('NodeRoom tool rows', () => {
       return match[0];
     };
 
-    expect(chip('t-shell')).toContain('text-node-bash');
-    expect(chip('t-shell')).toContain('var(--node-bash) 40%');
-    expect(chip('t-file')).toContain('var(--node-command) 40%');
-    expect(chip('t-search')).toContain('var(--node-prompt) 70%');
-    expect(chip('t-search')).toContain('var(--node-prompt) 45%');
-    expect(chip('t-todo')).toContain('var(--node-approval) 40%');
-    expect(chip('t-gen')).toContain('text-text-secondary');
+    for (const id of ['t-shell', 't-file', 't-search', 't-todo', 't-gen']) {
+      expect(chip(id)).toContain('font-extrabold');
+      expect(chip(id)).toContain('text-text-primary');
+      expect(chip(id)).not.toContain('style=');
+      expect(chip(id)).not.toContain('border');
+    }
     const todoSummary = summaryMarkup(rowMarkup(markup, 't-todo'));
     expect(todoSummary).toContain('text-text-secondary">todo updated</span>');
     expect(todoSummary).not.toContain('text-text-primary">todo updated</span>');
@@ -732,11 +731,11 @@ describe('NodeRoom tool rows', () => {
     const summary = summaryMarkup(rowMarkup(markup, 't-shell'));
     expect(summary).toContain('font-mono');
     expect(summary).toContain('text-[12px]');
-    expect(summary).toContain('min-h-[24px]');
+    expect(summary).toContain('min-h-[32px]');
     expect(summary).toContain('gap-2');
-    expect(summary).toContain('px-1.5');
-    expect(summary).toContain('py-1');
-    expect(summary).toContain('rounded-[6px]');
+    expect(summary).toContain('px-2.5');
+    expect(summary).toContain('py-[7px]');
+    expect(summary).not.toContain('rounded-');
     expect(summary).toContain('hover:bg-surface-hover');
     expect(summary).toContain('focus-visible:outline-accent-bright');
     expect(summary).toContain('-outline-offset-2');
@@ -755,11 +754,11 @@ describe('NodeRoom tool rows', () => {
     expect(glyph?.[1]).toContain('w-[12px]');
     expect(glyph?.[1]).toContain('font-bold');
     expect(summary.match(/font-bold/g)?.length).toBe(1);
-    // Rest state: no inset card fill/border/shadow on the row itself.
+    // Rest state: a square bordered row on the muted surface, no shadow.
     const openTag = rowOpenTag(rowMarkup(markup, 't-shell'));
     expect(openTag).not.toContain('ptool');
-    expect(openTag).not.toContain('bg-surface-inset');
-    expect(openTag).not.toContain('border');
+    expect(openTag).toContain('border border-border bg-surface');
+    expect(openTag).not.toContain('rounded-');
     expect(openTag).not.toContain('shadow');
   });
 
@@ -773,9 +772,7 @@ describe('NodeRoom tool rows', () => {
 
     const bodyStart = row.indexOf('</summary>') + '</summary>'.length;
     const body = row.slice(bodyStart);
-    expect(body).toContain('ml-[29px]');
-    expect(body).toContain('border-l-2');
-    expect(body).toContain('pl-2.5');
+    expect(body).toContain('border-t border-border px-2.5 py-2');
 
     // The bar opens with the truncatable label, then the pinned badges, then the Raw toggle.
     const bar =
@@ -811,9 +808,9 @@ describe('NodeRoom tool rows', () => {
     expect(raw?.[1]).toContain('focus-visible:outline-accent-bright');
     expect(body.match(/<button[^>]*>Raw[\s\S]*?<\/button>/g)).toHaveLength(1);
 
-    // The file body arm: node-command path, then the preview, in the inset box.
+    // The file body arm: node-command path, then the preview, in the code box.
     expect(body).toContain('tool-family-body');
-    expect(body).toContain('bg-surface-inset');
+    expect(body).toContain('bg-code-bg');
     expect(body).toContain('text-node-command">a.ts<');
     expect(body).toContain('truncated-output');
     // A failed auto-opened row still exposes no serialized payload or diagnostic labels.
@@ -835,18 +832,22 @@ describe('NodeRoom tool rows', () => {
       lifecycleItem('l-1', 4, 'completed'),
     ];
     const markup = renderRoom({ items });
-    // Every row wrapper carries `tabindex="-1"` unconditionally now (see the
-    // focus-target marker test above); rows sit flush with no other class.
-    expect(markup).toContain('<div tabindex="-1"><details data-tool-id="t-1"');
-    expect(markup).toContain('</details></div><div tabindex="-1"><details data-tool-id="t-2"');
+    // Every item is one stream row: a 64px time column, then the item, with a
+    // bottom rule. Every row wrapper carries `tabindex="-1"` (see the
+    // focus-target marker test above).
+    const streamRow =
+      '<div data-stream-row="" class="grid grid-cols-[64px_minmax(0,1fr)] border-b border-border py-2.5" tabindex="-1">';
+    expect(markup).toContain(streamRow);
+    expect(markup.split('data-stream-row=""').length - 1).toBe(4);
     expect(markup).not.toContain('gap-3');
-    expect(markup).toContain('px-3');
-    expect(markup).toContain('py-2.5');
-    // Non-tool content keeps its own vertical margins; the last item's
-    // wrapper additionally carries the dock focus-target marker.
-    expect(markup).toContain('class="my-1.5"');
-    expect(markup).toContain('chat-markdown max-w-none font-sans text-[12.5px]');
-    expect(markup).toContain('<p class="text-xs text-text-secondary">completed');
+    expect(markup).toContain('px-6');
+    // Agent text uses the run-view agent type tokens; status rows are system labels.
+    expect(markup).toContain(
+      'chat-markdown max-w-none font-sans text-[length:var(--rv-agent-font-size)] leading-[var(--rv-agent-line-height)]'
+    );
+    expect(markup).toContain(
+      '<p class="text-[12px] font-bold tracking-[0.06em] uppercase text-text-secondary">completed'
+    );
   });
 
   test('extension slots keep their anchor and gain separation below the row', () => {
@@ -859,7 +860,7 @@ describe('NodeRoom tool rows', () => {
     const toolIndex = markup.indexOf('data-tool-id="tool-use-1"');
     const afterIndex = markup.indexOf('after-tool-1');
     expect(afterIndex).toBeGreaterThan(toolIndex);
-    expect(markup).toContain('<div class="mt-1.5">after-tool-1</div>');
+    expect(markup).toContain('<div class="mt-2.5">after-tool-1</div>');
     expect(markup).toContain('<div class="mt-1.5">at-end</div>');
   });
 
@@ -1271,7 +1272,7 @@ describe('NodeRoom task dispatch bodies', () => {
     const card = cardMarkup(row, 0);
     expect(card).toContain('group/subtask');
     expect(card).toContain('mt-[5px]');
-    expect(card).toContain('rounded-[6px]');
+    expect(card).not.toContain('rounded-');
     expect(card).toContain('bg-surface-elevated');
     expect(card).toContain('px-[9px]');
     expect(card).toContain('py-[6px]');
@@ -1313,7 +1314,7 @@ describe('NodeRoom task dispatch bodies', () => {
     expect(box).toContain('TAILMARKER');
     expect(box).toContain('whitespace-pre-wrap');
     expect(box).toContain('break-words');
-    expect(box).toContain('bg-surface-inset');
+    expect(box).toContain('bg-code-bg');
     // Payload strings are React text — never attributes.
     expect(card).not.toContain('title=');
     expect(card).not.toContain('aria-label=');

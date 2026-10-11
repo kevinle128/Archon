@@ -32,7 +32,7 @@ export function WorkflowEnvPicker({
   const selectedMissing = value !== null && value.length > 0 && !envs.some(env => env.id === value);
   return (
     <div className="grid gap-1">
-      <div className="relative w-56 max-w-full">
+      <div className="relative w-full">
         <label className="sr-only" htmlFor="workflow-run-env">
           Workflow ENV overlay
         </label>

@@ -62,7 +62,7 @@ function TodoStripRow({ item, current }: { item: TodoItem; current: boolean }): 
   return (
     <li
       className={cn(
-        'flex items-baseline gap-2 rounded-[4px] py-[1px] pr-[4px] pl-[2px] font-mono text-[11.5px] leading-[1.85]',
+        'flex items-baseline gap-2 rounded-none py-[1px] pr-[4px] pl-[2px] font-mono text-[11.5px] leading-[1.85]',
         current ? cn('bg-surface text-text-primary', RUNNING_MARKER) : 'text-text-secondary'
       )}
     >

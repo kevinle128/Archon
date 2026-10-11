@@ -501,6 +501,27 @@ body {
    and the new-side column/cells are hidden. State foregrounds are local
    custom properties so a contrast correction is one scoped change per state
    (code and marker share it; line numbers stay --text-secondary). */
+/* Expanded tool bodies are dark code blocks in both themes. Inside them the
+   text, node and status tones use the dark palette values, so every tone keeps
+   its contrast on --code-bg. The inline diff uses the same ground. */
+.tool-family-body {
+  --text-primary: var(--code-fg);
+  --text-secondary: #9aa3b2;
+  --text-tertiary: #8a93a6;
+  --surface-inset: var(--code-bg);
+  --surface-hover: #232a36;
+  --border: #232a36;
+  --border-bright: #2e3746;
+  --node-command: #60a5fa;
+  --node-prompt: #c084fc;
+  --node-bash: #fbbf24;
+  --node-loop: #2dd4bf;
+  --node-approval: #fb923c;
+  --success: #5fbf8f;
+  --warning: #f0a54a;
+  --error: #f07167;
+}
+
 .tool-diff {
   --diff-background-color: var(--surface-inset);
   --diff-text-color: var(--text-primary);

@@ -221,7 +221,7 @@ function FileBrowser({
                   onClick={(): void => {
                     onSelect(f.path);
                   }}
-                  className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none ${
+                  className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-none px-3 py-2 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none ${
                     isSelected ? 'bg-accent-muted' : 'hover:bg-surface-hover'
                   }`}
                 >

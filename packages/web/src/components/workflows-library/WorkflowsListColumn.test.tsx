@@ -60,8 +60,9 @@ describe('WorkflowsListColumn', () => {
 
   test('pins recommended rows above the rest', () => {
     const html = render([entry('pinned', 'First')], [entry('other', 'Second', 'project')]);
-    expect(html.indexOf('Recommended')).toBeLessThan(html.indexOf('Pinned'));
-    expect(html.indexOf('Pinned')).toBeLessThan(html.indexOf('All workflows'));
+    // Rows show the raw workflow name, as the handoff does.
+    expect(html.indexOf('Recommended')).toBeLessThan(html.indexOf('>pinned<'));
+    expect(html.indexOf('>pinned<')).toBeLessThan(html.indexOf('All workflows'));
   });
 
   test('tags the source and marks the selected row', () => {

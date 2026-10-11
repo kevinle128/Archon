@@ -161,6 +161,15 @@ function ResolvedStamp(props: { presentation: AskCardPresentation }): React.Reac
   );
 }
 
+/**
+ * An option is a lettered row. The real input covers the row without paint, so
+ * a click anywhere on the row selects it and focus shows as a row outline.
+ */
+const OPTION_ROW_CLASS =
+  'relative grid cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-baseline gap-2 border-b border-border px-4 py-2.5 text-sm text-text-primary hover:bg-selection has-[:checked]:bg-selection has-[:focus-visible]:outline-2 has-[:focus-visible]:-outline-offset-2 has-[:focus-visible]:outline-accent-bright';
+const OPTION_INPUT_CLASS =
+  'absolute inset-0 m-0 size-full cursor-pointer appearance-none opacity-0';
+
 export function AskCard(props: AskCardProps): React.ReactElement {
   const {
     interaction,
@@ -285,12 +294,10 @@ export function AskCard(props: AskCardProps): React.ReactElement {
                     const focusFirst = autoFocus && questionIndex === 0 && optionIndex === 0;
                     if (question.selection === 'single') {
                       return (
-                        <label
-                          key={option}
-                          className="grid cursor-pointer grid-cols-[16px_20px_minmax(0,1fr)] items-baseline gap-2 border-b border-border px-4 py-2.5 text-sm text-text-primary hover:bg-selection has-[:checked]:bg-selection"
-                        >
+                        <label key={option} className={OPTION_ROW_CLASS}>
                           <input
                             id={controlId}
+                            className={OPTION_INPUT_CLASS}
                             type="radio"
                             name={`${mountContext}:${interaction.id}:${question.id}`}
                             value={option}
@@ -308,12 +315,10 @@ export function AskCard(props: AskCardProps): React.ReactElement {
                       );
                     }
                     return (
-                      <label
-                        key={option}
-                        className="grid cursor-pointer grid-cols-[16px_20px_minmax(0,1fr)] items-baseline gap-2 border-b border-border px-4 py-2.5 text-sm text-text-primary hover:bg-selection has-[:checked]:bg-selection"
-                      >
+                      <label key={option} className={OPTION_ROW_CLASS}>
                         <input
                           id={controlId}
+                          className={OPTION_INPUT_CLASS}
                           type="checkbox"
                           name={`${mountContext}:${interaction.id}:${question.id}`}
                           value={option}
@@ -332,8 +337,9 @@ export function AskCard(props: AskCardProps): React.ReactElement {
                   })}
                   {question.allowOther ? (
                     <div className="space-y-2">
-                      <label className="grid cursor-pointer grid-cols-[16px_20px_minmax(0,1fr)] items-baseline gap-2 border-b border-border px-4 py-2.5 text-sm text-text-primary hover:bg-selection has-[:checked]:bg-selection">
+                      <label className={OPTION_ROW_CLASS}>
                         <input
+                          className={OPTION_INPUT_CLASS}
                           type={question.selection === 'single' ? 'radio' : 'checkbox'}
                           name={`${mountContext}:${interaction.id}:${question.id}`}
                           value="__other__"

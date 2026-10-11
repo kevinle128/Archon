@@ -296,7 +296,7 @@ function BackendPicker({
         </span>
       </div>
       {searching && matches.length > 0 ? (
-        <div className="max-h-56 overflow-y-auto rounded-[10px] border border-border">
+        <div className="max-h-56 overflow-y-auto rounded-none border border-border">
           {matches.map(c => {
             const count = modelCounts.get(c.vendor);
             return (
@@ -575,7 +575,7 @@ export function ProvidersSection(): ReactElement | null {
   const wrap = (children: ReactElement, aside?: ReactElement): ReactElement => (
     <SettingsSection
       id="set-providers"
-      title="AI providers"
+      title="Providers"
       description="API keys and subscription logins, stored encrypted per user. Runs use the credentials of the person who starts them."
       aside={aside}
     >

@@ -40,7 +40,7 @@ export function NodeRunList({
             type="button"
             aria-current={selected ? 'true' : undefined}
             className={cn(
-              'flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 rounded-[10px] px-3 py-2 text-left text-sm transition-colors duration-150 motion-reduce:transition-none',
+              'flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 rounded-none px-3 py-2 text-left text-sm transition-colors duration-150 motion-reduce:transition-none',
               selected ? 'bg-accent-muted' : 'hover:bg-surface'
             )}
             onClick={(): void => {

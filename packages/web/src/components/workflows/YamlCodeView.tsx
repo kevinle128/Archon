@@ -30,7 +30,7 @@ export function YamlCodeView({
             type="button"
             onClick={onCollapse}
             aria-label="Collapse YAML preview"
-            className="inline-flex size-8 cursor-pointer items-center justify-center rounded-[10px] text-text-tertiary transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex size-8 cursor-pointer items-center justify-center rounded-none text-text-tertiary transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <ChevronDown className="size-4" aria-hidden="true" />
           </button>
