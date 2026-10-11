@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea';
 import type { AskAnswerBody, PendingInteraction } from '@/lib/api';
 import { askCardId } from '@/lib/execution-room-model';
 import { ensureUtc, formatDurationMs } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 import type { AskCardPresentation } from './ask-card-presentation';
 import {
@@ -187,6 +188,10 @@ export function AskCard(props: AskCardProps): React.ReactElement {
   } = props;
 
   const [declineOpen, setDeclineOpen] = useState(false);
+  // A single question reads in the filled header, as the handoff shows it, and
+  // names its option group; several questions keep a legend each.
+  const headerQuestionId = useId();
+  const headerQuestion = questions.length === 1 ? (questions[0]?.prompt ?? null) : null;
 
   const draftValid = isAskDraftValid(questions, draft);
   const isPending = presentation.viewState === 'pending';
@@ -259,13 +264,21 @@ export function AskCard(props: AskCardProps): React.ReactElement {
           <CardTitle className="text-[11px] font-bold tracking-[0.08em] uppercase">
             {`${agentDisplayName} is asking`}
           </CardTitle>
+          {headerQuestion !== null ? (
+            <p
+              id={headerQuestionId}
+              className="mt-1 text-[19px] leading-tight font-extrabold text-status-waiting-fg"
+            >
+              {headerQuestion}
+            </p>
+          ) : null}
           <CardDescription className="flex flex-wrap items-center gap-2 text-xs text-status-waiting-fg">
             <span>{nodeId}</span>
             <span aria-hidden="true">·</span>
             <span>{formatDurationMs(elapsedWaitingMs(interaction.created_at, nowMs))}</span>
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4 px-0 pt-4">
+        <CardContent className={cn('space-y-4 px-0', headerQuestion === null ? 'pt-4' : 'pt-0')}>
           {presentation.viewState === 'sending' ? (
             <p className="px-4 text-sm text-text-secondary">Sending…</p>
           ) : null}
@@ -285,10 +298,16 @@ export function AskCard(props: AskCardProps): React.ReactElement {
               const value = draft[question.id];
               const otherOn = isOtherOn(question, value);
               return (
-                <fieldset key={question.id} className="min-w-0 border-0 p-0">
-                  <legend className="mb-2 px-4 text-[19px] leading-tight font-extrabold text-text-primary">
-                    {question.prompt}
-                  </legend>
+                <fieldset
+                  key={question.id}
+                  className="min-w-0 border-0 p-0"
+                  aria-labelledby={headerQuestion !== null ? headerQuestionId : undefined}
+                >
+                  {headerQuestion === null ? (
+                    <legend className="mb-2 px-4 text-[19px] leading-tight font-extrabold text-text-primary">
+                      {question.prompt}
+                    </legend>
+                  ) : null}
                   {question.options.map((option, optionIndex) => {
                     const controlId = `${mountContext}:${interaction.id}:${question.id}:${option}`;
                     const focusFirst = autoFocus && questionIndex === 0 && optionIndex === 0;

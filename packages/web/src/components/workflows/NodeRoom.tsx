@@ -29,7 +29,6 @@ import {
   type TaskSubtaskCard,
   type ToolBody,
   headlineAfterLabel,
-  type ToolOutcome,
   type ToolPresentationInput,
   type ToolRowBadge,
   type ToolRowBadgeTone,
@@ -430,14 +429,6 @@ function LifecycleHistory({
     </p>
   );
 }
-
-const GLYPH_TONE: Record<ToolOutcome, string> = {
-  succeeded: 'text-success',
-  failed: 'text-error',
-  running: 'text-accent-bright',
-  interrupted: 'text-warning',
-  unknown: 'text-text-secondary',
-};
 
 const BADGE_TONE: Record<ToolRowBadgeTone, { className?: string; style?: React.CSSProperties }> = {
   neutral: { className: 'text-text-secondary' },
@@ -1029,15 +1020,6 @@ function ToolHistory({
           ▶
         </span>{' '}
         <span className="sr-only">{presentation.statusLabel}</span>{' '}
-        <span
-          aria-hidden="true"
-          className={cn(
-            'w-[12px] flex-none text-center text-[12px] font-bold leading-none',
-            GLYPH_TONE[presentation.statusLabel]
-          )}
-        >
-          {presentation.glyph}
-        </span>{' '}
         <span
           className="max-w-[24ch] flex-none overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-extrabold text-text-primary"
           title={chipTitle}

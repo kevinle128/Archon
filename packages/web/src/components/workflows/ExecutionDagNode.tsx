@@ -24,10 +24,11 @@ export type ExecutionFlowNode = Node<ExecutionNodeData>;
 
 const STATUS_STYLES: Partial<Record<WorkflowStepStatus, string>> = {
   completed: 'border-l-2 border-success bg-success/5',
-  running: 'border-l-2 border-accent-bright bg-accent/5 shadow-[0_0_8px_var(--accent)]',
+  running: 'border-l-2 border-accent-bright bg-accent/5',
   awaiting: 'border-l-2 border-warning bg-warning/5 animate-pulse motion-reduce:animate-none',
   failed: 'border-l-2 border-error bg-error/5',
-  skipped: 'opacity-50 border-l-2 border-border',
+  // Skipped reads as muted but stays legible: a dashed card, never faded with opacity.
+  skipped: 'border-l-2 border-dashed border-line-strong bg-surface text-text-secondary',
 };
 const DEFAULT_STYLE = 'border-l-2 border-border bg-surface-elevated';
 

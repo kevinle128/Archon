@@ -520,7 +520,7 @@ describe('NodeRoom operator rows', () => {
 });
 
 describe('NodeRoom tool rows', () => {
-  test('maps the five outcomes to closed/open and the exact glyph + hidden status word', () => {
+  test('maps the five outcomes to closed/open and a hidden status word, with no status glyph', () => {
     const items: AgentHistoryItem[] = [
       toolItem({ id: 't-ok', toolUseId: 't-ok', outcome: 'succeeded' }),
       toolItem({ id: 't-bad', toolUseId: 't-bad', outcome: 'failed', exitCode: 2 }),
@@ -530,24 +530,24 @@ describe('NodeRoom tool rows', () => {
     ];
     const markup = renderRoom({ items });
 
-    const expected: [string, boolean, string, string][] = [
-      ['t-ok', false, 'succeeded', '✓'],
-      ['t-bad', true, 'failed', '✕'],
-      ['t-run', false, 'running', '◐'],
-      ['t-int', false, 'interrupted', '⚠'],
-      ['t-unk', false, 'unknown', '–'],
+    const expected: [string, boolean, string][] = [
+      ['t-ok', false, 'succeeded'],
+      ['t-bad', true, 'failed'],
+      ['t-run', false, 'running'],
+      ['t-int', false, 'interrupted'],
+      ['t-unk', false, 'unknown'],
     ];
-    for (const [toolUseId, open, word, glyph] of expected) {
+    for (const [toolUseId, open, word] of expected) {
       const row = rowMarkup(markup, toolUseId);
       const openTag = rowOpenTag(row);
       expect(openTag.startsWith('<details data-tool-id=')).toBe(true);
       expect(/\sopen(\s|=|>)/.test(openTag)).toBe(open);
       const summary = summaryMarkup(row);
+      // The handoff row is caret, name, target, facts: the hidden word carries
+      // the state and the facts show it; there is no status glyph.
       expect(summary).toContain(`<span class="sr-only">${word}</span>`);
-      expect(summary).toContain(glyph);
-      // Glyph and chevron are decorative; the hidden word carries the state.
+      for (const glyph of ['✓', '✕', '◐', '⚠']) expect(summary).not.toContain(glyph);
       expect(/aria-hidden="true"[^>]*>▶/.exec(summary)).not.toBeNull();
-      expect(new RegExp(`aria-hidden="true"[^>]*>${glyph}`).exec(summary)).not.toBeNull();
     }
   });
 
@@ -749,11 +749,9 @@ describe('NodeRoom tool rows', () => {
     expect(chevron?.[1]).toContain('text-[10px]');
     expect(chevron?.[1]).toContain('duration-[120ms]');
     expect(chevron?.[1]).toContain('motion-reduce:transition-none');
-    // Glyph: bold, fixed 12px column; only the glyph is bold inside the row.
-    const glyph = /<span aria-hidden="true" class="([^"]*)">✓<\/span>/.exec(summary);
-    expect(glyph?.[1]).toContain('w-[12px]');
-    expect(glyph?.[1]).toContain('font-bold');
-    expect(summary.match(/font-bold/g)?.length).toBe(1);
+    // No status glyph: the tool name is the only heavy text in the row.
+    expect(summary).not.toContain('✓');
+    expect(summary.match(/font-bold/g)).toBeNull();
     // Rest state: a square bordered row on the muted surface, no shadow.
     const openTag = rowOpenTag(rowMarkup(markup, 't-shell'));
     expect(openTag).not.toContain('ptool');

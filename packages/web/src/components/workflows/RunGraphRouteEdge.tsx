@@ -31,6 +31,19 @@ function strokeForRoute(route: LayoutRoute): string {
   }
 }
 
+/** Longest edge label, in characters, before it is cut with an ellipsis. */
+const LABEL_MAX_CHARS = 24;
+
+/**
+ * Edge labels carry route conditions, which can be long expressions. In the
+ * narrow run column a full condition overlaps its neighbours, so the label is
+ * cut; the full condition stays on the node definition.
+ */
+export function shortEdgeLabel(label: string | undefined): string | undefined {
+  if (label === undefined || label.length <= LABEL_MAX_CHARS) return label;
+  return `${label.slice(0, LABEL_MAX_CHARS - 1)}…`;
+}
+
 function isDashed(route: LayoutRoute): boolean {
   return route.backEdge || route.kind === 'conditional';
 }
@@ -53,7 +66,7 @@ export function RunGraphRouteEdge(props: EdgeProps<RunGraphFlowEdge>): React.Rea
       path={route.path}
       labelX={route.labelPosition.x}
       labelY={route.labelPosition.y}
-      label={route.label}
+      label={shortEdgeLabel(route.label)}
       markerEnd={props.markerEnd}
       style={style}
     />
