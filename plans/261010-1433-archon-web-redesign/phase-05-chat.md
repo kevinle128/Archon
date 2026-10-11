@@ -1,6 +1,8 @@
 # Phase 05: Chat
 
-Status: pending. Depends on: 02. Effort: 1.5d. Can run in parallel with 03, 04, 06, 07.
+Status: done. Depends on: 02. Effort: 1.5d. Can run in parallel with 03, 04, 06, 07.
+
+Delivery notes: the bubble renders its own tool, error and run cards so its memo comparator stays correct. The context panel reads runs of this chat from the shared recent-runs query (`parent_conversation_id` or `conversation_id`), and is hidden below 1024px.
 
 ## Context
 

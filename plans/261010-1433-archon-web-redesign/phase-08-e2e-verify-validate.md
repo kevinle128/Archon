@@ -1,6 +1,17 @@
 # Phase 08: e2e sweep, verify-archon, docs, full validation
 
-Status: pending. Depends on: 03, 04, 05, 06, 07. Effort: 1.5d.
+Status: in progress. Depends on: 03, 04, 05, 06, 07. Effort: 1.5d.
+
+Delivery notes (so far):
+
+- Full `test:ui`: 155 passed, 2 skipped, 2 failed before the last fix. The failures were a real regression: an `after:content` arrow put "→" into the accessible name of the Ask Submit and Start run buttons; the arrows are now `aria-hidden` spans. `test:ui:hitl`: 33 passed, 2 skipped after the fix.
+- Real bugs found by the sweep and fixed: loop-group body nodes now use their runtime ids (`<group>.<body>`) in the step list, so deep links and status match; the Needs you button opens `/runs?filter=needs` and the list keeps the filter; one `h1` per screen (chat thread title and run title are `h2`); delete-diff text and line numbers clear 4.5:1 (derived tokens, not handoff colors).
+- verify-archon: sources now pin the redesign handoff (README, Runs Workspace prototype, its scripts and design-system bundle), the run-view mockup for the graph, the steering handoff for the queue band, the brand guide and `index.css`. Criteria keep their ids. Tool rows, agent text and the Ask card use the handoff as reference; the graph and queue band keep earlier references (listed as accepted differences, because the handoff has no graph view and shows queued guidance as operator rows). `desktop_room_width` is removed; the node column width comes from the layout.
+- Deviation from requirement 4: the visual config captures the light theme only (`theme: light`), as the handoff is light only. Dark is checked by the screenshot pass, not by the image reviewer.
+- Surface id stays `legacy` in the config: the run view keeps its `legacy-*` element ids, so renaming the surface would only rename evidence files.
+- Docs: `adapters/web.md` describes the top bar, Runs workspace, Chat, Workflows, Settings sections, run routes and redirects, and the Builder; `guides/authoring-workflows.md` points stuck runs at the Runs workspace.
+
+Remaining: transcript stream-row restyle (time column, 14.5px agent text, handoff tool rows) with its pinned specs, the fidelity fixes from the screenshot pass, and the kept-features walk.
 
 ## Context
 

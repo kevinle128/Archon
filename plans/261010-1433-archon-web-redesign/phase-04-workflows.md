@@ -1,6 +1,8 @@
 # Phase 04: Workflows
 
-Status: pending. Depends on: 02. Effort: 1.5d. Can run in parallel with 03, 05, 06, 07.
+Status: done. Depends on: 02. Effort: 1.5d. Can run in parallel with 03, 05, 06, 07.
+
+Delivery notes: load errors were never shown on this screen (`listWorkflows` drops them), so only parse-warning tags are kept. The started-run poller matches the new conversation's database id against `parent_conversation_id`, which is how web runs record the chat that started them.
 
 ## Context
 

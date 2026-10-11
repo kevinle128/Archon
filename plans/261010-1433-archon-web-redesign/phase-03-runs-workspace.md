@@ -1,6 +1,16 @@
 # Phase 03: Runs workspace
 
-Status: pending. Depends on: 02. Effort: 5d (largest phase; sub-steps 3A to 3E can split across people if each owns its files).
+Status: done. Depends on: 02. Effort: 5d (largest phase; sub-steps 3A to 3E can split across people if each owns its files).
+
+Delivery notes:
+
+- `LegacyGraphLogsPane` stays the owner of rows, selection, chat and room state and now renders the run column (header, Nodes List | Graph) and the node column (node header, tabs, body). Its behavior tests were kept and moved to the new layout.
+- Node list rows keep `legacy-graph-<node>` opener ids; execution rows (iterations, retries, occurrences) live in the History tab (`NodeRunList`, "Node runs"). A History pick and a chat status pick open that execution's stream, as in the prototype.
+- Run tabs: Changes, Files, Terminal, Artifacts, Logs, Chat ("Chat" instead of "Conversation" so ten tabs fit and the label matches the old tab). They mount on first open and stay mounted; the Artifacts close acts only while its tab is open.
+- A node that ran but is missing from the definition gets a trailing step so its room stays reachable.
+- On wide screens the first run and the most relevant node open by default; below 1024px the list hides while a run is open; a narrow pane shows one column at a time.
+- No `iteration` URL parameter: the prototype's history pick covers it and the README routes do not name it.
+- Transcript typography (agent text size, tool rows, operator rows) still follows the old mockup because many e2e checks pin it; phase 08 restyles it with the visual criteria rewrite.
 
 ## Context
 

@@ -1,6 +1,8 @@
 # Phase 06: Builder
 
-Status: pending. Depends on: 02. Effort: 2d. Can run in parallel with 03, 04, 05, 07.
+Status: done. Depends on: 02. Effort: 2d. Can run in parallel with 03, 04, 05, 07.
+
+Delivery notes: dependency edits in the inspector now rewrite the node's incoming edges (before, only route nodes did, so other edits were lost on save). The route-outcome list is one shared constant in `lib/builder/builder-steps.ts`. A Step → move needs a node to follow; without one the control is disabled.
 
 ## Context
 

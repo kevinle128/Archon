@@ -1,6 +1,8 @@
 # Phase 07: Settings and Login
 
-Status: pending. Depends on: 02. Effort: 1.5d. Can run in parallel with 03, 04, 05, 06.
+Status: done. Depends on: 02. Effort: 1.5d.
+
+Delivery notes: one section shows at a time, selected by `?section=` (the e2e cost helper opens `?section=usage`). Login validation lives in `lib/auth/login-form.ts` so the package test script runs its tests.
 
 ## Context
 
