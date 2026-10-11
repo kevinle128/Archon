@@ -10,7 +10,7 @@ import type { SettingsScope } from '@/lib/settings/types';
  */
 
 export const CONTROL_CLASS =
-  'min-h-11 w-full min-w-0 rounded-[10px] border border-border bg-background px-3 text-sm text-text-primary transition-colors duration-150 motion-reduce:transition-none placeholder:text-text-tertiary hover:border-text-tertiary focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 disabled:hover:border-border';
+  'min-h-9 w-full min-w-0 border border-line-strong bg-card px-3 text-[13px] text-text-primary placeholder:text-text-tertiary hover:border-text-secondary disabled:opacity-50 disabled:hover:border-line-strong';
 
 export const MONO_CONTROL_CLASS = `${CONTROL_CLASS} font-mono`;
 
@@ -64,7 +64,7 @@ export function Field({
     [helper ? helperId : null, error ? errorId : null].filter(Boolean).join(' ') || undefined;
   return (
     <div className={cn('grid min-w-0 gap-2', className)}>
-      <label htmlFor={id} className="text-xs font-medium text-text-secondary">
+      <label htmlFor={id} className="text-xs font-semibold text-text-secondary">
         {label}
       </label>
       {children({ id, describedBy, invalid: Boolean(error) })}
@@ -85,11 +85,10 @@ export function Field({
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary: 'border-accent bg-accent text-on-accent hover:opacity-90',
-  secondary: 'border-border bg-background text-text-primary hover:bg-surface-elevated',
-  ghost:
-    'border-transparent bg-transparent text-text-secondary hover:bg-surface-elevated hover:text-text-primary',
-  danger: 'border-transparent bg-transparent text-error hover:border-error',
+  primary: 'border-accent bg-accent text-on-accent hover:bg-accent-hover',
+  secondary: 'border-line-strong bg-card text-text-primary hover:bg-selection',
+  ghost: 'border-transparent bg-transparent text-text-primary hover:bg-selection',
+  danger: 'border-error bg-card text-error hover:bg-tint-error',
 };
 
 export function Btn({
@@ -102,7 +101,7 @@ export function Btn({
     <button
       type={type}
       className={cn(
-        'inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border px-4 text-sm font-medium transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:border-border disabled:bg-transparent disabled:text-text-tertiary disabled:hover:bg-transparent',
+        'inline-flex min-h-8 cursor-pointer items-center justify-center gap-2 border px-3 text-[13px] font-semibold whitespace-nowrap disabled:cursor-default disabled:border-border disabled:bg-transparent disabled:text-text-tertiary disabled:hover:bg-transparent',
         BUTTON_VARIANTS[variant],
         className
       )}
@@ -114,29 +113,31 @@ export function Btn({
 export type Tone = 'done' | 'wait' | 'pend' | 'fail' | 'warn';
 
 const TONE_CLASS: Record<Tone, string> = {
-  done: 'text-success',
-  wait: 'border-accent text-accent',
-  pend: 'text-text-secondary',
-  fail: 'text-error',
-  warn: 'text-warning',
+  done: 'text-status-done',
+  wait: 'text-status-running',
+  pend: 'text-status-pending',
+  fail: 'text-status-failed',
+  warn: 'text-status-waiting',
 };
 
-/** Status pill: colored dot, outlined for pending, never color-only (always has text). */
+const TONE_GLYPH: Record<Tone, string> = {
+  done: '✓',
+  wait: '▶',
+  pend: '○',
+  fail: '✕',
+  warn: '!',
+};
+
+/** Status: glyph and label in the status tone, never color only. */
 export function StatusPill({ tone, children }: { tone: Tone; children: ReactNode }): ReactElement {
   return (
     <span
       className={cn(
-        'inline-flex h-6 items-center gap-2 whitespace-nowrap rounded-full border border-border px-2.5 text-xs font-medium',
+        'inline-flex items-center gap-1 text-xs font-bold whitespace-nowrap',
         TONE_CLASS[tone]
       )}
     >
-      <span
-        aria-hidden
-        className={cn(
-          'size-1.5 shrink-0 rounded-full',
-          tone === 'pend' ? 'border border-current' : 'bg-current'
-        )}
-      />
+      <span aria-hidden>{TONE_GLYPH[tone]}</span>
       {children}
     </span>
   );
@@ -157,17 +158,18 @@ export function SettingsSection({
   children: ReactNode;
 }): ReactElement {
   return (
-    <section
-      id={id}
-      aria-labelledby={`${id}-title`}
-      className="grid scroll-mt-4 gap-6 border-t border-border py-10 first:border-t-0 first:pt-6"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="grid max-w-[60ch] gap-2">
-          <h2 id={`${id}-title`} className="text-xl font-semibold leading-tight text-text-primary">
+    <section id={id} aria-labelledby={`${id}-title`} className="grid gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-foreground pb-4">
+        <div className="grid max-w-[64ch] gap-1">
+          <h2
+            id={`${id}-title`}
+            className="text-[28px] leading-[1.15] font-extrabold text-text-primary"
+          >
             {title}
           </h2>
-          {description ? <p className="text-sm text-text-secondary">{description}</p> : null}
+          {description ? (
+            <p className="text-sm leading-[1.55] text-text-secondary">{description}</p>
+          ) : null}
         </div>
         {aside}
       </div>
@@ -204,10 +206,10 @@ export function ScopeToggle({
         onChange(value);
       }}
       className={cn(
-        'min-h-9 cursor-pointer rounded-lg px-3 text-xs font-medium transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-accent',
+        'min-h-8 cursor-pointer px-3 text-[13px] font-semibold',
         scope === value
-          ? 'bg-accent-muted text-accent'
-          : 'text-text-secondary hover:text-text-primary'
+          ? 'bg-foreground text-background'
+          : 'bg-card text-text-primary hover:bg-selection'
       )}
     >
       {label}
@@ -217,7 +219,7 @@ export function ScopeToggle({
     <div
       role="group"
       aria-label="Settings scope"
-      className="flex shrink-0 items-center gap-0.5 rounded-[10px] border border-border p-0.5"
+      className="flex shrink-0 items-center border border-line-strong"
     >
       {item('install', 'This install')}
       {item('user', 'Just me')}
@@ -231,4 +233,4 @@ export function LoadingLine({ children = 'Loading...' }: { children?: ReactNode 
 
 /** A row separated by a hairline, used for project and connection lists. */
 export const ROW_CLASS =
-  'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-border py-4 last:border-b-0';
+  'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-border py-3';

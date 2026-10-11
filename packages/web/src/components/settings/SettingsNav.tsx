@@ -1,74 +1,63 @@
-import { useCallback, useEffect, useState, type ReactElement, type RefObject } from 'react';
+import type { ReactElement } from 'react';
+
 import { cn } from '@/lib/utils';
 
 export interface SettingsNavItem {
   id: string;
   label: string;
+  /** Short state shown at the right, such as a count or "2 not set". */
+  hint?: string;
+  /** True when the hint asks for attention. */
+  hintAttention?: boolean;
 }
 
-/** Offset in px below the scroll container's top edge at which a section counts as current. */
-const ACTIVE_OFFSET = 48;
-
 /**
- * In-page section index. Clicking scrolls the body to the section, and scrolling
- * keeps the highlighted item in step. Items are supplied by the page so sections
- * that are hidden (for example no web identity) never leave a dead link.
+ * Settings section list. One section shows at a time; the page keeps the choice
+ * in the URL. Items are supplied by the page so hidden sections leave no row.
  */
 export function SettingsNav({
   items,
-  scrollRef,
+  active,
+  onSelect,
 }: {
   items: readonly SettingsNavItem[];
-  scrollRef: RefObject<HTMLDivElement | null>;
+  active: string;
+  onSelect: (id: string) => void;
 }): ReactElement {
-  const [active, setActive] = useState(items[0]?.id ?? '');
-
-  const updateActive = useCallback((): void => {
-    const container = scrollRef.current;
-    if (!container) return;
-    const top = container.getBoundingClientRect().top;
-    let current = items[0]?.id ?? '';
-    for (const { id } of items) {
-      const el = document.getElementById(id);
-      if (el && el.getBoundingClientRect().top - top <= ACTIVE_OFFSET) current = id;
-    }
-    setActive(current);
-  }, [items, scrollRef]);
-
-  useEffect(() => {
-    const container = scrollRef.current;
-    if (!container) return;
-    updateActive();
-    container.addEventListener('scroll', updateActive, { passive: true });
-    return (): void => {
-      container.removeEventListener('scroll', updateActive);
-    };
-  }, [scrollRef, updateActive]);
-
   return (
     <nav
       aria-label="Settings sections"
-      className="flex gap-1 overflow-x-auto border-b border-border p-3 md:grid md:content-start md:gap-0.5 md:overflow-visible md:border-b-0 md:px-4 md:py-10"
+      className="flex flex-col max-md:flex-row max-md:overflow-x-auto"
     >
-      {items.map(({ id, label }) => (
-        <button
-          key={id}
-          type="button"
-          aria-current={active === id ? 'true' : undefined}
-          onClick={() => {
-            document.getElementById(id)?.scrollIntoView({ block: 'start' });
-            setActive(id);
-          }}
-          className={cn(
-            'min-h-11 shrink-0 cursor-pointer whitespace-nowrap rounded-[10px] px-3 text-left text-sm font-medium transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-accent',
-            active === id
-              ? 'bg-accent-muted text-accent'
-              : 'text-text-secondary hover:bg-surface hover:text-text-primary'
-          )}
-        >
-          {label}
-        </button>
-      ))}
+      {items.map(item => {
+        const current = item.id === active;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            aria-current={current ? 'true' : undefined}
+            onClick={() => {
+              onSelect(item.id);
+            }}
+            className={cn(
+              'flex shrink-0 cursor-pointer items-baseline justify-between gap-2 border-l-[3px] px-4 py-2.5 text-left text-sm font-semibold whitespace-nowrap hover:bg-selection',
+              current ? 'border-l-accent bg-selection' : 'border-l-transparent'
+            )}
+          >
+            <span>{item.label}</span>
+            {item.hint !== undefined ? (
+              <span
+                className={cn(
+                  'text-xs font-normal',
+                  item.hintAttention === true ? 'text-status-waiting' : 'text-text-secondary'
+                )}
+              >
+                {item.hint}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
     </nav>
   );
 }

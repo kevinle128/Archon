@@ -36,12 +36,13 @@ import {
   SettingsSection,
   TextInput,
 } from './primitives';
+import { buildRunPath } from '@/lib/runs/run-url';
 
 /** Run-detail route for a run group; deleted projects and unknown runs stay unlinked. */
 function runHref(group: UsageReportGroup): string | null {
   const runId = group.dimensions.runId;
   if (runId === undefined || runId === '') return null;
-  return `/workflows/runs/${encodeURIComponent(runId)}`;
+  return buildRunPath(runId);
 }
 
 const TH = 'whitespace-nowrap px-2.5 py-2 text-xs font-medium text-text-secondary';

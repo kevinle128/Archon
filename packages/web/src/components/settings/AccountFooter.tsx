@@ -5,7 +5,7 @@ import { getUpdateCheck, getAuthStatus } from '@/lib/api';
 import { useSession, signOut } from '@/lib/auth-client';
 
 const iconButtonClass =
-  'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors duration-150 hover:bg-surface-elevated hover:text-text-primary';
+  'flex h-8 w-8 shrink-0 items-center justify-center text-text-secondary hover:bg-selection hover:text-text-primary';
 
 /** Identity, version, update notice and sign out (web auth only). */
 export function AccountFooter(): React.ReactElement {
@@ -39,7 +39,7 @@ export function AccountFooter(): React.ReactElement {
     <div className="flex items-center gap-2 border-t border-border px-4 py-3">
       {displayName && (
         <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-semibold text-text-primary"
+          className="flex h-7 w-7 shrink-0 items-center justify-center border border-line-strong bg-card text-xs font-bold text-text-primary"
           aria-hidden
         >
           {displayName.charAt(0).toUpperCase()}
@@ -47,7 +47,7 @@ export function AccountFooter(): React.ReactElement {
       )}
       <div className="grid min-w-0 flex-1 leading-snug">
         {displayName && (
-          <span className="truncate text-sm font-medium text-text-primary" title={user?.email}>
+          <span className="truncate text-xs font-bold text-text-primary" title={user?.email}>
             {displayName}
           </span>
         )}
