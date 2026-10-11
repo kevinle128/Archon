@@ -103,62 +103,67 @@ export function ConversationItem({
     [handleRenameSubmit]
   );
 
+  const projectSlash = projectName?.lastIndexOf('/') ?? -1;
+  const projectOwner =
+    projectName !== undefined && projectSlash > 0 ? projectName.slice(0, projectSlash + 1) : '';
+  const projectRepo =
+    projectName === undefined ? 'No project' : projectName.slice(projectSlash + 1);
+
   return (
     <NavLink
       to={`/chat/${encodeURIComponent(conversation.platform_conversation_id)}`}
       className={({ isActive }): string =>
         cn(
-          'group relative flex min-h-11 w-full items-start gap-3 rounded-lg px-3 py-2 transition-colors duration-150',
-          isActive ? 'bg-background' : 'hover:bg-surface-elevated'
+          'group relative flex w-full flex-col gap-1 border-b border-l-[3px] border-b-border px-4 py-3 text-text-primary no-underline hover:bg-selection',
+          isActive ? 'border-l-accent bg-selection' : 'border-l-transparent'
         )
       }
     >
-      <div
-        className={cn(
-          'mx-1 mt-2 h-2 w-2 shrink-0 rounded-full',
-          status === 'running' && 'bg-primary animate-pulse motion-reduce:animate-none',
-          status === 'failed' && 'bg-destructive',
-          status === 'idle' && 'bg-transparent'
-        )}
-      />
-      <div className="flex min-w-0 flex-1 flex-col">
-        {isEditing ? (
-          <input
-            ref={inputRef}
-            value={editValue}
-            onChange={(e): void => {
-              setEditValue(e.target.value);
-            }}
-            onBlur={handleRenameSubmit}
-            onKeyDown={handleKeyDown}
-            onClick={(e): void => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            className="w-full bg-transparent text-sm text-text-primary outline-none border-b border-primary"
-          />
-        ) : (
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span
-              className="truncate text-sm text-text-primary"
-              title={conversation.title ?? 'Untitled conversation'}
-            >
-              {displayName}
-            </span>
-            {conversation.platform_type !== 'web' && (
-              <span className="text-[10px] font-medium uppercase tracking-wider text-text-tertiary bg-surface-elevated rounded px-1 py-0.5 shrink-0">
-                {conversation.platform_type}
-              </span>
-            )}
-          </div>
-        )}
-        {renameError && <span className="text-[10px] text-error">{renameError}</span>}
-        <span className="truncate text-xs text-text-tertiary">{lastActivity}</span>
-        {projectName && <span className="truncate text-xs text-text-tertiary">{projectName}</span>}
-      </div>
+      <span className="truncate pr-12 text-[11px] font-bold text-text-secondary">
+        <span className="font-normal">{projectOwner}</span>
+        <span className="text-text-primary">{projectRepo}</span>
+        {conversation.platform_type !== 'web' ? (
+          <span className="ml-2 font-normal tracking-wider uppercase">
+            {conversation.platform_type}
+          </span>
+        ) : null}
+      </span>
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          value={editValue}
+          onChange={(e): void => {
+            setEditValue(e.target.value);
+          }}
+          onBlur={handleRenameSubmit}
+          onKeyDown={handleKeyDown}
+          onClick={(e): void => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          aria-label="Conversation title"
+          className="w-full border-b border-primary bg-transparent text-sm font-bold text-text-primary outline-none"
+        />
+      ) : (
+        <span className="flex w-full items-baseline gap-2">
+          <span
+            className="min-w-0 flex-1 text-sm leading-[1.35] font-bold break-words"
+            title={conversation.title ?? 'Untitled conversation'}
+          >
+            {displayName}
+          </span>
+          <span className="flex-none text-xs text-text-secondary">{lastActivity}</span>
+        </span>
+      )}
+      {renameError && <span className="text-[11px] text-error">{renameError}</span>}
+      {status === 'running' ? (
+        <span className="text-[11px] font-bold text-status-running">▶ Run active</span>
+      ) : status === 'failed' ? (
+        <span className="text-[11px] font-bold text-status-failed">✕ Last run failed</span>
+      ) : null}
       {!isEditing && (
         <>
-          <div className="absolute right-2 top-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
+          <div className="absolute top-2 right-2 z-10 flex items-center gap-0.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
             <button
               onClick={(e): void => {
                 e.preventDefault();
@@ -171,7 +176,8 @@ export function ConversationItem({
                   inputRef.current?.select();
                 }, 0);
               }}
-              className="p-1 rounded hover:bg-surface-hover"
+              className="p-1 hover:bg-card"
+              aria-label="Rename conversation"
               title="Rename conversation"
             >
               <Pencil className="h-3.5 w-3.5 text-text-tertiary hover:text-primary" />
@@ -183,7 +189,8 @@ export function ConversationItem({
                 setDeleteError(null);
                 setDeleteDialogOpen(true);
               }}
-              className="p-1 rounded hover:bg-surface-hover"
+              className="p-1 hover:bg-card"
+              aria-label="Delete conversation"
               title="Delete conversation"
             >
               <Trash2 className="h-3.5 w-3.5 text-text-tertiary hover:text-error" />
@@ -208,7 +215,7 @@ export function ConversationItem({
         </>
       )}
       {badge !== undefined && badge > 0 && (
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-error text-[10px] font-semibold text-on-solid px-1">
+        <span className="absolute right-3 bottom-3 flex h-5 min-w-5 items-center justify-center bg-error px-1 text-[10px] font-semibold text-on-solid">
           {badge > 99 ? '99+' : String(badge)}
         </span>
       )}

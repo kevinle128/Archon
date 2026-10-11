@@ -5,6 +5,10 @@ import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { MessageInput, type MessageInputHandle } from './MessageInput';
 import { LockIndicator } from './LockIndicator';
+import { ChatContextPanel } from './ChatContextPanel';
+import { composerSuggestions } from '@/lib/chat/chat-commands';
+import { projectDisplayName } from '@/lib/projects/display-name';
+import { runsOfConversation } from '@/lib/workflows-library/queries';
 import { useSSE } from '@/hooks/useSSE';
 import {
   useWorkflowStore,
@@ -15,6 +19,8 @@ import {
   sendMessage as apiSendMessage,
   listConversations,
   listCodebases,
+  listWorkflowRuns,
+  listWorkflows,
   getMessages,
   createConversation,
   getWorkflowRun,
@@ -316,6 +322,31 @@ export function ChatInterface({
       : undefined;
   const headerTitle = currentConv?.title ?? 'Chat';
   const headerSubtitle = resolveChatHeaderPath(currentConv?.cwd, cwdOverride, workflowWorkingPath);
+  const panelCodebase = currentCodebase ?? contextCodebase;
+  const panelCwd = panelCodebase?.default_cwd;
+
+  // Same key and request as the conversation list, so the panel adds no request.
+  const { data: recentRuns } = useQuery({
+    queryKey: ['workflow-runs-status'],
+    queryFn: () => listWorkflowRuns({ limit: 50 }),
+    refetchInterval: 10_000,
+  });
+  const chatRuns = useMemo(
+    () => (currentConv === undefined ? [] : runsOfConversation(recentRuns ?? [], currentConv.id)),
+    [currentConv, recentRuns]
+  );
+  const { data: workflowList } = useQuery({
+    queryKey: ['workflows', panelCwd ?? null],
+    queryFn: () => listWorkflows(panelCwd),
+    staleTime: 60_000,
+  });
+  const suggestions = useMemo(
+    () =>
+      composerSuggestions(
+        workflowList?.recommended[0] ?? workflowList?.workflows[0]?.workflow.name
+      ),
+    [workflowList]
+  );
 
   const nextId = (): string => {
     messageIdCounter.current += 1;
@@ -742,57 +773,66 @@ export function ChatInterface({
   const isStreaming = messages.some(m => m.isStreaming);
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-      <ChatHeader
-        title={isNewChat ? 'New Chat' : headerTitle}
-        path={headerSubtitle}
-        projectName={currentCodebase?.name ?? contextCodebase?.name}
-        provider={currentConv?.ai_assistant_type}
-        platform={currentConv?.platform_type}
-        connected={isNewChat ? undefined : connected}
-        isDocker={isDocker}
-        isWsl={isWsl}
-        wslDistro={wslDistro}
-      />
-      {(conversationsError || codebasesError) && (
-        <div className="flex gap-2 px-8 py-1">
-          {conversationsError && (
-            <span className="text-xs text-error">Failed to load conversations</span>
-          )}
-          {codebasesError && <span className="text-xs text-error">Failed to load projects</span>}
-        </div>
-      )}
-      <MessageList
-        messages={messages}
-        isStreaming={isStreaming}
-        isNewChat={isNewChat}
-        projectName={currentCodebase?.name ?? contextCodebase?.name}
-        assistantLabel={currentConv?.ai_assistant_type}
-        onQuickAction={(action): void => {
-          if (action === 'focus') {
-            inputRef.current?.focus();
-          } else {
-            void handleSend(action);
+    <>
+      <section
+        aria-label="Conversation"
+        className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border"
+      >
+        <ChatHeader
+          title={isNewChat ? 'New Chat' : headerTitle}
+          path={headerSubtitle}
+          projectName={panelCodebase !== undefined ? projectDisplayName(panelCodebase) : undefined}
+          provider={currentConv?.ai_assistant_type}
+          platform={currentConv?.platform_type}
+          connected={isNewChat ? undefined : connected}
+          isDocker={isDocker}
+          isWsl={isWsl}
+          wslDistro={wslDistro}
+        />
+        {(conversationsError || codebasesError) && (
+          <div className="flex gap-2 px-6 py-1">
+            {conversationsError && (
+              <span className="text-xs text-error">Failed to load conversations</span>
+            )}
+            {codebasesError && <span className="text-xs text-error">Failed to load projects</span>}
+          </div>
+        )}
+        <MessageList
+          messages={messages}
+          isStreaming={isStreaming}
+          isNewChat={isNewChat}
+          projectName={currentCodebase?.name ?? contextCodebase?.name}
+          assistantLabel={currentConv?.ai_assistant_type}
+        />
+        <LockIndicator locked={locked && hasSentMessage} queuePosition={queuePosition} />
+        <MessageInput
+          ref={inputRef}
+          onSend={handleSend}
+          suggestions={suggestions}
+          projectName={currentCodebase?.name ?? contextCodebase?.name}
+          disabled={
+            sending ||
+            locked ||
+            isStreaming ||
+            (currentConv != null && currentConv.platform_type !== 'web')
           }
+          disabledReason={
+            currentConv != null && currentConv.platform_type !== 'web'
+              ? 'Continuing chats from other platforms in the Web UI is coming soon'
+              : undefined
+          }
+        />
+      </section>
+      <ChatContextPanel
+        projectName={panelCodebase !== undefined ? projectDisplayName(panelCodebase) : null}
+        branch={panelCodebase?.default_branch ?? null}
+        path={headerSubtitle ?? panelCodebase?.default_cwd ?? null}
+        runs={chatRuns}
+        cwd={panelCwd}
+        onPrefill={(text): void => {
+          inputRef.current?.prefill(text);
         }}
       />
-      <LockIndicator locked={locked && hasSentMessage} queuePosition={queuePosition} />
-      <MessageInput
-        ref={inputRef}
-        onSend={handleSend}
-        projectName={currentCodebase?.name ?? contextCodebase?.name}
-        disabled={
-          sending ||
-          locked ||
-          isStreaming ||
-          (currentConv != null && currentConv.platform_type !== 'web')
-        }
-        disabledReason={
-          currentConv != null && currentConv.platform_type !== 'web'
-            ? 'Continuing chats from other platforms in the Web UI is coming soon'
-            : undefined
-        }
-      />
-    </div>
+    </>
   );
 }

@@ -10,11 +10,12 @@ function message(overrides: Partial<ChatMessage>): ChatMessage {
 }
 
 describe('MessageBubble', () => {
-  test('renders a user message in the soft accent bubble with a "You" time line', () => {
+  test('renders a user message in bold under a "You" byline', () => {
     const markup = renderToStaticMarkup(
       <MessageBubble message={message({ role: 'user', content: 'Run a review' })} />
     );
-    expect(markup).toContain('bg-accent-muted');
+    expect(markup).toContain('data-role="user"');
+    expect(markup).toContain('font-semibold');
     expect(markup).toContain('Run a review');
     expect(markup).toContain('You');
   });
@@ -23,7 +24,7 @@ describe('MessageBubble', () => {
     const markup = renderToStaticMarkup(
       <MessageBubble message={message({})} assistantLabel="codex" />
     );
-    expect(markup).not.toContain('bg-accent-muted');
+    expect(markup).toContain('data-role="assistant"');
     expect(markup).toContain('Archon');
     expect(markup).toContain('codex');
     expect(markup).not.toContain('Archon is typing');
