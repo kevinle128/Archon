@@ -175,19 +175,25 @@ async function setRoomWidth(
   return room;
 }
 
+/** One-line height bands: a tool row summary, and a subtask card summary inside its body. */
+const ROW_BAND = { min: 30, max: 36 } as const;
+const CARD_BAND = { min: 24, max: 30 } as const;
+
 /**
  * One-line proof for a row or card summary: bounded height, every direct
  * child inside the summary's vertical band, and no clipped content.
  */
 async function expectSummaryOneLine(
   summary: Locator,
-  label: string
+  label: string,
+  band: { min: number; max: number } = ROW_BAND
 ): Promise<{ height: number; width: number }> {
   const box = await summary.boundingBox();
   expect(box, `${label} bounding box`).toBeTruthy();
   if (!box) throw new Error(`missing ${label} summary box`);
-  expect(box.height, `${label} summary keeps one line (24–30px)`).toBeGreaterThanOrEqual(24);
-  expect(box.height, `${label} summary keeps one line (24–30px)`).toBeLessThanOrEqual(30);
+  const range = `${String(band.min)}–${String(band.max)}px`;
+  expect(box.height, `${label} summary keeps one line (${range})`).toBeGreaterThanOrEqual(band.min);
+  expect(box.height, `${label} summary keeps one line (${range})`).toBeLessThanOrEqual(band.max);
   const fits = await summary.evaluate(el => el.scrollWidth <= el.clientWidth + 1);
   expect(fits, `${label} summary content fits horizontally without clipping`).toBe(true);
   const childrenInside = await summary.evaluate(el => {
@@ -599,7 +605,7 @@ for (const surface of ['console', 'legacy'] as const) {
       };
     });
     expect(cardGeometry.borderTopWidth, 'card 1px border').toBe('1px');
-    expect(cardGeometry.borderRadius, 'card 6px radius').toBe('6px');
+    expect(cardGeometry.borderRadius, 'card has square corners').toBe('0px');
     expect(cardGeometry.paddingTop, 'card 6px vertical padding').toBe('6px');
     expect(cardGeometry.paddingBottom, 'card 6px vertical padding').toBe('6px');
     expect(cardGeometry.paddingLeft, 'card 9px horizontal padding').toBe('9px');
@@ -620,7 +626,7 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(cardBg.resolved, 'card resolves --surface-elevated').toBe(elevated.resolved);
     const approval = await resolveColorIn(room, 'var(--node-approval)');
     const secondary = await resolveColorIn(room, 'var(--text-secondary)');
-    const inset = await resolveColorIn(room, 'var(--surface-inset)');
+    const codeBg = await resolveColorIn(room, 'var(--code-bg)');
     const agentColor = await firstParts.agent.evaluate(
       el => el.ownerDocument.defaultView?.getComputedStyle(el).color ?? ''
     );
@@ -638,7 +644,7 @@ for (const surface of ['console', 'legacy'] as const) {
     );
     expect(excerptColor, 'excerpt resolves --text-secondary').toBe(secondary.resolved);
     const promptBg = await effectiveBackground(firstParts.prompt);
-    expect(promptBg.resolved, 'prompt box resolves --surface-inset').toBe(inset.resolved);
+    expect(promptBg.resolved, 'prompt box is a code block on --code-bg').toBe(codeBg.resolved);
     const promptFits = await firstParts.prompt.evaluate(el => el.scrollWidth <= el.clientWidth + 1);
     expect(promptFits, 'prompt wraps without horizontal overflow').toBe(true);
 
@@ -761,7 +767,7 @@ for (const surface of ['console', 'legacy'] as const) {
         elevated: elevated.resolved,
         approval: approval.resolved,
         secondary: secondary.resolved,
-        inset: inset.resolved,
+        codeBg: codeBg.resolved,
         accent: accent.resolved,
       },
       focus,
@@ -799,7 +805,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await summary.press('Enter');
     await expect(row).toHaveJSProperty('open', true);
     const cardSummary = row.locator(`${CARD} > summary`).first();
-    await expectSummaryOneLine(cardSummary, 'card at reference width');
+    await expectSummaryOneLine(cardSummary, 'card at reference width', CARD_BAND);
     await cardSummary.press('Enter');
     const prompt = row.locator(`${CARD} pre`).first();
     await expect(prompt).toBeVisible();
@@ -818,7 +824,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await narrowSummary.press('Enter');
     await expect(narrowRow).toHaveJSProperty('open', true);
     const narrowCard = narrowRow.locator(`${CARD} > summary`).first();
-    await expectSummaryOneLine(narrowCard, 'card at 390px');
+    await expectSummaryOneLine(narrowCard, 'card at 390px', CARD_BAND);
     await narrowCard.press('Enter');
     const narrowPrompt = narrowRow.locator(`${CARD} pre`).first();
     await expect(narrowPrompt).toBeVisible();
@@ -851,7 +857,7 @@ for (const surface of ['console', 'legacy'] as const) {
       await zoomSummary.press('Enter');
       await expect(zoomRow).toHaveJSProperty('open', true);
       const zoomCard = zoomRow.locator(`${CARD} > summary`).first();
-      await expectSummaryOneLine(zoomCard, 'card at 200% zoom');
+      await expectSummaryOneLine(zoomCard, 'card at 200% zoom', CARD_BAND);
       await zoomCard.press('Enter');
       const zoomPrompt = zoomRow.locator(`${CARD} pre`).first();
       await expect(zoomPrompt).toBeVisible();

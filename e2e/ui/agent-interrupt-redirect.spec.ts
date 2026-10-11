@@ -554,12 +554,12 @@ async function expectOperatorVisualContract(
   expect(metrics, 'operator row metrics available').not.toBeNull();
   if (metrics === null) return;
 
-  expect(metrics.roleFontSize).toBe('10px');
+  expect(metrics.roleFontSize).toBe('11px');
   expect(metrics.roleTransform).toBe('uppercase');
   const trackingPx = parseFloat(metrics.roleLetterSpacing);
   expect(
     Math.abs(trackingPx - 0.7),
-    `role tracking ${metrics.roleLetterSpacing} ≈ 0.07em`
+    `role tracking ${metrics.roleLetterSpacing} ≈ 0.06em`
   ).toBeLessThanOrEqual(0.15);
   expect(metrics.deliveryFontSize).toBe('11px');
   expect(metrics.deliveryTransform).toBe('none');
@@ -567,9 +567,9 @@ async function expectOperatorVisualContract(
   expect(metrics.deliveryRightAligned).toBe(true);
   expect(metrics.bodyText).toBe(expectedBody);
   expect(metrics.bodyChildElementCount, 'body is plain text, no Markdown children').toBe(0);
-  expect(metrics.bodyFontSize).toBe('12.5px');
-  expect(metrics.bodyLineHeight).toBe('19.375px');
-  expect(['400', 'normal']).toContain(metrics.bodyFontWeight);
+  expect(metrics.bodyFontSize).toBe('14px');
+  expect(metrics.bodyLineHeight).toBe('21.7px');
+  expect(metrics.bodyFontWeight).toBe('600');
   expect(metrics.bodyFontFamily.toLowerCase()).toMatch(/sans|inter|system|ui-sans/);
   expect(metrics.bodyWhiteSpace).toMatch(/pre-wrap/);
 
@@ -612,9 +612,10 @@ async function expectOperatorVisualContract(
   });
   expect(assistantMetrics, 'adjacent assistant body after operator rows').not.toBeNull();
   if (assistantMetrics !== null) {
-    expect(assistantMetrics.fontSize).toBe('12.5px');
-    expect(assistantMetrics.lineHeight).toBe('19.375px');
-    expect(assistantMetrics.color).toBe(secondary.resolved);
+    // Agent text uses the handoff stream type: 14.5px at 1.6, primary text.
+    expect(assistantMetrics.fontSize).toBe('14.5px');
+    expect(assistantMetrics.lineHeight).toBe('23.2px');
+    expect(assistantMetrics.color).toBe(primary.resolved);
   }
 
   const order = await room.evaluate(roomEl => {

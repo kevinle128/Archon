@@ -50,11 +50,11 @@ test('[P1] [V:shell.settings] Settings sections and reload', async ({ page }) =>
   await expect(page).toHaveURL(/\/settings\/?$/);
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
   const sections = page.getByRole('navigation', { name: 'Settings sections' });
-  // AI providers and GitHub need a web identity and are hidden without one, so
+  // Providers and GitHub need a web identity and are hidden without one, so
   // they are not asserted on this identity-free install.
   await expect(sections.getByRole('button', { name: 'Projects' })).toBeVisible();
   await expect(sections.getByRole('button', { name: 'Model tiers' })).toBeVisible();
-  await expect(sections.getByRole('button', { name: 'Usage and cost' })).toBeVisible();
+  await expect(sections.getByRole('button', { name: 'Usage', exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
 });

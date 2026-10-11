@@ -67,8 +67,10 @@ async function measureProductRatio(
   const room = panelLocator(page, roomId);
   if ((await view.count()) === 0 || (await room.count()) === 0) return null;
   if (!(await view.isVisible()) || !(await room.isVisible())) return null;
-  const viewBox = await view.boundingBox();
-  const roomBox = await room.boundingBox();
+  // A resize can remount a column between the visibility check and the
+  // measurement; a column that detaches counts as not measurable.
+  const viewBox = await view.boundingBox({ timeout: 2_000 }).catch(() => null);
+  const roomBox = await room.boundingBox({ timeout: 2_000 }).catch(() => null);
   if (viewBox === null || roomBox === null) return null;
   const total = viewBox.width + roomBox.width;
   if (total <= 0) return null;

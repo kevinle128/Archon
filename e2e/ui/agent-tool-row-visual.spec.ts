@@ -231,8 +231,8 @@ async function expectSummaryOneLine(summary: Locator): Promise<void> {
   const box = await summary.boundingBox();
   expect(box, 'summary bounding box').toBeTruthy();
   if (!box) throw new Error('missing summary box');
-  expect(box.height, 'summary height keeps one line (24–30px)').toBeGreaterThanOrEqual(24);
-  expect(box.height, 'summary height keeps one line (24–30px)').toBeLessThanOrEqual(30);
+  expect(box.height, 'summary height keeps one line (30–36px)').toBeGreaterThanOrEqual(30);
+  expect(box.height, 'summary height keeps one line (30–36px)').toBeLessThanOrEqual(36);
   const fits = await summary.evaluate(el => el.scrollWidth <= el.clientWidth + 1);
   expect(fits, 'summary content fits horizontally without clipping').toBe(true);
   const childrenInside = await summary.evaluate(el => {
@@ -307,17 +307,11 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
 
 /** Transcript container = first ancestor carrying non-zero padding. */
 async function transcriptPadding(summary: Locator): Promise<{ top: string; left: string }> {
+  // The transcript list is the parent of the row's stream-row wrapper.
   return summary.evaluate(el => {
-    const view = el.ownerDocument.defaultView;
-    let node = el.parentElement;
-    while (node !== null) {
-      const cs = view?.getComputedStyle(node);
-      if (cs !== undefined && (cs.paddingLeft !== '0px' || cs.paddingTop !== '0px')) {
-        return { top: cs.paddingTop, left: cs.paddingLeft };
-      }
-      node = node.parentElement;
-    }
-    return { top: '', left: '' };
+    const list = el.closest('[data-stream-row]')?.parentElement ?? null;
+    const cs = list === null ? undefined : el.ownerDocument.defaultView?.getComputedStyle(list);
+    return { top: cs?.paddingTop ?? '', left: cs?.paddingLeft ?? '' };
   });
 }
 
@@ -622,12 +616,14 @@ const surface = 'legacy' as const;
     await setRoomWidth(page, surface, started.runId);
     await expectSummaryOneLine(summary);
 
-    // Transcript list padding is the canonical 10px/12px on both surfaces.
+    // The transcript list has the node column's 24px side padding; stream rows
+    // carry their own vertical spacing.
     const padding = await transcriptPadding(summary);
-    expect(padding.left, 'transcript horizontal padding').toBe('12px');
-    expect(padding.top, 'transcript vertical padding').toBe('10px');
+    expect(padding.left, 'transcript horizontal padding').toBe('24px');
+    expect(padding.top, 'transcript vertical padding').toBe('0px');
 
-    // Rest row carries no inset card fill/border/shadow; hover = surface-hover.
+    // Rest row is a square bordered row on --surface with no shadow; hover = surface-hover.
+    const surfaceToken = await resolveColorIn(room, 'var(--surface)');
     const rest = await row.evaluate(el => {
       const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
       return {
@@ -636,8 +632,8 @@ const surface = 'legacy' as const;
         shadow: cs?.boxShadow ?? '',
       };
     });
-    expect(rest.background, 'rest row is transparent on the room surface').toBe('rgba(0, 0, 0, 0)');
-    expect(rest.borderWidth).toBe('0px');
+    expect(rest.background, 'rest row uses --surface').toBe(surfaceToken.resolved);
+    expect(rest.borderWidth).toBe('1px');
     expect(rest.shadow).toBe('none');
     const hoverToken = await resolveColorIn(room, 'var(--surface-hover)');
     await summary.hover();
@@ -678,16 +674,17 @@ const surface = 'legacy' as const;
     });
     expect(geometry.fontSize).toBe('12px');
     expect(geometry.fontWeight).toBe('400');
-    expect(geometry.paddingTop).toBe('4px');
-    expect(geometry.paddingRight).toBe('6px');
+    expect(geometry.paddingTop).toBe('7px');
+    expect(geometry.paddingRight).toBe('10px');
     expect(geometry.gap).toBe('8px');
-    expect(geometry.borderRadius).toBe('6px');
-    expect(geometry.minHeight).toBe('24px');
+    expect(geometry.borderRadius).toBe('0px');
+    expect(geometry.minHeight).toBe('32px');
     expect(geometry.chevron.fontSize).toBe('10px');
     expect(geometry.chevron.width).toBe(9);
     expect(geometry.glyph.fontSize).toBe('12px');
     expect(geometry.glyph.fontWeight).toBe('700');
-    expect(geometry.chip.fontSize).toBe('11px');
+    expect(geometry.chip.fontSize).toBe('13px');
+    expect(geometry.chip.fontWeight).toBe('800');
 
     // Chevron transition is the only row animation: 120ms, none under reduce.
     const chevron = summary.locator('span').first();
@@ -748,7 +745,8 @@ const surface = 'legacy' as const;
     const tokenBorderBright = await resolveColorIn(room, 'var(--border-bright)');
     const tokenTextPrimary = await resolveColorIn(room, 'var(--text-primary)');
     const tokenTextSecondary = await resolveColorIn(room, 'var(--text-secondary)');
-    const tokenInset = await resolveColorIn(room, 'var(--surface-inset)');
+    const tokenCodeBg = await resolveColorIn(room, 'var(--code-bg)');
+    const tokenCodeFg = await resolveColorIn(room, 'var(--code-fg)');
     const rawStyle = async (): Promise<{ color: string; border: string }> =>
       rawToggle.evaluate(el => {
         const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
@@ -842,7 +840,7 @@ const surface = 'legacy' as const;
     expect(payload.input).toEqual({ path: 'HITL_TOOL_INPUT.txt' });
     expect(payload.output).toBe(HITL_TOOL_OUTPUT);
 
-    // Open panel: primary text on the inset surface, no horizontal scroll.
+    // Open panel: code text on the dark code block, no horizontal scroll.
     const panelStyle = await rawPanel.evaluate(el => {
       const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
       return {
@@ -853,10 +851,12 @@ const surface = 'legacy' as const;
         overflowX: el.scrollWidth - el.clientWidth,
       };
     });
-    expect(panelStyle.color, 'Raw JSON uses primary text').toBe(tokenTextPrimary.resolved);
-    expect(panelStyle.background, 'Raw panel uses the inset surface').toBe(tokenInset.resolved);
-    expect(panelStyle.fontSize).toBe('11.5px');
-    expect(panelStyle.lineHeight).toBe('17.25px');
+    expect(panelStyle.color, 'Raw JSON uses the code text color').toBe(tokenCodeFg.resolved);
+    expect(panelStyle.background, 'Raw panel uses the code block ground').toBe(
+      tokenCodeBg.resolved
+    );
+    expect(panelStyle.fontSize).toBe('12px');
+    expect(panelStyle.lineHeight).toBe('18px');
     expect(panelStyle.overflowX, 'Raw panel has no horizontal scroll').toBeLessThanOrEqual(1);
 
     // AX tree open state: expanded true and controls resolves to this panel.
@@ -1115,9 +1115,9 @@ const surface = 'legacy' as const;
     expect(bodyStyle.paddingRight).toBe('10px');
     expect(bodyStyle.paddingTop).toBe('8px');
     expect(bodyStyle.paddingBottom).toBe('8px');
-    expect(bodyStyle.borderRadius).toBe('6px');
-    expect(bodyStyle.fontSize).toBe('11.5px');
-    expect(bodyStyle.lineHeight).toBe('17.25px');
+    expect(bodyStyle.borderRadius).toBe('0px');
+    expect(bodyStyle.fontSize).toBe('12px');
+    expect(bodyStyle.lineHeight).toBe('18px');
     expect(bodyStyle.fontFamily.toLowerCase()).toContain('mono');
     expect(bodyStyle.whiteSpace).toBe('pre-wrap');
     expect(bodyStyle.overflowWrap).toBe('anywhere');
@@ -1294,8 +1294,8 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones meet their WCAG floors
     }
 
     // Story 1.2 Raw tones: closed label = secondary on the body-bar surface;
-    // hover/focus/open share the primary label; the JSON panel is primary text
-    // on the inset surface. Floors are WCAG AA (4.5:1) throughout.
+    // hover/focus/open share the primary label; the JSON panel is code text on
+    // the dark code block. Floors are WCAG AA (4.5:1) throughout.
     const row = room.locator(ROW).first();
     await summary.click();
     await expect(row).toHaveJSProperty('open', true);
@@ -1303,7 +1303,8 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones meet their WCAG floors
     const barBg = await effectiveBackground(rawToggle);
     const secondary = await resolveColorIn(room, 'var(--text-secondary)');
     const primary = await resolveColorIn(room, 'var(--text-primary)');
-    const inset = await resolveColorIn(room, 'var(--surface-inset)');
+    const codeBg = await resolveColorIn(room, 'var(--code-bg)');
+    const codeFg = await resolveColorIn(room, 'var(--code-fg)');
     const closedLabelRatio = contrastRatio(secondary.c, barBg.c);
     const activeLabelRatio = contrastRatio(primary.c, barBg.c);
     surfaceEvidence['Raw body-bar background'] = barBg.resolved;
@@ -1321,17 +1322,17 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones meet their WCAG floors
     const rawPanel = row.locator('pre');
     await expect(rawPanel).toBeVisible();
     const panelBg = await effectiveBackground(rawPanel);
-    expect(panelBg.resolved, `${surface} Raw panel bg is --surface-inset`).toBe(inset.resolved);
-    const jsonRatio = contrastRatio(primary.c, panelBg.c);
-    surfaceEvidence['Raw JSON vs inset panel'] = Number(jsonRatio.toFixed(2));
-    expect(jsonRatio, `${surface} Raw JSON text vs inset panel ≥4.5:1`).toBeGreaterThanOrEqual(4.5);
+    expect(panelBg.resolved, `${surface} Raw panel bg is --code-bg`).toBe(codeBg.resolved);
+    const jsonRatio = contrastRatio(codeFg.c, panelBg.c);
+    surfaceEvidence['Raw JSON vs code panel'] = Number(jsonRatio.toFixed(2));
+    expect(jsonRatio, `${surface} Raw JSON text vs code panel ≥4.5:1`).toBeGreaterThanOrEqual(4.5);
     rawEvidence[surface] = {
       'body-bar background': barBg.resolved,
       'closed label (--text-secondary)': secondary.resolved,
       'closed label vs body bar': Number(closedLabelRatio.toFixed(2)),
       'hover/focus/open label (--text-primary)': primary.resolved,
       'active label vs body bar': Number(activeLabelRatio.toFixed(2)),
-      'panel background (--surface-inset effective)': panelBg.resolved,
+      'panel background (--code-bg effective)': panelBg.resolved,
       'Raw JSON vs panel': Number(jsonRatio.toFixed(2)),
     };
     evidence[surface] = surfaceEvidence;

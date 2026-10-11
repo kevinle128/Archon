@@ -180,8 +180,8 @@ async function expectSummaryOneLine(
   const box = await summary.boundingBox();
   expect(box, `${label} bounding box`).toBeTruthy();
   if (!box) throw new Error(`missing ${label} summary box`);
-  expect(box.height, `${label} summary keeps one line (24–30px)`).toBeGreaterThanOrEqual(24);
-  expect(box.height, `${label} summary keeps one line (24–30px)`).toBeLessThanOrEqual(30);
+  expect(box.height, `${label} summary keeps one line (30–36px)`).toBeGreaterThanOrEqual(30);
+  expect(box.height, `${label} summary keeps one line (30–36px)`).toBeLessThanOrEqual(36);
   const fits = await summary.evaluate(el => el.scrollWidth <= el.clientWidth + 1);
   expect(fits, `${label} summary content fits horizontally without clipping`).toBe(true);
   const childrenInside = await summary.evaluate(el => {
