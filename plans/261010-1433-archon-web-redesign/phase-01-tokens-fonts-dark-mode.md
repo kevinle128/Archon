@@ -16,7 +16,7 @@ Status: pending. Depends on: none. Effort: 2d.
 
 1. Light tokens equal the README "Design tokens" values (navy header, `#f5f7fa` background, `#2563eb` accent, status colors, line/strong/selection, code block, tints).
 2. Dark tokens use the `midnight` palette from the Runs prototype `theme()`: bg `#0f1218`, surface `#161a22`, text `#e6e8ee`, muted `#9aa3b2`, faint `#667085`, line `#232a36`, strong `#2e3746`, selection `#1c2230`, code bg `#0a0c11`, code text `#cdd3de`, waiting `#f0a54a`, failed `#f07167`, running/accent `#8b9bff`, done `#5fbf8f`, pending segment `#2e3746`. The dark header follows the prototype rule for non-`slate-d` themes: header bg = bg, header text = text, header muted = muted, header line = strong, header accent = accent. Chip text on waiting fill in dark = bg (`waitFg`).
-3. Every text/background pair passes WCAG AA (4.5:1 body, 3:1 for 18px+ or bold 14px+). Record the check in the PR.
+3. Colors are the exact handoff values, even where small text is below WCAG AA (locked decision 7). Do not darken tokens for contrast.
 4. Font: Archivo 400/600/700/800 for all UI text. Mono: `ui-monospace, Menlo, monospace` (README "Typography"). `font-variant-numeric: tabular-nums` on `body`.
 5. Radius 0 everywhere; no shadows (README). Focus: `:focus-visible` 2px outline in accent, offset 2px.
 6. Caret blink and live timers are the only motion; `prefers-reduced-motion: reduce` stops the blink.
@@ -57,7 +57,7 @@ Create:
 3. Build primitives with unit tests (render + role + selected state). Use the existing `src/test/preload-radix-dom.ts` setup.
 4. Point `StatusIcon` at `status-presentation`.
 5. Run `bun run dev`. Check every current screen in light and dark at 1440 and 1024. Old layouts must stay usable (they are replaced in later phases).
-6. Check contrast pairs. Fix values that fail, and note the change in the brand guide.
+6. Check that every token equals the handoff value (locked decision 7).
 7. Update the brand guide pages.
 8. Re-pin the two verify-archon sha256 values (`shasum -a 256 <file>`).
 
@@ -65,7 +65,7 @@ Create:
 
 - Add: `status-presentation.test.ts`, tests for `status-chip`, `progress-strip`, `underline-tabs`, `list-row`, `segmented`, `live-elapsed`.
 - Update: `StatusIcon.test.tsx` (glyphs), `PixelLogo.test.tsx` (if it asserts colors).
-- e2e to run: `verifier-visual.spec.ts` (pin integrity), `agent-todo-strip.spec.ts`, `agent-interrupt-redirect.spec.ts`, `agent-tool-row-visual.spec.ts`, `occurrence-navigation.spec.ts` (they read computed colors and check `/mono/i` font family; `ui-monospace` matches). Fix tokens, not the specs, if a contrast check fails.
+- e2e to run: `verifier-visual.spec.ts` (pin integrity), `agent-todo-strip.spec.ts`, `agent-interrupt-redirect.spec.ts`, `agent-tool-row-visual.spec.ts`, `occurrence-navigation.spec.ts` (they read computed colors and check `/mono/i` font family; `ui-monospace` matches). If a spec asserts an AA contrast that the exact handoff colors fail, update the spec and note locked decision 7.
 
 ## Validation
 

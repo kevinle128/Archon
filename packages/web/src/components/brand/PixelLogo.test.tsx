@@ -28,4 +28,17 @@ describe('PixelLogo', () => {
     expect(decorative).toContain('aria-hidden="true"');
     expect(decorative).not.toContain('aria-label');
   });
+
+  test('sizes the mark for the top bar and the login page', () => {
+    expect(renderToStaticMarkup(<PixelLogo size="sm" />)).toContain('h-5 w-5');
+    expect(renderToStaticMarkup(<PixelLogo size="lg" />)).toContain('h-7 w-7');
+    expect(renderToStaticMarkup(<PixelLogo />)).toContain('h-6 w-6');
+  });
+
+  test('header tone draws in the top bar colors', () => {
+    const markup = renderToStaticMarkup(<PixelLogo active tone="header" />);
+    expect(markup).toContain('text-header-fg');
+    expect(markup).toContain('fill="var(--header-accent)"');
+    expect(renderToStaticMarkup(<PixelLogo active />)).toContain('fill="var(--accent)"');
+  });
 });

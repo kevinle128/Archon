@@ -23,6 +23,7 @@ created: 2026-10-10
 4. **Builder:** step columns are drawn from real `depends_on` edges; dependencies are edited explicitly; ← / → change them only on click; keep the React Flow canvas as a "Graph" view; no Loop/Approval creation in the palette. (User, 2026-10-10.)
 5. **Visual checks:** re-pin hashes in 01 and 03; in 08 rewrite the verify-archon criteria against the handoff and commit the whole handoff folder. (User, 2026-10-10.)
 6. **No-API items:** hide per-project and per-workflow run counts, "Prune finished worktrees" and the GitHub repositories/webhook/trigger chips. Runs list progress strips use one run-detail request per visible row, capped at 50 rows. (User, 2026-10-10.)
+7. **Exact handoff colors everywhere.** Use the README token values for text, fills, strips and glyphs, even where small text is below WCAG AA. Do not darken values for contrast. (User, 2026-10-11; this replaces the AA requirement in phase 01.)
 
 ## Constraints
 

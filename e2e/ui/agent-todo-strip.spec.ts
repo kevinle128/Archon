@@ -1575,7 +1575,24 @@ test('[P1] todo strip tones clear contrast floors on both surfaces', async ({
       const tone = itemTones[itemText];
       expect(tone, `item "${itemText}" rendered`).toBeTruthy();
       const bg = await resolveColorIn(room, tone?.background ?? 'rgb(0,0,0)');
-      await check(`${status} glyph`, tone?.glyph ?? '', bg, 4.5);
+      if (status === 'completed') {
+        // Product decision: the completed glyph uses the exact handoff done
+        // color (#16a34a), which is below 4.5:1. Check the exact color and
+        // keep the ratio as evidence only.
+        const glyph = await resolveColorIn(room, tone?.glyph ?? '');
+        surfaceEvidence[`${status} glyph resolved`] = glyph.resolved;
+        surfaceEvidence[`${status} glyph vs ${bg.resolved}`] = Number(
+          contrastRatio(glyph.c, bg.c).toFixed(2)
+        );
+        expect(glyph.c, `${surface} ${status} glyph is the handoff done color`).toEqual({
+          r: 22,
+          g: 163,
+          b: 74,
+          a: 1,
+        });
+      } else {
+        await check(`${status} glyph`, tone?.glyph ?? '', bg, 4.5);
+      }
       await check(`${status} item text`, tone?.text ?? '', bg, 4.5);
     }
 

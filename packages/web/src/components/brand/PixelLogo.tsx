@@ -22,19 +22,38 @@ interface PixelLogoProps {
   active?: boolean;
   /** Accessible name. Pass an empty string for a purely decorative logo. */
   label?: string;
+  /**
+   * `sm` is 20px (top bar). `lg` is 28px (Login). Omit for the 24px default.
+   * An explicit size class in `className` wins.
+   */
+  size?: 'sm' | 'lg';
+  /**
+   * `header` draws in the top bar colors (--header-fg, --header-accent).
+   * `inherit` uses the surrounding text color and --accent.
+   */
+  tone?: 'inherit' | 'header';
 }
+
+const SIZE_CLASS = { sm: 'h-5 w-5', lg: 'h-7 w-7' } as const;
 
 export function PixelLogo({
   className,
   active = false,
   label = 'Archon',
+  size,
+  tone = 'inherit',
 }: PixelLogoProps): React.ReactElement {
   const decorative = label === '';
   return (
     <svg
       viewBox="0 0 64 64"
       shapeRendering="crispEdges"
-      className={cn('block h-6 w-6 shrink-0', className)}
+      className={cn(
+        'block shrink-0',
+        size === undefined ? 'h-6 w-6' : SIZE_CLASS[size],
+        tone === 'header' && 'text-header-fg',
+        className
+      )}
       role={decorative ? undefined : 'img'}
       aria-label={decorative ? undefined : label}
       aria-hidden={decorative ? true : undefined}
@@ -50,7 +69,7 @@ export function PixelLogo({
           y={PAD + CROSSBAR_ROW * CELL}
           width={CELL}
           height={CELL}
-          fill="var(--accent)"
+          fill={tone === 'header' ? 'var(--header-accent)' : 'var(--accent)'}
         />
       )}
     </svg>

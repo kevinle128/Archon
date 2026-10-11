@@ -1271,7 +1271,7 @@ const surface = 'legacy' as const;
   });
 }
 
-test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on both surfaces', async ({
+test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones meet their WCAG floors on both surfaces', async ({
   page,
   archon,
 }, testInfo: TestInfo) => {
@@ -1306,6 +1306,19 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
       surfaceEvidence[`${label} resolved`] = fg.resolved;
       surfaceEvidence[`${label} vs rest`] = Number(rest.toFixed(2));
       surfaceEvidence[`${label} vs hover`] = Number(hover.toFixed(2));
+      if (label === 'succeeded glyph') {
+        // Product decision: the glyph uses the exact handoff done color
+        // (#16a34a), which is below 3:1 on the hover tint. Check the exact
+        // color instead of a contrast floor; the ratios stay in the evidence.
+        expect(fg.c, `${surface} ${label} is the handoff done color`).toEqual({
+          r: 22,
+          g: 163,
+          b: 74,
+          a: 1,
+        });
+        continue;
+      }
+      // The focus outline is a graphic, so the WCAG 1.4.11 floor of 3:1 applies.
       const floor = label === 'focus outline' ? 3 : 4.5;
       expect(rest, `${surface} ${label} vs rest ≥${String(floor)}:1`).toBeGreaterThanOrEqual(floor);
       expect(hover, `${surface} ${label} vs hover ≥${String(floor)}:1`).toBeGreaterThanOrEqual(
