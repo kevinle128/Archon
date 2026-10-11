@@ -13,7 +13,7 @@ interface AllConversationsViewProps {
 export function AllConversationsView({
   searchQuery,
 }: AllConversationsViewProps): React.ReactElement {
-  const { codebases } = useProject();
+  const { codebases, selectedProjectId } = useProject();
 
   const { data: conversations, isError: isErrorConversations } = useQuery({
     queryKey: ['conversations'],
@@ -51,6 +51,8 @@ export function AllConversationsView({
   }
 
   const filtered = conversations?.filter(conv => {
+    // The top bar project filter scopes the list.
+    if (selectedProjectId && conv.codebase_id !== selectedProjectId) return false;
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (conv.title ?? conv.platform_conversation_id).toLowerCase().includes(query);

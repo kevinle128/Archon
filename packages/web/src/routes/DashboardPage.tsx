@@ -20,6 +20,8 @@ import { StatusSummaryBar } from '@/components/dashboard/StatusSummaryBar';
 import { WorkflowRunCard } from '@/components/dashboard/WorkflowRunCard';
 import { useDashboardSSE } from '@/hooks/useDashboardSSE';
 import { useWorkflowStore } from '@/stores/workflow-store';
+import { WorkflowInvoker } from '@/components/sidebar/WorkflowInvoker';
+import { useProject } from '@/contexts/ProjectContext';
 
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
@@ -43,6 +45,7 @@ function getDateBounds(range: DateRange): { after?: string; before?: string } {
 
 export function DashboardPage(): React.ReactElement {
   const queryClient = useQueryClient();
+  const { selectedProjectId } = useProject();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Connect to multiplexed dashboard SSE stream (all workflow events → Zustand store)
@@ -276,9 +279,7 @@ export function DashboardPage(): React.ReactElement {
         <div className="mx-auto grid w-full max-w-[1200px] gap-6 px-8 py-8">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="grid gap-2">
-              <h1 className="text-[28px] font-semibold leading-tight text-text-primary">
-                Dashboard
-              </h1>
+              <h1 className="text-[28px] font-semibold leading-tight text-text-primary">Runs</h1>
               <p className="text-base text-text-secondary">All workflow runs across projects.</p>
             </div>
             <div className="flex flex-col items-end gap-1 font-mono text-xs text-text-secondary">
@@ -297,6 +298,11 @@ export function DashboardPage(): React.ReactElement {
                 </span>
               )}
             </div>
+            {selectedProjectId && (
+              <div className="max-w-[360px]">
+                <WorkflowInvoker codebaseId={selectedProjectId} />
+              </div>
+            )}
           </div>
 
           <StatusSummaryBar

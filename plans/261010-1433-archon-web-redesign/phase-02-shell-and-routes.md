@@ -1,6 +1,8 @@
 # Phase 02: Shell (top bar, project filter, Needs you, routes, sidebar removal)
 
-Status: pending. Depends on: 01. Effort: 2d.
+Status: done. Depends on: 01. Effort: 2d.
+
+Delivery notes: `lib/runs/run-url.ts` moved to phase 03, where it gets its first callers together with the `/runs/:runId` route. Narrow screens (below `md`) put the nav on a second row; the shell grid uses `minmax(0, 1fr)` so wide run pages cannot widen the page. Project worktrees moved into Settings > Projects in this phase so no sidebar feature is missing between phases.
 
 ## Context
 

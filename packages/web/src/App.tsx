@@ -13,6 +13,7 @@ import { WorkflowBuilderPage } from '@/routes/WorkflowBuilderPage';
 import { SettingsPage } from '@/routes/SettingsPage';
 import { LoginPage } from '@/routes/LoginPage';
 import { SessionGate } from '@/components/auth/SessionGate';
+import { RedirectWithSearch } from '@/components/shell/RedirectWithSearch';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -78,10 +79,11 @@ export function App(): React.ReactElement {
                   </SessionGate>
                 }
               >
-                <Route path="/" element={<Navigate to="/chat" replace />} />
+                <Route path="/" element={<Navigate to="/runs" replace />} />
+                <Route path="/runs" element={<DashboardPage />} />
+                <Route path="/dashboard" element={<RedirectWithSearch to="/runs" />} />
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/chat/*" element={<ChatPage />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/workflows" element={<WorkflowsPage />} />
                 <Route path="/workflows/builder" element={<WorkflowBuilderPage />} />
                 <Route path="/workflows/runs/:runId" element={<WorkflowExecutionPage />} />

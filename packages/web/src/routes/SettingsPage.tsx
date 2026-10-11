@@ -4,6 +4,7 @@ import { getGithubConnection } from '@/lib/api';
 import { hasStatus } from '@/lib/settings/http';
 import { useProviderKeysQuery } from '@/lib/settings/hooks';
 import { settingsKeys } from '@/lib/settings/query-keys';
+import { AccountFooter } from '@/components/settings/AccountFooter';
 import { AliasesSection } from '@/components/settings/AliasesSection';
 import { AssistantSection } from '@/components/settings/AssistantSection';
 import { GithubSection } from '@/components/settings/GithubSection';
@@ -52,7 +53,10 @@ export function SettingsPage(): ReactElement {
 
   return (
     <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] md:grid-cols-[224px_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)]">
-      <SettingsNav items={items} scrollRef={scrollRef} />
+      <div className="flex min-h-0 flex-col justify-between md:border-r md:border-border">
+        <SettingsNav items={items} scrollRef={scrollRef} />
+        <AccountFooter />
+      </div>
       <div ref={scrollRef} className="min-h-0 overflow-y-auto">
         <div className="max-w-[840px] px-6 pb-16 pt-10 md:px-12">
           <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.01em] text-text-primary">

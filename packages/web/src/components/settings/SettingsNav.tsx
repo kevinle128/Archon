@@ -48,7 +48,7 @@ export function SettingsNav({
   return (
     <nav
       aria-label="Settings sections"
-      className="flex gap-1 overflow-x-auto border-b border-border p-3 md:grid md:content-start md:gap-0.5 md:overflow-visible md:border-b-0 md:border-r md:px-4 md:py-10"
+      className="flex gap-1 overflow-x-auto border-b border-border p-3 md:grid md:content-start md:gap-0.5 md:overflow-visible md:border-b-0 md:px-4 md:py-10"
     >
       {items.map(({ id, label }) => (
         <button

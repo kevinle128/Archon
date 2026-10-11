@@ -1,17 +1,15 @@
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { LogOut, Moon, Sun } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { getUpdateCheck, getAuthStatus } from '@/lib/api';
 import { useSession, signOut } from '@/lib/auth-client';
-import { useTheme } from '@/lib/theme';
 
 const iconButtonClass =
   'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors duration-150 hover:bg-surface-elevated hover:text-text-primary';
 
-/** Identity, version, update notice, sign out (web auth only) and the theme toggle. */
-export function SidebarFooter(): React.ReactElement {
+/** Identity, version, update notice and sign out (web auth only). */
+export function AccountFooter(): React.ReactElement {
   const navigate = useNavigate();
-  const { resolved, toggle } = useTheme();
 
   // Web-auth identity (only shown when auth is enabled).
   const { data: authStatus } = useQuery({
@@ -36,10 +34,9 @@ export function SidebarFooter(): React.ReactElement {
 
   const user = authStatus?.enabled ? session?.user : undefined;
   const displayName = user ? user.name || user.email : null;
-  const nextTheme = resolved === 'dark' ? 'light' : 'dark';
 
   return (
-    <div className="flex items-center gap-2 border-t border-border pl-2 pt-2">
+    <div className="flex items-center gap-2 border-t border-border px-4 py-3">
       {displayName && (
         <span
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-semibold text-text-primary"
@@ -81,19 +78,6 @@ export function SidebarFooter(): React.ReactElement {
           <LogOut className="h-5 w-5" strokeWidth={1.5} />
         </button>
       )}
-      <button
-        type="button"
-        onClick={toggle}
-        title={`Switch to ${nextTheme} theme`}
-        aria-label={`Switch to ${nextTheme} theme`}
-        className={iconButtonClass}
-      >
-        {resolved === 'dark' ? (
-          <Sun className="h-5 w-5" strokeWidth={1.5} />
-        ) : (
-          <Moon className="h-5 w-5" strokeWidth={1.5} />
-        )}
-      </button>
     </div>
   );
 }

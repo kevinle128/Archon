@@ -1234,11 +1234,11 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
             <button
               type="button"
               onClick={(): void => {
-                navigate('/dashboard');
+                navigate('/runs');
               }}
               className="-ml-2 inline-flex min-h-11 cursor-pointer items-center rounded-[10px] px-2 transition-colors duration-150 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
             >
-              Dashboard
+              Runs
             </button>
             <ChevronRight
               aria-hidden="true"

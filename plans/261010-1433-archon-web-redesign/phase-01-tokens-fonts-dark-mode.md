@@ -1,6 +1,6 @@
 # Phase 01: Tokens, fonts, dark mode, shared primitives, brand guide
 
-Status: pending. Depends on: none. Effort: 2d.
+Status: done. Depends on: none. Effort: 2d.
 
 ## Context
 

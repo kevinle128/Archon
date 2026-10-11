@@ -23,6 +23,7 @@ import {
   SettingsSection,
   TextInput,
 } from './primitives';
+import { ProjectWorktrees } from './ProjectWorktrees';
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -294,6 +295,7 @@ export function ProjectsSection(): ReactElement {
                   Remove
                 </Btn>
               </div>
+              <ProjectWorktrees codebaseId={cb.id} />
               {expanded === cb.id ? <EnvVarsEditor codebaseId={cb.id} /> : null}
             </div>
           ))}

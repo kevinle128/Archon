@@ -56,8 +56,8 @@ interface Props {
  * that propagates to `$REJECTION_REASON` inside the workflow's `on_reject`
  * prompt.
  *
- * Replaces previous use of `window.confirm()` for these actions to match the
- * codebase-delete UX in `sidebar/ProjectSelector.tsx`.
+ * Replaces previous use of `window.confirm()` for these actions so run actions
+ * use an in-app confirmation dialog.
  */
 export function ConfirmRunActionDialog({
   trigger,

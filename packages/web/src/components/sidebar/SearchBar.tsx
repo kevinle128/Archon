@@ -6,6 +6,8 @@ interface SearchBarProps {
   onChange: (value: string) => void;
   placeholder: string;
   inputRef?: RefObject<HTMLInputElement | null>;
+  /** Marks the input as the screen's list filter: `/` focuses it and Escape clears it. */
+  listFilter?: boolean;
 }
 
 export function SearchBar({
@@ -13,6 +15,7 @@ export function SearchBar({
   onChange,
   placeholder,
   inputRef,
+  listFilter = false,
 }: SearchBarProps): React.ReactElement {
   return (
     <div className="relative flex items-center">
@@ -21,6 +24,10 @@ export function SearchBar({
         ref={inputRef}
         type="text"
         value={value}
+        data-list-filter={listFilter ? '' : undefined}
+        onKeyDown={(e): void => {
+          if (listFilter && e.key === 'Escape') onChange('');
+        }}
         onChange={(e): void => {
           onChange(e.target.value);
         }}
