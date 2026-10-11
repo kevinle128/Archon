@@ -507,10 +507,10 @@ body {
   --diff-font-family: var(--font-mono);
   --diff-selection-background-color: color-mix(in oklch, var(--ring) 35%, transparent);
   --tool-diff-insert-fg: var(--success);
-  /* Pure --error measures ~4.3:1 on the 12% delete tint over --surface-inset;
-     mixing 15% toward --text-primary clears the 4.5:1 floor while the hue
+  /* Pure --error is below 4.5:1 on the 12% delete tint over --surface-inset;
+     mixing 25% toward --text-primary clears the 4.5:1 floor while the hue
      stays on the error axis. */
-  --tool-diff-delete-fg: color-mix(in oklch, var(--error) 85%, var(--text-primary));
+  --tool-diff-delete-fg: color-mix(in oklch, var(--error) 75%, var(--text-primary));
   --diff-gutter-insert-background-color: color-mix(
     in oklch,
     var(--success) 12%,
@@ -522,7 +522,13 @@ body {
     var(--error) 12%,
     var(--surface-inset)
   );
-  --diff-gutter-delete-text-color: var(--text-secondary);
+  /* --text-secondary is below 4.5:1 on the delete tint; a 20% step toward
+     --text-primary clears the floor and keeps the number secondary. */
+  --diff-gutter-delete-text-color: color-mix(
+    in oklch,
+    var(--text-secondary) 80%,
+    var(--text-primary)
+  );
   --diff-code-insert-background-color: color-mix(
     in oklch,
     var(--success) 12%,
@@ -559,6 +565,10 @@ body {
   color: var(--text-secondary);
   text-align: right;
   white-space: nowrap;
+}
+
+.tool-diff .diff-gutter-delete {
+  color: var(--diff-gutter-delete-text-color);
 }
 
 .tool-diff-marker {
@@ -705,7 +715,7 @@ body {
 }
 
 /* =========================================================================
- * Run-view semantic tokens (scoped to the run-view root only).
+ * Run-view semantic tokens (scoped to the Runs workspace run and node columns).
  * Root: .legacy-run-view (WorkflowExecution). These properties do not apply
  * sitewide.
  * ========================================================================= */
@@ -718,8 +728,8 @@ body {
   --rv-tab-size: 0.6875rem;
 
   /* Agent message typography */
-  --rv-agent-font-size: 14px;
-  --rv-agent-line-height: 1.5;
+  --rv-agent-font-size: 14.5px;
+  --rv-agent-line-height: 1.6;
 
   /* Tool card inset surface — matches mockup .ptool */
   --rv-tool-card-bg: var(--surface-inset);
@@ -728,8 +738,8 @@ body {
   --rv-tool-card-padding: 8px 10px;
   --rv-tool-io-font-size: 12px;
 
-  /* Ask card — matches mockup .ask-card */
-  --rv-ask-card-border-color: var(--accent);
+  /* Ask card: the waiting tone frames a question the agent asks the operator. */
+  --rv-ask-card-border-color: var(--status-waiting);
   --rv-ask-card-radius: var(--radius);
   --rv-ask-card-padding: 12px 14px;
 

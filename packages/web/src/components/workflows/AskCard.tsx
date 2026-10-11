@@ -245,28 +245,29 @@ export function AskCard(props: AskCardProps): React.ReactElement {
       aria-label={`question from agent, ${String(questions.length)} questions`}
       onSubmit={handleSubmit}
     >
-      <Card className="rounded-xl border-l-[3px] border-border border-l-accent bg-surface shadow-none">
-        <CardHeader>
-          <CardTitle className="text-sm font-medium text-text-primary">
+      <Card className="gap-0 border-2 border-status-waiting bg-card py-0 shadow-none">
+        <CardHeader className="gap-0.5 bg-status-waiting px-4 py-3 text-status-waiting-fg">
+          <CardTitle className="text-[11px] font-bold tracking-[0.08em] uppercase">
             {`${agentDisplayName} is asking`}
           </CardTitle>
-          <CardDescription className="flex flex-wrap items-center gap-2 text-xs">
+          <CardDescription className="flex flex-wrap items-center gap-2 text-xs text-status-waiting-fg">
             <span>{nodeId}</span>
+            <span aria-hidden="true">·</span>
             <span>{formatDurationMs(elapsedWaitingMs(interaction.created_at, nowMs))}</span>
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 px-0 pt-4">
           {presentation.viewState === 'sending' ? (
-            <p className="text-sm text-text-secondary">Sending…</p>
+            <p className="px-4 text-sm text-text-secondary">Sending…</p>
           ) : null}
           <ResolvedStamp presentation={presentation} />
           {presentation.error !== null && presentation.viewState !== 'failed-resume' ? (
-            <p role="alert" className="text-sm text-error">
+            <p role="alert" className="px-4 text-sm font-semibold text-error">
               {presentation.error}
             </p>
           ) : null}
           {answerSummaries(questions, presentation.answer).map(item => (
-            <p key={item.key} className="text-sm text-text-primary">
+            <p key={item.key} className="px-4 text-sm text-text-primary">
               {item.label}: {item.value}
             </p>
           ))}
@@ -275,8 +276,8 @@ export function AskCard(props: AskCardProps): React.ReactElement {
               const value = draft[question.id];
               const otherOn = isOtherOn(question, value);
               return (
-                <fieldset key={question.id} className="min-w-0 space-y-2 border-0 p-0">
-                  <legend className="text-sm font-medium text-text-primary">
+                <fieldset key={question.id} className="min-w-0 border-0 p-0">
+                  <legend className="mb-2 px-4 text-[19px] leading-tight font-extrabold text-text-primary">
                     {question.prompt}
                   </legend>
                   {question.options.map((option, optionIndex) => {
@@ -286,7 +287,7 @@ export function AskCard(props: AskCardProps): React.ReactElement {
                       return (
                         <label
                           key={option}
-                          className="flex items-center gap-2 text-sm text-text-primary"
+                          className="grid cursor-pointer grid-cols-[16px_20px_minmax(0,1fr)] items-baseline gap-2 border-b border-border px-4 py-2.5 text-sm text-text-primary hover:bg-selection has-[:checked]:bg-selection"
                         >
                           <input
                             id={controlId}
@@ -299,6 +300,9 @@ export function AskCard(props: AskCardProps): React.ReactElement {
                               selectSingle(question, option);
                             }}
                           />
+                          <span aria-hidden="true" className="font-extrabold">
+                            {optionLetter(optionIndex)}
+                          </span>
                           <span>{option}</span>
                         </label>
                       );
@@ -306,7 +310,7 @@ export function AskCard(props: AskCardProps): React.ReactElement {
                     return (
                       <label
                         key={option}
-                        className="flex items-center gap-2 text-sm text-text-primary"
+                        className="grid cursor-pointer grid-cols-[16px_20px_minmax(0,1fr)] items-baseline gap-2 border-b border-border px-4 py-2.5 text-sm text-text-primary hover:bg-selection has-[:checked]:bg-selection"
                       >
                         <input
                           id={controlId}
@@ -319,13 +323,16 @@ export function AskCard(props: AskCardProps): React.ReactElement {
                             toggleMulti(question, option, event.target.checked);
                           }}
                         />
+                        <span aria-hidden="true" className="font-extrabold">
+                          {optionLetter(optionIndex)}
+                        </span>
                         <span>{option}</span>
                       </label>
                     );
                   })}
                   {question.allowOther ? (
                     <div className="space-y-2">
-                      <label className="flex items-center gap-2 text-sm text-text-primary">
+                      <label className="grid cursor-pointer grid-cols-[16px_20px_minmax(0,1fr)] items-baseline gap-2 border-b border-border px-4 py-2.5 text-sm text-text-primary hover:bg-selection has-[:checked]:bg-selection">
                         <input
                           type={question.selection === 'single' ? 'radio' : 'checkbox'}
                           name={`${mountContext}:${interaction.id}:${question.id}`}
@@ -342,10 +349,14 @@ export function AskCard(props: AskCardProps): React.ReactElement {
                             setQuestionOtherSelected(question, event.target.checked);
                           }}
                         />
+                        <span aria-hidden="true" className="font-extrabold">
+                          {optionLetter(question.options.length)}
+                        </span>
                         <span>Other</span>
                       </label>
                       {otherOn ? (
                         <Textarea
+                          className="mx-4 w-[calc(100%-2rem)]"
                           aria-label={`Other answer for ${question.prompt}`}
                           aria-required="true"
                           value={otherTextFromDraft(question, value)}
@@ -361,16 +372,21 @@ export function AskCard(props: AskCardProps): React.ReactElement {
             })}
           </fieldset>
         </CardContent>
-        <CardFooter className="flex flex-col items-stretch gap-3">
+        <CardFooter className="flex flex-col items-stretch gap-3 px-4 pt-3 pb-4">
           {showActions ? (
             <div className="flex flex-col items-stretch gap-3">
               <div className="flex items-center gap-2">
-                <Button type="submit" disabled={!draftValid}>
+                <Button
+                  type="submit"
+                  disabled={!draftValid}
+                  className="min-w-[150px] justify-between"
+                >
                   Submit
+                  <span aria-hidden="true">→</span>
                 </Button>
                 <AlertDialog open={declineOpen} onOpenChange={setDeclineOpen}>
                   <AlertDialogTrigger asChild>
-                    <Button type="button" variant="outline">
+                    <Button type="button" variant="secondary">
                       Decline
                     </Button>
                   </AlertDialogTrigger>
@@ -403,6 +419,11 @@ export function AskCard(props: AskCardProps): React.ReactElement {
   );
 }
 
+/** Letter shown beside an option: A, B, C, ... */
+function optionLetter(index: number): string {
+  return String.fromCharCode(65 + (index % 26));
+}
+
 export function InvalidAskCard(props: {
   interaction: PendingInteraction;
   agentDisplayName: string;
@@ -411,7 +432,7 @@ export function InvalidAskCard(props: {
   return (
     <section
       role="alert"
-      className="rounded-xl border border-error bg-error/5 p-4 text-text-primary"
+      className="border-2 border-status-failed bg-tint-error p-4 text-text-primary"
     >
       <p className="text-sm font-medium">Invalid Ask payload</p>
       <p className="mt-1 text-xs text-text-secondary">{`${props.agentDisplayName} · ${props.nodeId}`}</p>

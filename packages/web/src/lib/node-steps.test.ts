@@ -43,7 +43,7 @@ describe('groupNodesIntoSteps', () => {
     expect(groupNodesIntoSteps([])).toEqual([]);
   });
 
-  test('keeps loop group children nested', () => {
+  test('keeps loop group children nested under their runtime ids', () => {
     const steps = groupNodesIntoSteps([
       node('g', {
         loop_group: { nodes: [node('inner', { prompt: 'p' }), node('check', { bash: 'true' })] },
@@ -53,8 +53,8 @@ describe('groupNodesIntoSteps', () => {
     const group = steps[0]?.nodes[0];
     expect(group?.code).toBe('GROUP');
     expect(group?.children.map(c => [c.id, c.code])).toEqual([
-      ['inner', 'PRM'],
-      ['check', 'SH'],
+      ['g.inner', 'PRM'],
+      ['g.check', 'SH'],
     ]);
   });
 

@@ -4,12 +4,11 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { act, createElement, useState, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter, useNavigate } from 'react-router';
+import { MemoryRouter, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router';
 import { QueryClient, QueryClientProvider, notifyManager } from '@tanstack/react-query';
 import { resolveRunDetailRefetchIntervalMs } from '@/lib/execution-room-model';
 
-import type { WorkflowExecutionBody } from './WorkflowExecution';
-import type { WorkflowRunView } from './source-control/dag-run-tabs';
+import { parseNodeColumnTab } from '@/lib/runs/run-url';
 import { getWorkflowRun, type WorkflowEventResponse } from '@/lib/api';
 
 const workflowExecutionImportWindow = new Window({ url: 'https://localhost/' });
@@ -24,12 +23,8 @@ Object.assign(globalThis as object, {
   HTMLElement: workflowExecutionImportWindow.HTMLElement,
 });
 const workflowExecution = await import('./WorkflowExecution');
-const {
-  buildWorkflowDagNodeStates,
-  emptyAskActionStates,
-  mapWorkflowRunDetail,
-  resolveWorkflowExecutionBody,
-} = workflowExecution;
+const { buildWorkflowDagNodeStates, emptyAskActionStates, defaultRoomRow, mapWorkflowRunDetail } =
+  workflowExecution;
 // Radix keeps import-time DOM references; restore globals but keep the window alive.
 if (previousDocument === undefined) {
   Reflect.deleteProperty(globalThis, 'document');
@@ -150,39 +145,25 @@ describe('buildWorkflowDagNodeStates', () => {
     expect(nodes[0]?.status).toBe('running');
     expect(nodes[0]?.routeDecision).toEqual(routeDecision);
   });
+});
 
-  describe('resolveWorkflowExecutionBody', () => {
-    const views: WorkflowRunView[] = [
-      'graph',
-      'logs',
-      'chat',
-      'source-control',
-      'files-changed',
-      'terminal',
-    ];
-
-    test('every DAG inspect view shares the pane and source control stays separate', () => {
-      const expected: Record<WorkflowRunView, WorkflowExecutionBody> = {
-        graph: 'graph-logs-pane',
-        logs: 'graph-logs-pane',
-        chat: 'graph-logs-pane',
-        'source-control': 'source-control',
-        'files-changed': 'files-changed',
-        terminal: 'terminal',
-      };
-      for (const activeView of views) {
-        expect(resolveWorkflowExecutionBody({ isDag: true, activeView })).toBe(
-          expected[activeView]
-        );
-      }
-      expect(Object.values(expected)).not.toContain('chat');
-    });
-
-    test('every non-DAG input returns sequential', () => {
-      for (const activeView of views) {
-        expect(resolveWorkflowExecutionBody({ isDag: false, activeView })).toBe('sequential');
-      }
-    });
+describe('defaultRoomRow', () => {
+  test('prefers the live row, then the last failed row, then the last row', () => {
+    expect(
+      defaultRoomRow([
+        { id: 'a', status: 'completed' },
+        { id: 'b', status: 'awaiting' },
+        { id: 'c', status: 'failed' },
+      ])?.id
+    ).toBe('b');
+    expect(
+      defaultRoomRow([
+        { id: 'a', status: 'failed' },
+        { id: 'b', status: 'completed' },
+      ])?.id
+    ).toBe('a');
+    expect(defaultRoomRow([{ id: 'a', status: 'completed' }])?.id).toBe('a');
+    expect(defaultRoomRow([])).toBeNull();
   });
 });
 
@@ -659,7 +640,7 @@ describe('WorkflowExecution room visit', () => {
           type: 'button',
           'data-testid': 'set-node-review',
           onClick: (): void => {
-            navigate({ search: '?node=review' });
+            void navigate('/runs/run-1/review');
           },
         },
         'set-review'
@@ -670,7 +651,7 @@ describe('WorkflowExecution room visit', () => {
           type: 'button',
           'data-testid': 'clear-node',
           onClick: (): void => {
-            navigate({ search: '' });
+            void navigate('/runs/run-1');
           },
         },
         'clear-node'
@@ -678,12 +659,22 @@ describe('WorkflowExecution room visit', () => {
     );
   }
 
-  function ExecutionHarness(props: { initialRunId: string; initialSearch?: string }): ReactElement {
+  function RouteHost({ runId }: { runId: string }): ReactElement {
+    const { nodeId } = useParams<{ nodeId?: string }>();
+    const [searchParams] = useSearchParams();
+    return createElement(workflowExecution.WorkflowExecution, {
+      runId,
+      nodeId: nodeId ?? null,
+      tab: parseNodeColumnTab(searchParams.get('tab')),
+    });
+  }
+
+  function ExecutionHarness(props: { initialRunId: string; initialPath?: string }): ReactElement {
     const [runId, setRunId] = useState(props.initialRunId);
     return createElement(
       MemoryRouter,
       {
-        initialEntries: [`/workflows/runs/${props.initialRunId}${props.initialSearch ?? ''}`],
+        initialEntries: [`/runs/${props.initialRunId}${props.initialPath ?? ''}`],
       },
       createElement(
         QueryClientProvider,
@@ -703,15 +694,22 @@ describe('WorkflowExecution room visit', () => {
             'switch-run'
           ),
           createElement(QuerySearchControls),
-          createElement(workflowExecution.WorkflowExecution, { runId })
+          createElement(
+            Routes,
+            null,
+            createElement(Route, {
+              path: '/runs/:runId/:nodeId?',
+              element: createElement(RouteHost, { runId }),
+            })
+          )
         )
       )
     );
   }
 
-  async function renderVisit(initialSearch?: string): Promise<void> {
+  async function renderVisit(initialPath?: string): Promise<void> {
     await act(async () => {
-      root.render(createElement(ExecutionHarness, { initialRunId: 'run-1', initialSearch }));
+      root.render(createElement(ExecutionHarness, { initialRunId: 'run-1', initialPath }));
     });
     await flushUntil('run title', () => (host.textContent ?? '').includes('demo'));
   }
@@ -756,6 +754,29 @@ describe('WorkflowExecution room visit', () => {
     await activate(tab);
   }
 
+  async function clickRadio(label: string): Promise<void> {
+    const radio = Array.from(host.querySelectorAll('[role="radio"]')).find(
+      candidate => (candidate.textContent ?? '').trim() === label
+    );
+    if (radio === undefined) throw new Error(`missing radio ${label}`);
+    await activate(radio);
+  }
+
+  /** Opens a node from the run column's step list. */
+  async function openStep(nodeId: string): Promise<void> {
+    await flushUntil(
+      `step ${nodeId}`,
+      () => host.querySelector(`#legacy-graph-${nodeId}`) !== null
+    );
+    const button = host.querySelector(`#legacy-graph-${nodeId}`);
+    if (button === null) throw new Error(`missing step ${nodeId}`);
+    await activate(button);
+    await flushUntil(
+      `room ${nodeId}`,
+      () => host.querySelector('[data-testid="legacy-node-room"]') !== null
+    );
+  }
+
   async function clickGraphNode(nodeId: string): Promise<void> {
     await flushUntil(`graph node ${nodeId}`, () => {
       return host.querySelector(`.react-flow__node[data-id="${nodeId}"]`) !== null;
@@ -765,21 +786,13 @@ describe('WorkflowExecution room visit', () => {
     await activate(node);
   }
 
-  test('ordinary visits have no selected room until a log row is opened', async () => {
+  test('ordinary visits have no selected room until a node is opened', async () => {
     await renderVisit();
     expect(host.querySelector('[data-testid="legacy-node-room"]')).toBeNull();
     expect(host.querySelector('[role="separator"]')).toBeNull();
 
-    await clickTab('Logs');
-    await flushUntil('log rows', () => (host.textContent ?? '').includes('Review'));
-    await clickNamed('Review');
-    await flushUntil(
-      'opened review',
-      () => host.querySelector('[data-testid="legacy-node-room"]') !== null
-    );
-    expect(host.querySelector('#legacy-log-start-review')?.getAttribute('aria-current')).toBe(
-      'true'
-    );
+    await openStep('review');
+    expect(host.querySelector('#legacy-graph-review')?.getAttribute('aria-current')).toBe('true');
     expect(host.querySelector('[data-testid="legacy-node-room"]')?.textContent).toContain('Review');
   });
 
@@ -810,13 +823,7 @@ describe('WorkflowExecution room visit', () => {
 
   test('a refetch failure after the run has loaded keeps the room open and hints, then recovers', async () => {
     await renderVisit();
-    await clickTab('Logs');
-    await flushUntil('log rows', () => (host.textContent ?? '').includes('Review'));
-    await clickNamed('Review');
-    await flushUntil(
-      'opened review',
-      () => host.querySelector('[data-testid="legacy-node-room"]') !== null
-    );
+    await openStep('review');
 
     // Simulate an outage: the next run-detail read fails after data has
     // already loaded once.
@@ -825,7 +832,7 @@ describe('WorkflowExecution room visit', () => {
       await queryClient.invalidateQueries({ queryKey: ['workflowRun', 'run-1'] });
     });
     await flushUntil('hint shown', () =>
-      (host.textContent ?? '').includes('Failed to load — retrying')
+      (host.textContent ?? '').includes('Failed to load. Retrying.')
     );
 
     // react-query keeps the last-good data, so the error page must not
@@ -841,7 +848,7 @@ describe('WorkflowExecution room visit', () => {
     });
     await flushUntil(
       'hint cleared',
-      () => !(host.textContent ?? '').includes('Failed to load — retrying')
+      () => !(host.textContent ?? '').includes('Failed to load. Retrying.')
     );
     expect(host.querySelector('[data-testid="legacy-node-room"]')).not.toBeNull();
   });
@@ -901,24 +908,16 @@ describe('WorkflowExecution room visit', () => {
     await flushUntil('refetch fired', () => runDetailFetches > fetchesAtMount);
   });
 
-  test('closing the room restores focus to the log opener', async () => {
+  test('closing the room restores focus to the step opener', async () => {
     await renderVisit();
-    await clickTab('Logs');
-    await flushUntil('log rows', () => host.querySelector('#legacy-log-start-review') !== null);
-    const opener = host.querySelector('#legacy-log-start-review');
-    if (opener === null) throw new Error('missing log opener');
-    await activate(opener);
-    await flushUntil(
-      'room open',
-      () => host.querySelector('[data-testid="legacy-node-room"]') !== null
-    );
+    await openStep('review');
     await clickNamed('Close');
     await flushUntil(
       'room closed',
       () => host.querySelector('[data-testid="legacy-node-room"]') === null
     );
     await flushFrames();
-    expect(win.document.activeElement?.id).toBe('legacy-log-start-review');
+    expect(win.document.activeElement?.id).toBe('legacy-graph-review');
   });
 
   test('graph clicks restore the last explicit row after visiting another node', async () => {
@@ -936,12 +935,13 @@ describe('WorkflowExecution room visit', () => {
     }
 
     await renderVisit();
-    await clickTab('Logs');
+    await openStep('group');
+    await clickTab('History · 2');
     await flushUntil('loop rows', () => (host.textContent ?? '').includes('Group ×1'));
     await clickNamed('Group ×1');
     await flushUntil('explicit iteration', () => selectedExecutionRowId() === 'iter-1-start');
 
-    await clickTab('Graph');
+    await clickRadio('Graph');
     await clickGraphNode('review');
     await flushUntil('review from graph', () =>
       (host.querySelector('[data-testid="legacy-node-room"]')?.textContent ?? '').includes('Review')
@@ -953,6 +953,7 @@ describe('WorkflowExecution room visit', () => {
 
   test('runtime graph drops the minimap but keeps controls and node selection', async () => {
     await renderVisit();
+    await clickRadio('Graph');
     await flushUntil('graph mounted', () => host.querySelector('.react-flow') !== null);
     // The runtime graph has no minimap; pan/zoom controls and node click stay.
     expect(host.querySelector('.react-flow__minimap')).toBeNull();
@@ -967,7 +968,7 @@ describe('WorkflowExecution room visit', () => {
   });
 
   test('deep-link node query applies once per entry and reopens after leaving', async () => {
-    await renderVisit('?node=review');
+    await renderVisit('/review');
     await flushUntil(
       'first deep link',
       () => host.querySelector('[data-testid="legacy-node-room"]') !== null
@@ -994,25 +995,18 @@ describe('WorkflowExecution room visit', () => {
 
   test('changing runId clears the previous selection and keeps shell chrome after close', async () => {
     await renderVisit();
-    await clickTab('Logs');
-    await flushUntil('log rows', () => host.querySelector('#legacy-log-start-review') !== null);
-    await clickNamed('Review');
-    await flushUntil(
-      'room open',
-      () => host.querySelector('[data-testid="legacy-node-room"]') !== null
-    );
+    await openStep('review');
 
     await clickNamed('Close');
     await flushUntil(
       'room closed',
       () => host.querySelector('[data-testid="legacy-node-room"]') === null
     );
-    const artifactsButton = await clickNamed('Artifacts');
+    await clickTab('Artifacts');
     await flushUntil(
       'artifacts panel',
       () => host.querySelector('[data-testid="run-artifacts-panel"]') !== null
     );
-    expect(artifactsButton.hasAttribute('disabled')).toBe(false);
     expect(host.querySelector('[data-testid="run-artifacts-panel"]')?.textContent).toContain(
       'ship-it'
     );
@@ -1128,9 +1122,7 @@ describe('WorkflowExecution room visit', () => {
   test('shares Ask drafts between the room and Chat and resets them on run change', async () => {
     mockAskFetch();
     await renderVisit();
-    await clickTab('Logs');
-    await flushUntil('log rows', () => (host.textContent ?? '').includes('Review'));
-    await clickNamed('Review');
+    await openStep('review');
     await flushUntil('ask in room', () =>
       (host.querySelector('[data-testid="legacy-node-room"]')?.textContent ?? '').includes('Notes')
     );
@@ -1161,8 +1153,21 @@ describe('WorkflowExecution room visit', () => {
       reactOnChange(chatField)?.({ target: { value: 'shared-from-chat' } });
     });
     await flush();
-    expect((roomField as unknown as HTMLTextAreaElement).value).toBe('shared-from-chat');
     expect((chatField as unknown as HTMLTextAreaElement).value).toBe('shared-from-chat');
+    // The room body is not mounted while a run tab is open; back on the stream it
+    // reads the same shared draft.
+    await clickTab('Live stream');
+    await flushUntil(
+      'room ask again',
+      () =>
+        host.querySelector('[data-testid="legacy-node-room"] #run-ask-card-tool-ask-room') !== null
+    );
+    const roomFieldAgain = host.querySelector(
+      '[data-testid="legacy-node-room"] #run-ask-card-tool-ask-room textarea'
+    );
+    expect((roomFieldAgain as unknown as HTMLTextAreaElement | null)?.value).toBe(
+      'shared-from-chat'
+    );
 
     await clickNamed('switch-run');
     await flushUntil('run switched', () => (host.textContent ?? '').includes('demo'));
@@ -1175,12 +1180,11 @@ describe('WorkflowExecution room visit', () => {
   test('Awaiting input opens the matching Ask without changing the main view', async () => {
     mockAskFetch();
     await renderVisit();
-    const graphTab = Array.from(host.querySelectorAll('[role="tab"]')).find(
-      tab => (tab.textContent ?? '').trim() === 'Graph'
-    );
-    expect(
-      graphTab?.getAttribute('aria-selected') ?? graphTab?.getAttribute('data-state')
-    ).not.toBe('false');
+    const listRadio = (): Element | undefined =>
+      Array.from(host.querySelectorAll('[role="radio"]')).find(
+        radio => (radio.textContent ?? '').trim() === 'List'
+      );
+    expect(listRadio()?.getAttribute('aria-checked')).toBe('true');
     await clickNamed('Awaiting input');
     await flushUntil(
       'opened from chrome',
@@ -1195,13 +1199,7 @@ describe('WorkflowExecution room visit', () => {
     for (let i = 0; i < 8; i += 1) {
       await flushFrames();
     }
-    const stillGraph = Array.from(host.querySelectorAll('[role="tab"]')).find(
-      tab => (tab.textContent ?? '').trim() === 'Graph'
-    );
-    expect(
-      stillGraph?.getAttribute('data-state') === 'active' ||
-        stillGraph?.getAttribute('aria-selected') === 'true'
-    ).toBe(true);
+    expect(listRadio()?.getAttribute('aria-checked')).toBe('true');
     const active = win.document.activeElement as { tagName?: string; id?: string } | null;
     const roomAsk = win.document.getElementById('run-ask-card-tool-ask-room');
     expect(

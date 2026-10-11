@@ -77,7 +77,7 @@ export function TopBar(): React.ReactElement {
       <NeedsYouButton
         count={projectCounts?.paused ?? 0}
         onClick={(): void => {
-          void navigate('/runs?status=paused');
+          void navigate('/runs?filter=needs');
         }}
       />
       <ThemeToggle choice={choice} onChange={setChoice} />

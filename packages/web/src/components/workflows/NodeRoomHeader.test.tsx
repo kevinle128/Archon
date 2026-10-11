@@ -120,7 +120,7 @@ describe('NodeRoomHeader', () => {
     expect(closes).toEqual([1]);
   });
 
-  test('the running pill carries the bright-blue accent token, not text-accent, and no dot', async () => {
+  test('the running status reads as the running glyph and label in the running tone', async () => {
     await act(async () => {
       root.render(
         createElement(nodeRoomHeader.NodeRoomHeader, {
@@ -135,24 +135,13 @@ describe('NodeRoomHeader', () => {
       );
     });
 
-    const pill = Array.from(host.querySelectorAll('span')).find(
-      el => el.textContent?.trim() === 'Running'
-    );
-    if (pill === undefined) throw new Error('missing Running pill');
-    expect(pill.className).toContain('text-accent-bright');
-    expect(pill.className).not.toContain('text-accent ');
-    expect(pill.className).toContain('text-[10px]');
-    expect(pill.className).toContain('font-bold');
-    expect(pill.querySelector('span[aria-hidden]')).toBeNull();
-    // Matches the mockup pill exactly: no explicit line-height override, so
-    // the browser's own default wins (measured 18px total live) instead of
-    // the inherited cascade the app previously left in place (measured
-    // 21px). The flat, per-tone border color (vs. an alpha-blend of the
-    // bright accent) is verified against a live browser in the round's
-    // visual QA evidence — happy-dom's CSSOM does not parse `oklch()`, so it
-    // cannot assert that value here.
-    const style = pill.getAttribute('style') ?? '';
-    expect(style).toContain('line-height: normal');
+    const status = host.querySelector('[data-slot="node-status"]');
+    if (status === null) throw new Error('missing node status');
+    expect(status.textContent).toBe('▶ Running');
+    expect(status.className).toContain('text-status-running');
+    expect(status.className).toContain('font-bold');
+    // The glyph is decoration; assistive tech reads the label only.
+    expect(status.querySelector('span[aria-hidden="true"]')?.textContent).toBe('▶ ');
   });
 
   test('meta appends waiting on operator for an idle-after-interrupt agent', async () => {

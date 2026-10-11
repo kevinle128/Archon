@@ -1,14 +1,15 @@
 /**
- * Shared Graph/Logs/Chat composition: one left navigation and one typed room.
+ * Run and node columns of the Runs workspace: the run's node list (or graph) on
+ * the left, the selected node's room and the run-wide tabs on the right.
  */
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import {
-  PercentResizablePanel,
-  ResizableHandle,
-  ResizablePanelGroup,
-} from '@/components/ui/resizable';
+import { NodeColumnTabs } from '@/components/runs/NodeColumnTabs';
+import { NodeStepList, type NodeRowInfo } from '@/components/runs/NodeStepList';
+import { formatElapsed, LiveElapsed } from '@/components/ui/live-elapsed';
+import { SectionLabel } from '@/components/ui/section-label';
+import { Segmented } from '@/components/ui/segmented';
 import {
   getWorkflowNodeMessages,
   type AskAnswerBody,
@@ -21,19 +22,24 @@ import {
   type WorkflowNodeStateResponse,
 } from '@/lib/api';
 import { readApprovalContext, type WebApprovalContext } from '@/lib/approval-context';
+import { ensureUtc } from '@/lib/format';
 import {
   chooseExecutionForNode,
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
+  isLiveRowStatus,
   latestNodeExecutionKey,
   resolveFinishedIterationView,
   roomOpenerId,
   type ExecutionHeaderModel,
   type RunOfTotal,
 } from '@/lib/execution-room-model';
-import { LEGACY_ROOM_WIDTH_PX, clampRoomRatio, roomPanelSizes } from '@/lib/room-split-layout';
-import type { WorkflowRunStatus } from '@/lib/types';
+import { groupNodesIntoSteps, type NodeStep } from '@/lib/node-steps';
+import { nodeExtras } from '@/lib/runs/node-extras';
+import { isRunTab, type NodeColumnTab, type RunTab } from '@/lib/runs/run-url';
+import type { DagNodeState, WorkflowRunStatus } from '@/lib/types';
 import { useContainerSplitMode, type ContainerSplitMode } from '@/lib/use-container-split-mode';
+import { cn } from '@/lib/utils';
 
 import { AskCard, InvalidAskCard } from './AskCard';
 import type { AskActionStateByRequest } from './ask-answer-controller';
@@ -43,6 +49,7 @@ import { buildChatTimeline, type ChatTimelineEntry } from './build-chat-timeline
 import { buildLogRows, type LogRow } from './build-log-rows';
 import { ChatTimeline } from './ChatTimeline';
 import { LegacyNodeRoom } from './LegacyNodeRoom';
+import { RoomPlaceholder } from './NodeRoom';
 import { isLiveRunStatus } from './NodeTranscriptPane';
 import { NodeRunList } from './NodeRunList';
 import type { ExecutionHeaderOption } from './NodeRoomHeader';
@@ -51,10 +58,28 @@ import { resolveRoomKind } from './resolve-room-kind';
 import { resolveTimelineRoomRow } from './resolve-timeline-room-row';
 import { parseAskEnvelope, type AskDraft, type AskDraftByRequest } from './parse-ask-envelope';
 import { RunChatComposer } from './RunChatComposer';
-import { useStackedViewport } from './source-control/use-stacked-viewport';
+import { selectNodeStdout } from './select-room-data';
+
+/** Width below which the run and node columns show one at a time. */
+const SPLIT_MIN_REM = 34;
+
+export type RunNodeView = 'list' | 'graph';
 
 export interface LegacyGraphLogsPaneProps {
-  activeView: 'graph' | 'logs' | 'chat';
+  /** Run column body: the node step list or the graph. */
+  nodeView: RunNodeView;
+  onNodeViewChange?: (view: RunNodeView) => void;
+  /** Node column tab. */
+  tab: NodeColumnTab;
+  onTabChange?: (tab: NodeColumnTab) => void;
+  /** Run-wide tabs this run offers, in display order. */
+  runTabs?: readonly RunTab[];
+  /** Content of a run-wide tab. The pane renders "conversation" itself. */
+  renderRunTab?: (tab: Exclude<RunTab, 'conversation'>) => ReactNode;
+  /** Run header at the top of the run column. */
+  runHeader?: ReactNode;
+  /** Live per-node state, for loop iterations in the node list. */
+  dagNodes?: readonly DagNodeState[];
   renderGraph: (input: {
     selectedNodeId: string | null;
     onNodeClick: (nodeId: string) => void;
@@ -78,8 +103,6 @@ export interface LegacyGraphLogsPaneProps {
     rememberExplicit: boolean
   ) => void;
   onCloseRoom: () => void;
-  roomRatio: number;
-  onRoomRatioChange: (ratio: number) => void;
   splitMode?: ContainerSplitMode;
   runId: string;
   runStartedAt: string;
@@ -210,8 +233,64 @@ function synthesizeLegacyLogNodeStates(input: {
   return next.length === input.nodeStates.length ? input.nodeStates : next;
 }
 
+/** Steps for a run without a loaded definition: each known node is its own step. */
+function fallbackSteps(nodeStates: readonly WorkflowNodeStateResponse[]): NodeStep[] {
+  return nodeStates.map((state, position) => ({
+    index: position + 1,
+    number: String(position + 1).padStart(2, '0'),
+    parallel: false,
+    nodes: [
+      {
+        id: state.nodeId,
+        node: { id: state.nodeId } as DagNode,
+        kind: 'unknown',
+        code: 'NODE',
+        children: [],
+      },
+    ],
+  }));
+}
+
+/**
+ * A definition node by runtime id. A loop-group body node runs as
+ * `<groupId>.<bodyId>`, so the lookup descends into the group by that prefix.
+ */
+function findDefinitionNode(nodes: readonly DagNode[], nodeId: string): DagNode | undefined {
+  for (const node of nodes) {
+    if (node.id === nodeId) return node;
+    const body = node.loop_group?.nodes;
+    if (body !== undefined && nodeId.startsWith(`${node.id}.`)) {
+      const child = findDefinitionNode(body as DagNode[], nodeId.slice(node.id.length + 1));
+      if (child !== undefined) return child;
+    }
+  }
+  return undefined;
+}
+
+function rowRight(status: string, latest: LogRow | undefined): React.ReactNode {
+  if (latest === undefined) return undefined;
+  if (status === 'running' && latest.startedAt !== undefined) {
+    return <LiveElapsed since={ensureUtc(latest.startedAt)} />;
+  }
+  if (status === 'awaiting' && latest.startedAt !== undefined) {
+    return (
+      <>
+        waiting <LiveElapsed since={ensureUtc(latest.startedAt)} />
+      </>
+    );
+  }
+  return latest.durationMs !== undefined ? formatElapsed(latest.durationMs) : undefined;
+}
+
 export function LegacyGraphLogsPane({
-  activeView,
+  nodeView,
+  onNodeViewChange,
+  tab,
+  onTabChange,
+  runTabs = ['conversation'],
+  renderRunTab,
+  runHeader,
+  dagNodes = [],
   renderGraph,
   selectedNodeId,
   selectedLogRowId,
@@ -219,8 +298,6 @@ export function LegacyGraphLogsPane({
   lastExplicitRowByNode = {},
   onOpenRoom,
   onCloseRoom,
-  roomRatio,
-  onRoomRatioChange,
   splitMode: splitModeOverride,
   runId,
   runStartedAt,
@@ -258,9 +335,8 @@ export function LegacyGraphLogsPane({
   onRunSettleHint,
   terminalEdgeKick = 0,
 }: LegacyGraphLogsPaneProps): React.ReactElement {
-  const stacked = useStackedViewport();
   const paneRef = useRef<HTMLDivElement>(null);
-  const measuredMode = useContainerSplitMode(paneRef);
+  const measuredMode = useContainerSplitMode(paneRef, SPLIT_MIN_REM);
   const mode = splitModeOverride ?? measuredMode;
   const visibleNodeStates = useMemo(
     () => synthesizeLegacyLogNodeStates({ nodeStates, events, runStatus, approval }),
@@ -274,9 +350,13 @@ export function LegacyGraphLogsPane({
   const [chatDraft, setChatDraft] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [chatSendError, setChatSendError] = useState<string | null>(null);
+  // Run tabs mount on first open and stay mounted while hidden, so a terminal
+  // session or a diff position survives a node change or a tab change.
+  const [mountedRunTabs, setMountedRunTabs] = useState<readonly RunTab[]>(() =>
+    isRunTab(tab) ? [tab] : []
+  );
   const sendGeneration = useRef(0);
   const previousRunId = useRef(runId);
-  const sizes = roomPanelSizes(roomRatio);
   const explicitSelectedRow =
     selectedLogRowId === null
       ? null
@@ -317,9 +397,10 @@ export function LegacyGraphLogsPane({
   const nodeExecutionKey =
     selectedNodeId === null ? null : latestNodeExecutionKey(events, selectedNodeId);
 
+  const conversationOpen = mountedRunTabs.includes('conversation');
   const parentMessagesQuery = useQuery({
     queryKey: ['runChatMessages', parentPlatformId],
-    enabled: activeView === 'chat' && parentPlatformId !== null,
+    enabled: conversationOpen && parentPlatformId !== null,
     queryFn: async (): Promise<MessageResponse[]> => {
       if (parentPlatformId === null) throw new Error('Parent conversation is unavailable');
       return loadParentMessages(parentPlatformId);
@@ -330,7 +411,7 @@ export function LegacyGraphLogsPane({
 
   const parentConversationQuery = useQuery({
     queryKey: ['runChatConversation', parentPlatformId],
-    enabled: activeView === 'chat' && parentPlatformId !== null,
+    enabled: conversationOpen && parentPlatformId !== null,
     queryFn: async (): Promise<ConversationResponse> => {
       if (parentPlatformId === null) throw new Error('Parent conversation is unavailable');
       return loadParentConversation(parentPlatformId);
@@ -388,7 +469,14 @@ export function LegacyGraphLogsPane({
     setChatSending(false);
     setChatSendError(null);
     setSelectedTimelineEntryId(null);
+    setMountedRunTabs(isRunTab(tab) ? [tab] : []);
+    // A run change resets the run tabs once; the active tab is read, not tracked.
   }, [runId]);
+
+  useEffect(() => {
+    if (!isRunTab(tab)) return;
+    setMountedRunTabs(current => (current.includes(tab) ? current : [...current, tab]));
+  }, [tab]);
 
   useEffect(() => {
     if (selectedNodeId === null) setSelectedTimelineEntryId(null);
@@ -424,6 +512,8 @@ export function LegacyGraphLogsPane({
     });
     setSelectedTimelineEntryId(entry.id);
     onOpenRoom(row.id, row.nodeId, null, true);
+    // The room shows in the stream tab; the conversation stays mounted behind it.
+    onTabChange?.('stream');
   };
 
   const handleChatSubmit = (): void => {
@@ -449,219 +539,314 @@ export function LegacyGraphLogsPane({
       });
   };
 
-  const leftPane =
-    activeView === 'graph' ? (
-      <div className="h-full min-h-0">
-        {renderGraph({ selectedNodeId, onNodeClick: handleGraphNodeClick })}
-      </div>
-    ) : activeView === 'logs' ? (
-      <div className="h-full min-h-0 overflow-auto">
-        <NodeRunList
-          rows={rows}
-          selectedRowId={selectedRow?.id ?? null}
-          onSelect={handleLogRowSelect}
-        />
+  const steps = useMemo((): NodeStep[] => {
+    if (definitionNodes.length === 0) return fallbackSteps(visibleNodeStates);
+    const defined = groupNodesIntoSteps(definitionNodes);
+    // A node that ran but is no longer in the definition still gets a row, after
+    // the defined steps, so its room stays reachable.
+    const known = new Set(
+      defined.flatMap(step =>
+        step.nodes.flatMap(node => [node.id, ...node.children.map(child => child.id)])
+      )
+    );
+    const orphans = fallbackSteps(visibleNodeStates.filter(state => !known.has(state.nodeId)));
+    return [
+      ...defined,
+      ...orphans.map((step, offset) => {
+        const index = defined.length + offset + 1;
+        return { ...step, index, number: String(index).padStart(2, '0') };
+      }),
+    ];
+  }, [definitionNodes, visibleNodeStates]);
+  const topLevelIds = steps.flatMap(step => step.nodes.map(node => node.id));
+  const statusOf = (nodeId: string): string =>
+    visibleNodeStates.find(state => state.nodeId === nodeId)?.status ?? 'pending';
+  const doneCount = topLevelIds.filter(id => statusOf(id) === 'completed').length;
+  const infoOf = (nodeId: string): NodeRowInfo => {
+    const status = statusOf(nodeId);
+    const nodeRows = rows.filter(row => row.nodeId === nodeId);
+    return {
+      status,
+      right: rowRight(status, nodeRows[nodeRows.length - 1]),
+      extras: nodeExtras({
+        definition: findDefinitionNode(definitionNodes, nodeId),
+        state: dagNodes.find(node => node.nodeId === nodeId),
+        rows: nodeRows,
+      }),
+    };
+  };
+
+  const runColumnBody =
+    nodeView === 'graph' ? (
+      <div className="h-full min-h-[320px]">
+        {renderGraph({
+          selectedNodeId: selectedRow?.nodeId ?? selectedNodeId,
+          onNodeClick: handleGraphNodeClick,
+        })}
       </div>
     ) : (
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="min-h-0 flex-1">
-          <ChatTimeline
-            entries={chatEntries}
-            selectedEntryId={selectedTimelineEntryId}
-            onSelectNodeStatus={handleNodeStatusSelect}
-            loading={
-              parentMessagesQuery.fetchStatus === 'fetching' &&
-              parentMessagesQuery.data === undefined
-            }
-            error={parentMessagesError}
-            renderAsk={(entry): React.ReactNode => {
-              const questions = parseAskEnvelope(entry.interaction.envelope);
-              if (questions === null) {
-                const row = rows.find(candidate => candidate.id === entry.rowId);
-                return (
-                  <InvalidAskCard
-                    interaction={entry.interaction}
-                    agentDisplayName={row?.label ?? entry.interaction.node_id}
-                    nodeId={entry.interaction.node_id}
-                  />
-                );
-              }
-              const requestId = entry.interaction.tool_use_id;
-              const row = rows.find(candidate => candidate.id === entry.rowId);
-              return (
-                <AskCard
-                  interaction={entry.interaction}
-                  questions={questions}
-                  presentation={resolveAskCardPresentation({
-                    interaction: entry.interaction,
-                    action: actionStates[requestId],
-                    nodeStatus: visibleNodeStates.find(
-                      state => state.nodeId === entry.interaction.node_id
-                    )?.status,
-                    nodeError: visibleNodeStates.find(
-                      state => state.nodeId === entry.interaction.node_id
-                    )?.error,
-                  })}
-                  viewerIsStarter={viewerIsStarter}
-                  starterDisplayName={starterDisplayName}
-                  agentDisplayName={row?.label ?? entry.interaction.node_id}
-                  nodeId={entry.interaction.node_id}
-                  autoFocus={false}
-                  nowMs={Date.now()}
-                  mountContext="chat"
-                  draft={askDrafts?.[requestId] ?? {}}
-                  onDraftChange={(next): void => {
-                    onAskDraftChange?.(requestId, next);
-                  }}
-                  onSubmit={(body): void => {
-                    void onSubmitAsk(requestId, body);
-                  }}
-                  onDecline={(): void => {
-                    void onSubmitAsk(requestId, { decline: true });
-                  }}
-                />
-              );
-            }}
-          />
-        </div>
-        <RunChatComposer
-          value={chatDraft}
-          onValueChange={setChatDraft}
-          onSubmit={handleChatSubmit}
-          sending={chatSending}
-          disabledReason={composerDisabledReason}
-          error={chatSendError}
-        />
-      </div>
+      <NodeStepList
+        steps={steps}
+        infoOf={infoOf}
+        selectedNodeId={selectedRow?.nodeId ?? selectedNodeId}
+        onSelect={handleGraphNodeClick}
+      />
     );
 
-  const wrappedLeft = <div className="flex h-full min-h-0 flex-col">{leftPane}</div>;
-
-  const roomPane = (
-    <div
-      data-testid="legacy-node-room"
-      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
-    >
-      {roomHeader}
-      <LegacyNodeRoom
-        runId={runId}
-        row={selectedRow}
-        loadMessages={loadMessages}
-        definitionNodes={definitionNodes}
-        definitionPending={definitionPending}
-        events={events}
-        runStatus={runStatus}
-        approval={approval}
-        onApprove={onApprove}
-        onReject={onReject}
-        pendingInteractions={pendingInteractions}
-        ownsUnscopedInteractions={ownsUnscopedInteractions}
-        viewerIsStarter={viewerIsStarter}
-        starterDisplayName={starterDisplayName}
-        actionStates={actionStates}
-        onSubmitAsk={onSubmitAsk}
-        nodeState={selectedNodeState}
-        followingLive={followingLive}
-        headerModel={headerModel}
-        headerOptions={headerOptions}
-        executionCount={executionCount}
-        runOfTotal={runOfTotal}
-        onSelectRow={onSelectExecution}
-        finishedIteration={finishedIteration}
-        nodeTerminal={nodeTerminal}
-        idleAwaitExpired={idleAwaitExpired}
-        nodeExecutionKey={nodeExecutionKey}
-        onClose={onCloseRoom}
-        closeLabel={mode === 'single' ? 'Back' : 'Close'}
-        scopeKey={scopeKey}
-        initialScrollTop={initialScrollTop}
-        onScrollTopChange={onScrollTopChange}
-        askDrafts={askDrafts}
-        onAskDraftChange={onAskDraftChange}
-        onRunSettleHint={onRunSettleHint}
-        terminalEdgeKick={terminalEdgeKick}
+  const conversationPane = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1">
+        <ChatTimeline
+          entries={chatEntries}
+          selectedEntryId={selectedTimelineEntryId}
+          onSelectNodeStatus={handleNodeStatusSelect}
+          loading={
+            parentMessagesQuery.fetchStatus === 'fetching' && parentMessagesQuery.data === undefined
+          }
+          error={parentMessagesError}
+          renderAsk={(entry): React.ReactNode => {
+            const questions = parseAskEnvelope(entry.interaction.envelope);
+            if (questions === null) {
+              const row = rows.find(candidate => candidate.id === entry.rowId);
+              return (
+                <InvalidAskCard
+                  interaction={entry.interaction}
+                  agentDisplayName={row?.label ?? entry.interaction.node_id}
+                  nodeId={entry.interaction.node_id}
+                />
+              );
+            }
+            const requestId = entry.interaction.tool_use_id;
+            const row = rows.find(candidate => candidate.id === entry.rowId);
+            return (
+              <AskCard
+                interaction={entry.interaction}
+                questions={questions}
+                presentation={resolveAskCardPresentation({
+                  interaction: entry.interaction,
+                  action: actionStates[requestId],
+                  nodeStatus: visibleNodeStates.find(
+                    state => state.nodeId === entry.interaction.node_id
+                  )?.status,
+                  nodeError: visibleNodeStates.find(
+                    state => state.nodeId === entry.interaction.node_id
+                  )?.error,
+                })}
+                viewerIsStarter={viewerIsStarter}
+                starterDisplayName={starterDisplayName}
+                agentDisplayName={row?.label ?? entry.interaction.node_id}
+                nodeId={entry.interaction.node_id}
+                autoFocus={false}
+                nowMs={Date.now()}
+                mountContext="chat"
+                draft={askDrafts?.[requestId] ?? {}}
+                onDraftChange={(next): void => {
+                  onAskDraftChange?.(requestId, next);
+                }}
+                onSubmit={(body): void => {
+                  void onSubmitAsk(requestId, body);
+                }}
+                onDecline={(): void => {
+                  void onSubmitAsk(requestId, { decline: true });
+                }}
+              />
+            );
+          }}
+        />
+      </div>
+      <RunChatComposer
+        value={chatDraft}
+        onValueChange={setChatDraft}
+        onSubmit={handleChatSubmit}
+        sending={chatSending}
+        disabledReason={composerDisabledReason}
+        error={chatSendError}
       />
-      {roomFooter}
     </div>
   );
 
-  // A narrow-but-not-single viewport stacks the room under the graph/logs
-  // pane by height. That split still resizes by drag, unrelated to the node
-  // panel's own fixed width, and keeps its existing percentage layout.
-  if (mode === 'split' && stacked && roomOpen) {
-    const handleLayoutChanged = (layout: Record<string, number>): void => {
-      const roomSize = layout['legacy-run-room'];
-      if (typeof roomSize !== 'number') return;
-      onRoomRatioChange(clampRoomRatio(roomSize));
-    };
+  const historyRows =
+    selectedRow === null ? [] : rows.filter(row => row.nodeId === selectedRow.nodeId);
+  const tabs = (
+    <NodeColumnTabs
+      tab={tab}
+      onTabChange={(next): void => {
+        onTabChange?.(next);
+      }}
+      live={selectedRow !== null && isLiveRowStatus(selectedRow.status)}
+      historyCount={historyRows.length}
+      nodeOpen={roomOpen}
+      runTabs={runTabs}
+    />
+  );
+  const nodeTabActive = !isRunTab(tab);
+  const selectedDefinition =
+    selectedRow === null ? undefined : findDefinitionNode(definitionNodes, selectedRow.nodeId);
 
-    return (
-      <div ref={paneRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <ResizablePanelGroup
-          orientation="vertical"
-          className="min-h-0 flex-1"
-          defaultLayout={{
-            'legacy-run-view': 100 - clampRoomRatio(roomRatio),
-            'legacy-run-room': clampRoomRatio(roomRatio),
+  const nodeTabBody =
+    selectedRow === null ? null : tab === 'history' ? (
+      <div className="min-h-0 flex-1 overflow-auto">
+        <NodeRunList
+          rows={historyRows}
+          selectedRowId={selectedRow.id}
+          onSelect={(row): void => {
+            // A History pick shows that execution's transcript, as in the prototype.
+            handleLogRowSelect(row);
+            onTabChange?.('stream');
           }}
-          onLayoutChanged={handleLayoutChanged}
+        />
+      </div>
+    ) : tab === 'output' ? (
+      <div className="min-h-0 flex-1 overflow-auto px-6 py-4">
+        <SectionLabel>Output</SectionLabel>
+        {((): React.ReactElement => {
+          const text = selectNodeStdout(events, selectedRow).text;
+          return text === null || text === '' ? (
+            <p className="mt-2 text-sm text-text-secondary">This node has no output yet.</p>
+          ) : (
+            <div className="mt-2 max-w-[60ch] text-base leading-[1.55] whitespace-pre-wrap">
+              {text}
+            </div>
+          );
+        })()}
+      </div>
+    ) : tab === 'raw' ? (
+      <div className="min-h-0 flex-1 overflow-auto px-6 py-4">
+        <pre className="bg-code-bg p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap text-code-fg">
+          {JSON.stringify(
+            { state: selectedNodeState ?? null, definition: selectedDefinition ?? null },
+            null,
+            2
+          )}
+        </pre>
+      </div>
+    ) : null;
+
+  const nodeColumn = (
+    <div
+      data-testid="node-column"
+      className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background"
+    >
+      {selectedRow === null ? (
+        <>
+          {tabs}
+          {nodeTabActive ? <RoomPlaceholder>Select a node</RoomPlaceholder> : null}
+        </>
+      ) : (
+        <div
+          id="legacy-run-room"
+          data-testid="legacy-node-room"
+          className={cn(
+            'flex min-w-0 flex-col overflow-hidden',
+            tab === 'stream' ? 'min-h-0 flex-1' : 'flex-none'
+          )}
         >
-          <PercentResizablePanel
-            id="legacy-run-view"
-            className="flex min-h-0 flex-col"
-            defaultSize={sizes.view.defaultSize}
-            minSize={sizes.view.minSize}
-          >
-            {wrappedLeft}
-          </PercentResizablePanel>
-          <ResizableHandle withHandle aria-label="Resize node room" />
-          <PercentResizablePanel
-            id="legacy-run-room"
-            className="min-h-0 min-w-0 overflow-hidden"
-            style={{ overflow: 'hidden' }}
-            defaultSize={sizes.room.defaultSize}
-            minSize={sizes.room.minSize}
-            maxSize={sizes.room.maxSize}
-          >
-            {roomPane}
-          </PercentResizablePanel>
-        </ResizablePanelGroup>
+          {roomHeader}
+          <LegacyNodeRoom
+            runId={runId}
+            row={selectedRow}
+            loadMessages={loadMessages}
+            definitionNodes={definitionNodes}
+            definitionPending={definitionPending}
+            events={events}
+            runStatus={runStatus}
+            approval={approval}
+            onApprove={onApprove}
+            onReject={onReject}
+            pendingInteractions={pendingInteractions}
+            ownsUnscopedInteractions={ownsUnscopedInteractions}
+            viewerIsStarter={viewerIsStarter}
+            starterDisplayName={starterDisplayName}
+            actionStates={actionStates}
+            onSubmitAsk={onSubmitAsk}
+            nodeState={selectedNodeState}
+            followingLive={followingLive}
+            headerModel={headerModel}
+            headerOptions={headerOptions}
+            executionCount={executionCount}
+            runOfTotal={runOfTotal}
+            onSelectRow={onSelectExecution}
+            finishedIteration={finishedIteration}
+            nodeTerminal={nodeTerminal}
+            idleAwaitExpired={idleAwaitExpired}
+            nodeExecutionKey={nodeExecutionKey}
+            onClose={onCloseRoom}
+            closeLabel={mode === 'single' ? 'Back' : 'Close'}
+            scopeKey={scopeKey}
+            initialScrollTop={initialScrollTop}
+            onScrollTopChange={onScrollTopChange}
+            askDrafts={askDrafts}
+            onAskDraftChange={onAskDraftChange}
+            onRunSettleHint={onRunSettleHint}
+            terminalEdgeKick={terminalEdgeKick}
+            tabs={tabs}
+            showBody={tab === 'stream'}
+          />
+          {roomFooter}
+        </div>
+      )}
+      {nodeTabBody}
+      {mountedRunTabs.map(runTab => (
+        <div
+          key={runTab}
+          role="tabpanel"
+          aria-labelledby={`node-column-tab-${runTab}`}
+          hidden={runTab !== tab}
+          className={runTab === tab ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'hidden'}
+        >
+          {runTab === 'conversation' ? conversationPane : renderRunTab?.(runTab)}
+        </div>
+      ))}
+    </div>
+  );
+
+  const runColumn = (
+    <div
+      id="legacy-run-view"
+      data-testid="run-column"
+      className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border"
+    >
+      {runHeader}
+      <div className="flex flex-none items-center justify-between gap-3 px-6 pt-3 pb-2">
+        <div className="flex items-baseline gap-3">
+          <SectionLabel>Nodes</SectionLabel>
+          <span className="text-[11px] tracking-[0.08em] text-text-secondary uppercase">
+            {String(doneCount)} of {String(topLevelIds.length)} done
+          </span>
+        </div>
+        {onNodeViewChange !== undefined ? (
+          <Segmented
+            aria-label="Node view"
+            value={nodeView}
+            onValueChange={onNodeViewChange}
+            options={[
+              { value: 'list', label: 'List' },
+              { value: 'graph', label: 'Graph' },
+            ]}
+          />
+        ) : null}
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-6 pb-6">{runColumnBody}</div>
+    </div>
+  );
+
+  // A narrow pane shows one column at a time: the node column once a node is
+  // open, with a Back control in its header, else the run column.
+  if (mode === 'single') {
+    return (
+      <div ref={paneRef} className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)]">
+        {roomOpen ? nodeColumn : runColumn}
       </div>
     );
   }
 
-  // The approved node panel is a fixed 460px, not a user-resizable share of
-  // the window, and carries no drag handle; only the room's own close
-  // affordance changes its width, by leaving the split entirely.
   return (
-    <div ref={paneRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1" style={{ overflow: 'hidden' }}>
-        <div
-          id="legacy-run-view"
-          // The `hidden` attribute alone does not hide a `.flex` element:
-          // Tailwind preflight gives `[hidden]` zero specificity, so the
-          // display utility must change as well.
-          className={
-            mode === 'single' && roomOpen
-              ? 'hidden min-h-0 min-w-0 flex-1 flex-col'
-              : 'flex min-h-0 min-w-0 flex-1 flex-col'
-          }
-          hidden={mode === 'single' && roomOpen}
-        >
-          {wrappedLeft}
-        </div>
-        {roomOpen ? (
-          <div
-            id="legacy-run-room"
-            className="min-h-0 min-w-0 overflow-hidden"
-            style={
-              mode === 'single' ? { width: '100%' } : { width: LEGACY_ROOM_WIDTH_PX, flexShrink: 0 }
-            }
-          >
-            {roomPane}
-          </div>
-        ) : null}
-      </div>
+    <div
+      ref={paneRef}
+      className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(260px,0.85fr)_minmax(0,1.4fr)]"
+    >
+      {runColumn}
+      {nodeColumn}
     </div>
   );
 }

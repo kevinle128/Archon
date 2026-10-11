@@ -17,6 +17,7 @@ export const NODE_KIND_CODE: Readonly<Record<NodeBodyKind, string>> = {
 };
 
 export interface StepNode {
+  /** Runtime node id. A loop-group body node is `<groupId>.<bodyId>`, as the executor names it. */
   id: string;
   node: DagNode;
   kind: NodeBodyKind;
@@ -35,14 +36,18 @@ export interface NodeStep {
   parallel: boolean;
 }
 
-function toStepNode(node: DagNode): StepNode {
+function toStepNode(node: DagNode, groupId?: string): StepNode {
   const kind = nodeBodyKind(node);
+  const id = groupId === undefined ? node.id : `${groupId}.${node.id}`;
   return {
-    id: node.id,
+    id,
     node,
     kind,
     code: NODE_KIND_CODE[kind],
-    children: node.loop_group !== undefined ? node.loop_group.nodes.map(toStepNode) : [],
+    children:
+      node.loop_group !== undefined
+        ? node.loop_group.nodes.map(child => toStepNode(child, id))
+        : [],
   };
 }
 

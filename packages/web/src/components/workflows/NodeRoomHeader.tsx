@@ -5,8 +5,6 @@
  * duration, and retry-count stay off the chrome so a missing field never
  * renders a placeholder.
  */
-import type { CSSProperties } from 'react';
-
 import {
   effectiveNodeRoomStatus,
   headerMetaLine,
@@ -52,45 +50,20 @@ export interface NodeRoomHeaderProps {
   terminalOutcome?: SteeringNodeOutcome | null;
 }
 
-interface StatusPillStyle {
-  className: string;
-  style: CSSProperties;
-}
-
-// `--running` has no Legacy equivalent in index.css (it is Console-only, in
-// theme.css) — `--accent-bright` is Legacy's own bright blue, already used
-// for this exact tone's border, and is the nearest existing token to it.
-// Every tone renders 10px/700 with no dot, matching the mockup room header
-// pill (measured against the live mockup, not the run-level page header
-// pill it was once confused with). `lineHeight: 'normal'` matches the
-// mockup's pill exactly: the mockup's own markup sets no line-height on the
-// pill, so the browser's own default for its font wins there (measured 18px
-// tall); without this override the inherited cascade left the app's pill at
-// 21px. The border colors are the mockup's own flat, per-tone literals — a
-// solid color, not an alpha-blend of the bright accent over the surface —
-// so they render exactly the same regardless of what's behind the pill.
-const STATUS_PILL_STYLE: Readonly<Record<string, StatusPillStyle>> = {
-  accent: {
-    className: 'text-[10px] font-bold text-accent-bright',
-    style: { borderColor: 'var(--status-pill-border-running)', lineHeight: 'normal' },
-  },
-  warning: {
-    className: 'text-[10px] font-bold text-warning',
-    style: { borderColor: 'var(--status-pill-border-warning)', lineHeight: 'normal' },
-  },
-  success: {
-    className: 'text-[10px] font-bold text-success',
-    style: { borderColor: 'var(--status-pill-border-success)', lineHeight: 'normal' },
-  },
-  error: {
-    className: 'text-[10px] font-bold text-error',
-    style: { borderColor: 'var(--status-pill-border-error)', lineHeight: 'normal' },
-  },
+/** Status text color per pill tone. A tone of null reads as the pending tone. */
+const PILL_TONE_CLASS: Readonly<Record<string, string>> = {
+  accent: 'text-status-running',
+  warning: 'text-status-waiting',
+  success: 'text-status-done',
+  error: 'text-status-failed',
 };
 
-const NEUTRAL_PILL_STYLE: StatusPillStyle = {
-  className: 'text-[10px] font-bold text-text-secondary',
-  style: { borderColor: 'var(--border)', lineHeight: 'normal' },
+/** Glyph per pill tone, from the shared status language. */
+const PILL_TONE_GLYPH: Readonly<Record<string, string>> = {
+  accent: '▶',
+  warning: '!',
+  success: '✓',
+  error: '✕',
 };
 
 export function NodeRoomHeader({
@@ -110,7 +83,6 @@ export function NodeRoomHeader({
 }: NodeRoomHeaderProps): React.ReactElement {
   const effectiveStatus = effectiveNodeRoomStatus(model.status, terminalOutcome);
   const pill = statusPill(effectiveStatus, recoveryRequired);
-  const pillStyle = pill.tone === null ? NEUTRAL_PILL_STYLE : STATUS_PILL_STYLE[pill.tone];
   const metaLine = headerMetaLine({
     startedAt: model.startedAt,
     status: effectiveStatus,
@@ -125,70 +97,72 @@ export function NodeRoomHeader({
     recoveryRequired,
   });
 
+  const toneClass = pill.tone === null ? 'text-status-pending' : PILL_TONE_CLASS[pill.tone];
+  const glyph = pill.tone === null ? '○' : PILL_TONE_GLYPH[pill.tone];
+
   return (
-    <header className="sticky top-0 z-10 min-w-0 overflow-hidden border-b border-border bg-background">
-      <div className="flex min-w-0 flex-col gap-2 px-8 py-4">
-        <div className="flex min-w-0 items-center gap-2">
+    <header className="sticky top-0 z-10 min-w-0 overflow-hidden bg-background">
+      <div className="flex min-w-0 items-start gap-3 px-6 pt-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {kindChip !== null ? (
-            <span className="shrink-0 font-mono text-xs font-normal text-text-tertiary">
-              {kindChip.label}
-            </span>
+            <span className="text-xs text-text-secondary">{kindChip.label}</span>
           ) : null}
-          <div className="min-w-0 truncate text-xl font-medium text-text-primary">
-            {model.nodeLabel}
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+            <h2 className="min-w-0 text-xl font-extrabold break-words text-text-primary">
+              {model.nodeLabel}
+            </h2>
+            <span
+              data-slot="node-status"
+              data-tone={pill.tone ?? 'pending'}
+              className={cn('shrink-0 text-[13px] font-bold whitespace-nowrap', toneClass)}
+            >
+              <span aria-hidden="true">{glyph} </span>
+              {pill.label}
+            </span>
           </div>
-          <span
-            className={cn(
-              'inline-flex shrink-0 items-center rounded-full border px-2 py-0.5',
-              pillStyle.className
-            )}
-            style={pillStyle.style}
-          >
-            {pill.label}
-          </span>
-          <button
-            type="button"
-            aria-label={closeLabel}
-            className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center rounded-[10px] text-[13px] text-text-tertiary transition-colors duration-150 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
-            onClick={onClose}
-          >
-            ✕
-          </button>
+          {metaLine !== null ? (
+            <div className="truncate text-xs text-text-secondary">{metaLine}</div>
+          ) : null}
+          {options.length > 1 || model.isLoopIteration ? (
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className="shrink-0 text-[11px] text-text-secondary">execution</span>
+              {options.length > 1 ? (
+                <>
+                  <select
+                    aria-label="Execution"
+                    className="h-7 min-w-0 max-w-[12rem] flex-[0_1_12rem] truncate border border-line-strong bg-card px-1.5 text-xs text-text-primary"
+                    value={selectedRowId}
+                    onChange={(event): void => {
+                      onSelectRow(event.currentTarget.value);
+                    }}
+                  >
+                    {options.map(option => (
+                      <option key={option.rowId} value={option.rowId}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="shrink-0 text-[11px] text-text-secondary">
+                    of {executionCount}
+                    {model.loopMaxIterations !== null
+                      ? ` · max ${String(model.loopMaxIterations)}`
+                      : ''}
+                  </span>
+                </>
+              ) : (
+                <span className="shrink-0 text-xs text-text-primary">{model.executionLabel}</span>
+              )}
+            </div>
+          ) : null}
         </div>
-        {metaLine !== null ? (
-          <div className="truncate text-xs text-text-tertiary">{metaLine}</div>
-        ) : null}
-        {options.length > 1 || model.isLoopIteration ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <span className="shrink-0 text-[10.5px] text-text-tertiary">execution</span>
-            {options.length > 1 ? (
-              <>
-                <select
-                  aria-label="Execution"
-                  className="min-w-0 max-w-[12rem] flex-[0_1_12rem] truncate rounded border border-border bg-surface-elevated px-1.5 py-0.5 text-xs text-text-primary"
-                  value={selectedRowId}
-                  onChange={(event): void => {
-                    onSelectRow(event.currentTarget.value);
-                  }}
-                >
-                  {options.map(option => (
-                    <option key={option.rowId} value={option.rowId}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="shrink-0 text-[10.5px] text-text-tertiary">
-                  of {executionCount}
-                  {model.loopMaxIterations !== null
-                    ? ` · max ${String(model.loopMaxIterations)}`
-                    : ''}
-                </span>
-              </>
-            ) : (
-              <span className="shrink-0 text-xs text-text-primary">{model.executionLabel}</span>
-            )}
-          </div>
-        ) : null}
+        <button
+          type="button"
+          aria-label={closeLabel}
+          className="inline-flex h-8 min-w-8 shrink-0 cursor-pointer items-center justify-center px-2 text-[13px] font-semibold text-text-secondary hover:text-text-primary"
+          onClick={onClose}
+        >
+          {closeLabel === 'Back' ? '← Back' : '✕'}
+        </button>
       </div>
     </header>
   );

@@ -930,7 +930,7 @@ describe('TodoStrip markup', () => {
     expect(sectionTag).toContain('aria-label="Todo"');
     expect(sectionTag).toContain('flex-none');
     expect(sectionTag).toContain('border-b');
-    expect(sectionTag).toContain('bg-surface-elevated');
+    expect(sectionTag).toContain('bg-surface');
     expect(sectionTag).not.toContain('rounded');
     // The strip is not a landmark: the room region owns the landmark.
     expect(markup.match(/role="region"/g)).toBeNull();
@@ -940,7 +940,7 @@ describe('TodoStrip markup', () => {
     expect(buttonTag).toContain('aria-expanded="false"');
     expect(buttonTag).toContain('w-full');
     expect(buttonTag).toContain('min-h-[24px]');
-    expect(buttonTag).toContain('px-[10px]');
+    expect(buttonTag).toContain('px-6');
     expect(buttonTag).toContain('py-[6px]');
     expect(buttonTag).toContain('gap-2');
     expect(buttonTag).toContain('whitespace-nowrap');

@@ -27,12 +27,14 @@ export function WorkflowInvoker({ codebaseId }: WorkflowInvokerProps): React.Rea
   });
 
   if (isErrorWorkflows) {
-    return <p className="mx-1 text-[10px] text-error">Failed to load workflows — retrying</p>;
+    return <p className="text-xs text-error">Failed to load workflows. Retrying.</p>;
   }
 
   const workflows = workflowsResult?.workflows;
   const recommendedNames = workflowsResult?.recommended ?? [];
-  if (!workflows || workflows.length === 0) return null;
+  if (!workflows || workflows.length === 0) {
+    return <p className="text-sm text-text-secondary">No workflows available for this project.</p>;
+  }
 
   // Partition into recommended (declared order) + rest. Empty recommended → flat options.
   // The helper keys on `name`, so flatten each entry briefly before partitioning.
@@ -71,16 +73,17 @@ export function WorkflowInvoker({ codebaseId }: WorkflowInvokerProps): React.Rea
   };
 
   return (
-    <div className="flex flex-col gap-1.5 mx-1">
+    <div className="grid gap-3">
       <select
         value={selectedWorkflow ?? ''}
         onChange={(e): void => {
           setSelectedWorkflow(e.target.value || null);
           setError(null);
         }}
-        className="w-full rounded-md border border-border bg-surface-elevated px-2 py-1.5 text-xs text-text-secondary focus:outline-none focus:ring-1 focus:ring-accent"
+        aria-label="Workflow"
+        className="h-8 w-full border border-line-strong bg-card px-2 text-[13px] text-text-primary"
       >
-        <option value="">Run workflow...</option>
+        <option value="">Choose a workflow</option>
         {recommendedEntries.length > 0 ? (
           <>
             <optgroup label="Recommended">
@@ -109,7 +112,7 @@ export function WorkflowInvoker({ codebaseId }: WorkflowInvokerProps): React.Rea
         )}
       </select>
       {selectedWorkflow && (
-        <div className="flex flex-col gap-1.5">
+        <div className="grid gap-2">
           <input
             type="text"
             value={message}
@@ -122,24 +125,27 @@ export function WorkflowInvoker({ codebaseId }: WorkflowInvokerProps): React.Rea
                 void handleRun();
               }
             }}
-            placeholder="Enter message..."
+            placeholder="Input for the workflow"
             name="workflow-message"
             autoComplete="off"
             disabled={running}
-            className="w-full rounded-md border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-tertiary focus:border-primary focus:outline-none disabled:opacity-50"
+            aria-label="Workflow input"
+            className="h-8 w-full border border-line-strong bg-card px-2 text-[13px] text-text-primary placeholder:text-text-tertiary disabled:opacity-50"
             autoFocus
           />
-          <div className="flex items-center justify-end gap-2">
-            {error && <span className="text-[10px] text-error flex-1 line-clamp-1">{error}</span>}
+          <div className="flex items-center justify-end gap-3">
+            {error && (
+              <span className="line-clamp-2 flex-1 text-xs font-semibold text-error">{error}</span>
+            )}
             <button
               onClick={(): void => {
                 void handleRun();
               }}
               disabled={running || !message.trim()}
-              className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:bg-accent-hover transition-colors disabled:opacity-50"
+              className="inline-flex h-8 items-center gap-2 bg-primary px-4 text-[13px] font-semibold text-primary-foreground hover:bg-accent-hover disabled:opacity-50"
             >
-              {running && <Loader2 className="h-3 w-3 animate-spin" />}
-              {running ? 'Starting...' : 'Run'}
+              {running && <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />}
+              {running ? 'Starting…' : 'Start run →'}
             </button>
           </div>
         </div>

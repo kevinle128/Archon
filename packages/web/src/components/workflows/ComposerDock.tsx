@@ -274,18 +274,21 @@ export interface ComposerDockProps {
 }
 
 const FIELD_CLASSES = cn(
-  'min-h-[56px] w-full resize-none rounded-md border border-border bg-surface-inset',
-  'px-[10px] py-[8px] font-sans text-[13px] leading-[1.45] text-text-primary',
+  'min-h-[40px] w-full resize-none border border-line-strong bg-background',
+  'px-3 py-2 font-sans text-[13px] leading-[1.45] text-text-primary placeholder:text-text-tertiary',
   'focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2'
 );
 
 const CONTROL_BASE_CLASSES = cn(
-  'min-h-[32px] flex-none rounded-md border bg-transparent px-3 font-mono text-[11px]',
+  'min-h-[40px] flex-none border bg-card px-4 text-[13px] font-semibold',
   'transition-colors motion-reduce:transition-none',
   'focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2'
 );
-const CONTROL_ENABLED_CLASSES = 'border-border-bright text-text-primary hover:bg-surface-inset';
+const CONTROL_ENABLED_CLASSES = 'border-line-strong text-text-primary hover:bg-selection';
 const CONTROL_DISABLED_CLASSES = 'border-border text-text-secondary';
+/** The send control is the dock's primary action: an accent fill while it can send. */
+const PRIMARY_ENABLED_CLASSES =
+  'border-primary bg-primary text-primary-foreground hover:bg-accent-hover';
 
 const BLOCKED_REASON_CLASSES =
   'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary';
@@ -1683,7 +1686,7 @@ export function ComposerDock({
           }
           focusInsideRef.current = false;
         }}
-        className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]"
+        className="flex-none border-t-2 border-line-strong bg-background px-6 py-3"
       >
         {idle ? (
           <>
@@ -1785,8 +1788,8 @@ export function ComposerDock({
             onClick={submit}
             className={cn(
               CONTROL_BASE_CLASSES,
-              'min-w-[84px]',
-              canSubmit ? CONTROL_ENABLED_CLASSES : CONTROL_DISABLED_CLASSES
+              'min-w-[96px]',
+              canSubmit ? PRIMARY_ENABLED_CLASSES : CONTROL_DISABLED_CLASSES
             )}
           >
             {idle ? 'Send now' : 'Queue'}
