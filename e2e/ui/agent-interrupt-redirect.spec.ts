@@ -735,7 +735,6 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(toolRow.locator('summary')).toContainText('interrupted', {
         timeout: T.medium,
       });
-      await expect(toolRow.locator('summary')).toContainText('⚠');
       interruptedToolId = await toolRow.getAttribute('data-tool-id');
       expect(interruptedToolId).not.toBeNull();
       await waitForSubState(page, run.runId, QUEUE_GUIDANCE_NODE, 'idle-after-interrupt');
@@ -801,7 +800,7 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(interruptedToolId).not.toBeNull();
       await expect(
         room.locator(`[data-tool-id="${interruptedToolId}"]`).locator('summary')
-      ).toContainText('⚠');
+      ).toContainText('interrupted');
       await expect(stopButton(room)).toBeVisible();
       await expect(room.locator('[data-operator-row]')).toHaveCount(3, { timeout: T.xlong });
       await expect(room.getByText(/resumed echo: first/).first()).toBeVisible({
@@ -1431,7 +1430,7 @@ for (const surface of ['console', 'legacy'] as const) {
       // the new turn's rows.
       await expect(
         room.locator(`[data-tool-id="${interruptedToolId}"]`).locator('summary')
-      ).toContainText('⚠');
+      ).toContainText('interrupted');
       await captureEvidence(room, `us-005-${surface}-460-generating-again.png`, testInfo);
       const afterGrow = await lastRowVisibility(room, surface);
       expect(afterGrow, 'last transcript row reachable after dock shrink').toBe('ok');

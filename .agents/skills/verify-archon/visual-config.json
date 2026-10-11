@@ -81,7 +81,7 @@
         "row-closed"
       ],
       "source": "claude-design/design_handoff_archon_redesign/README.md#1-runs-workspace-archon-runs-workspacedchtml",
-      "expected": "A tool call is one bordered row on the muted surface: caret, then the tool name in heavy weight, then the monospace target with ellipsis, then right-aligned facts. Error facts use the failed color in bold. Compare style and order, not fixture text."
+      "expected": "A tool call is one bordered row on the muted surface: caret, then the tool name in heavy weight, then the monospace target with ellipsis, then right-aligned facts; no status icon. Error facts use the failed color in bold. Compare style and order, not fixture text."
     },
     {
       "id": "raw-disclosure",
@@ -97,7 +97,7 @@
         "ask-pending"
       ],
       "source": "claude-design/design_handoff_archon_redesign/README.md#1-runs-workspace-archon-runs-workspacedchtml",
-      "expected": "The Ask card has a 2px waiting-color border and a filled waiting-color header with white 'THE AGENT IS ASKING YOU' text and a large heavy question. Options are rows with a letter A/B/C and a label; the selected option uses the selection tint. A footer holds the note field and the primary Submit or answer button. Nothing is clipped."
+      "expected": "The Ask card has a 2px waiting-color border and a filled waiting-color header with the white asking label and, for a single question, the question in large heavy white text. Options are rows with a letter A/B/C and a label; the selected option uses the selection tint. A footer holds the primary Submit button. Nothing is clipped."
     },
     {
       "id": "assistant-report",
@@ -113,7 +113,7 @@
         "runtime-graph"
       ],
       "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/README.md#the-graph-renderer",
-      "expected": "The runtime graph fills the run view with status-marked node cards, connecting edges, and zoom and fit controls; no minimap is present. Compare structure and controls, not node count or labels."
+      "expected": "The runtime graph fills the run column of the Runs workspace with readable status-marked node cards (fit stops at a readable zoom and the rest is reached by panning), connecting edges, and zoom and fit controls; no minimap is present. Compare structure, readability and controls, not node count or labels."
     },
     {
       "id": "queue-anatomy",
@@ -161,9 +161,10 @@
   "zoom": 1,
   "comparison": "Side-by-side review plus measured geometry; fixture text, node counts and durations differ, so no single pixel threshold is valid.",
   "accepted_differences": [
-    "The handoff Runs workspace has no graph view; the runtime graph keeps the earlier run-view mockup as its reference.",
+    "The handoff Runs workspace has no graph view; the product keeps the Graph view as a List/Graph switch in the run column (user decision), so the graph lives in that column and keeps the earlier run-view mockup as its structural reference.",
     "The handoff shows queued guidance as operator rows; the product keeps the approved queue band from the steering handoff, so the queue reference is that handoff.",
     "The product's opened tool row shows its payload behind a Raw control; the handoff shows the body directly.",
+    "The handoff Ask note field has no API: an answer carries only option values or a decline, and free text goes through the Other option. The footer therefore has no note field and keeps the Submit label; the product adds Decline and View payload.",
     "Captures use the light theme, as the handoff does; the dark theme (midnight palette) is not part of this comparison.",
     "Prototype-only sample values (durations, costs, tokens), provider-specific per-item Send now, and unrelated nodes are excluded.",
     "References are resized to the measured region width; browser and region dimensions are recorded separately.",

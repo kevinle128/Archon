@@ -244,6 +244,12 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
             region.style.width = `${width}px`;
             region.style.maxWidth = `${width}px`;
           }, actualGeometry.width);
+          if (state === 'runtime-graph') {
+            // The mockup lays its graph out for the full width; refit it to the
+            // narrowed region so the nodes stay inside the reference capture.
+            await reference.getByRole('button', { name: 'Fit', exact: true }).first().click();
+            await expect(reference.locator('.gnode').first()).toBeInViewport();
+          }
           await expected.scrollIntoViewIfNeeded();
           await reference.evaluate(async (): Promise<void> => {
             await document.fonts.ready;

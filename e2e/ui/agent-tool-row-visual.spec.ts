@@ -643,7 +643,7 @@ const surface = 'legacy' as const;
     expect(hoverBg, 'hover uses --surface-hover').toBe(hoverToken.resolved);
     await page.mouse.move(0, 0);
 
-    // Geometry computed styles — summary, chevron, glyph, chip.
+    // Geometry computed styles — summary, chevron, name (no status glyph).
     const geometry = await summary.evaluate(el => {
       const view = el.ownerDocument.defaultView;
       const cs = view?.getComputedStyle(el);
@@ -668,8 +668,7 @@ const surface = 'legacy' as const;
         borderRadius: cs?.borderRadius ?? '',
         minHeight: cs?.minHeight ?? '',
         chevron: metric(kids[0]),
-        glyph: metric(kids[2]),
-        chip: metric(kids[3]),
+        chip: metric(kids[2]),
       };
     });
     expect(geometry.fontSize).toBe('12px');
@@ -681,8 +680,6 @@ const surface = 'legacy' as const;
     expect(geometry.minHeight).toBe('32px');
     expect(geometry.chevron.fontSize).toBe('10px');
     expect(geometry.chevron.width).toBe(9);
-    expect(geometry.glyph.fontSize).toBe('12px');
-    expect(geometry.glyph.fontWeight).toBe('700');
     expect(geometry.chip.fontSize).toBe('13px');
     expect(geometry.chip.fontWeight).toBe('800');
 
@@ -1248,10 +1245,9 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones meet their WCAG floors
   // The real fixture renders a `file` row only; tones absent from it are
   // measured as resolved production style values, not claimed in screenshots.
   const TONES = {
-    'search/glob chip text': 'color-mix(in oklch, var(--node-prompt) 70%, var(--text-primary))',
+    'tool name text': 'var(--text-primary)',
     'nonzero exit digits': 'color-mix(in oklch, var(--error) 75%, var(--text-primary))',
     'focus outline': 'var(--accent-bright)',
-    'succeeded glyph': 'var(--success)',
     'neutral badge text': 'var(--text-secondary)',
   } as const;
   const evidence: Record<string, Record<string, number | string>> = {};
@@ -1273,18 +1269,6 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones meet their WCAG floors
       surfaceEvidence[`${label} resolved`] = fg.resolved;
       surfaceEvidence[`${label} vs rest`] = Number(rest.toFixed(2));
       surfaceEvidence[`${label} vs hover`] = Number(hover.toFixed(2));
-      if (label === 'succeeded glyph') {
-        // Product decision: the glyph uses the exact handoff done color
-        // (#16a34a), which is below 3:1 on the hover tint. Check the exact
-        // color instead of a contrast floor; the ratios stay in the evidence.
-        expect(fg.c, `${surface} ${label} is the handoff done color`).toEqual({
-          r: 22,
-          g: 163,
-          b: 74,
-          a: 1,
-        });
-        continue;
-      }
       // The focus outline is a graphic, so the WCAG 1.4.11 floor of 3:1 applies.
       const floor = label === 'focus outline' ? 3 : 4.5;
       expect(rest, `${surface} ${label} vs rest ≥${String(floor)}:1`).toBeGreaterThanOrEqual(floor);

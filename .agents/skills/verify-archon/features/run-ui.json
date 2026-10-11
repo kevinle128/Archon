@@ -195,7 +195,7 @@
       "id": "ui.visual",
       "runner": {
         "kind": "browser",
-        "id": "visual-32e4fb427e036ff7fb101b54f623225ac3d81841476879e607a8d3f7c07ca7df"
+        "id": "visual-ad63942d258074df12dd2729c97f648c4e85412ac10f46a5d08fd140e70cf19a"
       },
       "prerequisites": [
         "Bun and installed target dependencies",
