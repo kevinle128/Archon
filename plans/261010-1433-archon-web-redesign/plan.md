@@ -1,7 +1,7 @@
 ---
 title: 'Archon web UI redesign: Runs workspace and navy/blue shell'
 description: 'Rebuild packages/web on the handoff design: top-bar shell, project filter, three-column Runs workspace, restyled Workflows, Chat, Builder, Settings and Login, with all current features kept and dark mode kept.'
-status: in-progress
+status: done
 priority: P2
 effort: 17d
 branch: feat/web-runs-workspace-redesign

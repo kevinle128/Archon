@@ -1,8 +1,8 @@
 # Phase 08: e2e sweep, verify-archon, docs, full validation
 
-Status: in progress. Depends on: 03, 04, 05, 06, 07. Effort: 1.5d.
+Status: done. Depends on: 03, 04, 05, 06, 07. Effort: 1.5d.
 
-Delivery notes (so far):
+Delivery notes:
 
 - Full `test:ui`: 155 passed, 2 skipped, 2 failed before the last fix. The failures were a real regression: an `after:content` arrow put "→" into the accessible name of the Ask Submit and Start run buttons; the arrows are now `aria-hidden` spans. `test:ui:hitl`: 33 passed, 2 skipped after the fix.
 - Real bugs found by the sweep and fixed: loop-group body nodes now use their runtime ids (`<group>.<body>`) in the step list, so deep links and status match; the Needs you button opens `/runs?filter=needs` and the list keeps the filter; one `h1` per screen (chat thread title and run title are `h2`); delete-diff text and line numbers clear 4.5:1 (derived tokens, not handoff colors).
@@ -11,7 +11,14 @@ Delivery notes (so far):
 - Surface id stays `legacy` in the config: the run view keeps its `legacy-*` element ids, so renaming the surface would only rename evidence files.
 - Docs: `adapters/web.md` describes the top bar, Runs workspace, Chat, Workflows, Settings sections, run routes and redirects, and the Builder; `guides/authoring-workflows.md` points stuck runs at the Runs workspace.
 
-Remaining: transcript stream-row restyle (time column, 14.5px agent text, handoff tool rows) with its pinned specs, the fidelity fixes from the screenshot pass, and the kept-features walk.
+- Transcript restyle: stream rows with a time column (from each row's `created_at`), 14.5px agent text, handoff tool rows (bordered, heavy name, mono target), dark code bodies with the dark palette scoped inside them, lettered Ask options, kind · model in the node header. Pinned specs moved to the handoff values (row summary band 30–36px, square corners, `--code-bg` panels).
+- The sweep found one more real bug: a guidance draft typed inside the save debounce was lost when the dock remounted. Leaving a scope now flushes the save and the next dock restores the text.
+- Screenshot pass (1440×900 and 1024×768, light and dark): fixed raw workflow names, square environment picker, short chat row times, the Providers and Usage labels, square pills and arbitrary radii. Accepted differences: the run view keeps the List/Graph switch, the run tabs beside the node tabs, the Close control and the meta line in the node header, the Awaiting input jump button, the Decline and payload controls on the Ask card, and the Assistant defaults section (all kept features).
+- Kept-features walk (code check of every row in the phase 02–07 tables): all reachable. Run header cost and env rows, the More menu (Open chat, Plannotator, IDE, delete), Load more, chat lock indicator and conversation actions, builder undo/redo, validation and quick add, project env vars and worktrees are wired.
+- verify-archon `ui.visual` (codex image review) first failed on fidelity findings, all fixed: the tool row lost its status glyph (caret, name, target, facts), a single Ask question sits in the filled header, the run-column graph fits at 100% so cards stay readable, long route labels are cut to 24 characters, skipped graph cards are dashed and muted instead of faded, and the running card has no glow. The harness refits the mockup graph after narrowing its region. Final verdict: PASS.
+- Accepted difference recorded in the visual config: the handoff Ask note field has no API (answers carry option values or a decline; free text uses Other), so the footer keeps Submit, Decline and View payload.
+- Known, not in scope: in the e2e runtime (no web identity) the Providers section stays on "Loading…" because the provider-keys request does not return; the loading logic is unchanged from before the redesign.
+- Final runs on the last build: `bun run validate` passes; `test:ui:hitl` 33 passed, 2 skipped; full `test:ui` 155 passed, 2 skipped, 2 failed, and both failures (a resize race in two measuring specs) now pass on repeat runs after the fix.
 
 ## Context
 
