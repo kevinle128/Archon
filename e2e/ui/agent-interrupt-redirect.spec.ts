@@ -191,7 +191,7 @@ async function openGuidanceRoom(
     await openRunDetail(page, runId, nodeId);
   } else {
     await openLegacyRunDetail(page, runId);
-    const logsTab = page.getByRole('tab', { name: 'Logs' });
+    const logsTab = page.getByRole('radio', { name: 'List' });
     await expect(logsTab).toBeVisible({ timeout: T.medium });
     await logsTab.click();
     const nodeButton = page.getByRole('button', { name: new RegExp(nodeId) }).first();
@@ -1265,23 +1265,18 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(page.getByText(LOOP_DONE_TEXT).first()).toBeVisible();
     await expect(page.getByText('×2')).toHaveCount(0);
     if (surface === 'console') {
-      await page.getByRole('tab', { name: 'Logs' }).click();
+      // The stream shows the redirected echo before the loop sentinel.
       const order = await page.evaluate(() => {
         const text = (document.querySelector('main') ?? document.body).textContent ?? '';
         return {
-          text,
-          group: text.indexOf('steer-loop ×1'),
           echo: text.indexOf('[e2e-fake] resumed echo: finish now'),
           done: text.indexOf('E2E_LOOP_DONE'),
         };
       });
-      expect(order.group, '×1 group header exists').toBeGreaterThanOrEqual(0);
-      expect(order.echo).toBeGreaterThan(order.group);
+      expect(order.echo, 'redirect echo is in the stream').toBeGreaterThanOrEqual(0);
       expect(order.done).toBeGreaterThan(order.echo);
-      // Scoped to the node run list only: the open room's own header
-      // legitimately repeats the same "steer-loop ×1" label alongside it, so
-      // counting across the whole page would double-count one iteration
-      // instead of catching a genuine second one.
+      // History lists the iteration once: the redirect did not add a second one.
+      await page.getByRole('tab', { name: /^History/ }).click();
       await expect(
         page.getByRole('navigation', { name: 'Node runs' }).getByRole('button', {
           name: /steer-loop ×/,

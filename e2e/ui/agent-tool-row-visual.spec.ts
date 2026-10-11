@@ -48,7 +48,8 @@ const ROOM_NAME = `${HITL_INSPECT_NODE} room`;
 // 460px Legacy, `packages/web/src/lib/room-split-layout.ts`) — the
 // ratio-write path `setRoomWidth` still performs is inert on both surfaces;
 // the measured width always lands on the fixed value regardless of ratio.
-const APP_ROOM_WIDTH: Record<Surface, number> = { console: 520, legacy: 460 };
+/** Narrowest node column the Runs workspace gives a room at the split viewport. */
+const MIN_ROOM_WIDTH = 360;
 // The static-mockup test below (Story 1.1) forces a fixed 460px panel width
 // regardless of surface — it predates the Console/Legacy width split.
 const MOCKUP_PANEL_WIDTH = 460;
@@ -80,7 +81,7 @@ async function openToolRoom(page: Page, surface: Surface, runId: string): Promis
   } else {
     await openLegacyRunDetail(page, runId);
     await expect(page.getByText(/e2e-hitl-run/i).first()).toBeVisible({ timeout: T.medium });
-    const logsTab = page.getByRole('tab', { name: 'Logs' });
+    const logsTab = page.getByRole('radio', { name: 'List' });
     if ((await logsTab.count()) > 0) await logsTab.click();
     await page
       .getByRole('button', { name: new RegExp(HITL_INSPECT_NODE) })
@@ -93,11 +94,6 @@ async function openToolRoom(page: Page, surface: Surface, runId: string): Promis
   await expect(room.locator(SUMMARY).first()).toBeVisible({ timeout: T.medium });
   return room;
 }
-
-const ROOM_PANEL_ID: Record<Surface, string> = {
-  console: 'console-run-room',
-  legacy: 'legacy-run-room',
-};
 
 // --- Story 1.3 family-body gallery ---
 // Browser visual fixtures: deterministic route-fulfilled transcript responses
@@ -211,45 +207,18 @@ async function routeGalleryTranscript(page: Page, runId: string): Promise<void> 
   });
 }
 // Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
-const ROOM_RATIO_MIN = 24;
-const ROOM_RATIO_MAX = 60;
 
 /**
- * Sizes the room region to `APP_ROOM_WIDTH[surface] ± ROOM_TOLERANCE_PX`.
- * Both rooms are fixed pixel widths with no drag handle, so the ratio this
- * writes into the persisted split key is inert on both surfaces — the
- * measured region width always lands on the fixed value; the write is
- * harmless legacy plumbing kept for a minimal diff against this file's
- * pre-fixed-width shape.
+ * Opens the room and returns its width. The room fills the node column, a grid
+ * share of the Runs workspace, so the proof is that it stays readable and never
+ * outgrows its column.
  */
 async function setRoomWidth(page: Page, surface: Surface, runId: string): Promise<number> {
-  const target = APP_ROOM_WIDTH[surface];
-  const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
-  const metrics = await panel.evaluate(el => {
-    const panelRect = el.getBoundingClientRect();
-    const groupRect = el.parentElement?.getBoundingClientRect();
-    return { panel: panelRect.width, group: groupRect?.width ?? 0 };
-  });
-  expect(metrics.group, 'resizable group width').toBeGreaterThan(0);
-  const region = roomRegion(page);
-  const regionWidth = (await region.boundingBox())?.width ?? 0;
-  const inset = metrics.panel - regionWidth;
-  const ratio = Math.min(
-    ROOM_RATIO_MAX,
-    Math.max(ROOM_RATIO_MIN, ((target + inset) / metrics.group) * 100)
-  );
-  await page.evaluate(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
-    },
-    [`archon.run-room.ratio.${surface}`, String(ratio)]
-  );
   const room = await openToolRoom(page, surface, runId);
   const width = (await room.boundingBox())?.width ?? 0;
-  expect(
-    Math.abs(width - target),
-    `measured room width ${String(width)} must land within ${String(target)}±${String(ROOM_TOLERANCE_PX)}`
-  ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+  const column = (await page.getByTestId('node-column').boundingBox())?.width ?? 0;
+  expect(width, `room width ${String(width)} is readable`).toBeGreaterThanOrEqual(MIN_ROOM_WIDTH);
+  expect(width, 'room fits its node column').toBeLessThanOrEqual(column + ROOM_TOLERANCE_PX);
   return width;
 }
 
@@ -650,8 +619,7 @@ const surface = 'legacy' as const;
     expect(axName).not.toContain('✓');
     if (axClosed.expanded !== null) expect(axClosed.expanded).toBe(false);
 
-    const width = await setRoomWidth(page, surface, started.runId);
-    expect(Math.abs(width - APP_ROOM_WIDTH[surface])).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+    await setRoomWidth(page, surface, started.runId);
     await expectSummaryOneLine(summary);
 
     // Transcript list padding is the canonical 10px/12px on both surfaces.
@@ -1021,7 +989,6 @@ const surface = 'legacy' as const;
     let room = await openToolRoom(page, surface, started.runId);
     await expect(room.locator(ROW)).toHaveCount(GALLERY_TOOLS.length, { timeout: T.medium });
     const width = await setRoomWidth(page, surface, started.runId);
-    expect(Math.abs(width - APP_ROOM_WIDTH[surface])).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
     room = roomRegion(page);
     const rows = room.locator(ROW);
     await expect(rows).toHaveCount(GALLERY_TOOLS.length, { timeout: T.medium });

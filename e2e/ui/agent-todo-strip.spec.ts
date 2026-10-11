@@ -64,13 +64,7 @@ const SWEEP_VIEWPORTS = [
   { name: '768x900', width: 768, height: 900 },
   { name: '390x844', width: 390, height: 844 },
 ] as const;
-const ROOM_PANEL_ID: Record<Surface, string> = {
-  console: 'legacy-run-room',
-  legacy: 'legacy-run-room',
-};
 // Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
-const ROOM_RATIO_MIN = 24;
-const ROOM_RATIO_MAX = 60;
 const RUNNING_TOKEN: Record<Surface, string> = {
   console: 'var(--accent-bright)',
   legacy: 'var(--accent-bright)',
@@ -103,7 +97,7 @@ async function openNodeRoom(
   } else {
     await openLegacyRunDetail(page, runId);
     await expect(page.getByText(/e2e-todo-strip/i).first()).toBeVisible({ timeout: T.medium });
-    const logsTab = page.getByRole('tab', { name: 'Logs' });
+    const logsTab = page.getByRole('radio', { name: 'List' });
     if ((await logsTab.count()) > 0) await logsTab.click();
     await page
       .getByRole('button', { name: new RegExp(nodeId) })
@@ -156,33 +150,13 @@ async function runTodoStrip(page: Page, archon: ArchonRuntime): Promise<CliRunRe
  * what gets asserted.
  */
 async function setRoomWidth(page: Page, surface: Surface, runId: string): Promise<number> {
-  const target = TARGET_ROOM_WIDTH[surface];
-  const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
-  const metrics = await panel.evaluate(el => {
-    const panelRect = el.getBoundingClientRect();
-    const groupRect = el.parentElement?.getBoundingClientRect();
-    return { panel: panelRect.width, group: groupRect?.width ?? 0 };
-  });
-  expect(metrics.group, 'resizable group width').toBeGreaterThan(0);
-  const region = roomRegion(page, TODO_STRIP_TODO_NODE);
-  const regionWidth = (await region.boundingBox())?.width ?? 0;
-  const inset = metrics.panel - regionWidth;
-  const ratio = Math.min(
-    ROOM_RATIO_MAX,
-    Math.max(ROOM_RATIO_MIN, ((target + inset) / metrics.group) * 100)
-  );
-  await page.evaluate(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
-    },
-    [`archon.run-room.ratio.${surface}`, String(ratio)]
-  );
   const room = await openNodeRoom(page, surface, runId, TODO_STRIP_TODO_NODE);
   const width = (await room.boundingBox())?.width ?? 0;
-  expect(
-    Math.abs(width - target),
-    `measured room width ${String(width)} must land within ${String(target)}±${String(ROOM_TOLERANCE_PX)}`
-  ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+  const column = (await page.getByTestId('node-column').boundingBox())?.width ?? 0;
+  // The room fills the node column, a grid share of the Runs workspace: it must stay
+  // readable and never outgrow its column.
+  expect(width, `room width ${String(width)} is readable`).toBeGreaterThanOrEqual(360);
+  expect(width, 'room fits its node column').toBeLessThanOrEqual(column + ROOM_TOLERANCE_PX);
   return width;
 }
 
@@ -646,20 +620,19 @@ for (const surface of ['console', 'legacy'] as const) {
     const run = await runTodoStrip(page, archon);
     await openNodeRoom(page, surface, run.runId, TODO_STRIP_TODO_NODE);
     const roomWidth = await setRoomWidth(page, surface, run.runId);
-    expect(Math.abs(roomWidth - TARGET_ROOM_WIDTH[surface])).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
     const room = roomRegion(page, TODO_STRIP_TODO_NODE);
     const strip = room.locator(STRIP);
     const button = strip.getByRole('button');
     const body = await stripBody(strip);
 
-    const elevated = await resolveColorIn(room, 'var(--surface-elevated)');
+    const surfaceBg = await resolveColorIn(room, 'var(--surface)');
     const hoverBg = await resolveColorIn(room, 'var(--surface-hover)');
     const success = await resolveColorIn(room, 'var(--success)');
     const borderBright = await resolveColorIn(room, 'var(--border-bright)');
     const textSecondary = await resolveColorIn(room, 'var(--text-secondary)');
     const textPrimary = await resolveColorIn(room, 'var(--text-primary)');
 
-    // Container: full room width, flex-none, surface-elevated, no radius, 1px
+    // Container: full room width, flex-none, surface, no radius, 1px
     // top rule (separates the strip from the transcript above; the queue band
     // below carries its own top rule, so the strip itself has no bottom one).
     const stripBox = await strip.boundingBox();
@@ -677,11 +650,11 @@ for (const surface of ['console', 'legacy'] as const) {
     });
     expect(container.flexGrow).toBe('0');
     expect(container.flexShrink).toBe('0');
-    expect(container.background, 'container uses surface-elevated').toBe(elevated.resolved);
+    expect(container.background, 'container uses surface').toBe(surfaceBg.resolved);
     expect(container.borderTopWidth).toBe('1px');
     expect(container.borderRadius).toBe('0px');
 
-    // Header: one line, 6/10 padding, ≥24px target, 8px gaps, surface-hover.
+    // Header: one line, 6/24 padding, ≥24px target, 8px gaps, surface-hover.
     const header = await button.evaluate(el => {
       const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
       const band = el.getBoundingClientRect();
@@ -704,8 +677,8 @@ for (const surface of ['console', 'legacy'] as const) {
     });
     expect(header.paddingTop).toBe('6px');
     expect(header.paddingBottom).toBe('6px');
-    expect(header.paddingLeft).toBe('10px');
-    expect(header.paddingRight).toBe('10px');
+    expect(header.paddingLeft).toBe('24px');
+    expect(header.paddingRight).toBe('24px');
     expect(header.columnGap).toBe('8px');
     expect(header.whiteSpace).toBe('nowrap');
     expect(header.width, 'header target width ≥24px').toBeGreaterThanOrEqual(24);
@@ -849,9 +822,9 @@ for (const surface of ['console', 'legacy'] as const) {
       };
     });
     expect(bodyStyle.paddingTop).toBe('4px');
-    expect(bodyStyle.paddingRight).toBe('10px');
+    expect(bodyStyle.paddingRight).toBe('24px');
     expect(bodyStyle.paddingBottom).toBe('8px');
-    expect(bodyStyle.paddingLeft).toBe('10px');
+    expect(bodyStyle.paddingLeft).toBe('24px');
     expect(bodyStyle.borderTopWidth).toBe('1px');
     expect(bodyStyle.maxHeight).toBe('168px');
     expect(bodyStyle.overflowY).toBe('auto');
@@ -1293,7 +1266,7 @@ for (const surface of ['console', 'legacy'] as const) {
     // Scope navigation mounts a new, collapsed control: switch to the no-todo
     // room and back without reloading the page.
     // Switching scope goes through the Logs tab's node list.
-    await page.getByRole('tab', { name: 'Logs' }).click();
+    await page.getByRole('radio', { name: 'List' }).click();
     await page
       .getByRole('button', { name: new RegExp(TODO_STRIP_NO_TODO_NODE) })
       .first()

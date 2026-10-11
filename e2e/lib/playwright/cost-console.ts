@@ -9,7 +9,7 @@ import { T } from './timeouts';
  * accumulated ledger rows.
  */
 export async function openCostForRun(page: Page, runId: string): Promise<void> {
-  await page.goto('/settings');
+  await page.goto('/settings?section=usage');
   await page.locator('#set-usage').scrollIntoViewIfNeeded();
   await page.getByLabel('Run ID', { exact: true }).fill(runId);
   await applyFilters(page);

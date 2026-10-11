@@ -32,7 +32,12 @@ test('[P1] [V:shell.redirects] Old dashboard links open Runs with their filters'
   page,
 }) => {
   await page.goto('/dashboard?status=paused');
-  await expect(page).toHaveURL(/\/runs\?status=paused$/, { timeout: T.medium });
+  // The old status becomes the list filter that holds it; a run may open beside the list.
+  await expect(page).toHaveURL(/\/runs(?:\/[^/?]+)?\?filter=needs$/, { timeout: T.medium });
+  await expect(page.getByRole('tab', { name: /^Needs you/ })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
 });
 
 test('[P1] [V:shell.settings] Settings sections and reload', async ({ page }) => {

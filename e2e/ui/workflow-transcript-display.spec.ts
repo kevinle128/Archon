@@ -45,7 +45,7 @@ async function waitForRunTitle(page: Page): Promise<void> {
 }
 
 async function openLegacyLogRow(page: Page, nodeText: string): Promise<void> {
-  const logsTab = page.getByRole('tab', { name: 'Logs' });
+  const logsTab = page.getByRole('radio', { name: 'List' });
   if ((await logsTab.count()) > 0) {
     await logsTab.click();
   }
@@ -230,15 +230,16 @@ test('[P1] [V:transcript-display.graph] Legacy runtime graph drops the minimap; 
   const started = await archon.prepareTranscriptDisplayRun();
   await openLegacyRunDetail(page, started.runId);
   await waitForRunTitle(page);
+  await page.getByRole('radio', { name: 'Graph' }).click();
 
   const graph = page.locator('.react-flow');
   await expect(graph).toBeVisible({ timeout: T.medium });
   await expect(page.locator('.react-flow__minimap')).toHaveCount(0);
   const controls = page.locator('.react-flow__controls');
   await expect(controls).toBeVisible();
-  const zoomOut = controls.locator('.react-flow__controls-zoomout');
+  const zoomIn = controls.locator('.react-flow__controls-zoomin');
   const fitView = controls.locator('.react-flow__controls-fitview');
-  await expect(zoomOut).toBeVisible();
+  await expect(zoomIn).toBeVisible();
   await expect(fitView).toBeVisible();
 
   const viewport = page.locator('.react-flow__viewport');
@@ -247,8 +248,9 @@ test('[P1] [V:transcript-display.graph] Legacy runtime graph drops the minimap; 
   await fitView.click();
   const fitted = await transform();
 
-  // Zoom changes the viewport transform; fit restores it.
-  await zoomOut.click();
+  // Zoom changes the viewport transform; fit restores it. A fitted graph in the
+  // run column can sit at the minimum zoom, so zoom in rather than out.
+  await zoomIn.click();
   await expect.poll(transform, { timeout: T.medium }).not.toBe(fitted);
   await fitView.click();
   await expect.poll(transform, { timeout: T.medium }).toBe(fitted);
@@ -280,8 +282,9 @@ test('[P1] [V:transcript-display.graph] Legacy runtime graph drops the minimap; 
   await node.click();
   await waitForRoom(page, TRANSCRIPT_PLAIN_NODE);
 
-  // The Legacy builder canvas keeps its minimap — only the runtime graph lost it.
+  // The builder's Graph view keeps its minimap — only the runtime graph lost it.
   await page.goto('/workflows/builder?edit=e2e-transcript-display');
+  await page.getByRole('radio', { name: 'Graph' }).click();
   await expect(page.locator('.react-flow')).toBeVisible({ timeout: T.medium });
   await expect(page.locator('.react-flow__minimap')).toBeVisible({ timeout: T.medium });
   await expect(page.locator('.react-flow__controls')).toBeVisible();

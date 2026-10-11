@@ -36,13 +36,7 @@ const ROOM_TOLERANCE_PX = 2;
 
 /** Design reference width: the room is authored at 460px. */
 const REFERENCE_WIDTH: Record<Surface, number> = { console: 460, legacy: 460 };
-const ROOM_PANEL_ID: Record<Surface, string> = {
-  console: 'legacy-run-room',
-  legacy: 'legacy-run-room',
-};
 // Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
-const ROOM_RATIO_MIN = 24;
-const ROOM_RATIO_MAX = 60;
 
 const OMP_IMAGE_URL = 'https://e2e.invalid/task-dispatch-diagram.png';
 const OMP_IMAGE_HOST = 'e2e.invalid';
@@ -87,7 +81,7 @@ async function openTaskRoom(
     await expect(page.getByText(/e2e-task-dispatch/i).first()).toBeVisible({
       timeout: T.medium,
     });
-    const logsTab = page.getByRole('tab', { name: 'Logs' });
+    const logsTab = page.getByRole('radio', { name: 'List' });
     if ((await logsTab.count()) > 0) await logsTab.click();
     await page
       .getByRole('button', { name: new RegExp(nodeId) })
@@ -103,7 +97,7 @@ async function openTaskRoom(
 /** Moves an already-open room to another node through the log-row button. */
 async function switchRoom(page: Page, nodeId: string): Promise<Locator> {
   // A deep-linked run opens on the graph; the node buttons live on the Logs tab.
-  const logsTab = page.getByRole('tab', { name: 'Logs' });
+  const logsTab = page.getByRole('radio', { name: 'List' });
   if ((await logsTab.count()) > 0) await logsTab.click();
   await page
     .getByRole('button', { name: new RegExp(nodeId) })
@@ -171,33 +165,13 @@ async function setRoomWidth(
   runId: string,
   nodeId: string
 ): Promise<Locator> {
-  const target = REFERENCE_WIDTH[surface];
-  const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
-  const metrics = await panel.evaluate(el => {
-    const panelRect = el.getBoundingClientRect();
-    const groupRect = el.parentElement?.getBoundingClientRect();
-    return { panel: panelRect.width, group: groupRect?.width ?? 0 };
-  });
-  expect(metrics.group, 'resizable group width').toBeGreaterThan(0);
-  const region = roomRegion(page, nodeId);
-  const regionWidth = (await region.boundingBox())?.width ?? 0;
-  const inset = metrics.panel - regionWidth;
-  const ratio = Math.min(
-    ROOM_RATIO_MAX,
-    Math.max(ROOM_RATIO_MIN, ((target + inset) / metrics.group) * 100)
-  );
-  await page.evaluate(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
-    },
-    [`archon.run-room.ratio.${surface}`, String(ratio)]
-  );
   const room = await openTaskRoom(page, surface, runId, nodeId);
   const width = (await room.boundingBox())?.width ?? 0;
-  expect(
-    Math.abs(width - target),
-    `measured room width ${String(width)} must land within ${String(target)}±${String(ROOM_TOLERANCE_PX)}`
-  ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+  const column = (await page.getByTestId('node-column').boundingBox())?.width ?? 0;
+  // The room fills the node column, a grid share of the Runs workspace: it must stay
+  // readable and never outgrow its column.
+  expect(width, `room width ${String(width)} is readable`).toBeGreaterThanOrEqual(360);
+  expect(width, 'room fits its node column').toBeLessThanOrEqual(column + ROOM_TOLERANCE_PX);
   return room;
 }
 
