@@ -513,7 +513,7 @@ describe('LegacyNodeRoom static rooms', () => {
       ],
     });
     expect(markup).toContain('Open child run');
-    expect(markup).toContain('href="/workflows/runs/child-1"');
+    expect(markup).toContain('href="/runs/child-1"');
     expect(markup).not.toContain('child-old');
     expect(markup).toContain('Workflow');
     expect(markup.match(/role="region"/g)?.length).toBe(1);
@@ -2117,11 +2117,11 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(panel).not.toBeNull();
     expect(panel?.closest('details[data-tool-id]')?.getAttribute('data-tool-id')).toBe('t-1');
     expect(panel?.tagName).toBe('PRE');
-    expect(panel?.className).toContain('bg-surface-inset');
-    expect(panel?.className).toContain('rounded-[6px]');
+    expect(panel?.className).toContain('bg-code-bg');
+    expect(panel?.className).not.toContain('rounded-');
     expect(panel?.className).toContain('px-2.5');
     expect(panel?.className).toContain('py-2');
-    expect(panel?.className).toContain('text-text-primary');
+    expect(panel?.className).toContain('text-code-fg');
     expect(panel?.textContent).toBe(
       JSON.stringify({ name: 'Read', input: { path: 'a.ts' }, output: 'chunk' }, null, 2)
     );
@@ -2325,7 +2325,7 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(panel.className).toContain('[overflow-wrap:anywhere]');
     expect(panel.className).toContain('min-w-0');
     expect(panel.className).toContain('max-w-full');
-    expect(panel.className).toContain('border');
+    expect(panel.className).toContain('bg-code-bg');
     expect(panel.className).toContain('font-mono');
     expect(panel.textContent).toContain(longValue);
   });
@@ -2955,6 +2955,9 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
       const row = host.querySelector('[data-operator-row]');
       if (row === null) throw new Error(`missing operator row: ${host.innerHTML}`);
       expect((row as HTMLElement).style.overflowWrap).toBe('anywhere');
+      // Operator rows carry the 3px foreground rule on the left.
+      expect(row.className).toContain('border-l-[3px]');
+      expect(row.className).toContain('border-foreground');
 
       const label = row.querySelector('[data-operator-label]');
       if (label === null) throw new Error('missing operator label');
@@ -2965,11 +2968,10 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
       if (roleLine === null) throw new Error('missing role line');
       expect(roleLine.className).toContain('flex');
       expect(roleLine.className).toContain('w-full');
-      expect(roleLine.className).toContain('text-[10px]');
-      expect(roleLine.className).toContain('tracking-[0.07em]');
+      expect(roleLine.className).toContain('text-[11px]');
+      expect(roleLine.className).toContain('tracking-[0.06em]');
       expect(roleLine.className).toContain('uppercase');
       expect(roleLine.className).toContain('text-text-secondary');
-      expect(roleLine.getAttribute('style') ?? '').toContain('margin: 10px 2px 3px');
 
       const delivery = row.querySelector('[data-operator-delivery]');
       if (delivery === null) throw new Error('missing delivery');
@@ -2991,12 +2993,11 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
       expect(body.querySelector('img')).toBeNull();
       expect(body.querySelector('p')).toBeNull();
       expect(body.className).toContain('font-sans');
-      expect(body.className).toContain('text-[12.5px]');
+      expect(body.className).toContain('text-[14px]');
       expect(body.className).toContain('leading-[1.55]');
-      expect(body.className).toContain('font-normal');
+      expect(body.className).toContain('font-semibold');
       expect(body.className).toContain('text-text-primary');
       expect(body.className).toContain('whitespace-pre-wrap');
-      expect((body as HTMLElement).style.margin).toBe('0px 2px 6px');
     });
 
     test('escapes markup-like display names as text and omits separator for null identity', async () => {
@@ -3036,8 +3037,8 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
 
       const tool = host.querySelector('details[data-tool-id="bash-1"]');
       const operator = host.querySelector('[data-operator-row]');
-      const assistantLabel = Array.from(host.querySelectorAll('div')).find(
-        el => el.textContent === 'assistant' && el.className.includes('uppercase')
+      const assistantLabel = Array.from(host.querySelectorAll('span')).find(
+        el => el.textContent === 'assistant' && el.className.includes('sr-only')
       );
       if (tool === null || operator === null || assistantLabel === undefined) {
         throw new Error(`missing ordered nodes: ${host.innerHTML}`);
@@ -3063,24 +3064,20 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
       expect(last.querySelector('[data-operator-row]')).not.toBeNull();
     });
 
-    test('assistant label source is lowercase and body uses text-secondary', async () => {
+    test('assistant text has a screen-reader label and the agent type tokens', async () => {
       await act(async () => {
         mountItems([assistantItem({ text: '**hello** world' })]);
       });
-      const label = Array.from(host.querySelectorAll('div')).find(
-        el => el.textContent === 'assistant' && el.className.includes('text-[10px]')
+      const label = Array.from(host.querySelectorAll('span')).find(
+        el => el.textContent === 'assistant' && el.className.includes('sr-only')
       );
-      if (label === null || label === undefined) throw new Error('missing assistant label');
-      expect(label.textContent).toBe('assistant');
-      expect(label.className).toContain('tracking-[0.07em]');
-      expect(label.className).toContain('uppercase');
-      expect(label.className).toContain('text-text-secondary');
+      if (label === undefined) throw new Error('missing assistant label');
 
       const body = label.nextElementSibling;
       if (body === null) throw new Error('missing assistant body');
-      expect(body.className).toContain('text-[12.5px]');
-      expect(body.className).toContain('leading-[1.55]');
-      expect(body.className).toContain('text-text-secondary');
+      expect(body.className).toContain('text-[length:var(--rv-agent-font-size)]');
+      expect(body.className).toContain('leading-[var(--rv-agent-line-height)]');
+      expect(body.className).toContain('text-text-primary');
       expect(body.querySelector('strong')?.textContent).toBe('hello');
     });
   });

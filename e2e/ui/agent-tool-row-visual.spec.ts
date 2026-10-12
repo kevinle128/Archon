@@ -48,7 +48,8 @@ const ROOM_NAME = `${HITL_INSPECT_NODE} room`;
 // 460px Legacy, `packages/web/src/lib/room-split-layout.ts`) — the
 // ratio-write path `setRoomWidth` still performs is inert on both surfaces;
 // the measured width always lands on the fixed value regardless of ratio.
-const APP_ROOM_WIDTH: Record<Surface, number> = { console: 520, legacy: 460 };
+/** Narrowest node column the Runs workspace gives a room at the split viewport. */
+const MIN_ROOM_WIDTH = 360;
 // The static-mockup test below (Story 1.1) forces a fixed 460px panel width
 // regardless of surface — it predates the Console/Legacy width split.
 const MOCKUP_PANEL_WIDTH = 460;
@@ -80,7 +81,7 @@ async function openToolRoom(page: Page, surface: Surface, runId: string): Promis
   } else {
     await openLegacyRunDetail(page, runId);
     await expect(page.getByText(/e2e-hitl-run/i).first()).toBeVisible({ timeout: T.medium });
-    const logsTab = page.getByRole('tab', { name: 'Logs' });
+    const logsTab = page.getByRole('radio', { name: 'List' });
     if ((await logsTab.count()) > 0) await logsTab.click();
     await page
       .getByRole('button', { name: new RegExp(HITL_INSPECT_NODE) })
@@ -93,11 +94,6 @@ async function openToolRoom(page: Page, surface: Surface, runId: string): Promis
   await expect(room.locator(SUMMARY).first()).toBeVisible({ timeout: T.medium });
   return room;
 }
-
-const ROOM_PANEL_ID: Record<Surface, string> = {
-  console: 'console-run-room',
-  legacy: 'legacy-run-room',
-};
 
 // --- Story 1.3 family-body gallery ---
 // Browser visual fixtures: deterministic route-fulfilled transcript responses
@@ -211,45 +207,18 @@ async function routeGalleryTranscript(page: Page, runId: string): Promise<void> 
   });
 }
 // Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
-const ROOM_RATIO_MIN = 24;
-const ROOM_RATIO_MAX = 60;
 
 /**
- * Sizes the room region to `APP_ROOM_WIDTH[surface] ± ROOM_TOLERANCE_PX`.
- * Both rooms are fixed pixel widths with no drag handle, so the ratio this
- * writes into the persisted split key is inert on both surfaces — the
- * measured region width always lands on the fixed value; the write is
- * harmless legacy plumbing kept for a minimal diff against this file's
- * pre-fixed-width shape.
+ * Opens the room and returns its width. The room fills the node column, a grid
+ * share of the Runs workspace, so the proof is that it stays readable and never
+ * outgrows its column.
  */
 async function setRoomWidth(page: Page, surface: Surface, runId: string): Promise<number> {
-  const target = APP_ROOM_WIDTH[surface];
-  const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
-  const metrics = await panel.evaluate(el => {
-    const panelRect = el.getBoundingClientRect();
-    const groupRect = el.parentElement?.getBoundingClientRect();
-    return { panel: panelRect.width, group: groupRect?.width ?? 0 };
-  });
-  expect(metrics.group, 'resizable group width').toBeGreaterThan(0);
-  const region = roomRegion(page);
-  const regionWidth = (await region.boundingBox())?.width ?? 0;
-  const inset = metrics.panel - regionWidth;
-  const ratio = Math.min(
-    ROOM_RATIO_MAX,
-    Math.max(ROOM_RATIO_MIN, ((target + inset) / metrics.group) * 100)
-  );
-  await page.evaluate(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
-    },
-    [`archon.run-room.ratio.${surface}`, String(ratio)]
-  );
   const room = await openToolRoom(page, surface, runId);
   const width = (await room.boundingBox())?.width ?? 0;
-  expect(
-    Math.abs(width - target),
-    `measured room width ${String(width)} must land within ${String(target)}±${String(ROOM_TOLERANCE_PX)}`
-  ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+  const column = (await page.getByTestId('node-column').boundingBox())?.width ?? 0;
+  expect(width, `room width ${String(width)} is readable`).toBeGreaterThanOrEqual(MIN_ROOM_WIDTH);
+  expect(width, 'room fits its node column').toBeLessThanOrEqual(column + ROOM_TOLERANCE_PX);
   return width;
 }
 
@@ -262,8 +231,8 @@ async function expectSummaryOneLine(summary: Locator): Promise<void> {
   const box = await summary.boundingBox();
   expect(box, 'summary bounding box').toBeTruthy();
   if (!box) throw new Error('missing summary box');
-  expect(box.height, 'summary height keeps one line (24–30px)').toBeGreaterThanOrEqual(24);
-  expect(box.height, 'summary height keeps one line (24–30px)').toBeLessThanOrEqual(30);
+  expect(box.height, 'summary height keeps one line (30–36px)').toBeGreaterThanOrEqual(30);
+  expect(box.height, 'summary height keeps one line (30–36px)').toBeLessThanOrEqual(36);
   const fits = await summary.evaluate(el => el.scrollWidth <= el.clientWidth + 1);
   expect(fits, 'summary content fits horizontally without clipping').toBe(true);
   const childrenInside = await summary.evaluate(el => {
@@ -338,17 +307,11 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
 
 /** Transcript container = first ancestor carrying non-zero padding. */
 async function transcriptPadding(summary: Locator): Promise<{ top: string; left: string }> {
+  // The transcript list is the parent of the row's stream-row wrapper.
   return summary.evaluate(el => {
-    const view = el.ownerDocument.defaultView;
-    let node = el.parentElement;
-    while (node !== null) {
-      const cs = view?.getComputedStyle(node);
-      if (cs !== undefined && (cs.paddingLeft !== '0px' || cs.paddingTop !== '0px')) {
-        return { top: cs.paddingTop, left: cs.paddingLeft };
-      }
-      node = node.parentElement;
-    }
-    return { top: '', left: '' };
+    const list = el.closest('[data-stream-row]')?.parentElement ?? null;
+    const cs = list === null ? undefined : el.ownerDocument.defaultView?.getComputedStyle(list);
+    return { top: cs?.paddingTop ?? '', left: cs?.paddingLeft ?? '' };
   });
 }
 
@@ -650,16 +613,17 @@ const surface = 'legacy' as const;
     expect(axName).not.toContain('✓');
     if (axClosed.expanded !== null) expect(axClosed.expanded).toBe(false);
 
-    const width = await setRoomWidth(page, surface, started.runId);
-    expect(Math.abs(width - APP_ROOM_WIDTH[surface])).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+    await setRoomWidth(page, surface, started.runId);
     await expectSummaryOneLine(summary);
 
-    // Transcript list padding is the canonical 10px/12px on both surfaces.
+    // The transcript list has the node column's 24px side padding; stream rows
+    // carry their own vertical spacing.
     const padding = await transcriptPadding(summary);
-    expect(padding.left, 'transcript horizontal padding').toBe('12px');
-    expect(padding.top, 'transcript vertical padding').toBe('10px');
+    expect(padding.left, 'transcript horizontal padding').toBe('24px');
+    expect(padding.top, 'transcript vertical padding').toBe('0px');
 
-    // Rest row carries no inset card fill/border/shadow; hover = surface-hover.
+    // Rest row is a square bordered row on --surface with no shadow; hover = surface-hover.
+    const surfaceToken = await resolveColorIn(room, 'var(--surface)');
     const rest = await row.evaluate(el => {
       const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
       return {
@@ -668,8 +632,8 @@ const surface = 'legacy' as const;
         shadow: cs?.boxShadow ?? '',
       };
     });
-    expect(rest.background, 'rest row is transparent on the room surface').toBe('rgba(0, 0, 0, 0)');
-    expect(rest.borderWidth).toBe('0px');
+    expect(rest.background, 'rest row uses --surface').toBe(surfaceToken.resolved);
+    expect(rest.borderWidth).toBe('1px');
     expect(rest.shadow).toBe('none');
     const hoverToken = await resolveColorIn(room, 'var(--surface-hover)');
     await summary.hover();
@@ -679,7 +643,7 @@ const surface = 'legacy' as const;
     expect(hoverBg, 'hover uses --surface-hover').toBe(hoverToken.resolved);
     await page.mouse.move(0, 0);
 
-    // Geometry computed styles — summary, chevron, glyph, chip.
+    // Geometry computed styles — summary, chevron, name (no status glyph).
     const geometry = await summary.evaluate(el => {
       const view = el.ownerDocument.defaultView;
       const cs = view?.getComputedStyle(el);
@@ -704,22 +668,20 @@ const surface = 'legacy' as const;
         borderRadius: cs?.borderRadius ?? '',
         minHeight: cs?.minHeight ?? '',
         chevron: metric(kids[0]),
-        glyph: metric(kids[2]),
-        chip: metric(kids[3]),
+        chip: metric(kids[2]),
       };
     });
     expect(geometry.fontSize).toBe('12px');
     expect(geometry.fontWeight).toBe('400');
-    expect(geometry.paddingTop).toBe('4px');
-    expect(geometry.paddingRight).toBe('6px');
+    expect(geometry.paddingTop).toBe('7px');
+    expect(geometry.paddingRight).toBe('10px');
     expect(geometry.gap).toBe('8px');
-    expect(geometry.borderRadius).toBe('6px');
-    expect(geometry.minHeight).toBe('24px');
+    expect(geometry.borderRadius).toBe('0px');
+    expect(geometry.minHeight).toBe('32px');
     expect(geometry.chevron.fontSize).toBe('10px');
     expect(geometry.chevron.width).toBe(9);
-    expect(geometry.glyph.fontSize).toBe('12px');
-    expect(geometry.glyph.fontWeight).toBe('700');
-    expect(geometry.chip.fontSize).toBe('11px');
+    expect(geometry.chip.fontSize).toBe('13px');
+    expect(geometry.chip.fontWeight).toBe('800');
 
     // Chevron transition is the only row animation: 120ms, none under reduce.
     const chevron = summary.locator('span').first();
@@ -780,7 +742,8 @@ const surface = 'legacy' as const;
     const tokenBorderBright = await resolveColorIn(room, 'var(--border-bright)');
     const tokenTextPrimary = await resolveColorIn(room, 'var(--text-primary)');
     const tokenTextSecondary = await resolveColorIn(room, 'var(--text-secondary)');
-    const tokenInset = await resolveColorIn(room, 'var(--surface-inset)');
+    const tokenCodeBg = await resolveColorIn(room, 'var(--code-bg)');
+    const tokenCodeFg = await resolveColorIn(room, 'var(--code-fg)');
     const rawStyle = async (): Promise<{ color: string; border: string }> =>
       rawToggle.evaluate(el => {
         const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
@@ -874,7 +837,7 @@ const surface = 'legacy' as const;
     expect(payload.input).toEqual({ path: 'HITL_TOOL_INPUT.txt' });
     expect(payload.output).toBe(HITL_TOOL_OUTPUT);
 
-    // Open panel: primary text on the inset surface, no horizontal scroll.
+    // Open panel: code text on the dark code block, no horizontal scroll.
     const panelStyle = await rawPanel.evaluate(el => {
       const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
       return {
@@ -885,10 +848,12 @@ const surface = 'legacy' as const;
         overflowX: el.scrollWidth - el.clientWidth,
       };
     });
-    expect(panelStyle.color, 'Raw JSON uses primary text').toBe(tokenTextPrimary.resolved);
-    expect(panelStyle.background, 'Raw panel uses the inset surface').toBe(tokenInset.resolved);
-    expect(panelStyle.fontSize).toBe('11.5px');
-    expect(panelStyle.lineHeight).toBe('17.25px');
+    expect(panelStyle.color, 'Raw JSON uses the code text color').toBe(tokenCodeFg.resolved);
+    expect(panelStyle.background, 'Raw panel uses the code block ground').toBe(
+      tokenCodeBg.resolved
+    );
+    expect(panelStyle.fontSize).toBe('12px');
+    expect(panelStyle.lineHeight).toBe('18px');
     expect(panelStyle.overflowX, 'Raw panel has no horizontal scroll').toBeLessThanOrEqual(1);
 
     // AX tree open state: expanded true and controls resolves to this panel.
@@ -1021,7 +986,6 @@ const surface = 'legacy' as const;
     let room = await openToolRoom(page, surface, started.runId);
     await expect(room.locator(ROW)).toHaveCount(GALLERY_TOOLS.length, { timeout: T.medium });
     const width = await setRoomWidth(page, surface, started.runId);
-    expect(Math.abs(width - APP_ROOM_WIDTH[surface])).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
     room = roomRegion(page);
     const rows = room.locator(ROW);
     await expect(rows).toHaveCount(GALLERY_TOOLS.length, { timeout: T.medium });
@@ -1148,9 +1112,9 @@ const surface = 'legacy' as const;
     expect(bodyStyle.paddingRight).toBe('10px');
     expect(bodyStyle.paddingTop).toBe('8px');
     expect(bodyStyle.paddingBottom).toBe('8px');
-    expect(bodyStyle.borderRadius).toBe('6px');
-    expect(bodyStyle.fontSize).toBe('11.5px');
-    expect(bodyStyle.lineHeight).toBe('17.25px');
+    expect(bodyStyle.borderRadius).toBe('0px');
+    expect(bodyStyle.fontSize).toBe('12px');
+    expect(bodyStyle.lineHeight).toBe('18px');
     expect(bodyStyle.fontFamily.toLowerCase()).toContain('mono');
     expect(bodyStyle.whiteSpace).toBe('pre-wrap');
     expect(bodyStyle.overflowWrap).toBe('anywhere');
@@ -1271,7 +1235,7 @@ const surface = 'legacy' as const;
   });
 }
 
-test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on both surfaces', async ({
+test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones meet their WCAG floors on both surfaces', async ({
   page,
   archon,
 }, testInfo: TestInfo) => {
@@ -1281,10 +1245,9 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
   // The real fixture renders a `file` row only; tones absent from it are
   // measured as resolved production style values, not claimed in screenshots.
   const TONES = {
-    'search/glob chip text': 'color-mix(in oklch, var(--node-prompt) 70%, var(--text-primary))',
+    'tool name text': 'var(--text-primary)',
     'nonzero exit digits': 'color-mix(in oklch, var(--error) 75%, var(--text-primary))',
     'focus outline': 'var(--accent-bright)',
-    'succeeded glyph': 'var(--success)',
     'neutral badge text': 'var(--text-secondary)',
   } as const;
   const evidence: Record<string, Record<string, number | string>> = {};
@@ -1306,6 +1269,7 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
       surfaceEvidence[`${label} resolved`] = fg.resolved;
       surfaceEvidence[`${label} vs rest`] = Number(rest.toFixed(2));
       surfaceEvidence[`${label} vs hover`] = Number(hover.toFixed(2));
+      // The focus outline is a graphic, so the WCAG 1.4.11 floor of 3:1 applies.
       const floor = label === 'focus outline' ? 3 : 4.5;
       expect(rest, `${surface} ${label} vs rest ≥${String(floor)}:1`).toBeGreaterThanOrEqual(floor);
       expect(hover, `${surface} ${label} vs hover ≥${String(floor)}:1`).toBeGreaterThanOrEqual(
@@ -1314,8 +1278,8 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
     }
 
     // Story 1.2 Raw tones: closed label = secondary on the body-bar surface;
-    // hover/focus/open share the primary label; the JSON panel is primary text
-    // on the inset surface. Floors are WCAG AA (4.5:1) throughout.
+    // hover/focus/open share the primary label; the JSON panel is code text on
+    // the dark code block. Floors are WCAG AA (4.5:1) throughout.
     const row = room.locator(ROW).first();
     await summary.click();
     await expect(row).toHaveJSProperty('open', true);
@@ -1323,7 +1287,8 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
     const barBg = await effectiveBackground(rawToggle);
     const secondary = await resolveColorIn(room, 'var(--text-secondary)');
     const primary = await resolveColorIn(room, 'var(--text-primary)');
-    const inset = await resolveColorIn(room, 'var(--surface-inset)');
+    const codeBg = await resolveColorIn(room, 'var(--code-bg)');
+    const codeFg = await resolveColorIn(room, 'var(--code-fg)');
     const closedLabelRatio = contrastRatio(secondary.c, barBg.c);
     const activeLabelRatio = contrastRatio(primary.c, barBg.c);
     surfaceEvidence['Raw body-bar background'] = barBg.resolved;
@@ -1341,17 +1306,17 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
     const rawPanel = row.locator('pre');
     await expect(rawPanel).toBeVisible();
     const panelBg = await effectiveBackground(rawPanel);
-    expect(panelBg.resolved, `${surface} Raw panel bg is --surface-inset`).toBe(inset.resolved);
-    const jsonRatio = contrastRatio(primary.c, panelBg.c);
-    surfaceEvidence['Raw JSON vs inset panel'] = Number(jsonRatio.toFixed(2));
-    expect(jsonRatio, `${surface} Raw JSON text vs inset panel ≥4.5:1`).toBeGreaterThanOrEqual(4.5);
+    expect(panelBg.resolved, `${surface} Raw panel bg is --code-bg`).toBe(codeBg.resolved);
+    const jsonRatio = contrastRatio(codeFg.c, panelBg.c);
+    surfaceEvidence['Raw JSON vs code panel'] = Number(jsonRatio.toFixed(2));
+    expect(jsonRatio, `${surface} Raw JSON text vs code panel ≥4.5:1`).toBeGreaterThanOrEqual(4.5);
     rawEvidence[surface] = {
       'body-bar background': barBg.resolved,
       'closed label (--text-secondary)': secondary.resolved,
       'closed label vs body bar': Number(closedLabelRatio.toFixed(2)),
       'hover/focus/open label (--text-primary)': primary.resolved,
       'active label vs body bar': Number(activeLabelRatio.toFixed(2)),
-      'panel background (--surface-inset effective)': panelBg.resolved,
+      'panel background (--code-bg effective)': panelBg.resolved,
       'Raw JSON vs panel': Number(jsonRatio.toFixed(2)),
     };
     evidence[surface] = surfaceEvidence;

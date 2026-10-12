@@ -7,7 +7,9 @@ import remarkGfm from 'remark-gfm';
 import type { ChatMessage, FileAttachment } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { ArtifactViewerModal } from '@/components/workflows/ArtifactViewerModal';
-import { PixelLogo } from '@/components/brand/PixelLogo';
+import { ErrorCard } from './ErrorCard';
+import { ToolCallCard } from './ToolCallCard';
+import { WorkflowProgressCard } from './WorkflowProgressCard';
 
 // Hoisted to module scope to prevent new references on every render
 const REMARK_PLUGINS = [remarkGfm, remarkBreaks];
@@ -146,15 +148,12 @@ function formatMessageTime(timestamp: number): string {
 /** Three quiet dots that show only while the agent is streaming. Static under reduced motion. */
 function TypingDots(): React.ReactElement {
   return (
-    <span role="status" aria-label="Archon is typing" className="flex items-center gap-1.5 py-1">
-      {[0, 1, 2].map(i => (
-        <span
-          key={i}
-          aria-hidden="true"
-          className="h-1.5 w-1.5 rounded-full bg-text-tertiary animate-pulse motion-reduce:animate-none"
-          style={{ animationDelay: `${String(i * 200)}ms` }}
-        />
-      ))}
+    <span
+      role="status"
+      aria-label="Archon is typing"
+      className="block text-[13px] text-text-secondary italic"
+    >
+      Archon is replying…
     </span>
   );
 }
@@ -197,73 +196,60 @@ function MessageBubbleRaw({ message, assistantLabel }: MessageBubbleProps): Reac
 
   return (
     <>
-      <div className={cn('group flex w-full', isUser ? 'justify-end' : 'justify-start')}>
-        {isUser ? (
-          <div className="flex max-w-[80%] flex-col items-end gap-1">
-            <div className="rounded-2xl bg-accent-muted px-4 py-3">
-              <div className="flex items-start gap-2">
-                <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-base leading-normal text-text-primary">
-                  {message.content}
-                </p>
-                <button
-                  onClick={copyMessage}
-                  className="mt-0.5 shrink-0 cursor-pointer text-text-tertiary opacity-0 transition-opacity duration-150 hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent group-hover:opacity-100"
-                  title={copyError ? 'Failed to copy' : 'Copy message'}
-                  aria-label={copied ? 'Copied' : copyError ? 'Failed to copy' : 'Copy message'}
-                >
-                  {copied ? (
-                    <Check className="h-3.5 w-3.5 text-success" />
-                  ) : copyError ? (
-                    <X className="h-3.5 w-3.5 text-error" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              </div>
-              {message.files && message.files.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {message.files.map((file: FileAttachment) => (
-                    <div
-                      key={file.id}
-                      className="flex items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 text-xs text-text-secondary"
-                      title={file.name}
-                    >
-                      <Paperclip className="h-3 w-3 shrink-0" />
-                      <span className="max-w-[120px] truncate">{file.name}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <span className="text-xs text-text-tertiary">
-              You &middot; {formatMessageTime(message.timestamp)}
+      <div
+        className="group grid grid-cols-[64px_minmax(0,1fr)] gap-3 border-b border-border py-3"
+        data-role={message.role}
+      >
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span
+            className={cn('text-xs font-extrabold', isUser ? 'text-text-primary' : 'text-accent')}
+          >
+            {isUser ? 'You' : 'Archon'}
+          </span>
+          {isThinking ? null : (
+            <span className="text-[11px] text-text-tertiary">
+              {formatMessageTime(message.timestamp)}
             </span>
-          </div>
-        ) : (
-          <div className="flex w-full min-w-0 flex-col gap-2">
-            <div className="flex items-center gap-2 text-xs text-text-tertiary">
-              <PixelLogo
-                label=""
-                active={message.isStreaming === true}
-                className="h-4 w-4 text-text-primary"
-              />
-              <span>
-                Archon
-                {assistantLabel ? ` \u00b7 ${assistantLabel}` : ''}
-                {isThinking ? '' : ` \u00b7 ${formatMessageTime(message.timestamp)}`}
-              </span>
+          )}
+          {!isUser && assistantLabel ? (
+            <span className="truncate text-[11px] text-text-tertiary" title={assistantLabel}>
+              {assistantLabel}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex min-w-0 flex-col gap-3">
+          {isUser ? (
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 text-[14.5px] leading-[1.6] font-semibold break-words whitespace-pre-wrap text-text-primary">
+                {message.content}
+              </p>
+              <button
+                onClick={copyMessage}
+                className="mt-0.5 shrink-0 cursor-pointer text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-text-primary focus-visible:opacity-100"
+                title={copyError ? 'Failed to copy' : 'Copy message'}
+                aria-label={copied ? 'Copied' : copyError ? 'Failed to copy' : 'Copy message'}
+              >
+                {copied ? (
+                  <Check className="h-3.5 w-3.5 text-success" />
+                ) : copyError ? (
+                  <X className="h-3.5 w-3.5 text-error" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+              </button>
             </div>
-            <div className="chat-markdown max-w-none text-base leading-relaxed text-text-primary">
+          ) : (
+            <div className="chat-markdown max-w-none text-[14.5px] leading-[1.6] text-text-primary">
               {isThinking && <span className="sr-only">Thinking</span>}
               {message.content &&
                 (isJsonString(message.content) ? (
                   <details className="group">
                     <summary className="cursor-pointer text-sm text-text-secondary hover:text-text-primary">
-                      <span className="rounded bg-surface-elevated px-1.5 py-0.5 font-mono text-xs">
+                      <span className="bg-surface px-1.5 py-0.5 font-mono text-xs">
                         JSON output
                       </span>
                     </summary>
-                    <pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-surface p-3 text-xs">
+                    <pre className="mt-2 overflow-x-auto bg-code-bg p-3 text-xs text-code-fg">
                       {JSON.stringify(JSON.parse(message.content.trim()) as unknown, null, 2)}
                     </pre>
                   </details>
@@ -278,8 +264,32 @@ function MessageBubbleRaw({ message, assistantLabel }: MessageBubbleProps): Reac
                 ))}
               {message.isStreaming && <TypingDots />}
             </div>
-          </div>
-        )}
+          )}
+          {isUser && message.files && message.files.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {message.files.map((file: FileAttachment) => (
+                <div
+                  key={file.id}
+                  className="flex items-center gap-1 border border-line-strong bg-surface px-1.5 py-0.5 text-xs text-text-secondary"
+                  title={file.name}
+                >
+                  <Paperclip className="h-3 w-3 shrink-0" />
+                  <span className="max-w-[120px] truncate">{file.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {message.toolCalls?.map(tool => (
+            <ToolCallCard key={tool.id} tool={tool} />
+          ))}
+          {message.error && <ErrorCard error={message.error} />}
+          {message.workflowDispatch && (
+            <WorkflowProgressCard
+              workflowName={message.workflowDispatch.workflowName}
+              workerConversationId={message.workflowDispatch.workerConversationId}
+            />
+          )}
+        </div>
       </div>
       {artifactViewer && (
         <ArtifactViewerModal

@@ -56,7 +56,7 @@ export function WorkflowAskChrome({
     <button
       type="button"
       aria-live="polite"
-      className="rounded-full border border-warning bg-warning/10 px-3 py-1 text-xs font-medium text-warning"
+      className="cursor-pointer border border-status-waiting bg-card px-2.5 py-1 text-xs font-semibold text-status-waiting hover:bg-selection"
       onClick={handleClick}
     >
       {`Awaiting input (${countPendingAsks(pendingInteractions)})`}

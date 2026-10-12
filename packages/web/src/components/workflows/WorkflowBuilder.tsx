@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ReactFlowProvider, useNodesState, useEdgesState, useViewport } from '@xyflow/react';
+import { ReactFlowProvider, useNodesState, useEdgesState } from '@xyflow/react';
+import { Redo2, Undo2 } from 'lucide-react';
 import type { Edge } from '@xyflow/react';
 import type {
   RouteLoopConfig,
@@ -17,6 +18,7 @@ import {
   validateWorkflow,
   saveWorkflow,
   createConversation,
+  listWorkflows,
   runWorkflow,
 } from '@/lib/api';
 import type { CommandEntry } from '@/lib/api';
@@ -25,25 +27,38 @@ import { useBuilderKeyboard } from '@/hooks/useBuilderKeyboard';
 import { useBuilderUndo } from '@/hooks/useBuilderUndo';
 import { useBuilderValidation } from '@/hooks/useBuilderValidation';
 import type { ValidationIssue } from '@/hooks/useBuilderValidation';
-import { BuilderToolbar } from './BuilderToolbar';
-import type { ViewMode } from './BuilderToolbar';
-import { NodeLibrary } from './NodeLibrary';
 import { WorkflowCanvas, reactFlowToDagNodes } from './WorkflowCanvas';
-import { NodeInspector } from './NodeInspector';
 import { ValidationPanel } from './ValidationPanel';
-import { StatusBar } from './StatusBar';
 import { YamlCodeView } from './YamlCodeView';
+import { BuilderInspector } from '@/components/builder/BuilderInspector';
+import { BuilderPalette, type BuilderNodeKind } from '@/components/builder/BuilderPalette';
+import { StepsCanvas } from '@/components/builder/StepsCanvas';
+import { WorkflowSettings } from '@/components/builder/WorkflowSettings';
+import { Button } from '@/components/ui/button';
+import { SectionLabel } from '@/components/ui/section-label';
+import { Segmented } from '@/components/ui/segmented';
+import { groupNodesIntoSteps } from '@/lib/node-steps';
+import { cn } from '@/lib/utils';
 import type { DagNodeData, DagFlowNode } from './DagNodeComponent';
+import {
+  dependenciesForStep,
+  ROUTE_OUTCOMES,
+  stepIndexOf,
+  withNodeDependencies,
+} from '@/lib/builder/builder-steps';
 
-const NODE_LIBRARY_WIDTH_KEY = 'archon:nodeLibraryWidth';
-const NODE_LIBRARY_MIN_WIDTH = 160;
-const NODE_LIBRARY_MAX_WIDTH = 400;
-const NODE_LIBRARY_DEFAULT_WIDTH = 240;
-const ROUTE_OUTCOMES = [
-  'positive',
-  'negative',
-  'exhausted',
-] as const satisfies readonly RouteLoopOutcome[];
+type CanvasView = 'steps' | 'graph';
+
+interface BuilderNotice {
+  kind: 'info' | 'error' | 'saved';
+  text: string;
+}
+
+const NOTICE_CLASS: Readonly<Record<BuilderNotice['kind'], string>> = {
+  info: 'bg-selection text-accent',
+  error: 'bg-tint-error text-status-failed',
+  saved: 'bg-tint-success text-status-done',
+};
 
 function routeLoopEdgeLabel(
   outcome: RouteLoopOutcome
@@ -91,85 +106,6 @@ function routeLoopConfigToEdges(
   return [...sourceEdges, ...routeEdges];
 }
 
-function NodeLibraryPanel({
-  commands,
-  isLoading,
-}: {
-  commands: CommandEntry[];
-  isLoading: boolean;
-}): React.ReactElement {
-  const [width, setWidth] = useState(() => {
-    try {
-      const stored = parseInt(localStorage.getItem(NODE_LIBRARY_WIDTH_KEY) ?? '', 10);
-      return Number.isFinite(stored)
-        ? Math.min(Math.max(stored, NODE_LIBRARY_MIN_WIDTH), NODE_LIBRARY_MAX_WIDTH)
-        : NODE_LIBRARY_DEFAULT_WIDTH;
-    } catch {
-      return NODE_LIBRARY_DEFAULT_WIDTH;
-    }
-  });
-  const dragging = useRef(false);
-  const startX = useRef(0);
-  const startWidth = useRef(0);
-
-  const onMouseDown = useCallback(
-    (e: React.MouseEvent): void => {
-      dragging.current = true;
-      startX.current = e.clientX;
-      startWidth.current = width;
-      e.preventDefault();
-    },
-    [width]
-  );
-
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent): void => {
-      if (!dragging.current) return;
-      const delta = e.clientX - startX.current;
-      const next = Math.min(
-        Math.max(startWidth.current + delta, NODE_LIBRARY_MIN_WIDTH),
-        NODE_LIBRARY_MAX_WIDTH
-      );
-      setWidth(next);
-    };
-    const onMouseUp = (): void => {
-      if (!dragging.current) return;
-      dragging.current = false;
-      setWidth(prev => {
-        try {
-          localStorage.setItem(NODE_LIBRARY_WIDTH_KEY, String(prev));
-        } catch {
-          // Storage unavailable or quota exceeded — width persists in memory only
-        }
-        return prev;
-      });
-    };
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    return (): void => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-  }, []);
-
-  return (
-    <div className="relative shrink-0 h-full overflow-hidden flex" style={{ width }}>
-      <div className="flex-1 overflow-hidden">
-        <NodeLibrary commands={commands} isLoading={isLoading} />
-      </div>
-      {/* Drag handle */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize node library panel"
-        onMouseDown={onMouseDown}
-        className="absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize transition-colors duration-200 hover:bg-accent-muted focus-visible:bg-accent-muted motion-reduce:transition-none"
-        title="Drag to resize"
-      />
-    </div>
-  );
-}
-
 function WorkflowBuilderInner(): React.ReactElement {
   const [searchParams] = useSearchParams();
   const editName = searchParams.get('edit');
@@ -192,9 +128,12 @@ function WorkflowBuilderInner(): React.ReactElement {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
-  const [yamlViewMode, setYamlViewMode] = useState<ViewMode>('hidden');
   const [validationPanelOpen, setValidationPanelOpen] = useState(false);
   const [showLibrary, setShowLibrary] = useState(true);
+  const [canvasView, setCanvasView] = useState<CanvasView>('steps');
+  const [inspectorTab, setInspectorTab] = useState<'inspector' | 'yaml'>('inspector');
+  const [startFrom, setStartFrom] = useState('');
+  const [notice, setNotice] = useState<BuilderNotice | null>(null);
 
   // DAG state
   const [nodes, setNodes, onNodesChange] = useNodesState<DagFlowNode>([]);
@@ -215,16 +154,16 @@ function WorkflowBuilderInner(): React.ReactElement {
   });
   const commandList: CommandEntry[] = commands ?? [];
 
+  const { data: workflowList } = useQuery({
+    queryKey: ['workflows', cwd ?? null],
+    queryFn: () => listWorkflows(cwd),
+  });
+
   const { pushSnapshot, undo, redo, canUndo, canRedo } = useBuilderUndo();
-  const { zoom } = useViewport();
 
   const validationIssues = useBuilderValidation(workflowName, workflowDescription, nodes, edges);
   const errorCount = useMemo(
     () => validationIssues.filter(i => i.severity === 'error').length,
-    [validationIssues]
-  );
-  const warningCount = useMemo(
-    () => validationIssues.filter(i => i.severity === 'warning').length,
     [validationIssues]
   );
 
@@ -323,6 +262,11 @@ function WorkflowBuilderInner(): React.ReactElement {
         selectedNode?.data.nodeType === 'route_loop' &&
         routeLoopUpdate !== undefined &&
         (updates.route_loop !== undefined || updatesDependsOn);
+      // Dependencies are edges: the saved YAML derives `depends_on` from them, so an
+      // inspector edit must rewrite the node's incoming edges, not only its data.
+      if (selectedNodeId && updatesDependsOn && selectedNode?.data.nodeType !== 'route_loop') {
+        setEdges(eds => withNodeDependencies(eds, selectedNodeId, updates.depends_on ?? []));
+      }
       if (selectedNodeId && shouldRebuildRouteLoopEdges) {
         const sourceNodeIds = updatesDependsOn
           ? (updates.depends_on ?? [])
@@ -368,6 +312,7 @@ function WorkflowBuilderInner(): React.ReactElement {
       const result = await validateWorkflow(def);
       if (result.valid) {
         setValidationErrors([]);
+        setNotice({ kind: 'info', text: 'The server accepts this workflow.' });
       } else {
         setValidationErrors(result.errors ?? ['Unknown validation error']);
       }
@@ -394,6 +339,10 @@ function WorkflowBuilderInner(): React.ReactElement {
       setValidationErrors([]);
       await saveWorkflow(workflowName.trim(), def, cwd, workflowSource);
       setHasUnsavedChanges(false);
+      setNotice({
+        kind: 'saved',
+        text: `Saved to .archon/workflows/${workflowName.trim()}.yaml`,
+      });
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error');
       console.error('[workflow-builder] workflow.save_failed', { workflowName, cwd, error });
@@ -434,15 +383,6 @@ function WorkflowBuilderInner(): React.ReactElement {
     }
   }, [redo, setNodes, setEdges]);
 
-  // Convert validation issues to string array for toolbar display
-  const toolbarValidationErrors = useMemo(
-    (): string[] => [
-      ...validationErrors,
-      ...validationIssues.filter(i => i.severity === 'error').map(i => i.message),
-    ],
-    [validationErrors, validationIssues]
-  );
-
   // Convert validation issues for the panel (merge server-side errors with client-side)
   const allValidationIssues = useMemo((): ValidationIssue[] => {
     const serverIssues: ValidationIssue[] = validationErrors.map(msg => ({
@@ -462,11 +402,7 @@ function WorkflowBuilderInner(): React.ReactElement {
         setShowLibrary(v => !v);
       },
       onToggleYaml: (): void => {
-        setYamlViewMode(v => {
-          const modes: ViewMode[] = ['hidden', 'split', 'full'];
-          const idx = modes.indexOf(v);
-          return modes[(idx + 1) % modes.length];
-        });
+        setInspectorTab(tab => (tab === 'yaml' ? 'inspector' : 'yaml'));
       },
       onToggleValidation: handleToggleValidationPanel,
       onAddPrompt: (): void => {
@@ -531,132 +467,340 @@ function WorkflowBuilderInner(): React.ReactElement {
 
   const selectedNode = selectedNodeId ? nodes.find(n => n.id === selectedNodeId) : null;
 
+  const steps = useMemo(
+    () => groupNodesIntoSteps(reactFlowToDagNodes(nodes, edges)),
+    [nodes, edges]
+  );
+  const selectedStepIndex = selectedNodeId === null ? -1 : stepIndexOf(steps, selectedNodeId);
+
+  const handleStartFrom = useCallback(
+    async (name: string | null): Promise<void> => {
+      pushSnapshotLatest();
+      setStartFrom(name ?? '');
+      setSelectedNodeId(null);
+      if (name === null) {
+        setWorkflowName('');
+        setWorkflowDescription('');
+        setProvider(undefined);
+        setModel(undefined);
+        setWorkflowMetadata({});
+        setWorkflowSource(undefined);
+        setNodes([]);
+        setEdges([]);
+        setValidationErrors([]);
+        setNotice(null);
+        setHasUnsavedChanges(false);
+        return;
+      }
+      await loadWorkflow(name);
+      // A start point is a copy: it saves as a new project workflow.
+      setWorkflowName(`${name}-copy`);
+      setWorkflowSource(undefined);
+      setHasUnsavedChanges(true);
+      setNotice({ kind: 'info', text: `Started from ${name}. Saving creates ${name}-copy.` });
+    },
+    [loadWorkflow, pushSnapshotLatest, setNodes, setEdges]
+  );
+
+  const handleAddNode = useCallback(
+    (kind: BuilderNodeKind): void => {
+      const base = kind === 'route_loop' ? 'route' : kind;
+      const taken = new Set(nodes.map(n => n.id));
+      let counter = nodes.length + 1;
+      while (taken.has(`${base}-${String(counter)}`)) counter += 1;
+      const id = `${base}-${String(counter)}`;
+      // A new node goes into the step after the selected one, or into a new last step.
+      const targetStep = selectedStepIndex >= 0 ? selectedStepIndex + 1 : steps.length;
+      const dependsOn = dependenciesForStep(steps, targetStep);
+      const label =
+        kind === 'command'
+          ? (commandList[0]?.name ?? '')
+          : kind === 'prompt'
+            ? 'Prompt'
+            : kind === 'bash'
+              ? 'Shell'
+              : 'Route';
+      const newNode: DagFlowNode = {
+        id,
+        type: 'dagNode',
+        position: { x: targetStep * 260, y: (steps[targetStep]?.nodes.length ?? 0) * 110 },
+        data: {
+          id,
+          label,
+          nodeType: kind,
+          depends_on: dependsOn.length > 0 ? dependsOn : undefined,
+          ...(kind === 'prompt' ? { promptText: '' } : {}),
+          ...(kind === 'bash' ? { bashScript: '' } : {}),
+        },
+      };
+      pushSnapshotLatest();
+      setNodes(nds => [...nds, newNode]);
+      setEdges(eds => withNodeDependencies(eds, id, dependsOn));
+      setSelectedNodeId(id);
+      markDirty();
+    },
+    [
+      nodes,
+      selectedStepIndex,
+      steps,
+      commandList,
+      pushSnapshotLatest,
+      setNodes,
+      setEdges,
+      markDirty,
+    ]
+  );
+
+  const handleMoveStep = useCallback(
+    (direction: -1 | 1): void => {
+      if (selectedNodeId === null || selectedStepIndex < 0) return;
+      const target = selectedStepIndex + direction;
+      if (target < 0) return;
+      const dependsOn = dependenciesForStep(steps, target, selectedNodeId);
+      // Moving right needs a node to follow; without one the node stays where it is.
+      if (direction === 1 && dependsOn.length === 0) return;
+      pushSnapshotLatest();
+      handleNodeUpdate({ depends_on: dependsOn.length > 0 ? dependsOn : undefined });
+    },
+    [selectedNodeId, selectedStepIndex, steps, pushSnapshotLatest, handleNodeUpdate]
+  );
+
+  const saveBlocked = errorCount > 0;
+  const statsText = `${String(nodes.length)} ${nodes.length === 1 ? 'node' : 'nodes'} · ${String(steps.length)} ${steps.length === 1 ? 'step' : 'steps'} · ${String(errorCount)} ${errorCount === 1 ? 'error' : 'errors'}`;
+  const activeNotice: BuilderNotice | null =
+    validationErrors.length > 0 ? { kind: 'error', text: validationErrors.join(' ') } : notice;
+
   return (
-    <div className="flex flex-col h-full">
-      <BuilderToolbar
-        workflowName={workflowName}
-        workflowDescription={workflowDescription}
-        provider={provider}
-        model={model}
-        hasUnsavedChanges={hasUnsavedChanges}
-        validationErrors={toolbarValidationErrors}
-        viewMode={yamlViewMode}
-        onNameChange={(n): void => {
-          setWorkflowName(n);
-          markDirty();
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)_minmax(300px,380px)]">
+      <BuilderPalette
+        workflows={workflowList?.workflows ?? []}
+        startFrom={startFrom}
+        onStartFrom={(name): void => {
+          void handleStartFrom(name);
         }}
-        onDescriptionChange={(d): void => {
-          setWorkflowDescription(d);
-          markDirty();
-        }}
-        onProviderChange={(p): void => {
-          setProvider(p);
-          markDirty();
-        }}
-        onModelChange={(m): void => {
-          setModel(m);
-          markDirty();
-        }}
-        onViewModeChange={setYamlViewMode}
-        onValidate={(): void => {
-          void handleValidate();
-        }}
-        onSave={(): void => {
-          void handleSave();
-        }}
-        onRun={(): void => {
-          void handleRun();
-        }}
-        onLoadWorkflow={(name): void => {
-          void loadWorkflow(name);
-        }}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
+        addHint={
+          selectedNodeId !== null
+            ? `Adds to the step after ${selectedNodeId}.`
+            : 'Adds a new step at the end.'
+        }
+        onAdd={handleAddNode}
+        commands={commandList}
+        commandsLoading={commandsLoading}
+        showLibrary={canvasView === 'graph' && showLibrary}
       />
 
-      {commandsError && (
-        <div className="px-4 py-1.5 text-xs text-error bg-surface-inset border-b border-border">
-          Failed to load commands. Command palette and dropdowns may be empty.
+      <section
+        aria-label="Workflow canvas"
+        className="flex min-h-0 min-w-0 flex-col border-r border-border"
+      >
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-6 py-3">
+          <input
+            aria-label="Workflow name"
+            value={workflowName}
+            placeholder="workflow-name"
+            onChange={(event): void => {
+              setWorkflowName(event.target.value.replace(/\s+/g, '-'));
+              markDirty();
+            }}
+            className="min-h-10 min-w-[200px] flex-1 border border-line-strong bg-card px-3 text-xl font-extrabold text-text-primary placeholder:text-text-tertiary"
+          />
+          <span
+            className={cn(
+              'text-xs font-semibold',
+              saveBlocked ? 'text-status-failed' : 'text-text-secondary'
+            )}
+          >
+            {statsText}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Undo"
+              disabled={!canUndo}
+              onClick={handleUndo}
+            >
+              <Undo2 className="size-4" aria-hidden="true" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Redo"
+              disabled={!canRedo}
+              onClick={handleRedo}
+            >
+              <Redo2 className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={(): void => {
+              void handleValidate();
+            }}
+          >
+            Validate
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={workflowName.trim() === '' || hasUnsavedChanges}
+            title={hasUnsavedChanges ? 'Save before running' : undefined}
+            onClick={(): void => {
+              void handleRun();
+            }}
+          >
+            Run
+          </Button>
+          <Button
+            size="sm"
+            onClick={(): void => {
+              if (saveBlocked) {
+                setNotice({
+                  kind: 'error',
+                  text: `Fix ${String(errorCount)} ${errorCount === 1 ? 'error' : 'errors'} before saving.`,
+                });
+                setValidationPanelOpen(true);
+                return;
+              }
+              void handleSave();
+            }}
+          >
+            {hasUnsavedChanges || workflowName.trim() === '' ? 'Save' : 'Saved'}
+          </Button>
         </div>
-      )}
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left panel: Node Library */}
-        {showLibrary && <NodeLibraryPanel commands={commandList} isLoading={commandsLoading} />}
-
-        {/* Center area */}
-        <div className="flex-1 relative overflow-hidden flex flex-col">
-          {yamlViewMode === 'full' ? (
-            <YamlCodeView definition={buildDefinition()} mode="full" />
-          ) : (
-            <>
-              <div className="flex-1 relative overflow-hidden">
-                <WorkflowCanvas
-                  nodes={nodes}
-                  edges={edges}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
-                  setNodes={setNodes}
-                  setEdges={setEdges}
-                  onNodeSelect={setSelectedNodeId}
-                  onNodeDelete={handleNodeDeleteById}
-                  onDirty={markDirty}
-                  onPushSnapshot={pushSnapshotLatest}
-                  commands={commandList}
-                />
-              </div>
-
-              {yamlViewMode === 'split' && (
-                <div className="h-60 shrink-0 border-t border-border">
-                  <YamlCodeView
-                    definition={buildDefinition()}
-                    mode="split"
-                    onCollapse={(): void => {
-                      setYamlViewMode('hidden');
-                    }}
-                  />
-                </div>
-              )}
-            </>
-          )}
+        {activeNotice !== null ? (
+          <div
+            role={activeNotice.kind === 'error' ? 'alert' : 'status'}
+            className={cn(
+              'border-b border-border px-6 py-2 text-[13px] font-semibold',
+              NOTICE_CLASS[activeNotice.kind]
+            )}
+          >
+            {activeNotice.text}
+          </div>
+        ) : null}
+        {commandsError ? (
+          <div className="border-b border-border bg-tint-error px-6 py-2 text-xs text-error">
+            Failed to load commands. Command palette and dropdowns may be empty.
+          </div>
+        ) : null}
+        <div className="flex items-center justify-between gap-3 px-6 pt-3">
+          <SectionLabel>Canvas</SectionLabel>
+          <Segmented<CanvasView>
+            aria-label="Canvas view"
+            value={canvasView}
+            onValueChange={setCanvasView}
+            options={[
+              { value: 'steps', label: 'Steps' },
+              { value: 'graph', label: 'Graph' },
+            ]}
+          />
         </div>
-
-        {/* Right panel: Node Inspector */}
-        {selectedNodeId && selectedNode && yamlViewMode !== 'full' && (
-          <div className="w-80 shrink-0">
-            <NodeInspector
-              node={selectedNode.data}
-              commands={commandList}
-              onUpdate={handleNodeUpdate}
-              onDelete={handleNodeDelete}
-              onClose={(): void => {
-                setSelectedNodeId(null);
+        {canvasView === 'steps' ? (
+          <div className="min-h-0 flex-1 overflow-auto px-6 py-4">
+            <StepsCanvas
+              steps={steps}
+              selectedNodeId={selectedNodeId}
+              onSelect={(id): void => {
+                setSelectedNodeId(id);
+                setInspectorTab('inspector');
               }}
             />
           </div>
+        ) : (
+          <div className="relative mt-3 min-h-0 flex-1 overflow-hidden border-t border-border">
+            <WorkflowCanvas
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              setNodes={setNodes}
+              setEdges={setEdges}
+              onNodeSelect={setSelectedNodeId}
+              onNodeDelete={handleNodeDeleteById}
+              onDirty={markDirty}
+              onPushSnapshot={pushSnapshotLatest}
+              commands={commandList}
+            />
+          </div>
         )}
-      </div>
+        <ValidationPanel
+          issues={allValidationIssues}
+          isOpen={validationPanelOpen}
+          onToggle={handleToggleValidationPanel}
+          onFocusNode={setSelectedNodeId}
+        />
+      </section>
 
-      {/* Validation Panel */}
-      <ValidationPanel
-        issues={allValidationIssues}
-        isOpen={validationPanelOpen}
-        onToggle={handleToggleValidationPanel}
-        onFocusNode={setSelectedNodeId}
-      />
-
-      {/* Status Bar */}
-      <StatusBar
-        nodeCount={nodes.length}
-        edgeCount={edges.length}
-        errorCount={errorCount}
-        warningCount={warningCount}
-        hasUnsavedChanges={hasUnsavedChanges}
-        zoomLevel={Math.round(zoom * 100)}
-        onValidationClick={handleToggleValidationPanel}
-      />
+      <section aria-label="Inspector" className="flex min-h-0 flex-col bg-background">
+        <div
+          role="tablist"
+          aria-label="Inspector views"
+          className="flex flex-none border-b border-border px-6"
+        >
+          {(['inspector', 'yaml'] as const).map(value => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={inspectorTab === value}
+              onClick={(): void => {
+                setInspectorTab(value);
+              }}
+              className={cn(
+                '-mb-px mr-4 border-b-[3px] pt-3 pb-2 text-[13px] font-semibold',
+                inspectorTab === value
+                  ? 'border-accent text-text-primary'
+                  : 'border-transparent text-text-secondary hover:text-text-primary'
+              )}
+            >
+              {value === 'inspector' ? 'Inspector' : 'YAML'}
+            </button>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto px-6 py-4">
+          {inspectorTab === 'yaml' ? (
+            <div className="flex flex-col gap-2">
+              <span className="text-xs text-text-secondary">
+                .archon/workflows/{workflowName.trim() || 'untitled'}.yaml
+              </span>
+              <YamlCodeView definition={buildDefinition()} mode="full" />
+            </div>
+          ) : selectedNode ? (
+            <BuilderInspector
+              node={selectedNode.data}
+              commands={commandList}
+              stepNumber={selectedStepIndex + 1}
+              canMoveLeft={selectedStepIndex > 0}
+              canMoveRight={
+                dependenciesForStep(steps, selectedStepIndex + 1, selectedNode.id).length > 0
+              }
+              onMove={handleMoveStep}
+              onUpdate={handleNodeUpdate}
+              onDelete={handleNodeDelete}
+            />
+          ) : (
+            <WorkflowSettings
+              description={workflowDescription}
+              provider={provider}
+              model={model}
+              onDescriptionChange={(next): void => {
+                setWorkflowDescription(next);
+                markDirty();
+              }}
+              onProviderChange={(next): void => {
+                setProvider(next);
+                markDirty();
+              }}
+              onModelChange={(next): void => {
+                setModel(next);
+                markDirty();
+              }}
+            />
+          )}
+        </div>
+      </section>
     </div>
   );
 }

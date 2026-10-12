@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/modernist-e24aa044-ad6a-428b-b2d0-5369bdd0a859/styles.css">
+  <script src="_ds/modernist-e24aa044-ad6a-428b-b2d0-5369bdd0a859/_ds_bundle.js"></script>
+  <script src="archon-runs.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    button { font: inherit; color: inherit; }
+    a { color: inherit; } a:hover { color: var(--color-accent); }
+    @keyframes blink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+  </style>
+</helmet>
+<div style="height: {{ rootH }}; display: flex; flex-direction: column; font-family: var(--font-body); --hdrBg: {{ th.hdrBg }}; --hdrFg: {{ th.hdrFg }}; --hdrMuted: {{ th.hdrMuted }}; --hdrLine: {{ th.hdrLine }}; font-variant-numeric: tabular-nums; --bg: {{ th.bg }}; --surface: {{ th.surface }}; --text: {{ th.text }}; --muted: {{ th.muted }}; --faint: {{ th.faint }}; --line: {{ th.line }}; --strong: {{ th.strong }}; --sel: {{ th.sel }}; --code: {{ th.code }}; --codeFg: {{ th.codeFg }}; --wait: {{ th.wait }}; --waitFg: {{ th.waitFg }}; --fail: {{ th.fail }}; --color-bg: {{ th.bg }}; --color-surface: {{ th.surface }}; --color-text: {{ th.text }}; --color-divider: {{ th.line }}; --color-accent: {{ th.accent }}; --color-accent-600: {{ th.accent }}; background: var(--bg); color: var(--text);">
+
+  <div style="display: flex; align-items: stretch; height: 48px; flex: none; background: var(--hdrBg); color: var(--hdrFg); border-bottom: 1px solid var(--hdrLine);">
+    <div style="display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); border-right: 1px solid var(--hdrLine);"><svg viewBox="0 0 64 64" width="20" height="20" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true" style="display: block; flex: none;"><rect x="20" y="4" width="8" height="8"></rect><rect x="28" y="4" width="8" height="8"></rect><rect x="36" y="4" width="8" height="8"></rect><rect x="12" y="12" width="8" height="8"></rect><rect x="20" y="12" width="8" height="8"></rect><rect x="36" y="12" width="8" height="8"></rect><rect x="44" y="12" width="8" height="8"></rect><rect x="4" y="20" width="8" height="8"></rect><rect x="12" y="20" width="8" height="8"></rect><rect x="44" y="20" width="8" height="8"></rect><rect x="52" y="20" width="8" height="8"></rect><rect x="4" y="28" width="8" height="8"></rect><rect x="12" y="28" width="8" height="8"></rect><rect x="20" y="28" width="8" height="8"></rect><rect x="28" y="28" width="8" height="8"></rect><rect x="36" y="28" width="8" height="8"></rect><rect x="44" y="28" width="8" height="8"></rect><rect x="52" y="28" width="8" height="8"></rect><rect x="4" y="36" width="8" height="8"></rect><rect x="12" y="36" width="8" height="8"></rect><rect x="44" y="36" width="8" height="8"></rect><rect x="52" y="36" width="8" height="8"></rect><rect x="4" y="44" width="8" height="8"></rect><rect x="12" y="44" width="8" height="8"></rect><rect x="44" y="44" width="8" height="8"></rect><rect x="52" y="44" width="8" height="8"></rect><rect x="4" y="52" width="8" height="8"></rect><rect x="12" y="52" width="8" height="8"></rect><rect x="44" y="52" width="8" height="8"></rect><rect x="52" y="52" width="8" height="8"></rect></svg><span style="font-family: var(--font-heading); font-weight: 800; font-size: 16px;">Archon</span></div>
+    <nav style="display: flex; align-items: stretch; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none;">
+      <sc-for list="{{ nav }}" as="n" hint-placeholder-count="5">
+        <a href="{{ n.href }}" style="flex: none; display: flex; align-items: center; padding: 0 var(--space-4); border-bottom: 3px solid {{ n.bd }}; font-size: 14px; font-weight: 600; color: {{ n.fg }}; text-decoration: none;" style-hover="color: var(--hdrFg);">{{ n.label }}</a>
+      </sc-for>
+    </nav>
+    <label style="display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); border-left: 1px solid var(--hdrLine); font-size: 12px; color: var(--hdrMuted); white-space: nowrap;">Project
+      <select value="{{ project }}" onChange="{{ setProject }}" style="height: 30px; padding: 0 var(--space-2); border: 1px solid var(--hdrLine); border-radius: 0; background: var(--hdrBg); color: var(--hdrFg); font-family: var(--font-body); font-size: 13px; font-weight: 600; cursor: pointer; max-width: 240px;">
+        <sc-for list="{{ projectOpts }}" as="p" hint-placeholder-count="4"><option value="{{ p.value }}">{{ p.label }}</option></sc-for>
+      </select>
+    </label>
+    <button type="button" onClick="{{ goNeeds }}" style="flex: none; display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); border: 0; background: {{ needsBg }}; color: {{ needsFg }}; cursor: pointer; font-size: 13px; font-weight: 600;">
+      <span style="font-family: var(--font-heading); font-weight: 800; font-size: 20px;">{{ needsCount }}</span> Needs you
+    </button>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(240px, 300px) minmax(260px, 0.85fr) minmax(0, 1.4fr);">
+
+    <aside style="display: flex; flex-direction: column; min-height: 0; border-right: 2px solid var(--strong);">
+      <div style="padding: var(--space-3) var(--space-4) 0;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <span style="font-family: var(--font-heading); font-weight: 800; font-size: 20px;">Runs</span>
+          <span style="font-size: 12px; color: var(--muted);">{{ liveLabel }}</span>
+        </div>
+        <input class="input" style="margin-top: var(--space-2); min-height: 32px; font-size: 13px; background: var(--bg);" placeholder="Filter by name, issue, workflow, project" value="{{ q }}" onChange="{{ setQ }}">
+        <div style="display: flex; margin-top: var(--space-2); border-bottom: 1px solid var(--line);">
+          <sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
+            <button type="button" onClick="{{ f.on }}" style="flex: none; padding: var(--space-2) 0; margin-right: var(--space-3); border: 0; border-bottom: 2px solid {{ f.bd }}; margin-bottom: -1px; background: none; font-size: 12px; font-weight: 600; color: {{ f.fg }}; cursor: pointer;">{{ f.label }} {{ f.count }}</button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="flex: 1; overflow: auto;">
+        <sc-for list="{{ runList }}" as="r" hint-placeholder-count="5">
+          <button type="button" onClick="{{ r.on }}" style="width: 100%; display: flex; flex-direction: column; gap: 6px; padding: var(--space-3) var(--space-4); border: 0; border-bottom: 1px solid var(--line); border-left: 3px solid {{ r.bar }}; background: {{ r.bg }}; cursor: pointer; text-align: left;" style-hover="background: var(--sel);">
+            <span style="display: flex; gap: 4px; padding-left: 20px; width: 100%; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; color: var(--muted); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;"><span style="font-weight: 400;">{{ r.projOwner }}/</span><span style="color: var(--text);">{{ r.projName }}</span></span>
+            <span style="display: flex; gap: var(--space-2); align-items: baseline; width: 100%;">
+              <span style="font-size: 13px; font-weight: 800; color: {{ r.st.color }}; width: 12px; flex: none;">{{ r.st.glyph }}</span>
+              <span style="font-size: 14px; font-weight: 700; flex: 1; min-width: 0;">{{ r.name }} <span style="font-weight: 400; color: var(--muted);">· {{ r.note }}</span></span>
+              <span style="font-size: 12px; color: var(--muted); flex: none;">{{ r.time }}</span>
+            </span>
+            <span style="display: flex; gap: 2px; padding-left: 20px; width: 100%;">
+              <sc-for list="{{ r.segs }}" as="g" hint-placeholder-count="6"><span style="flex: 1; height: 4px; background: {{ g.c }};"></span></sc-for>
+            </span>
+            <span style="display: flex; justify-content: space-between; gap: var(--space-2); padding-left: 20px; width: 100%; font-size: 12px; color: var(--muted);">
+              <span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.workflow }}</span>
+              <span style="flex: none; color: {{ r.st.color }}; font-weight: 600;">{{ r.st.label }}</span>
+            </span>
+          </button>
+        </sc-for>
+        <sc-if value="{{ listEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: var(--space-4); font-size: 13px; color: var(--muted);">No runs match.</div></sc-if>
+      </div>
+    </aside>
+
+    <section style="display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line);">
+      <div style="padding: var(--space-4) var(--space-6); border-bottom: 1px solid var(--line);">
+        <div style="display: flex; align-items: center; gap: var(--space-2); font-size: 12px; color: var(--muted);"><span>{{ run.project }}</span><span>·</span><span>{{ run.id }}</span></div>
+        <div style="display: flex; align-items: center; gap: var(--space-3); margin-top: 2px; flex-wrap: wrap;">
+          <span style="font-family: var(--font-heading); font-weight: 800; font-size: 24px; line-height: 1.15;">{{ run.name }}</span>
+          <span style="font-size: 12px; font-weight: 700; padding: 2px 8px; background: {{ run.st.chipBg }}; color: {{ run.st.chipFg }}; border: 1px solid {{ run.st.color }};">{{ run.st.label }}</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 2px var(--space-3); margin-top: var(--space-3); font-size: 12px;">
+          <span style="color: var(--muted);">Workflow</span><span style="font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ run.workflow }}</span>
+          <span style="color: var(--muted);">Elapsed</span><span style="font-weight: 600;">{{ run.time }} · {{ run.cost }}</span>
+          <span style="color: var(--muted);">Input</span><span style="font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ run.input }}</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3);">
+          <sc-for list="{{ runActions }}" as="a" hint-placeholder-count="2"><button type="button" class="btn btn-secondary" style="padding: 5px 10px; font-size: 13px; white-space: nowrap;">{{ a.label }}</button></sc-for>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; padding: var(--space-3) var(--space-6) var(--space-1); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);"><span>Nodes</span><span>{{ run.progress }}</span></div>
+      <div style="flex: 1; overflow: auto; padding: 0 var(--space-6) var(--space-6);">
+        <sc-for list="{{ layers }}" as="L" hint-placeholder-count="6">
+          <div style="display: grid; grid-template-columns: 28px minmax(0, 1fr); border-top: 1px solid var(--line);">
+            <div style="padding-top: 10px; font-size: 11px; color: var(--faint);">{{ L.num }}</div>
+            <div style="display: flex; flex-direction: column; border-left: {{ L.bracket }}; padding-left: {{ L.pad }};">
+              <sc-if value="{{ L.parallel }}" hint-placeholder-val="{{ false }}"><div style="font-size: 11px; color: var(--faint); padding-top: 6px;">{{ L.parLabel }}</div></sc-if>
+              <sc-for list="{{ L.nodes }}" as="n" hint-placeholder-count="1">
+                <button type="button" onClick="{{ n.on }}" style="display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 2px var(--space-2); align-items: baseline; padding: 8px var(--space-2); margin: 2px 0 2px calc(var(--space-2) * -1); border: 0; border-left: 3px solid {{ n.bar }}; background: {{ n.bg }}; cursor: pointer; text-align: left;" style-hover="background: var(--sel);">
+                  <span style="font-size: 13px; font-weight: 800; color: {{ n.st.color }};">{{ n.st.glyph }}</span>
+                  <span style="font-size: 14px; font-weight: 600; color: {{ n.fg }}; word-break: break-word;">{{ n.id }}</span>
+                  <span style="font-size: 12px; color: var(--muted);">{{ n.right }}</span>
+                  <span></span>
+                  <span style="font-size: 11px; color: var(--muted); grid-column: 2 / -1;">{{ n.code }}{{ n.extra }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+        <div style="margin-top: var(--space-4); font-size: 11px; color: var(--faint);">Durations, costs and tokens are sample values.</div>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; min-height: 0; background: var(--bg);">
+      <div style="padding: var(--space-4) var(--space-6) 0; border-bottom: 1px solid var(--line);">
+        <div style="display: flex; align-items: flex-start; gap: var(--space-3);">
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-size: 12px; color: var(--muted);">{{ node.kindLabel }} · {{ node.model }}</div>
+            <div style="display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap;"><span style="font-family: var(--font-heading); font-weight: 800; font-size: 20px; word-break: break-word;">{{ node.id }}</span><span style="font-size: 13px; font-weight: 700; white-space: nowrap; color: {{ node.st.color }};">{{ node.st.glyph }} {{ node.st.label }}</span><span style="font-size: 12px; color: var(--muted);">{{ node.right }}</span></div>
+          </div>
+          <div style="display: flex; gap: var(--space-2); flex: none;">
+            <sc-for list="{{ nodeActions }}" as="a" hint-placeholder-count="1"><button type="button" class="btn btn-secondary" style="padding: 5px 10px; font-size: 13px; white-space: nowrap;">{{ a.label }}</button></sc-for>
+          </div>
+        </div>
+        <div style="display: flex; margin-top: var(--space-3);">
+          <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+            <button type="button" onClick="{{ t.on }}" style="flex: none; padding: var(--space-2) 0; margin-right: var(--space-4); border: 0; border-bottom: 3px solid {{ t.bd }}; margin-bottom: -1px; background: none; font-size: 13px; font-weight: 600; color: {{ t.fg }}; cursor: pointer;">{{ t.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <sc-if value="{{ hasTodo }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; gap: var(--space-3); align-items: baseline; padding: var(--space-2) var(--space-6); border-bottom: 1px solid var(--line); background: var(--surface); font-size: 12px; overflow-x: auto; scrollbar-width: none; flex: none;">
+          <span style="font-weight: 700; flex: none;">Todo {{ todoCount }}</span>
+          <sc-for list="{{ todo }}" as="d" hint-placeholder-count="5"><span style="flex: none; color: {{ d.fg }}; text-decoration: {{ d.deco }};">{{ d.mark }} {{ d.text }}</span></sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{ viewingIter }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: var(--space-2) var(--space-6); background: var(--code); color: var(--codeFg); font-size: 13px; flex: none;"><span>{{ iterBanner }}</span><button type="button" onClick="{{ backLive }}" style="background: none; border: 0; color: inherit; font-weight: 700; cursor: pointer; text-decoration: underline;">Back to current</button></div>
+      </sc-if>
+
+      <sc-if value="{{ tab_stream }}" hint-placeholder-val="{{ true }}">
+        <div ref="{{ streamRef }}" onScroll="{{ onStreamScroll }}" style="flex: 1; overflow: auto; padding: var(--space-2) var(--space-6) var(--space-6);">
+          <sc-if value="{{ streamEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: var(--space-8) 0; font-size: 15px; color: var(--muted); max-width: 48ch;">{{ emptyMsg }}</div></sc-if>
+          <sc-for list="{{ stream }}" as="it" hint-placeholder-count="6">
+            <div style="display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: var(--space-3); padding: 10px 0; border-bottom: 1px solid var(--line);">
+              <span style="font-size: 11px; color: var(--faint); padding-top: 3px;">{{ it.time }}</span>
+              <div style="min-width: 0;">
+                <sc-if value="{{ it.isAgent }}" hint-placeholder-val="{{ true }}"><div style="font-size: 14.5px; line-height: 1.6; text-wrap: pretty;">{{ it.shown }}<sc-if value="{{ it.typing }}" hint-placeholder-val="{{ false }}">{{ cursor }}</sc-if></div></sc-if>
+                <sc-if value="{{ it.isSys }}" hint-placeholder-val="{{ false }}"><div style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);">{{ it.text }}</div></sc-if>
+                <sc-if value="{{ it.isThink }}" hint-placeholder-val="{{ false }}">
+                  <button type="button" onClick="{{ it.toggle }}" style="background: none; border: 0; padding: 0; cursor: pointer; font-size: 13px; font-style: italic; color: var(--muted); text-align: left;">{{ it.caret }} {{ it.text }}</button>
+                  <sc-if value="{{ it.open }}" hint-placeholder-val="{{ false }}"><div style="font-size: 13px; line-height: 1.55; color: var(--muted); font-style: italic; margin-top: 4px; padding-left: var(--space-3); border-left: 2px solid var(--line);">{{ it.body }}</div></sc-if>
+                </sc-if>
+                <sc-if value="{{ it.isTool }}" hint-placeholder-val="{{ false }}">
+                  <button type="button" onClick="{{ it.toggle }}" style="width: 100%; display: grid; grid-template-columns: 12px auto minmax(0, 1fr) auto; gap: var(--space-2); align-items: baseline; padding: 6px var(--space-2); border: 1px solid var(--line); background: var(--surface); cursor: pointer; text-align: left; font-size: 13px;" style-hover="border-color: var(--text);">
+                    <span style="color: var(--muted); font-size: 11px;">{{ it.caret }}</span>
+                    <span style="font-weight: 800;">{{ it.name }}</span>
+                    <span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ it.target }}</span>
+                    <span style="font-size: 12px; color: {{ it.metaFg }}; font-weight: {{ it.metaW }};">{{ it.meta }}</span>
+                  </button>
+                  <sc-if value="{{ it.open }}" hint-placeholder-val="{{ false }}"><pre style="margin: 0; padding: var(--space-3); background: var(--code); color: var(--codeFg); font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;">{{ it.body }}</pre></sc-if>
+                </sc-if>
+                <sc-if value="{{ it.isOp }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding-left: var(--space-3); border-left: 3px solid var(--text);">
+                    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;">You · {{ it.opState }}</div>
+                    <div style="font-size: 14.5px; line-height: 1.55; font-weight: 600;">{{ it.text }}</div>
+                    <sc-if value="{{ it.canWithdraw }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ it.withdraw }}" style="background: none; border: 0; padding: 0; margin-top: 2px; font-size: 12px; color: var(--muted); cursor: pointer; text-decoration: underline;">Withdraw</button></sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ it.isAsk }}" hint-placeholder-val="{{ false }}">
+                  <div style="border: 2px solid var(--wait);">
+                    <div style="padding: var(--space-3) var(--space-4); background: var(--wait); color: var(--waitFg);">
+                      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">The agent is asking you</div>
+                      <div style="font-family: var(--font-heading); font-weight: 800; font-size: 19px; line-height: 1.25;">{{ it.q }}</div>
+                    </div>
+                    <sc-for list="{{ askOpts }}" as="o" hint-placeholder-count="3">
+                      <button type="button" onClick="{{ o.on }}" style="width: 100%; display: grid; grid-template-columns: 24px 1fr; gap: var(--space-2); align-items: baseline; padding: 10px var(--space-4); border: 0; border-bottom: 1px solid var(--line); background: {{ o.bg }}; color: {{ o.fg }}; cursor: pointer; text-align: left; font-size: 14px;" style-hover="background: var(--sel);"><span style="font-weight: 800;">{{ o.letter }}</span><span>{{ o.label }}</span></button>
+                    </sc-for>
+                    <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); padding: var(--space-3) var(--space-4);">
+                      <input class="input" style="background: var(--bg);" placeholder="Note for the agent (optional)" value="{{ note }}" onChange="{{ setNote }}">
+                      <button type="button" class="btn btn-primary" style="min-width: 150px; justify-content: space-between;" disabled="{{ cannotAnswer }}" onClick="{{ answer }}"><span>{{ answerLabel }}</span><span>→</span></button>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ tab_history }}" hint-placeholder-val="{{ false }}">
+        <div style="flex: 1; overflow: auto; padding: var(--space-4) var(--space-6);">
+          <div style="font-size: 13px; color: var(--muted); margin-bottom: var(--space-3);">{{ histNote }}</div>
+          <sc-for list="{{ history }}" as="h" hint-placeholder-count="3">
+            <button type="button" onClick="{{ h.on }}" style="width: 100%; display: grid; grid-template-columns: 16px 88px minmax(0, 1fr) 64px; gap: var(--space-3); align-items: baseline; padding: var(--space-3) var(--space-2); border: 0; border-bottom: 1px solid var(--line); border-left: 3px solid {{ h.bar }}; background: {{ h.bg }}; cursor: pointer; text-align: left;" style-hover="background: var(--sel);">
+              <span style="font-weight: 800; color: {{ h.st.color }};">{{ h.st.glyph }}</span>
+              <span style="font-size: 14px; font-weight: 700;">{{ h.label }}</span>
+              <span style="font-size: 13px; line-height: 1.45;">{{ h.summary }}</span>
+              <span style="font-size: 12px; color: var(--muted); text-align: right;">{{ h.dur }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ tab_output }}" hint-placeholder-val="{{ false }}">
+        <div style="flex: 1; overflow: auto; padding: var(--space-6);">
+          <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);">Output</div>
+          <div style="font-size: 16px; line-height: 1.55; margin-top: var(--space-2); max-width: 60ch;">{{ outputText }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ tab_raw }}" hint-placeholder-val="{{ false }}">
+        <div style="flex: 1; overflow: auto; padding: var(--space-4) var(--space-6);">
+          <pre style="margin: 0; padding: var(--space-4); background: var(--code); color: var(--codeFg); font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;">{{ raw }}</pre>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ canGuide }}" hint-placeholder-val="{{ true }}">
+        <div style="border-top: 2px solid var(--strong); padding: var(--space-3) var(--space-6); display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--space-2); align-items: end; flex: none;">
+          <textarea class="input" rows="1" style="min-height: 40px; resize: none; overflow: hidden; background: var(--bg); white-space: nowrap;" placeholder="{{ guidePh }}" value="{{ guide }}" onChange="{{ setGuide }}" onKeyDown="{{ guideKey }}"></textarea>
+          <button type="button" class="btn btn-primary" style="min-height: 40px; min-width: 96px; justify-content: space-between;" onClick="{{ queue }}"><span>Queue</span><span>↵</span></button>
+          <button type="button" class="btn btn-secondary" style="min-height: 40px;">Interrupt</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ cannotGuide }}" hint-placeholder-val="{{ false }}">
+        <div style="border-top: 1px solid var(--line); padding: var(--space-3) var(--space-6); font-size: 13px; color: var(--muted); flex: none;">{{ noGuideMsg }}</div>
+      </sc-if>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;slate-d&quot;,&quot;slate-a&quot;,&quot;slate-b&quot;,&quot;slate-c&quot;,&quot;slate&quot;,&quot;ivory&quot;,&quot;midnight&quot;,&quot;paper&quot;,&quot;mono&quot;,&quot;graphite&quot;],&quot;default&quot;:&quot;slate-d&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;liveStream&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;height&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { project: 'all', filter: 'active', q: '', runSel: 'r-6c02d4', nodeSel: {}, tab: 'stream', iter: null, open: {}, t: 0, guide: '', queued: {}, answered: {}, choice: -1, note: '', follow: true };
+  componentDidMount() {
+    try { const pj = localStorage.getItem('archon.project'); if (pj) this.setState({ project: pj }); } catch (e) {}
+    if (!window.ArchonRuns) this._p = setInterval(() => { if (window.ArchonRuns) { clearInterval(this._p); this.forceUpdate(); } }, 50);
+    this._t = setInterval(() => { if (this.props.liveStream === false || this.state.t > 900) return; this.setState(s => ({ t: s.t + 1 })); }, 80);
+  }
+  componentWillUnmount() { clearInterval(this._p); clearInterval(this._t); }
+  componentDidUpdate() { const el = this.streamEl; if (el && this.state.follow) el.scrollTop = el.scrollHeight; }
+  theme() {
+    const T = {
+      paper: { bg: '#ffffff', surface: '#f8f4f4', text: '#201e1d', muted: '#605d5d', faint: '#9b9797', line: '#e6e2e2', strong: '#201e1d', sel: '#f1eded', code: '#201e1d', codeFg: '#f3f2f2', wait: '#ec3013', waitFg: '#ffffff', fail: '#ae1800', run: '#201e1d', done: '#7d7979', pend: '#bab6b6', accent: '#201e1d', bar: '#201e1d' },
+      mono: { bg: '#f3f2f2', surface: '#eae9e9', text: '#201e1d', muted: '#605d5d', faint: '#9b9797', line: '#d7d3d3', strong: '#201e1d', sel: '#e3e0e0', code: '#201e1d', codeFg: '#f3f2f2', wait: '#201e1d', waitFg: '#f3f2f2', fail: '#201e1d', run: '#201e1d', done: '#9b9797', pend: '#d7d3d3', accent: '#201e1d', bar: '#201e1d' },
+      graphite: { bg: '#161514', surface: '#201e1d', text: '#eae7e7', muted: '#bab6b6', faint: '#7d7979', line: '#2d2b2b', strong: '#605d5d', sel: '#2a2827', code: '#0e0d0d', codeFg: '#d7d3d3', wait: '#ff563c', waitFg: '#161514', fail: '#ff9783', run: '#eae7e7', done: '#7d7979', pend: '#444141', accent: '#ff563c', bar: '#ff563c' }
+    };
+    T.slate = { bg: '#f8f9fb', surface: '#eff2f6', text: '#1a2130', muted: '#5a6478', faint: '#98a1b2', line: '#e2e6ed', strong: '#c9d0db', sel: '#e8edfb', code: '#1a2130', codeFg: '#e6e9f0', wait: '#b4570a', waitFg: '#ffffff', fail: '#c0362c', run: '#3346c4', done: '#2f7d5b', pend: '#d3d9e3', accent: '#3346c4', bar: '#3346c4' };
+    T.ivory = { bg: '#fbfaf7', surface: '#f3f0ea', text: '#24221e', muted: '#6b665d', faint: '#a29c91', line: '#e7e2d8', strong: '#d2cbbd', sel: '#ece7dd', code: '#24221e', codeFg: '#efebe3', wait: '#a8550e', waitFg: '#ffffff', fail: '#b03a2e', run: '#1f5c4a', done: '#6f8f5f', pend: '#dcd5c8', accent: '#1f5c4a', bar: '#1f5c4a' };
+    T.midnight = { bg: '#0f1218', surface: '#161a22', text: '#e6e8ee', muted: '#9aa3b2', faint: '#667085', line: '#232a36', strong: '#2e3746', sel: '#1c2230', code: '#0a0c11', codeFg: '#cdd3de', wait: '#f0a54a', waitFg: '#0f1218', fail: '#f07167', run: '#8b9bff', done: '#5fbf8f', pend: '#2e3746', accent: '#8b9bff', bar: '#8b9bff' };
+    const base = { bg: '#f8f9fb', surface: '#eff2f6', text: '#1a2130', muted: '#5a6478', faint: '#98a1b2', line: '#e2e6ed', strong: '#c9d0db', code: '#1a2130', codeFg: '#e6e9f0', waitFg: '#ffffff' };
+    T['slate-a'] = { ...base, sel: '#e9eefc', wait: '#2b4acb', fail: '#c0362c', run: '#2b4acb', done: '#64748b', pend: '#d3d9e3', accent: '#2b4acb', bar: '#2b4acb' };
+    T['slate-b'] = { ...base, sel: '#e3f1ef', wait: '#c2410c', fail: '#b91c1c', run: '#0f766e', done: '#64748b', pend: '#d3d9e3', accent: '#0f766e', bar: '#0f766e' };
+    T['slate-c'] = { ...base, text: '#111827', sel: '#efeafc', wait: '#6d28d9', fail: '#be123c', run: '#334155', done: '#94a3b8', pend: '#dde2ea', accent: '#6d28d9', bar: '#6d28d9' };
+    T['slate-d'] = { ...base, bg: '#f5f7fa', surface: '#eaeef3', sel: '#e4ecfb', wait: '#d97706', fail: '#dc2626', run: '#2563eb', done: '#16a34a', pend: '#d3d9e3', accent: '#2563eb', bar: '#2563eb', hdrBg: '#1a2130', hdrFg: '#f1f4f9', hdrMuted: '#9aa5b8', hdrLine: '#2c364a', hdrAccent: '#7aa2ff' };
+    const th = T[this.props.theme] || T['slate-d'];
+    return { hdrBg: th.bg, hdrFg: th.text, hdrMuted: th.muted, hdrLine: th.strong, hdrAccent: th.accent, ...th };
+  }
+  st(k, th) {
+    const M = {
+      running: ['▶', 'Running', th.run], paused: ['!', 'Awaiting you', th.wait], awaiting: ['!', 'Awaiting you', th.wait],
+      done: ['✓', 'Done', th.done], completed: ['✓', 'Completed', th.done], failed: ['✕', 'Failed', th.fail],
+      pending: ['○', 'Pending', th.faint], skipped: ['–', 'Skipped', th.faint]
+    };
+    const m = M[k] || M.pending, hot = k === 'paused' || k === 'awaiting';
+    return { key: k, glyph: m[0], label: m[1], color: m[2], chipBg: hot ? th.wait : 'transparent', chipFg: hot ? th.waitFg : m[2] };
+  }
+  fmt(sec) { sec = Math.floor(sec); const m = Math.floor(sec / 60), s = sec % 60; return m >= 60 ? Math.floor(m / 60) + 'h ' + (m % 60) + 'm' : m + 'm ' + String(s).padStart(2, '0') + 's'; }
+  renderVals() {
+    const D = window.ArchonRuns, s = this.state, th = this.theme(), set = o => () => this.setState(o);
+    if (!D) return { th };
+    const tick = s.t, live = Math.floor(tick * 0.08);
+    const runStatus = r => (r.id === 'r-7f3a91' && s.answered[r.id] ? 'running' : r.status);
+    const nodeState = (r, n) => (r.id === 'r-7f3a91' && n.id === 'plan' && s.answered[r.id] ? 'running' : n.state);
+    const segColor = k => ({ done: th.done, running: th.run, awaiting: th.wait, failed: th.fail, pending: th.pend, skipped: th.pend }[k] || th.pend);
+    const nav = ['Runs', 'Workflows', 'Chat', 'Builder', 'Settings'].map((l, i) => ({ label: l, href: 'Archon%20' + (i === 0 ? 'Runs%20Workspace' : l) + '.dc.html', bd: i === 0 ? th.hdrAccent : 'transparent', fg: i === 0 ? th.hdrFg : th.hdrMuted }));
+    const all = D.runs.map(r => ({ ...r, status: runStatus(r) }));
+    const groups = { active: r => r.status === 'running' || r.status === 'paused', needs: r => r.status === 'paused', finished: r => r.status === 'completed' || r.status === 'failed', all: () => true };
+    const allP = s.project === 'all' ? all : all.filter(r => r.project === s.project);
+    const projectOpts = [{ value: 'all', label: 'All projects (' + all.length + ')' }].concat(D.projects.map(p => ({ value: p, label: p + ' (' + all.filter(r => r.project === p).length + ')' })));
+    const filters = [['active', 'Active'], ['needs', 'Needs you'], ['finished', 'Finished'], ['all', 'All']].map(([k, label]) => ({ label, count: String(allP.filter(groups[k]).length), on: set({ filter: k }), bd: s.filter === k ? th.accent : 'transparent', fg: s.filter === k ? th.text : th.muted }));
+    const q = s.q.toLowerCase();
+    const selectRun = r => { this.setState({ runSel: r.id, tab: 'stream', iter: null, follow: true, choice: -1, note: '' }); };
+    const runList = allP.filter(groups[s.filter]).filter(r => !q || (r.name + r.note + r.workflow + r.project + r.id).toLowerCase().includes(q)).map(r => {
+      const sel = r.id === s.runSel;
+      const pp = r.project.split('/');
+      return { ...r, projOwner: pp.slice(0, -1).join('/'), projName: pp[pp.length - 1], st: this.st(r.status, th), time: r.status === 'running' ? this.fmt(r.elapsed + live) : r.status === 'paused' ? 'since ' + r.started : r.started, segs: r.nodes.map(n => ({ c: segColor(nodeState(r, n)) })), on: () => selectRun(r), bg: sel ? th.sel : 'transparent', bar: sel ? th.bar : 'transparent' };
+    });
+    const R0 = all.find(r => r.id === s.runSel) || all[0];
+    const doneCount = R0.nodes.filter(n => n.state === 'done').length;
+    const run = { ...R0, st: this.st(R0.status, th), time: R0.status === 'running' ? this.fmt(R0.elapsed + live) : this.fmt(R0.elapsed), progress: doneCount + ' of ' + R0.nodes.length + ' done' };
+    const runActions = (R0.status === 'failed' ? ['Retry from failed node', 'Open worktree'] : R0.status === 'completed' ? ['Open artifacts', 'Run again'] : ['Cancel run', 'Open worktree']).map(label => ({ label }));
+    const focusId = (R0.nodes.find(n => n.focus) || R0.nodes[0]).id;
+    const nodeId = s.nodeSel[R0.id] || focusId;
+    const pickNode = id => { const m = { ...s.nodeSel }; m[R0.id] = id; this.setState({ nodeSel: m, iter: null, follow: true, tab: s.tab === 'raw' || s.tab === 'output' ? s.tab : 'stream' }); };
+    const nodeRight = n => { const k = nodeState(R0, n); if (k === 'running') return this.fmt(72 + live); if (k === 'awaiting') return 'waiting ' + this.fmt(R0.elapsed - 6); return n.dur || ''; };
+    const nodeExtra = n => { let e = ''; if (n.iterations) e += ' · iteration ' + n.iterations.length + ' of ' + n.maxIter; if (n.attempts) e += ' · ' + n.attempts + ' attempts'; if (n.cond) e += ' · conditional'; return e; };
+    const layerIds = [...new Set(R0.nodes.map(n => n.layer))].sort((a, b) => a - b);
+    const layers = layerIds.map(L => {
+      const ns = R0.nodes.filter(n => n.layer === L).map(n => { const sel = n.id === nodeId, k = nodeState(R0, n); return { ...n, st: this.st(k, th), code: D.kinds[n.kind], extra: nodeExtra(n), right: nodeRight(n), on: () => pickNode(n.id), bg: sel ? th.sel : 'transparent', bar: sel ? th.bar : 'transparent', fg: k === 'pending' || k === 'skipped' ? th.muted : th.text }; });
+      const par = ns.length > 1;
+      return { num: String(L + 1).padStart(2, '0'), nodes: ns, parallel: par, parLabel: 'Parallel · ' + ns.length, bracket: par ? '2px solid ' + th.line : '0', pad: par ? 'var(--space-3)' : '0' };
+    });
+    const N = R0.nodes.find(n => n.id === nodeId) || R0.nodes[0];
+    const nk = nodeState(R0, N);
+    const kindLabels = { command: 'Command', prompt: 'Prompt', bash: 'Bash', loop: 'Loop', approval: 'Approval' };
+    const node = { ...N, st: this.st(nk, th), kindLabel: kindLabels[N.kind], model: N.model || (N.kind === 'bash' ? 'shell' : N.kind === 'approval' ? 'human gate' : 'claude-sonnet-4-5'), right: nodeRight(N) };
+    const nodeActions = (nk === 'failed' ? ['Retry node'] : nk === 'running' ? ['Open in IDE'] : nk === 'done' ? ['Retry node'] : []).map(label => ({ label }));
+    const key = R0.id + ':' + N.id;
+    const prevIds = R0.nodes.filter(n => n.layer === N.layer - 1).map(n => n.id).join(', ');
+    // stream
+    let items = [];
+    const iterObj = s.iter != null && N.iterations ? N.iterations.find(i => i.n === s.iter) : null;
+    if (iterObj && iterObj.state !== 'running') {
+      items = [{ t: 'sys', time: '', text: 'Iteration ' + iterObj.n + ' · ' + this.st(iterObj.state, th).label + ' · ' + iterObj.dur }, { t: 'agent', time: '', text: iterObj.summary }];
+      if (iterObj.state === 'failed') items.push({ t: 'tool', time: '', name: 'Bash', target: 'bun run test:property', meta: 'exit 1', err: true, body: 'Error: property runner crashed (heap out of memory) after 1,204 cases.' });
+    } else if (N.stream) {
+      items = N.stream.slice();
+      if (N.live && R0.status === 'running') {
+        const k = Math.min(N.live.length, Math.floor(tick / 30));
+        N.live.slice(0, k).forEach((ev, i) => {
+          const x = { ...ev, time: '+' + (i + 1) * 9 + 's' };
+          if (ev.t === 'agent' && i === k - 1) { const chars = (tick - k * 30) * 5; x.shown = ev.text.slice(0, Math.max(0, chars)); x.typing = chars < ev.text.length; }
+          items.push(x);
+        });
+      }
+      if (R0.id === 'r-7f3a91' && N.id === 'plan' && s.answered[R0.id]) {
+        items = items.filter(i => i.t !== 'ask');
+        items.push({ t: 'op', time: 'now', text: s.answered[R0.id], opState: 'answered' });
+        items.push({ t: 'agent', time: 'now', text: 'Scope set. Writing the plan to plans/issue-266/plan.md, then handing off to verify-and-fix-plan and build-ralph-prd.' });
+      }
+    } else if (nk === 'done') {
+      items = [{ t: 'sys', time: '', text: 'Finished · ' + N.dur }, { t: 'agent', time: '', text: N.summary || 'Completed.' }];
+    }
+    (s.queued[key] || []).forEach((g, i) => items.push({ t: 'op', time: 'now', text: g, opState: 'queued for next turn', canWithdraw: true, withdraw: () => { const m = { ...s.queued }; m[key] = m[key].filter((_, j) => j !== i); this.setState({ queued: m }); } }));
+    const stream = items.map((it, i) => {
+      const ok = key + ':' + (s.iter || 'c') + ':' + i, open = !!s.open[ok] || (it.err && s.open[ok] !== false);
+      return { ...it, shown: it.shown != null ? it.shown : it.text, typing: !!it.typing, isAgent: it.t === 'agent', isSys: it.t === 'sys', isThink: it.t === 'think', isTool: it.t === 'tool', isOp: it.t === 'op', isAsk: it.t === 'ask', open, caret: open ? '▾' : '▸', toggle: () => { const m = { ...s.open }; m[ok] = !open; this.setState({ open: m }); }, metaFg: it.err ? th.fail : th.muted, metaW: it.err ? '700' : '400', canWithdraw: !!it.canWithdraw };
+    });
+    const askItem = items.find(i => i.t === 'ask');
+    const askOpts = askItem ? askItem.options.map((o, i) => { const sel = s.choice === i; return { label: o, letter: 'ABC'[i], on: set({ choice: i }), bg: sel ? th.sel : 'transparent', fg: th.text }; }) : [];
+    const emptyMsg = nk === 'skipped' ? 'Skipped because an earlier node failed.' : nk === 'pending' ? 'Not started. Waits on ' + (prevIds || 'nothing') + '.' + (N.cond ? ' Runs only when ' + N.cond + '.' : '') : 'No transcript.';
+    // todo
+    const todo = (N.todo || []).map(([text, d]) => ({ text, mark: d ? '✓' : '○', fg: d ? th.muted : th.text, deco: d ? 'line-through' : 'none' }));
+    // history
+    let history = [];
+    if (N.iterations) history = N.iterations.slice().reverse().map(it => { const sel = s.iter === it.n || (s.iter == null && it.state === 'running'); return { label: 'Iteration ' + it.n, summary: it.summary, dur: it.state === 'running' ? this.fmt(72 + live) : it.dur, st: this.st(it.state, th), on: () => this.setState({ iter: it.state === 'running' ? null : it.n, tab: 'stream', follow: false }), bg: sel ? th.sel : 'transparent', bar: sel ? th.bar : 'transparent' }; });
+    else if (nk !== 'pending' && nk !== 'skipped') history = [{ label: 'Attempt 1', summary: N.summary || 'Current attempt', dur: N.dur || node.right, st: this.st(nk, th), on: set({ tab: 'stream', iter: null }), bg: th.sel, bar: th.bar }];
+    const histNote = N.iterations ? N.iterations.length + ' of ' + N.maxIter + ' iterations' + (N.attempts ? ' · attempt ' + N.attempts + ' of 2' : '') + '. Pick one to read its transcript.' : history.length ? 'One attempt.' : 'No history yet.';
+    const tabs = [['stream', nk === 'running' ? 'Live stream' : 'Transcript'], ['history', 'History' + (N.iterations ? ' · ' + N.iterations.length : '')], ['output', 'Output'], ['raw', 'Raw']].map(([k, label]) => ({ label, on: set({ tab: k, follow: true }), bd: s.tab === k ? th.accent : 'transparent', fg: s.tab === k ? th.text : th.muted }));
+    const tb = {}; ['stream', 'history', 'output', 'raw'].forEach(k => { tb['tab_' + k] = s.tab === k; });
+    const raw = JSON.stringify({ run_id: R0.id, node_id: N.id, kind: N.kind, status: nk, model: node.model, depends_on: prevIds ? prevIds.split(', ') : [], when: N.cond, iterations: N.iterations ? N.iterations.length : undefined, events: items.length }, null, 2);
+    const canGuide = nk === 'running' && !iterObj;
+    const queue = () => { const g = s.guide.trim(); if (!g) return; const m = { ...s.queued }; m[key] = (m[key] || []).concat([g]); this.setState({ queued: m, guide: '', follow: true }); };
+    const needs = all.filter(r => r.status === 'paused');
+    return {
+      th, nav, filters, runList, listEmpty: runList.length === 0, q: s.q, setQ: e => this.setState({ q: e.target.value }),
+      project: s.project, projectOpts, setProject: e => { const v = e.target.value; try { localStorage.setItem('archon.project', v); } catch (er) {} const first = (v === 'all' ? all : all.filter(r => r.project === v))[0]; const keep = v === 'all' || (all.find(r => r.id === s.runSel) || {}).project === v; this.setState({ project: v, ...(keep || !first ? {} : { runSel: first.id, tab: 'stream', iter: null, follow: true }) }); },
+      liveLabel: allP.filter(r => r.status === 'running').length + ' running', needsCount: String(needs.length),
+      goNeeds: () => { if (needs[0]) this.setState({ filter: 'needs', runSel: needs[0].id, tab: 'stream', iter: null }); },
+      run, runActions, layers, node, nodeActions, tabs, ...tb,
+      stream, streamEmpty: stream.length === 0, emptyMsg, askOpts, note: s.note, setNote: e => this.setState({ note: e.target.value }),
+      cannotAnswer: s.choice < 0, answerLabel: s.choice >= 0 ? 'Answer ' + 'ABC'[s.choice] : 'Pick an option',
+      answer: () => { if (s.choice < 0 || !askItem) return; const m = { ...s.answered }; m[R0.id] = askItem.options[s.choice] + (s.note ? '. ' + s.note : ''); this.setState({ answered: m, follow: true }); },
+      cursor: React.createElement('span', { style: { display: 'inline-block', width: 8, height: '1.05em', marginLeft: 2, verticalAlign: 'text-bottom', background: 'currentColor', animation: 'blink 1s steps(1) infinite' } }),
+      hasTodo: todo.length > 0 && !iterObj, todo, todoCount: todo.filter(t => t.deco !== 'none').length + '/' + todo.length,
+      viewingIter: !!iterObj, iterBanner: iterObj ? 'Viewing iteration ' + iterObj.n + ' of ' + N.maxIter + ' · finished, read only' : '', backLive: set({ iter: null, follow: true }),
+      history, histNote, outputText: N.summary || (nk === 'running' ? 'Available when the node finishes.' : nk === 'awaiting' ? 'Waiting on your answer.' : 'No output.'), raw,
+      canGuide, cannotGuide: !canGuide, noGuideMsg: iterObj ? 'Past iterations are read only.' : nk === 'awaiting' ? 'Answer the question above to resume this node.' : 'Guidance is available while the agent is running.',
+      guide: s.guide, setGuide: e => this.setState({ guide: e.target.value }), guideKey: e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); queue(); } }, queue,
+      guidePh: 'Guide the agent…', needsBg: needs.length ? th.wait : 'transparent', needsFg: needs.length ? th.waitFg : th.hdrMuted, rootH: this.props.height || '100vh',
+      streamRef: el => { this.streamEl = el; }, onStreamScroll: e => { const el = e.currentTarget, f = el.scrollHeight - el.scrollTop - el.clientHeight < 40; if (f !== this.state.follow) this.setState({ follow: f }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

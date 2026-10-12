@@ -83,7 +83,7 @@ test('[P1] [V:hitl.legacy-tool-output] HITL Legacy room collapses the call to a 
   const started = await archon.runHitlWorkflow();
   await openLegacyRunDetail(page, started.runId);
   await expect(page.getByText(/e2e-hitl-run/i).first()).toBeVisible({ timeout: T.medium });
-  await page.getByRole('tab', { name: 'Logs' }).click();
+  await page.getByRole('radio', { name: 'List' }).click();
   await page
     .getByRole('button', { name: new RegExp(HITL_INSPECT_NODE) })
     .first()
@@ -215,7 +215,7 @@ test(`[P1] [V:hitl.unowned-ask] solo unowned Ask can answer, persist, and resume
     if (!requestId) throw new Error('missing pending Ask request id');
 
     await openLegacyRunDetail(page, started.runId);
-    await page.getByRole('tab', { name: 'Logs', exact: true }).click();
+    await page.getByRole('radio', { name: 'List', exact: true }).click();
     await page
       .getByRole('button', { name: new RegExp(HITL_ASK_NODE) })
       .first()
@@ -228,7 +228,7 @@ test(`[P1] [V:hitl.unowned-ask] solo unowned Ask can answer, persist, and resume
     await archon.waitForRunStatus(started.runId, 'completed');
     await page.reload();
     await expect(page.getByText(/^completed$/i).first()).toBeVisible();
-    await page.getByRole('tab', { name: 'Logs', exact: true }).click();
+    await page.getByRole('radio', { name: 'List', exact: true }).click();
     await page
       .getByRole('button', { name: new RegExp(HITL_ASK_NODE) })
       .first()
@@ -252,7 +252,7 @@ test('[P1] [V:hitl.cli-composer] CLI-origin composer cannot approve; Chat tab st
   await openLegacyRunDetail(page, started.runId);
   await expect(page.getByText(/e2e-hitl-run/i).first()).toBeVisible({ timeout: T.medium });
   await expect(page.getByRole('tab', { name: 'Chat' })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Source Control' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Changes' })).toBeVisible();
   await page.getByRole('tab', { name: 'Chat' }).click();
   await expect(page.getByRole('form', { name: 'Run conversation composer' })).toBeVisible();
   await expect(
@@ -335,7 +335,7 @@ test('[P1] [V:hitl.production-controls] production chrome keeps Artifacts and do
   await expect(page.locator('#view-toggle')).toHaveCount(0);
   // The control is always enabled: it opens a browser over every file on disk,
   // so a run without event-reported artifacts still has something to show.
-  const artifacts = page.getByRole('button', { name: /^Artifacts/ });
+  const artifacts = page.getByRole('tab', { name: 'Artifacts' });
   await expect(artifacts).toBeVisible();
   await expect(artifacts).toBeEnabled();
 });

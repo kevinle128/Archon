@@ -1,12 +1,9 @@
 import { useState, useCallback, useId } from 'react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import type { DagNodeData } from './DagNodeComponent';
-import type { CommandEntry, DagNode, RouteLoopConfig, RouteLoopOutcome } from '@/lib/api';
-import { X } from 'lucide-react';
+import type { CommandEntry, DagNode, RouteLoopConfig } from '@/lib/api';
 import { useProviders } from '@/hooks/useProviders';
+import { ROUTE_OUTCOMES } from '@/lib/builder/builder-steps';
 
 // Keep in sync with triggerRuleSchema.options in @archon/workflows/schemas/dag-node.ts
 // (api.generated.d.ts is type-only and cannot export runtime values)
@@ -19,30 +16,16 @@ const TRIGGER_RULES: readonly TriggerRule[] = [
 ];
 
 /** New DAG-mode inspector props (tabbed right panel). */
-export interface NodeInspectorProps {
-  node: DagNodeData;
-  commands: CommandEntry[];
-  onUpdate: (updates: Partial<DagNodeData>) => void;
-  onDelete: () => void;
-  onClose: () => void;
-}
-
 const inputClass =
-  'w-full rounded-[10px] border border-border bg-background px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
+  'w-full border border-line-strong bg-card px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary';
 
 const selectClass =
-  'w-full cursor-pointer rounded-[10px] border border-border bg-background px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
+  'w-full cursor-pointer border border-line-strong bg-card px-3 py-2 text-sm text-text-primary';
 
-const labelClass = 'text-xs font-medium text-text-secondary';
+const labelClass = 'text-xs font-semibold text-text-secondary';
 
 const textareaClass =
-  'w-full rounded-[10px] border border-border bg-background px-3 py-2 font-mono text-xs text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent resize-y';
-
-const ROUTE_OUTCOMES = [
-  'positive',
-  'negative',
-  'exhausted',
-] as const satisfies readonly RouteLoopOutcome[];
+  'w-full resize-y border border-line-strong bg-card px-3 py-2 font-mono text-xs text-text-primary placeholder:text-text-tertiary';
 
 function defaultRouteLoopConfig(): RouteLoopConfig {
   return {
@@ -223,7 +206,7 @@ function DependencyTags({
   );
 }
 
-function GeneralTab({
+export function GeneralTab({
   node,
   commands,
   onUpdate,
@@ -477,7 +460,7 @@ function GeneralTab({
   );
 }
 
-function ExecutionTab({
+export function ExecutionTab({
   node,
   onUpdate,
 }: {
@@ -640,7 +623,7 @@ const TOOL_PRESETS: readonly {
   { label: 'Edit-only', allowed: ['Read', 'Write', 'Edit', 'Glob', 'Grep'] },
 ];
 
-function ToolsTab({
+export function ToolsTab({
   node,
   onUpdate,
 }: {
@@ -692,7 +675,7 @@ function ToolsTab({
               onClick={(): void => {
                 onUpdate({ allowed_tools: preset.allowed, denied_tools: undefined });
               }}
-              className="rounded-full border border-border px-2 py-0.5 text-[10px] text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
+              className="rounded-none border border-border px-2 py-0.5 text-[10px] text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
             >
               {preset.label}
             </button>
@@ -782,7 +765,7 @@ function JsonTextareaField({
   );
 }
 
-function AdvancedTab({
+export function AdvancedTab({
   node,
   onUpdate,
 }: {
@@ -838,111 +821,5 @@ function AdvancedTab({
         }}
       />
     </div>
-  );
-}
-
-function DagInspector({
-  node,
-  commands,
-  onUpdate,
-  onDelete,
-  onClose,
-}: NodeInspectorProps): React.ReactElement {
-  const isBash = node.nodeType === 'bash';
-  const isRouteLoop = node.nodeType === 'route_loop';
-  const hasReadOnlyContent = node.nodeType === 'plannotator_gate' || node.nodeType === 'cancel';
-  const showAiTabs = !isBash && !isRouteLoop && !hasReadOnlyContent;
-
-  return (
-    <div key={node.id} className="flex flex-col h-full border-l border-border bg-surface">
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <b className="text-sm font-semibold text-text-primary">Inspector</b>
-        <span className="rounded-md bg-surface-inset px-1.5 py-0.5 font-mono text-xs text-text-secondary">
-          {node.nodeType}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-xs text-text-tertiary">
-          {node.label || node.id}
-        </span>
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={onDelete}
-          className="h-8 shrink-0 rounded-[10px] px-3 text-xs"
-          aria-label="Delete node"
-        >
-          Delete
-        </Button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-[10px] text-text-tertiary transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          title="Close inspector"
-          aria-label="Close inspector"
-        >
-          <X className="size-4" aria-hidden="true" />
-        </button>
-      </div>
-
-      {/* Tabbed content */}
-      <Tabs defaultValue="general" className="flex-1 flex flex-col gap-0">
-        <TabsList variant="line" className="px-2 pt-1 w-full justify-start">
-          <TabsTrigger value="general" className="text-sm">
-            General
-          </TabsTrigger>
-          {!isRouteLoop && !hasReadOnlyContent && (
-            <TabsTrigger value="execution" className="text-sm">
-              Execution
-            </TabsTrigger>
-          )}
-          {showAiTabs && (
-            <TabsTrigger value="tools" className="text-sm">
-              Tools
-            </TabsTrigger>
-          )}
-          {showAiTabs && (
-            <TabsTrigger value="advanced" className="text-sm">
-              Advanced
-            </TabsTrigger>
-          )}
-        </TabsList>
-
-        <ScrollArea className="flex-1">
-          <TabsContent value="general">
-            <GeneralTab node={node} commands={commands} onUpdate={onUpdate} />
-          </TabsContent>
-
-          {!isRouteLoop && !hasReadOnlyContent && (
-            <TabsContent value="execution">
-              <ExecutionTab node={node} onUpdate={onUpdate} />
-            </TabsContent>
-          )}
-
-          {showAiTabs && (
-            <TabsContent value="tools">
-              <ToolsTab node={node} onUpdate={onUpdate} />
-            </TabsContent>
-          )}
-
-          {showAiTabs && (
-            <TabsContent value="advanced">
-              <AdvancedTab key={node.id} node={node} onUpdate={onUpdate} />
-            </TabsContent>
-          )}
-        </ScrollArea>
-      </Tabs>
-    </div>
-  );
-}
-
-export function NodeInspector(props: NodeInspectorProps): React.ReactElement {
-  return (
-    <DagInspector
-      node={props.node}
-      commands={props.commands}
-      onUpdate={props.onUpdate}
-      onDelete={props.onDelete}
-      onClose={props.onClose}
-    />
   );
 }

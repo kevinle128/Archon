@@ -59,7 +59,7 @@ function ToolBodyView({ body }: { body: ToolBody }): React.ReactElement {
         <div>
           <div className="text-text-tertiary">$ {body.command}</div>
           {body.output !== null ? (
-            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background p-3">
+            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-none border border-border bg-background p-3">
               {body.output}
             </pre>
           ) : null}
@@ -70,7 +70,7 @@ function ToolBodyView({ body }: { body: ToolBody }): React.ReactElement {
         <div>
           <div className="text-text-tertiary">{body.path}</div>
           {body.preview !== null ? (
-            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background p-3">
+            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-none border border-border bg-background p-3">
               {body.preview}
             </pre>
           ) : null}
@@ -113,11 +113,11 @@ function ToolBodyView({ body }: { body: ToolBody }): React.ReactElement {
           {body.language !== null ? (
             <div className="text-text-tertiary">{body.language}</div>
           ) : null}
-          <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background p-3">
+          <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-none border border-border bg-background p-3">
             {body.source}
           </pre>
           {body.result !== null ? (
-            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background p-3">
+            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-none border border-border bg-background p-3">
               {body.result}
             </pre>
           ) : null}
@@ -128,7 +128,7 @@ function ToolBodyView({ body }: { body: ToolBody }): React.ReactElement {
         <div>
           <div className="text-text-tertiary">{body.title ?? body.url}</div>
           {body.markdown !== null ? (
-            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background p-3">
+            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-none border border-border bg-background p-3">
               {body.markdown}
             </pre>
           ) : null}
@@ -155,7 +155,7 @@ function ToolBodyView({ body }: { body: ToolBody }): React.ReactElement {
             </div>
           ))}
           {body.markdown !== null ? (
-            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background p-3">
+            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-none border border-border bg-background p-3">
               {body.markdown}
             </pre>
           ) : null}
@@ -303,7 +303,7 @@ export function ToolCallCard({ tool }: ToolCallCardProps): React.ReactElement {
               aria-expanded={rawOpen}
               aria-controls={rawOpen ? rawPanelId : undefined}
               className={cn(
-                'shrink-0 rounded-full border px-2 py-0.5 text-[10px]',
+                'shrink-0 rounded-none border px-2 py-0.5 text-[10px]',
                 rawOpen
                   ? 'border-border-bright text-text-primary'
                   : 'border-border text-text-secondary'
@@ -318,7 +318,7 @@ export function ToolCallCard({ tool }: ToolCallCardProps): React.ReactElement {
           {rawOpen ? (
             <pre
               id={rawPanelId}
-              className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background p-3"
+              className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-none border border-border bg-background p-3"
             >
               {toolRawPayloadJson(presentation.rawPayload)}
             </pre>

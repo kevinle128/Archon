@@ -19,16 +19,11 @@ import type {
 import type { CommandEntry, DagNode, RouteLoopConfig, RouteLoopOutcome } from '@/lib/api';
 import { dagNodeComponent, type DagFlowNode, type DagNodeData } from './DagNodeComponent';
 import { QuickAddPicker } from './QuickAddPicker';
+import { isRouteOutcome } from '@/lib/builder/builder-steps';
 
 export { dagNodesToReactFlow } from '@/lib/dag-layout';
 
 type CanvasNodeType = 'command' | 'prompt' | 'bash' | 'route_loop';
-
-const ROUTE_OUTCOMES = [
-  'positive',
-  'negative',
-  'exhausted',
-] as const satisfies readonly RouteLoopOutcome[];
 
 function resolveNodeLabel(nodeType: CanvasNodeType, commandName: string): string {
   if (nodeType === 'command') return commandName;
@@ -47,10 +42,6 @@ function defaultRouteLoopConfig(): RouteLoopConfig {
       exhausted: '',
     },
   };
-}
-
-function isRouteOutcome(value: unknown): value is RouteLoopOutcome {
-  return ROUTE_OUTCOMES.some(outcome => outcome === value);
 }
 
 /**
@@ -557,7 +548,7 @@ export function WorkflowCanvas({
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <MiniMap
-          className="!rounded-[10px] !border !border-border !bg-surface"
+          className="!rounded-none !border !border-border !bg-surface"
           style={{ width: 144, height: 96 }}
           nodeColor="var(--text-tertiary)"
           nodeStrokeWidth={0}
@@ -578,7 +569,7 @@ export function WorkflowCanvas({
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 min-w-[140px] rounded-[10px] border border-border bg-surface-elevated py-1"
+          className="fixed z-50 min-w-[140px] rounded-none border border-border bg-surface-elevated py-1"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, ExternalLink, Folder, MoreHorizontal } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Check, Copy, ExternalLink, MoreHorizontal } from 'lucide-react';
 import { ideUri } from '@/lib/ide-uri';
 
 interface ChatHeaderProps {
@@ -16,28 +15,6 @@ interface ChatHeaderProps {
   isDocker?: boolean;
   isWsl?: boolean;
   wslDistro?: string;
-}
-
-function Chip({
-  children,
-  mono,
-  className,
-}: {
-  children: React.ReactNode;
-  mono?: boolean;
-  className?: string;
-}): React.ReactElement {
-  return (
-    <span
-      className={cn(
-        'inline-flex min-h-6 items-center gap-1 rounded-full border border-border px-2 text-xs text-text-secondary',
-        mono && 'font-mono',
-        className
-      )}
-    >
-      {children}
-    </span>
-  );
 }
 
 function capitalize(value: string): string {
@@ -99,34 +76,37 @@ export function ChatHeader({
 
   const hasMenu = Boolean(path);
   const itemClass =
-    'flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-sm text-text-primary transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent';
+    'flex min-h-9 w-full cursor-pointer items-center gap-2 px-3 text-left text-[13px] text-text-primary hover:bg-selection';
 
   return (
-    <header className="flex min-h-14 shrink-0 items-center gap-4 border-b border-border py-1 pl-8 pr-4">
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2">
-        <h1 className="truncate text-base font-semibold text-text-primary">{title}</h1>
-        <div className="flex min-w-0 flex-wrap gap-2">
-          {projectName && (
-            <Chip>
-              <Folder className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-              {projectName}
-            </Chip>
-          )}
-          {provider && <Chip mono>{provider}</Chip>}
-          {platform && <Chip>{capitalize(platform)}</Chip>}
-          {connected !== undefined && (
-            <Chip>
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'h-2 w-2 rounded-full',
-                  connected ? 'bg-success' : 'bg-text-tertiary'
-                )}
-              />
-              {connected ? 'Connected' : 'Disconnected'}
-            </Chip>
-          )}
+    <header className="flex shrink-0 items-start gap-3 border-b border-border px-6 py-4">
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-text-secondary">
+          <span className="truncate">{projectName ?? 'No project'}</span>
+          {provider ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono">{provider}</span>
+            </>
+          ) : null}
+          {platform ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>{capitalize(platform)}</span>
+            </>
+          ) : null}
+          {connected !== undefined ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className={connected ? 'text-status-done' : 'text-text-tertiary'}>
+                {connected ? 'Connected' : 'Disconnected'}
+              </span>
+            </>
+          ) : null}
         </div>
+        <h2 className="mt-0.5 truncate text-[22px] leading-[1.2] font-extrabold text-text-primary">
+          {title}
+        </h2>
       </div>
       {hasMenu && (
         <div ref={menuRef} className="relative">
@@ -138,14 +118,14 @@ export function ChatHeader({
             onClick={(): void => {
               setMenuOpen(open => !open);
             }}
-            className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[10px] text-text-secondary transition-colors duration-150 hover:bg-surface-elevated hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center border border-line-strong bg-card text-text-secondary hover:text-text-primary"
           >
             <MoreHorizontal className="h-5 w-5" strokeWidth={1.5} />
           </button>
           {menuOpen && (
             <div
               role="menu"
-              className="absolute right-0 top-full z-20 mt-1 w-64 rounded-xl border border-border bg-surface-elevated p-1"
+              className="absolute right-0 top-full z-20 mt-1 w-64 border border-line-strong bg-card py-1"
             >
               <button type="button" role="menuitem" onClick={copyPath} className={itemClass}>
                 {copied ? (

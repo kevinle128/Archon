@@ -17,7 +17,7 @@ export function ErrorCard({ error, onRetry }: ErrorCardProps): React.ReactElemen
             <p className="text-sm text-text-primary">{error.message}</p>
             <span
               className={cn(
-                'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
+                'shrink-0 rounded-none px-2 py-0.5 text-[10px] font-medium',
                 error.classification === 'transient'
                   ? 'bg-warning/20 text-warning'
                   : 'bg-error/20 text-error'

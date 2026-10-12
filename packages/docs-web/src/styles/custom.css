@@ -1,29 +1,398 @@
+/* Archon theme for the Starlight docs pages.
+ *
+ * The values are the same as the product tokens in packages/web/src/index.css
+ * and the brand guide: a navy top bar over a light page, one blue accent,
+ * Archivo, 2px and 1px rules, no radius, no shadows, no gradients. Dark is the
+ * midnight palette.
+ *
+ * Starlight puts its own styles in cascade layers. These rules are not in a
+ * layer, so they win without !important.
+ */
+
+:root,
+::backdrop,
+:root[data-theme='light'],
+[data-theme='light'] ::backdrop {
+  --sl-color-white: #1a2130;
+  --sl-color-gray-1: #1a2130;
+  --sl-color-gray-2: #1a2130;
+  --sl-color-gray-3: #5a6478;
+  --sl-color-gray-4: #98a1b2;
+  --sl-color-gray-5: #c9d0db;
+  --sl-color-gray-6: #eaeef3;
+  --sl-color-gray-7: #f5f7fa;
+  --sl-color-black: #ffffff;
+
+  --sl-color-accent-low: #e4ecfb;
+  --sl-color-accent: #2563eb;
+  --sl-color-accent-high: #1d4ed8;
+
+  --sl-color-text: #1a2130;
+  --sl-color-text-accent: #2563eb;
+  --sl-color-text-invert: #ffffff;
+  --sl-color-bg: #f5f7fa;
+  --sl-color-bg-nav: #1a2130;
+  --sl-color-bg-sidebar: #f5f7fa;
+  --sl-color-bg-inline-code: #eaeef3;
+  --sl-color-bg-accent: #2563eb;
+  --sl-color-hairline-light: #e2e6ed;
+  --sl-color-hairline: #e2e6ed;
+  --sl-color-hairline-shade: #c9d0db;
+
+  --sl-color-orange-low: #eaeef3;
+  --sl-color-orange: #d97706;
+  --sl-color-orange-high: #1a2130;
+  --sl-color-green-low: #e7f6ec;
+  --sl-color-green: #16a34a;
+  --sl-color-green-high: #1a2130;
+  --sl-color-blue-low: #e4ecfb;
+  --sl-color-blue: #2563eb;
+  --sl-color-blue-high: #1a2130;
+  --sl-color-purple-low: #e4ecfb;
+  --sl-color-purple: #2563eb;
+  --sl-color-purple-high: #1a2130;
+  --sl-color-red-low: #fdecea;
+  --sl-color-red: #dc2626;
+  --sl-color-red-high: #1a2130;
+
+  --archon-text: #1a2130;
+  --archon-text-2: #5a6478;
+  --archon-line-strong: #c9d0db;
+  --archon-surface: #eaeef3;
+  --archon-card: #ffffff;
+  --archon-accent-text: #2563eb;
+  --archon-rule: #1a2130;
+  --archon-selection: #e4ecfb;
+  --archon-header-fg: #f1f4f9;
+  --archon-header-muted: #9aa5b8;
+  --archon-header-line: #2c364a;
+  --archon-header-accent: #7aa2ff;
+  --archon-header-field: #1a2130;
+  --archon-code-bg: #1a2130;
+  --archon-code-bar: #1a2130;
+  --archon-code-line: #2c364a;
+  --archon-code-fg: #e6e9f0;
+  --archon-code-muted: #9aa5b8;
+  --archon-code-accent: #7aa2ff;
+}
+
+:root[data-theme='dark'],
+[data-theme='dark'] ::backdrop {
+  color-scheme: dark;
+
+  --sl-color-white: #e6e8ee;
+  --sl-color-gray-1: #e6e8ee;
+  --sl-color-gray-2: #e6e8ee;
+  --sl-color-gray-3: #9aa3b2;
+  --sl-color-gray-4: #667085;
+  --sl-color-gray-5: #2e3746;
+  --sl-color-gray-6: #161a22;
+  --sl-color-gray-7: #0f1218;
+  --sl-color-black: #0f1218;
+
+  --sl-color-accent-low: #1c2230;
+  --sl-color-accent: #8b9bff;
+  --sl-color-accent-high: #a5b1ff;
+
+  --sl-color-text: #e6e8ee;
+  --sl-color-text-accent: #a5b1ff;
+  --sl-color-text-invert: #0f1218;
+  --sl-color-bg: #0f1218;
+  --sl-color-bg-nav: #0f1218;
+  --sl-color-bg-sidebar: #0f1218;
+  --sl-color-bg-inline-code: #1c2230;
+  --sl-color-bg-accent: #8b9bff;
+  --sl-color-hairline-light: #232a36;
+  --sl-color-hairline: #232a36;
+  --sl-color-hairline-shade: #2e3746;
+
+  --sl-color-orange-low: #161a22;
+  --sl-color-orange: #f0a54a;
+  --sl-color-orange-high: #e6e8ee;
+  --sl-color-green-low: #14261e;
+  --sl-color-green: #5fbf8f;
+  --sl-color-green-high: #e6e8ee;
+  --sl-color-blue-low: #1c2230;
+  --sl-color-blue: #8b9bff;
+  --sl-color-blue-high: #e6e8ee;
+  --sl-color-purple-low: #1c2230;
+  --sl-color-purple: #8b9bff;
+  --sl-color-purple-high: #e6e8ee;
+  --sl-color-red-low: #2a1a1d;
+  --sl-color-red: #f07167;
+  --sl-color-red-high: #e6e8ee;
+
+  --sl-color-backdrop-overlay: rgb(0 0 0 / 0.7);
+
+  --archon-text: #e6e8ee;
+  --archon-text-2: #9aa3b2;
+  --archon-line-strong: #2e3746;
+  --archon-surface: #161a22;
+  --archon-card: #0f1218;
+  --archon-accent-text: #a5b1ff;
+  --archon-rule: #e6e8ee;
+  --archon-selection: #1c2230;
+  --archon-header-fg: #e6e8ee;
+  --archon-header-muted: #9aa3b2;
+  --archon-header-line: #2e3746;
+  --archon-header-accent: #8b9bff;
+  --archon-header-field: #0f1218;
+  --archon-code-bg: #0a0c11;
+  --archon-code-bar: #161a22;
+  --archon-code-line: #232a36;
+  --archon-code-fg: #cdd3de;
+  --archon-code-muted: #9aa3b2;
+  --archon-code-accent: #8b9bff;
+}
+
 :root {
-  --sl-color-accent-low: #1a1f36;
-  --sl-color-accent: #3b82f6;
-  --sl-color-accent-high: #93c5fd;
-  --sl-font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --sl-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --sl-font: 'Archivo', ui-sans-serif, system-ui;
+  --sl-font-mono: ui-monospace, Menlo, monospace;
+  --sl-nav-height: 3rem;
+  --sl-nav-pad-y: 0.5rem;
+  --sl-text-h1: 1.75rem;
+  --sl-text-h2: 1.375rem;
+  --sl-text-h3: 1.125rem;
+  --sl-text-h4: 1rem;
+  --sl-text-h5: 0.875rem;
+  --sl-line-height: 1.6;
+  --sl-line-height-headings: 1.15;
+  --sl-shadow-sm: none;
+  --sl-shadow-md: none;
+  --sl-shadow-lg: none;
 }
 
-[data-theme='dark'] {
-  --sl-color-bg: #0f1219;
-  --sl-color-bg-sidebar: #131825;
-  --sl-color-bg-nav: #0f1219;
-  --sl-color-hairline-light: #1e293b;
-  --sl-color-text-accent: rgba(168, 85, 247, 0.25); /* mobile sidebar active-link bg — re-test after Starlight upgrades */
-  --sl-color-text-invert: white;
+/* Radius 0 everywhere. */
+*,
+*::before,
+*::after {
+  border-radius: 0;
 }
 
-/* !important needed: Starlight sets .hero padding/gap via inline styles */
-.hero {
-  padding-block: 2rem !important;
-  gap: 1rem !important;
+body {
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* .sidebar-content is an internal Starlight class (not a public API) — re-test after Starlight upgrades */
-[data-theme='dark'] .sidebar-content a[aria-current='page'] {
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(59, 130, 246, 0.15));
-  border-left-color: #a855f7;
+:focus-visible {
+  outline: 2px solid var(--sl-color-accent);
+  outline-offset: 2px;
+}
+
+/* Top bar: navy in light, the page color in dark, as in the web app. The
+ * controls inside it read the top bar colors. */
+
+header.header {
+  --sl-color-white: var(--archon-header-fg);
+  --sl-color-gray-1: var(--archon-header-fg);
+  --sl-color-gray-2: var(--archon-header-muted);
+  --sl-color-gray-3: var(--archon-header-muted);
+  --sl-color-gray-5: var(--archon-header-line);
+  --sl-color-gray-6: var(--archon-header-line);
+  --sl-color-black: var(--archon-header-field);
+  --sl-color-text-accent: var(--archon-header-fg);
+  --sl-color-hairline-shade: var(--archon-header-line);
+
+  border-bottom: 1px solid var(--archon-header-line);
+  color: var(--archon-header-fg);
+}
+
+.site-title {
+  gap: 0.5rem;
+  color: var(--archon-header-fg);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.site-title img {
+  width: 20px;
+  height: 20px;
+}
+
+header.header :is(site-search > button, starlight-theme-select select) {
+  height: 32px;
+  padding-block: 0;
+}
+
+header.header .social-icons a {
+  color: var(--archon-header-muted);
+}
+
+header.header .social-icons a:hover {
+  color: var(--archon-header-fg);
+}
+
+/* The search dialog is in the header markup but shows over the page, so it
+ * uses the page colors again. */
+header.header dialog {
+  --sl-color-white: var(--archon-text);
+  --sl-color-gray-1: var(--archon-text);
+  --sl-color-gray-2: var(--archon-text);
+  --sl-color-gray-3: var(--archon-text-2);
+  --sl-color-gray-5: var(--archon-line-strong);
+  --sl-color-gray-6: var(--archon-surface);
+  --sl-color-black: var(--archon-card);
+  --sl-color-text-accent: var(--archon-accent-text);
+  --sl-color-hairline-shade: var(--archon-line-strong);
+
+  color: var(--archon-text);
+}
+
+/* Sidebar: the page color with a 2px strong rule, like the left list column. */
+
+.sidebar-pane {
+  border-inline-end: 2px solid var(--sl-color-hairline-shade);
+}
+
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+  border-inline-start: 3px solid var(--sl-color-accent);
+  background: var(--archon-selection);
   color: var(--sl-color-white);
+  font-weight: 600;
+}
+
+.sidebar-content a {
+  border-inline-start: 3px solid transparent;
+}
+
+.sidebar-content a:hover {
+  background: var(--archon-selection);
+}
+
+.sidebar-content .large {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+/* Section labels in the sidebar groups: 11px, uppercase, wide spacing. */
+.sidebar-content summary .large {
+  color: var(--sl-color-gray-3);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Page title and headings. */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.content-panel:has(h1#_top) {
+  border-bottom: 2px solid var(--archon-rule);
+}
+
+.content-panel + .content-panel {
+  border-top: 0;
+}
+
+.right-sidebar {
+  border-inline-start: 1px solid var(--sl-color-hairline);
+}
+
+.right-sidebar h2 {
+  color: var(--sl-color-gray-3);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Inline code and tables. */
+
+.sl-markdown-content :not(pre) > code {
+  border: 1px solid var(--sl-color-hairline);
+  font-size: 0.8125rem;
+}
+
+.sl-markdown-content table {
+  font-size: 0.875rem;
+}
+
+.sl-markdown-content th {
+  color: var(--sl-color-gray-3);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sl-markdown-content :is(th, td) {
+  border-bottom: 1px solid var(--sl-color-hairline);
+}
+
+/* Asides: a 3px bar on the left and a flat tint. */
+
+.starlight-aside {
+  border-inline-start-width: 3px;
+}
+
+/* Cards: white with a 1px strong line. The icon is neutral, so the page has
+ * one accent only. */
+
+.card {
+  --sl-card-border: var(--sl-color-gray-5);
+  --sl-card-bg: var(--sl-color-gray-6);
+
+  border: 1px solid var(--sl-color-gray-5);
+  background: var(--sl-color-black);
+}
+
+/* Buttons in the splash hero use the button vocabulary of the web app. */
+
+.sl-link-button {
+  border-radius: 0;
+  font-weight: 600;
+}
+
+.sl-link-button.primary {
+  border-color: var(--sl-color-accent);
+  background: var(--sl-color-accent);
+  color: var(--sl-color-text-invert);
+}
+
+.sl-link-button.primary:hover {
+  border-color: var(--sl-color-accent-high);
+  background: var(--sl-color-accent-high);
+}
+
+.sl-link-button.secondary {
+  border: 1px solid var(--sl-color-gray-5);
+  background: var(--sl-color-black);
+  color: var(--sl-color-white);
+}
+
+.hero {
+  padding-block: 2rem;
+  gap: 1rem;
+}
+
+.hero h1 {
+  font-size: clamp(2rem, 5vw, 2.75rem);
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.hero img {
+  width: min(12rem, 40vw);
+  image-rendering: pixelated;
+}
+
+/* Pagination links at the page end. */
+.pagination-links a {
+  border: 1px solid var(--sl-color-gray-5);
+  box-shadow: none;
+}
+
+.pagination-links a:hover {
+  border-color: var(--sl-color-accent);
 }

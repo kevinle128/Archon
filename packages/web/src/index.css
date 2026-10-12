@@ -8,31 +8,58 @@
 
 /* Design tokens. Light is the default; the `dark` class on <html> (set by
    src/lib/theme.ts before first paint) switches to the dark values. Existing
-   token names stay stable so components change without class edits. */
+   token names stay stable so components change without class edits.
+   Values are the exact handoff palette. Some small status text is below
+   WCAG AA (4.5:1) on light surfaces; this is a product decision. */
 :root {
   color-scheme: light;
 
+  /* Top bar. Navy in light mode. */
+  --header-bg: #1a2130;
+  --header-fg: #f1f4f9;
+  --header-muted: #9aa5b8;
+  --header-line: #2c364a;
+  --header-accent: #7aa2ff;
+
   /* App-specific colors */
-  --surface: #f7f7f8;
-  --surface-elevated: #efeff1;
-  --surface-inset: #f7f7f8;
-  --surface-hover: #e8e8eb;
-  --border-bright: #d4d4d8;
-  --text-primary: #18181b;
-  --text-secondary: #52525b;
-  --text-tertiary: #71717a;
-  --accent-hover: #4338ca;
-  --accent-muted: #eef0ff;
-  --accent-bright: #4338ca;
+  --surface: #eaeef3;
+  --surface-elevated: #ffffff;
+  --surface-inset: #eaeef3;
+  --surface-hover: #e4ecfb;
+  --border-bright: #c9d0db;
+  --line-strong: #c9d0db;
+  --selection: #e4ecfb;
+  --text-primary: #1a2130;
+  --text-secondary: #5a6478;
+  --text-tertiary: #98a1b2;
+  --accent-hover: #1d4ed8;
+  --accent-muted: #e4ecfb;
+  --accent-bright: #2563eb;
   --on-accent: #ffffff;
   /* Text on saturated solid fills such as destructive buttons and error badges. */
   --on-solid: #ffffff;
   /* Modal backdrop. */
-  --scrim: rgb(24 24 27 / 0.45);
-  /* Clears 4.5:1 on --surface-hover, the darkest light surface a success glyph sits on. */
-  --success: #166534;
-  --warning: #b45309;
-  --error: #dc2626;
+  --scrim: rgb(26 33 48 / 0.45);
+
+  /* Code blocks */
+  --code-bg: #1a2130;
+  --code-fg: #e6e9f0;
+
+  /* Status language. Exact handoff values. */
+  --status-running: #2563eb;
+  --status-waiting: #d97706;
+  --status-waiting-fg: #ffffff;
+  --status-done: #16a34a;
+  --status-failed: #dc2626;
+  --status-pending: #98a1b2;
+  /* Progress strip segment for a node that has not started. Not text. */
+  --segment-pending: #d3d9e3;
+  --tint-error: #fdecea;
+  --tint-success: #e7f6ec;
+
+  --success: var(--status-done);
+  --warning: var(--status-waiting);
+  --error: var(--status-failed);
   /* Status pill borders in the node room header: the status hue blended into
      the page background so the outline reads on --surface without competing
      with the text. */
@@ -41,7 +68,7 @@
   --status-pill-border-error: color-mix(in srgb, var(--error) 40%, var(--background));
   --status-pill-border-warning: color-mix(in oklch, var(--warning) 40%, transparent);
 
-  /* Node type colors. Each clears 4.5:1 on --background and --surface. */
+  /* Node type colors. */
   --node-command: #1d4ed8;
   --node-prompt: #7e22ce;
   --node-bash: #b45309;
@@ -49,60 +76,79 @@
   --node-approval: #c2410c;
 
   /* shadcn variables mapped to the light theme */
-  --radius: 0.625rem;
-  --background: #ffffff;
-  --foreground: #18181b;
-  --card: #f7f7f8;
-  --card-foreground: #18181b;
+  --radius: 0px;
+  --background: #f5f7fa;
+  --foreground: #1a2130;
+  --card: #ffffff;
+  --card-foreground: #1a2130;
   --popover: #ffffff;
-  --popover-foreground: #18181b;
-  --primary: #4f46e5;
+  --popover-foreground: #1a2130;
+  --primary: #2563eb;
   --primary-foreground: #ffffff;
-  --secondary: #efeff1;
-  --secondary-foreground: #18181b;
-  --muted: #efeff1;
-  --muted-foreground: #52525b;
-  --accent: #4f46e5;
+  --secondary: #eaeef3;
+  --secondary-foreground: #1a2130;
+  --muted: #eaeef3;
+  --muted-foreground: #5a6478;
+  --accent: #2563eb;
   --accent-foreground: #ffffff;
   --destructive: #dc2626;
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --ring: #4f46e5;
-  --chart-1: #4f46e5;
-  --chart-2: #15803d;
-  --chart-3: #b45309;
+  --border: #e2e6ed;
+  --input: #c9d0db;
+  --ring: #2563eb;
+  --chart-1: #2563eb;
+  --chart-2: #16a34a;
+  --chart-3: #d97706;
   --chart-4: #dc2626;
-  --chart-5: #4338ca;
-  --sidebar: #f7f7f8;
-  --sidebar-foreground: #18181b;
-  --sidebar-primary: #4f46e5;
+  --chart-5: #1d4ed8;
+  --sidebar: #eaeef3;
+  --sidebar-foreground: #1a2130;
+  --sidebar-primary: #2563eb;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #eef0ff;
-  --sidebar-accent-foreground: #4f46e5;
-  --sidebar-border: #e4e4e7;
-  --sidebar-ring: #4f46e5;
+  --sidebar-accent: #e4ecfb;
+  --sidebar-accent-foreground: #2563eb;
+  --sidebar-border: #e2e6ed;
+  --sidebar-ring: #2563eb;
 }
 
 .dark {
   color-scheme: dark;
 
-  --surface: #141418;
-  --surface-elevated: #1c1c22;
-  --surface-inset: #0b0b0f;
-  --surface-hover: #24242c;
-  --border-bright: #3a3a44;
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-tertiary: #8b8b94;
-  --accent-hover: #9aa5fa;
-  --accent-muted: #1e1b3a;
-  --accent-bright: #a5b4fc;
-  --on-accent: #0b0b0f;
-  --on-solid: #0b0b0f;
+  /* Midnight palette. The top bar follows the page. */
+  --header-bg: #0f1218;
+  --header-fg: #e6e8ee;
+  --header-muted: #9aa3b2;
+  --header-line: #2e3746;
+  --header-accent: #8b9bff;
+
+  --surface: #161a22;
+  --surface-elevated: #1c2230;
+  --surface-inset: #0a0c11;
+  --surface-hover: #232a36;
+  --border-bright: #2e3746;
+  --line-strong: #2e3746;
+  --selection: #1c2230;
+  --text-primary: #e6e8ee;
+  --text-secondary: #9aa3b2;
+  --text-tertiary: #667085;
+  --accent-hover: #a5b1ff;
+  --accent-muted: #1c2230;
+  --accent-bright: #a5b1ff;
+  --on-accent: #0f1218;
+  --on-solid: #0f1218;
   --scrim: rgb(0 0 0 / 0.7);
-  --success: #4ade80;
-  --warning: #fbbf24;
-  --error: #f87171;
+
+  --code-bg: #0a0c11;
+  --code-fg: #cdd3de;
+
+  --status-running: #8b9bff;
+  --status-waiting: #f0a54a;
+  --status-waiting-fg: #0f1218;
+  --status-done: #5fbf8f;
+  --status-failed: #f07167;
+  --status-pending: #667085;
+  --segment-pending: #2e3746;
+  --tint-error: #2a1a1d;
+  --tint-success: #14261e;
 
   --node-command: #60a5fa;
   --node-prompt: #c084fc;
@@ -110,37 +156,37 @@
   --node-loop: #2dd4bf;
   --node-approval: #fb923c;
 
-  --background: #0b0b0f;
-  --foreground: #f4f4f5;
-  --card: #141418;
-  --card-foreground: #f4f4f5;
-  --popover: #141418;
-  --popover-foreground: #f4f4f5;
-  --primary: #818cf8;
-  --primary-foreground: #0b0b0f;
-  --secondary: #1c1c22;
-  --secondary-foreground: #f4f4f5;
-  --muted: #1c1c22;
-  --muted-foreground: #a1a1aa;
-  --accent: #818cf8;
-  --accent-foreground: #0b0b0f;
-  --destructive: #f87171;
-  --border: #2a2a31;
-  --input: #2a2a31;
-  --ring: #818cf8;
-  --chart-1: #818cf8;
-  --chart-2: #4ade80;
-  --chart-3: #fbbf24;
-  --chart-4: #f87171;
-  --chart-5: #a5b4fc;
-  --sidebar: #141418;
-  --sidebar-foreground: #f4f4f5;
-  --sidebar-primary: #818cf8;
-  --sidebar-primary-foreground: #0b0b0f;
-  --sidebar-accent: #1e1b3a;
-  --sidebar-accent-foreground: #818cf8;
-  --sidebar-border: #2a2a31;
-  --sidebar-ring: #818cf8;
+  --background: #0f1218;
+  --foreground: #e6e8ee;
+  --card: #161a22;
+  --card-foreground: #e6e8ee;
+  --popover: #161a22;
+  --popover-foreground: #e6e8ee;
+  --primary: #8b9bff;
+  --primary-foreground: #0f1218;
+  --secondary: #161a22;
+  --secondary-foreground: #e6e8ee;
+  --muted: #161a22;
+  --muted-foreground: #9aa3b2;
+  --accent: #8b9bff;
+  --accent-foreground: #0f1218;
+  --destructive: #f07167;
+  --border: #232a36;
+  --input: #2e3746;
+  --ring: #8b9bff;
+  --chart-1: #8b9bff;
+  --chart-2: #5fbf8f;
+  --chart-3: #f0a54a;
+  --chart-4: #f07167;
+  --chart-5: #a5b1ff;
+  --sidebar: #161a22;
+  --sidebar-foreground: #e6e8ee;
+  --sidebar-primary: #8b9bff;
+  --sidebar-primary-foreground: #0f1218;
+  --sidebar-accent: #1c2230;
+  --sidebar-accent-foreground: #8b9bff;
+  --sidebar-border: #232a36;
+  --sidebar-ring: #8b9bff;
 }
 
 @theme inline {
@@ -150,6 +196,8 @@
   --color-surface-elevated: var(--surface-elevated);
   --color-border: var(--border);
   --color-border-bright: var(--border-bright);
+  --color-line-strong: var(--line-strong);
+  --color-selection: var(--selection);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);
@@ -162,6 +210,22 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-error: var(--error);
+  --color-header-bg: var(--header-bg);
+  --color-header-fg: var(--header-fg);
+  --color-header-muted: var(--header-muted);
+  --color-header-line: var(--header-line);
+  --color-header-accent: var(--header-accent);
+  --color-code-bg: var(--code-bg);
+  --color-code-fg: var(--code-fg);
+  --color-status-running: var(--status-running);
+  --color-status-waiting: var(--status-waiting);
+  --color-status-waiting-fg: var(--status-waiting-fg);
+  --color-status-done: var(--status-done);
+  --color-status-failed: var(--status-failed);
+  --color-status-pending: var(--status-pending);
+  --color-segment-pending: var(--segment-pending);
+  --color-tint-error: var(--tint-error);
+  --color-tint-success: var(--tint-success);
   --color-node-command: var(--node-command);
   --color-node-prompt: var(--node-prompt);
   --color-node-bash: var(--node-bash);
@@ -170,8 +234,8 @@
   --color-on-accent: var(--on-accent);
   --color-on-solid: var(--on-solid);
   --color-scrim: var(--scrim);
-  --font-sans: 'Fira Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'Fira Code', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-sans: 'Archivo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, Menlo, monospace;
 
   /* shadcn theme mappings */
   --color-foreground: var(--foreground);
@@ -202,14 +266,25 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  /* Cards and panels are 12px; controls (--radius-lg) are 10px. */
-  --radius-xl: calc(var(--radius) + 2px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+
+  /* Square corners everywhere. Pills and spinners opt in with rounded-full. */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+
+  /* No shadows. Separation comes from 1px and 2px rules. */
+  --shadow-2xs: none;
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+  --shadow-2xl: none;
   --animate-slide-up: slide-up 0.25s ease-out;
 }
 
@@ -224,11 +299,38 @@
   }
 }
 
+/* Streaming caret. Steps, not a fade: the blink is the only decorative motion. */
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.caret-blink {
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret-blink {
+    animation: none;
+  }
+}
+
+/* Keyboard focus: one 2px accent outline on every control. The rule is in the
+   base layer so a component utility (for example an inset offset) can override it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
 /* Base body styling */
 body {
   background-color: var(--background);
   color: var(--text-primary);
   font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -244,7 +346,7 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 4px;
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -399,16 +501,37 @@ body {
    and the new-side column/cells are hidden. State foregrounds are local
    custom properties so a contrast correction is one scoped change per state
    (code and marker share it; line numbers stay --text-secondary). */
+/* Expanded tool bodies are dark code blocks in both themes. Inside them the
+   text, node and status tones use the dark palette values, so every tone keeps
+   its contrast on --code-bg. The inline diff uses the same ground. */
+.tool-family-body {
+  --text-primary: var(--code-fg);
+  --text-secondary: #9aa3b2;
+  --text-tertiary: #8a93a6;
+  --surface-inset: var(--code-bg);
+  --surface-hover: #232a36;
+  --border: #232a36;
+  --border-bright: #2e3746;
+  --node-command: #60a5fa;
+  --node-prompt: #c084fc;
+  --node-bash: #fbbf24;
+  --node-loop: #2dd4bf;
+  --node-approval: #fb923c;
+  --success: #5fbf8f;
+  --warning: #f0a54a;
+  --error: #f07167;
+}
+
 .tool-diff {
   --diff-background-color: var(--surface-inset);
   --diff-text-color: var(--text-primary);
   --diff-font-family: var(--font-mono);
   --diff-selection-background-color: color-mix(in oklch, var(--ring) 35%, transparent);
   --tool-diff-insert-fg: var(--success);
-  /* Pure --error measures ~4.3:1 on the 12% delete tint over --surface-inset;
-     mixing 15% toward --text-primary clears the 4.5:1 floor while the hue
+  /* Pure --error is below 4.5:1 on the 12% delete tint over --surface-inset;
+     mixing 25% toward --text-primary clears the 4.5:1 floor while the hue
      stays on the error axis. */
-  --tool-diff-delete-fg: color-mix(in oklch, var(--error) 85%, var(--text-primary));
+  --tool-diff-delete-fg: color-mix(in oklch, var(--error) 75%, var(--text-primary));
   --diff-gutter-insert-background-color: color-mix(
     in oklch,
     var(--success) 12%,
@@ -420,7 +543,13 @@ body {
     var(--error) 12%,
     var(--surface-inset)
   );
-  --diff-gutter-delete-text-color: var(--text-secondary);
+  /* --text-secondary is below 4.5:1 on the delete tint; a 20% step toward
+     --text-primary clears the floor and keeps the number secondary. */
+  --diff-gutter-delete-text-color: color-mix(
+    in oklch,
+    var(--text-secondary) 80%,
+    var(--text-primary)
+  );
   --diff-code-insert-background-color: color-mix(
     in oklch,
     var(--success) 12%,
@@ -457,6 +586,10 @@ body {
   color: var(--text-secondary);
   text-align: right;
   white-space: nowrap;
+}
+
+.tool-diff .diff-gutter-delete {
+  color: var(--diff-gutter-delete-text-color);
 }
 
 .tool-diff-marker {
@@ -603,7 +736,7 @@ body {
 }
 
 /* =========================================================================
- * Run-view semantic tokens (scoped to the run-view root only).
+ * Run-view semantic tokens (scoped to the Runs workspace run and node columns).
  * Root: .legacy-run-view (WorkflowExecution). These properties do not apply
  * sitewide.
  * ========================================================================= */
@@ -616,8 +749,8 @@ body {
   --rv-tab-size: 0.6875rem;
 
   /* Agent message typography */
-  --rv-agent-font-size: 14px;
-  --rv-agent-line-height: 1.5;
+  --rv-agent-font-size: 14.5px;
+  --rv-agent-line-height: 1.6;
 
   /* Tool card inset surface — matches mockup .ptool */
   --rv-tool-card-bg: var(--surface-inset);
@@ -626,8 +759,8 @@ body {
   --rv-tool-card-padding: 8px 10px;
   --rv-tool-io-font-size: 12px;
 
-  /* Ask card — matches mockup .ask-card */
-  --rv-ask-card-border-color: var(--accent);
+  /* Ask card: the waiting tone frames a question the agent asks the operator. */
+  --rv-ask-card-border-color: var(--status-waiting);
   --rv-ask-card-radius: var(--radius);
   --rv-ask-card-padding: 12px 14px;
 

@@ -9,6 +9,7 @@ import { test, expect } from '../lib/playwright/suite';
 import { type ArchonRuntime } from '../lib/playwright/archon-runtime';
 import {
   observeNodeMessagePages,
+  openHistoryRow,
   openLegacyRunDetail,
   openRunDetail,
 } from '../lib/playwright/run-detail';
@@ -72,11 +73,6 @@ const EVIDENCE_DIR = join(
 const CONSOLE_WIDE_VIEWPORT = { width: 1400, height: 560 } as const;
 const LEGACY_WIDE_VIEWPORT = { width: 1400, height: 560 } as const;
 const NARROW_VIEWPORT = { width: 390, height: 844 } as const;
-const ROOM_PANEL_ID: Record<'console' | 'legacy', string> = {
-  console: 'legacy-run-room',
-  legacy: 'legacy-run-room',
-};
-
 interface SeedMessage {
   kind: 'text' | 'tool' | 'status';
   payload: Record<string, unknown>;
@@ -420,26 +416,14 @@ async function expectNoLiveRegion(scroller: Locator): Promise<void> {
   await expect(scroller.locator('[aria-live], [role="status"], [role="alert"]')).toHaveCount(0);
 }
 
-// Design reference width: the room is a fixed pixel width with no drag handle
-// (`packages/web/src/lib/room-split-layout.ts`) — 460px.
-const AUTHORITATIVE_ROOM_WIDTH: Record<'console' | 'legacy', number> = {
-  console: 460,
-  legacy: 460,
-};
-
+/** The room fills the node column of the Runs workspace; it must stay readable inside it. */
 async function measuredRoomWidth(page: Page, surface: 'console' | 'legacy'): Promise<number> {
-  const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
-  const box = (await panel.count()) > 0 ? await panel.boundingBox() : null;
-  const measured = box ?? (await roomRegion(page).boundingBox());
+  const measured = await roomRegion(page).boundingBox();
   expect(measured, `${surface} room width`).toBeTruthy();
   const width = measured?.width ?? 0;
-  const target = AUTHORITATIVE_ROOM_WIDTH[surface];
-  expect(width, `${surface} room ≈${String(target)}px authoritative width`).toBeGreaterThanOrEqual(
-    target - 8
-  );
-  expect(width, `${surface} room ≈${String(target)}px authoritative width`).toBeLessThanOrEqual(
-    target + 8
-  );
+  const column = (await page.getByTestId('node-column').boundingBox())?.width ?? 0;
+  expect(width, `${surface} room is readable`).toBeGreaterThanOrEqual(300);
+  expect(width, `${surface} room fits its node column`).toBeLessThanOrEqual(column + 2);
   return width;
 }
 
@@ -610,9 +594,9 @@ test('[P1] [V:occurrence-nav.flat] Metadata-free node transcript renders flat on
 
     await openLegacyRunDetail(page, runId);
     await expect(page.getByText(/e2e-usage-record/i).first()).toBeVisible({ timeout: T.medium });
-    const logsTab = page.getByRole('tab', { name: 'Logs' });
+    const logsTab = page.getByRole('radio', { name: 'List' });
     if ((await logsTab.count()) > 0) await logsTab.click();
-    await page.locator('button[id*="occ-none%3Aunscoped"]').click();
+    await openHistoryRow(page, FLAT_NODE, 'button[id*="occ-none%3Aunscoped"]');
     const legacyRoom = roomRegion(page, FLAT_NODE);
     await expect(legacyRoom).toBeVisible({ timeout: T.medium });
     await expect(legacyRoom.getByText('E2E flat row one')).toBeVisible();
@@ -634,12 +618,12 @@ test('[P1] [V:occurrence-nav.legacy] Legacy node room shares the navigator contr
   try {
     await openLegacyRunDetail(page, runId);
     await expect(page.getByText(/e2e-usage-record/i).first()).toBeVisible({ timeout: T.medium });
-    const logsTab = page.getByRole('tab', { name: 'Logs' });
+    const logsTab = page.getByRole('radio', { name: 'List' });
     if ((await logsTab.count()) > 0) await logsTab.click();
 
     // The unscoped row's opener id embeds the encoded rowId — click it directly
     // so a same-named occurrence row can never satisfy the click.
-    await page.locator('button[id*="occ-multi%3Aunscoped"]').click();
+    await openHistoryRow(page, OCC_NODE, 'button[id*="occ-multi%3Aunscoped"]');
     const room = roomRegion(page);
     await expect(room).toBeVisible({ timeout: T.medium });
     await expect
@@ -682,7 +666,7 @@ test('[P1] [V:occurrence-nav.legacy] Legacy node room shares the navigator contr
     // Occurrence-scoped row: occurrence filter alone (no attempt_id — see the
     // console test above), one group, navigator gone (single-occurrence flat
     // state on Legacy).
-    await page.locator(`button[id*="${OCC_A}"]`).click();
+    await openHistoryRow(page, OCC_NODE, `button[id*="${OCC_A}"]`);
     await expect
       .poll(() =>
         observed.records.some(record => record.occurrenceId === OCC_A && record.attemptId === null)
@@ -696,7 +680,7 @@ test('[P1] [V:occurrence-nav.legacy] Legacy node room shares the navigator contr
 
     await expectNoHorizontalOverflow(page, scroller);
     const roomWidth = await measuredRoomWidth(page, 'legacy');
-    await page.locator('button[id*="occ-multi%3Aunscoped"]').click();
+    await openHistoryRow(page, OCC_NODE, 'button[id*="occ-multi%3Aunscoped"]');
     await expectGroupHeadings(room, ALL_LABELS);
     await navigator.selectOption(await navigatorOptionValue(page, LABEL_B));
     await expect.poll(async () => activeElementId(page)).toMatch(new RegExp(`occ-${OCC_B}$`));
@@ -801,10 +785,7 @@ test('[P1] [V:occurrence-nav.narrow] Narrow viewport keeps both navigators witho
   await expect.poll(async () => activeElementId(page)).toMatch(new RegExp(`occ-${OCC_B}$`));
   const scroller = room.locator('[data-testid="node-transcript-scroll"]');
   await expectNoHorizontalOverflow(page, scroller);
-  const width = await page
-    .locator(`#${ROOM_PANEL_ID.console}`)
-    .boundingBox()
-    .then(box => box?.width ?? 0);
+  const width = await room.boundingBox().then(box => box?.width ?? 0);
   await shot(
     page,
     room,
@@ -817,9 +798,9 @@ test('[P1] [V:occurrence-nav.narrow] Narrow viewport keeps both navigators witho
 
   await openLegacyRunDetail(page, runId);
   await expect(page.getByText(/e2e-usage-record/i).first()).toBeVisible({ timeout: T.medium });
-  const logsTab = page.getByRole('tab', { name: 'Logs' });
+  const logsTab = page.getByRole('radio', { name: 'List' });
   if ((await logsTab.count()) > 0) await logsTab.click();
-  await page.locator('button[id*="occ-multi%3Aunscoped"]').click();
+  await openHistoryRow(page, OCC_NODE, 'button[id*="occ-multi%3Aunscoped"]');
   const legacyRoom = roomRegion(page);
   await expect(legacyRoom).toBeVisible({ timeout: T.medium });
   await expectGroupHeadings(legacyRoom, ALL_LABELS);
@@ -829,10 +810,7 @@ test('[P1] [V:occurrence-nav.narrow] Narrow viewport keeps both navigators witho
   await expect.poll(async () => activeElementId(page)).toMatch(new RegExp(`occ-${OCC_B}$`));
   const legacyScroller = legacyRoom.locator('[data-testid="node-transcript-scroll"]');
   await expectNoHorizontalOverflow(page, legacyScroller);
-  const legacyWidth = await page
-    .locator(`#${ROOM_PANEL_ID.legacy}`)
-    .boundingBox()
-    .then(box => box?.width ?? 0);
+  const legacyWidth = await legacyRoom.boundingBox().then(box => box?.width ?? 0);
   await shot(
     page,
     legacyRoom,

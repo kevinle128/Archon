@@ -12,7 +12,7 @@ import { E2E_STARTER_WEB_USER, E2E_TEAMMATE_WEB_USER, HITL_ASK_NODE } from './ar
 export type IdentityKind = 'starter' | 'teammate' | 'none';
 
 /**
- * Open a run's detail page (`/workflows/runs/:runId`).
+ * Open a run in the Runs workspace (`/runs/:runId[/:nodeId]`).
  *
  * The project (codebase) id is read back from the REAL run-detail API rather
  * than threaded through the CLI envelope or mocked — same principle the whole
@@ -28,19 +28,39 @@ export async function openRunDetail(
   const detail = (await res.json()) as { run?: { codebase_id?: string | null } };
   const projectId = detail.run?.codebase_id;
   expect(projectId, `run ${runId} has a project (codebase) id`).toBeTruthy();
-  const nodeQuery = nodeId ? `?node=${encodeURIComponent(nodeId)}` : '';
-  await page.goto(`/workflows/runs/${encodeURIComponent(runId)}${nodeQuery}`);
+  const nodePath = nodeId ? `/${encodeURIComponent(nodeId)}` : '';
+  await page.goto(`/runs/${encodeURIComponent(runId)}${nodePath}`);
   return { projectId: projectId ?? '' };
 }
 
+/**
+ * Open a run through its old link format. Slack and Telegram messages still carry
+ * `/workflows/runs/:runId`; the app redirects it to the Runs workspace.
+ */
 export async function openLegacyRunDetail(page: Page, runId: string): Promise<void> {
   await page.goto(`/workflows/runs/${encodeURIComponent(runId)}`);
+  await expect(page).toHaveURL(new RegExp(`/runs/${encodeURIComponent(runId)}(?:[/?]|$)`));
 }
 
+/** Open a node from the run column's step list. */
 export async function openNodeRoom(page: Page, nodeId: string): Promise<void> {
-  const divider = page.locator(`#node-transition-${nodeId}`);
-  await expect(divider).toBeVisible();
-  await divider.getByRole('button', { name: new RegExp(nodeId) }).click();
+  const step = page.locator(`[id="legacy-graph-${encodeURIComponent(nodeId)}"]`);
+  await expect(step).toBeVisible();
+  await step.click();
+}
+
+/**
+ * Open one execution of a node: the node from the step list, then its row in the
+ * History tab, which lists every execution (iterations, retries, occurrences).
+ */
+export async function openHistoryRow(
+  page: Page,
+  nodeId: string,
+  rowSelector: string
+): Promise<void> {
+  await openNodeRoom(page, nodeId);
+  await page.getByRole('tab', { name: /^History/ }).click();
+  await page.locator(rowSelector).click();
 }
 
 /** One node-transcript row as returned by the messages list route. */

@@ -126,16 +126,16 @@ export function RunArtifactsPanel({
     <aside
       aria-label="Run artifacts"
       data-testid="run-artifacts-panel"
-      className="flex h-[45%] min-h-0 w-full shrink-0 flex-col border-t border-border bg-background lg:h-auto lg:w-[420px] lg:border-l lg:border-t-0"
+      className="flex min-h-0 w-full flex-1 flex-col bg-background"
     >
       <header className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2">
-        <h2 className="text-sm font-medium text-text-primary">Artifacts</h2>
+        <h2 className="text-sm font-bold text-text-primary">Artifacts</h2>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close artifacts"
           title="Close (Esc)"
-          className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-[10px] text-text-secondary transition-colors duration-150 hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
+          className="inline-flex h-8 w-8 cursor-pointer items-center justify-center text-text-secondary hover:bg-selection hover:text-text-primary"
         >
           <X aria-hidden="true" strokeWidth={2} className="h-4 w-4" />
         </button>
@@ -221,7 +221,7 @@ function FileBrowser({
                   onClick={(): void => {
                     onSelect(f.path);
                   }}
-                  className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none ${
+                  className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-none px-3 py-2 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none ${
                     isSelected ? 'bg-accent-muted' : 'hover:bg-surface-hover'
                   }`}
                 >

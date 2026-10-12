@@ -93,6 +93,10 @@ export interface LegacyNodeRoomProps {
   onRunSettleHint?: () => void;
   /** Forwarded to the composer dock; see its own doc comment. Default 0. */
   terminalEdgeKick?: number;
+  /** Rendered between the header and the body, for example the node column tabs. */
+  tabs?: React.ReactNode;
+  /** False when another tab replaces the room body. The header stays. Default true. */
+  showBody?: boolean;
 }
 
 const TYPE_LABELS: Record<NodeBodyKind, string> = {
@@ -159,6 +163,8 @@ export function LegacyNodeRoom({
   onAskDraftChange,
   onRunSettleHint,
   terminalEdgeKick = 0,
+  tabs,
+  showBody = true,
 }: LegacyNodeRoomProps): React.ReactElement {
   // Reported by the dock's own queue poll — the only place restart recovery
   // is currently observable. A fresh dock mount reports null immediately, so
@@ -237,7 +243,7 @@ export function LegacyNodeRoom({
         <span className="rounded bg-surface-elevated px-2 py-0.5 text-xs text-text-secondary">
           {waitingForDefinition ? 'Loading' : TYPE_LABELS[resolution.nodeType]}
         </span>
-        <span className={cn('rounded-full px-2 py-0.5 text-xs', STATUS_COLORS[row.status])}>
+        <span className={cn('rounded-none px-2 py-0.5 text-xs', STATUS_COLORS[row.status])}>
           {nodeStatusLabel(row.status)}
         </span>
         {onClose !== undefined ? (
@@ -349,10 +355,11 @@ export function LegacyNodeRoom({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className={cn('flex min-h-0 flex-col', showBody ? 'flex-1' : 'flex-none')}>
       {header}
       <NodeUsageDisclosure nodeId={row.nodeId} />
-      {body}
+      {tabs}
+      {showBody ? body : null}
     </div>
   );
 }

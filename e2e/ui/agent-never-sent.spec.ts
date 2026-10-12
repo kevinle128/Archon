@@ -80,7 +80,7 @@ async function openGuidanceRoom(
     await openRunDetail(page, runId, nodeId);
   } else {
     await openLegacyRunDetail(page, runId);
-    const logsTab = page.getByRole('tab', { name: 'Logs' });
+    const logsTab = page.getByRole('radio', { name: 'List' });
     await expect(logsTab).toBeVisible({ timeout: T.medium });
     await logsTab.click();
     const nodeButton = page.getByRole('button', { name: new RegExp(nodeId) }).first();

@@ -67,8 +67,10 @@ async function measureProductRatio(
   const room = panelLocator(page, roomId);
   if ((await view.count()) === 0 || (await room.count()) === 0) return null;
   if (!(await view.isVisible()) || !(await room.isVisible())) return null;
-  const viewBox = await view.boundingBox();
-  const roomBox = await room.boundingBox();
+  // A resize can remount a column between the visibility check and the
+  // measurement; a column that detaches counts as not measurable.
+  const viewBox = await view.boundingBox({ timeout: 2_000 }).catch(() => null);
+  const roomBox = await room.boundingBox({ timeout: 2_000 }).catch(() => null);
   if (viewBox === null || roomBox === null) return null;
   const total = viewBox.width + roomBox.width;
   if (total <= 0) return null;
@@ -124,7 +126,7 @@ test('[P1] [V:hitl.visual-captures] HITL visual: Legacy vs canonical mockup at r
   await page.setViewportSize({ width: 1440, height: 1000 });
   await openLegacyRunDetail(page, started.runId);
   await expect(page.getByText(/e2e-hitl-run/i).first()).toBeVisible({ timeout: T.medium });
-  await page.getByRole('tab', { name: 'Logs' }).click();
+  await page.getByRole('radio', { name: 'List' }).click();
   await page
     .getByRole('button', { name: new RegExp(HITL_INSPECT_NODE) })
     .first()
@@ -138,8 +140,10 @@ test('[P1] [V:hitl.visual-captures] HITL visual: Legacy vs canonical mockup at r
     await expect(page.getByRole('region', { name: `${HITL_INSPECT_NODE} room` })).toBeVisible();
     const ratio = await measureProductRatio(page, 'legacy');
     if (ratio !== null) {
-      expect(ratio).toBeGreaterThanOrEqual(0.24);
-      expect(ratio).toBeLessThanOrEqual(0.6);
+      // The Runs workspace gives the run column 0.85fr and the node column 1.4fr,
+      // so the room takes about 0.62 of the pair; the run column keeps its 260px floor.
+      expect(ratio).toBeGreaterThanOrEqual(0.4);
+      expect(ratio).toBeLessThanOrEqual(0.7);
     }
     await page.screenshot({
       path: join(CAPTURE_DIR, 'legacy-actual-' + viewport.name + '.png'),

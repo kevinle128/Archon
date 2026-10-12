@@ -1,10 +1,21 @@
 import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 
+import { RunActions, RunHeader, useIdeEnvironment } from '@/components/runs/RunHeader';
+import { getPlannotatorReviewUrl } from '@/lib/approval-context';
+import { projectDisplayName } from '@/lib/projects/display-name';
+import {
+  buildRunPath,
+  isRunTab,
+  keepListParams,
+  RUN_TABS,
+  type NodeColumnTab,
+  type RunTab,
+} from '@/lib/runs/run-url';
+
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { DagNodeProgress } from './DagNodeProgress';
-import { LegacyGraphLogsPane } from './LegacyGraphLogsPane';
+import { LegacyGraphLogsPane, type RunNodeView } from './LegacyGraphLogsPane';
 import { WorkflowAskChrome } from './WorkflowAskChrome';
 import {
   createAskAnswerController,
@@ -17,7 +28,6 @@ import { WorkflowLogs } from './WorkflowLogs';
 import { WorkflowDagViewer } from './WorkflowDagViewer';
 import { RunArtifactsPanel } from '@/components/run-artifacts/RunArtifactsPanel';
 import { WorkflowNodeRetryAction } from './WorkflowNodeRetryAction';
-import { DagRunTabs, type WorkflowRunView } from './source-control/dag-run-tabs';
 import { SourceControlTab } from './source-control/source-control-tab';
 import { FilesChangedTab } from './source-control/files-changed-tab';
 import { TerminalTab } from './terminal/terminal-tab';
@@ -27,6 +37,9 @@ import {
   abandonWorkflowRun,
   answerAskHuman,
   approveWorkflowRun,
+  cancelWorkflowRun,
+  createConversation,
+  deleteWorkflowRun,
   getConversation,
   getMessages,
   getWorkflowRun,
@@ -36,6 +49,7 @@ import {
   getWorkflowNodeMessages,
   rejectWorkflowRun,
   resumeWorkflowRun,
+  runWorkflow,
   sendMessage,
   type NodeExecution,
   type PendingInteraction,
@@ -47,7 +61,6 @@ import {
   capExecutionOptions,
   selectableExecutionRows,
   chooseExecutionForInteraction,
-  chooseExecutionForNode,
   closeRoom,
   computeLoopIterationCount,
   computeRunOfTotal,
@@ -61,13 +74,11 @@ import {
   resetRoomVisit,
   resolveRunDetailRefetchIntervalMs,
   resolveFollowedRow,
-  roomOpenerId,
   type RoomVisitState,
 } from '@/lib/execution-room-model';
 import { nodeMessageScopeKey, type NodeMessageSelection } from '@/lib/node-message-pages';
 import type { AskDraft, AskDraftByRequest } from './parse-ask-envelope';
-import { ensureUtc, formatDurationMs, formatStarted } from '@/lib/format';
-import { ChevronRight, FileText } from 'lucide-react';
+import { ensureUtc } from '@/lib/format';
 import { parseRunEnvOverlay } from '@/lib/run-usage/parse-run-env-overlay';
 import { readLegacyRunCost } from '@/lib/run-usage/run-usage';
 import type { RunEnvOverlay } from '@/components/workflow-envs/WorkflowEnvResolvedTable';
@@ -75,7 +86,6 @@ import { RunEnvOverlayMeta } from '@/components/run-usage/RunEnvOverlayMeta';
 import type { RunDetailUsage } from '@/lib/settings/usage';
 import { RunCostMeta } from '@/components/run-usage/RunCostMeta';
 import { runUsageContext, type RunUsageValue } from '@/components/run-usage/run-usage-context';
-import { readRoomRatio, writeRoomRatio } from '@/lib/room-split-layout';
 import { settleRunningDagNodesForTerminalStatus } from '@/lib/workflow-utils';
 import type {
   WorkflowState,
@@ -118,6 +128,8 @@ type WorkflowRunNodeState = NonNullable<
 
 export interface WorkflowRunQueryData {
   workflowState: WorkflowState;
+  /** The run row as the API returns it: input, worktree path, parent run, metadata. */
+  runRecord: Awaited<ReturnType<typeof getWorkflowRun>>['run'];
   workerPlatformId: string | null;
   parentPlatformId: string | null;
   conversationPlatformId: string | null;
@@ -169,6 +181,7 @@ export function mapWorkflowRunDetail(
         ? new Date(ensureUtc(data.run.completed_at)).getTime()
         : undefined,
     },
+    runRecord: data.run,
     workerPlatformId: data.run.worker_platform_id ?? null,
     parentPlatformId: data.run.parent_platform_id ?? null,
     conversationPlatformId: data.run.conversation_platform_id ?? null,
@@ -344,48 +357,36 @@ export function buildWorkflowDagNodeStates(
   );
 }
 
-export type WorkflowExecutionBody =
-  | 'graph-logs-pane'
-  | 'source-control'
-  | 'files-changed'
-  | 'terminal'
-  | 'sequential';
-
-export function resolveWorkflowExecutionBody(input: {
-  isDag: boolean;
-  activeView: WorkflowRunView;
-}): WorkflowExecutionBody {
-  if (!input.isDag) return 'sequential';
-  if (input.activeView === 'source-control') return 'source-control';
-  if (input.activeView === 'files-changed') return 'files-changed';
-  if (input.activeView === 'terminal') return 'terminal';
-  return 'graph-logs-pane';
-}
-
 interface WorkflowExecutionProps {
   runId: string;
+  /** Node from the URL `/runs/:runId/:nodeId`, or null. */
+  nodeId?: string | null;
+  /** Node column tab from the URL. */
+  tab?: NodeColumnTab;
+  /** True on narrow screens, where the runs list is hidden. */
+  showBackToList?: boolean;
+  /** Open the most relevant node when the URL names none. Off on narrow screens. */
+  autoSelectNode?: boolean;
 }
 
-function StatusBadge({ status }: { status: string }): React.ReactElement {
-  const colors: Record<string, string> = {
-    pending: 'border-accent text-accent',
-    running: 'border-accent text-accent',
-    completed: 'border-success text-success',
-    failed: 'border-error text-error',
-    cancelled: 'border-border text-text-secondary',
-    paused: 'border-warning text-warning',
+/**
+ * Node to open when the URL names none: the live one, else the last failed one,
+ * else the last one that ran. Null before any node ran.
+ */
+export function defaultRoomRow<T extends { status: string }>(rows: readonly T[]): T | null {
+  const lastWhere = (match: (row: T) => boolean): T | null => {
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      const row = rows[index];
+      if (row !== undefined && match(row)) return row;
+    }
+    return null;
   };
   return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${colors[status] ?? 'border-border text-text-secondary'}`}
-    >
-      {status}
-    </span>
+    lastWhere(row => isLiveRowStatus(row.status)) ??
+    lastWhere(row => row.status === 'failed') ??
+    lastWhere(() => true)
   );
 }
-
-const HEADER_BUTTON_CLASS =
-  'inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-border bg-background px-4 text-sm font-medium text-text-primary transition-colors duration-150 hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none';
 
 function nodeMessageSelectionFromRow(row: {
   id: string;
@@ -404,23 +405,23 @@ function nodeMessageSelectionFromRow(row: {
   return { kind: 'node', rowId: row.id };
 }
 
-export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.ReactElement {
+export function WorkflowExecution({
+  runId,
+  nodeId = null,
+  tab = 'stream',
+  showBackToList = false,
+  autoSelectNode = false,
+}: WorkflowExecutionProps): React.ReactElement {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const ideEnvironment = useIdeEnvironment();
   const queryClient = useQueryClient();
   const liveWorkflow = useWorkflowStore(s => s.workflows.get(runId));
   const [room, setRoom] = useState<RoomVisitState>(() => resetRoomVisit(runId));
-  const [roomRatio, setRoomRatio] = useState(() =>
-    typeof window === 'undefined' ? 40 : readRoomRatio('legacy', window.localStorage)
-  );
-  const [codebaseName, setCodebaseName] = useState<string | null>(null);
   const [codebaseCwd, setCodebaseCwd] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string | null>(null);
   const [workerRunId, setWorkerRunId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<WorkflowRunView>('graph');
-  const [showArtifacts, setShowArtifacts] = useState(false);
-  const closeArtifacts = useCallback((): void => {
-    setShowArtifacts(false);
-  }, []);
+  const [nodeView, setNodeView] = useState<RunNodeView>('list');
   const [actionError, setActionError] = useState<string | null>(null);
   // Increments on every user-initiated node click to trigger scroll in WorkflowLogs
   const [nodeScrollTrigger, setNodeScrollTrigger] = useState(0);
@@ -433,14 +434,14 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     setAskDrafts(current => ({ ...current, [requestId]: draft }));
   }, []);
   const selectedDagNode = room.selection?.nodeId ?? null;
-  const queryNode = searchParams.get('node');
+  const queryNode = nodeId;
 
   // Reset local state when navigating to a different workflow run
   useEffect(() => {
-    setCodebaseName(null);
     setCodebaseCwd(null);
+    setProjectName(null);
     setWorkerRunId(null);
-    setActiveView('graph');
+    setNodeView('list');
     setNodeScrollTrigger(0);
     fetchedCodebaseIdRef.current = null;
     setAskActionStates(emptyAskActionStates());
@@ -567,8 +568,8 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     fetchedCodebaseIdRef.current = codebaseId;
     void getCodebase(codebaseId)
       .then(cb => {
-        setCodebaseName(cb.name);
         setCodebaseCwd(cb.default_cwd);
+        setProjectName(projectDisplayName(cb));
       })
       .catch((err: unknown) => {
         console.warn('[WorkflowExecution] Failed to load codebase name', {
@@ -693,6 +694,26 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     });
   }, [executionRows, queryData, queryNode, runId]);
 
+  // A wide screen always shows a node: open the most relevant one once per run
+  // when the URL names none. A node the user closes stays closed.
+  const autoSelectedRun = useRef<string | null>(null);
+  useEffect(() => {
+    if (!autoSelectNode || queryNode !== null || autoSelectedRun.current === runId) return;
+    const row = defaultRoomRow(executionRows);
+    if (row === null) return;
+    autoSelectedRun.current = runId;
+    setRoom(previous =>
+      previous.selection !== null
+        ? previous
+        : openRoom(previous, {
+            nodeId: row.nodeId,
+            rowId: row.id,
+            openerId: null,
+            followingLive: isLiveRowStatus(row.status),
+          })
+    );
+  }, [autoSelectNode, executionRows, queryNode, runId]);
+
   // Force re-render every second while workflow is running (for live timer)
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -816,21 +837,37 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
         openerId,
         followingLive: row !== undefined && isLiveRowStatus(row.status),
       };
-      setRoom(previous =>
-        rememberExplicit ? openExplicitRoom(previous, selection) : openRoom(previous, selection)
-      );
+      setRoom(previous => ({
+        ...(rememberExplicit
+          ? openExplicitRoom(previous, selection)
+          : openRoom(previous, selection)),
+        // The URL below names this node; the deep-link effect must not pick a row again.
+        appliedDeepLinkNode: nodeId,
+      }));
       setNodeScrollTrigger(prev => prev + 1);
+      // Prototype rule: Output and Raw stay; any other tab returns to the stream.
+      const nextTab = tab === 'output' || tab === 'raw' ? tab : 'stream';
+      if (nodeId !== queryNode || nextTab !== tab) {
+        void navigate(keepListParams(buildRunPath(runId, nodeId, nextTab), searchParams), {
+          replace: true,
+        });
+      }
     },
-    [executionRows]
+    [executionRows, navigate, queryNode, runId, searchParams, tab]
   );
 
   const handleCloseRoom = useCallback((): void => {
     const openerId = room.selection?.openerId ?? null;
     setRoom(closeRoom);
+    if (queryNode !== null) {
+      void navigate(keepListParams(buildRunPath(runId, null, tab), searchParams), {
+        replace: true,
+      });
+    }
     requestAnimationFrame(() => {
       if (openerId !== null) document.getElementById(openerId)?.focus({ preventScroll: true });
     });
-  }, [room.selection?.openerId]);
+  }, [navigate, queryNode, room.selection?.openerId, runId, searchParams, tab]);
 
   const selectedExecutionRow = resolveFollowedRow(room.selection, executionRows);
   const runStartedAtIso = workflow === null ? '' : new Date(workflow.startedAt).toISOString();
@@ -923,42 +960,13 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     [transcriptScopeKey]
   );
 
-  const handleRoomRatioChange = useCallback((value: number): void => {
-    writeRoomRatio('legacy', value, window.localStorage);
-    setRoomRatio(value);
-  }, []);
-
-  // Handler for user-initiated node clicks (graph or sidebar).
-  // Increments scroll trigger so WorkflowLogs scrolls to the node's section.
-  const handleNodeClick = useCallback(
-    (nodeId: string): void => {
-      const lastExplicit = room.lastExplicitRowByNode[nodeId] ?? null;
-      const row = chooseExecutionForNode(executionRows, nodeId, lastExplicit);
-      if (row === null) {
-        setRoom(previous =>
-          openRoom(previous, {
-            nodeId,
-            rowId: `node:${nodeId}`,
-            openerId: roomOpenerId('legacy', 'graph', nodeId),
-            // No row exists yet for this node — nothing to follow now, but
-            // the first row it does produce should be followed rather than
-            // pinned, matching the intent of clicking a not-yet-started node.
-            followingLive: true,
-          })
-        );
-      } else {
-        setRoom(previous =>
-          openRoom(previous, {
-            nodeId,
-            rowId: row.id,
-            openerId: roomOpenerId('legacy', 'graph', nodeId),
-            followingLive: isLiveRowStatus(row.status),
-          })
-        );
-      }
-      setNodeScrollTrigger(prev => prev + 1);
+  const handleTabChange = useCallback(
+    (next: NodeColumnTab): void => {
+      void navigate(keepListParams(buildRunPath(runId, queryNode, next), searchParams), {
+        replace: true,
+      });
     },
-    [executionRows, room.lastExplicitRowByNode]
+    [navigate, queryNode, runId, searchParams]
   );
 
   const handleRetryDispatched = useCallback((): void => {
@@ -969,12 +977,20 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   }, [queryClient, runId]);
 
   const handleRunAction = useCallback(
-    async (action: 'resume' | 'abandon'): Promise<void> => {
+    async (action: 'resume' | 'abandon' | 'cancel' | 'delete'): Promise<void> => {
       setActionError(null);
       try {
         if (action === 'resume') await resumeWorkflowRun(runId);
-        else await abandonWorkflowRun(runId);
+        else if (action === 'abandon') await abandonWorkflowRun(runId);
+        else if (action === 'cancel') await cancelWorkflowRun(runId);
+        else {
+          await deleteWorkflowRun(runId);
+          void queryClient.invalidateQueries({ queryKey: ['dashboardRuns'] });
+          void navigate(keepListParams('/runs', searchParams), { replace: true });
+          return;
+        }
         await queryClient.invalidateQueries({ queryKey: ['workflowRun', runId] });
+        void queryClient.invalidateQueries({ queryKey: ['dashboardRuns'] });
         void queryClient.invalidateQueries({ queryKey: ['workflowRuns'] });
       } catch (err) {
         console.error('[WorkflowExecution] Run action failed', {
@@ -985,8 +1001,27 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
         setActionError(err instanceof Error ? err.message : `Failed to ${action} the run`);
       }
     },
-    [queryClient, runId]
+    [navigate, queryClient, runId, searchParams]
   );
+
+  // "Run again": a new conversation in the same project, then the same workflow and input.
+  const handleRunAgain = useCallback(async (): Promise<void> => {
+    const record = queryData?.runRecord;
+    if (record === undefined) return;
+    setActionError(null);
+    try {
+      const { conversationId } = await createConversation(record.codebase_id ?? undefined);
+      await runWorkflow(record.workflow_name, conversationId, record.user_message);
+      void queryClient.invalidateQueries({ queryKey: ['dashboardRuns'] });
+      void navigate(`/chat/${encodeURIComponent(conversationId)}`);
+    } catch (err) {
+      console.error('[WorkflowExecution] Run again failed', {
+        runId,
+        error: err instanceof Error ? err.message : err,
+      });
+      setActionError(err instanceof Error ? err.message : 'Failed to start the run again');
+    }
+  }, [navigate, queryClient, queryData?.runRecord, runId]);
 
   const handleGateApprove = useCallback(async (): Promise<void> => {
     await approveWorkflowRun(runId);
@@ -1032,7 +1067,6 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     initialData && isTerminal(initialData.status) && initialData.completedAt
       ? initialData.completedAt
       : (workflow.completedAt ?? (startedAt ? Date.now() : 0));
-  const elapsed = startedAt ? Math.max(0, completedAt - startedAt) : 0;
 
   const isRunning = workflow.status === 'running' || workflow.status === 'pending';
   const runUsageValue: RunUsageValue | undefined =
@@ -1141,15 +1175,168 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     );
   };
 
-  const renderBody = (): React.ReactElement => {
-    const body = resolveWorkflowExecutionBody({
-      isDag,
-      activeView,
-    });
-    if (body === 'graph-logs-pane') {
-      return (
+  const runRecord = queryData?.runRecord;
+  const chatId = parentPlatformId ?? workerPlatformId;
+  const plannotatorUrl = getPlannotatorReviewUrl({
+    status: workflow.status,
+    approval: queryData?.approval ?? null,
+  });
+
+  const askChrome = (
+    <WorkflowAskChrome
+      status={workflow.status}
+      pendingInteractions={queryData?.pendingInteractions ?? []}
+      nodeStates={queryData?.nodeStates ?? []}
+      runError={queryData?.runError ?? null}
+      onSelectAwaitingNode={(nodeId, interaction): void => {
+        const row = chooseExecutionForInteraction(executionRows, interaction);
+        if (row === null) return;
+        handleOpenRoom(row.id, nodeId, null, false);
+        const requestId = interaction.tool_use_id;
+        let attempts = 0;
+        const focusAsk = (): void => {
+          const card = document.getElementById(askCardId(requestId, 'room'));
+          if (card === null) {
+            if (attempts < 30) {
+              attempts += 1;
+              requestAnimationFrame(focusAsk);
+            }
+            return;
+          }
+          card.focus();
+          const control = card.querySelector(
+            'input:not([disabled]), textarea:not([disabled]), button:not([disabled])'
+          );
+          if (control instanceof HTMLElement) control.focus();
+        };
+        requestAnimationFrame(focusAsk);
+      }}
+      onRequestGraphView={(): void => undefined}
+    />
+  );
+
+  const renderRunTab = (runTab: Exclude<RunTab, 'conversation'>): ReactNode => {
+    switch (runTab) {
+      case 'changes':
+        return <SourceControlTab runId={runId} />;
+      case 'files':
+        return <FilesChangedTab runId={runId} />;
+      case 'terminal':
+        return <TerminalTab runId={runId} />;
+      case 'artifacts':
+        return (
+          <RunArtifactsPanel
+            runId={runId}
+            reportedArtifacts={workflow.artifacts}
+            onClose={(): void => {
+              // The panel stays mounted behind other tabs; only the open tab closes.
+              if (tab === 'artifacts') handleTabChange('stream');
+            }}
+          />
+        );
+      case 'logs':
+        return sequentialLogsPanel;
+    }
+  };
+
+  const runHeader = (
+    <RunHeader
+      runId={runId}
+      projectName={projectName}
+      workflowName={workflow.workflowName}
+      status={workflow.status}
+      startedAt={startedAt}
+      completedAt={isTerminal(workflow.status) ? completedAt : undefined}
+      input={runRecord?.user_message ?? ''}
+      parentRunId={runRecord?.parent_run_id ?? null}
+      showBackToList={showBackToList}
+      costRow={
+        <>
+          <dt className="text-text-secondary">Cost</dt>
+          <dd className="min-w-0">
+            <RunCostMeta />
+          </dd>
+        </>
+      }
+      envRow={
+        queryData?.envOverlay != null ? (
+          <>
+            <dt className="text-text-secondary">Env</dt>
+            <dd className="min-w-0">
+              <RunEnvOverlayMeta overlay={queryData.envOverlay} />
+            </dd>
+          </>
+        ) : null
+      }
+      askChrome={
+        <>
+          {askChrome}
+          {workerRunId !== null && workerRunId !== runId ? (
+            <button
+              type="button"
+              onClick={(): void => {
+                void navigate(buildRunPath(workerRunId));
+              }}
+              className="text-xs font-semibold text-accent"
+            >
+              Run details
+            </button>
+          ) : null}
+        </>
+      }
+      actions={
+        <RunActions
+          status={workflow.status}
+          workflowName={workflow.workflowName}
+          workingPath={runRecord?.working_path ?? null}
+          chatId={chatId}
+          plannotatorUrl={plannotatorUrl}
+          isDocker={ideEnvironment.isDocker}
+          isWsl={ideEnvironment.isWsl}
+          wslDistro={ideEnvironment.wslDistro}
+          onCancel={(): void => {
+            void handleRunAction('cancel');
+          }}
+          onRetryFromFailed={(): void => {
+            void handleRunAction('resume');
+          }}
+          onResume={(): void => {
+            void handleRunAction('resume');
+          }}
+          onAbandon={(): void => {
+            void handleRunAction('abandon');
+          }}
+          onDelete={(): void => {
+            void handleRunAction('delete');
+          }}
+          onOpenArtifacts={(): void => {
+            handleTabChange('artifacts');
+          }}
+          onRunAgain={(): void => {
+            void handleRunAgain();
+          }}
+        />
+      }
+      actionError={actionError}
+      loadError={error}
+    />
+  );
+
+  // A run without a DAG has no node rooms; its logs are the whole story.
+  const effectiveTab: NodeColumnTab = !isDag && !isRunTab(tab) ? 'logs' : tab;
+
+  return (
+    <runUsageContext.Provider value={runUsageValue}>
+      <div className="legacy-run-view flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         <LegacyGraphLogsPane
-          activeView={activeView === 'chat' ? 'chat' : activeView === 'graph' ? 'graph' : 'logs'}
+          nodeView={nodeView}
+          onNodeViewChange={setNodeView}
+          tab={effectiveTab}
+          onTabChange={handleTabChange}
+          runTabs={RUN_TABS}
+          renderRunTab={renderRunTab}
+          runHeader={runHeader}
+          dagNodes={workflow.dagNodes}
           renderGraph={renderGraph}
           selectedNodeId={selectedDagNode}
           // The RESOLVED row — while `room.selection.followingLive` holds,
@@ -1161,8 +1348,6 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           lastExplicitRowByNode={room.lastExplicitRowByNode}
           onOpenRoom={handleOpenRoom}
           onCloseRoom={handleCloseRoom}
-          roomRatio={roomRatio}
-          onRoomRatioChange={handleRoomRatioChange}
           runId={runId}
           runStartedAt={runStartedAtIso}
           nodeStates={queryData?.nodeStates ?? []}
@@ -1173,6 +1358,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           loadParentMessages={getMessages}
           loadParentConversation={getConversation}
           sendParentMessage={sendMessage}
+          roomHeader={<div data-testid="legacy-run-shell-chrome">{retryActionPanel}</div>}
           definitionNodes={dagDefinitionNodes ?? []}
           definitionPending={workflowDefPending}
           runStatus={workflow.status}
@@ -1197,209 +1383,6 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           onRunSettleHint={handleRunSettleHint}
           terminalEdgeKick={terminalEdgeKick}
         />
-      );
-    }
-    if (body === 'source-control') {
-      return <SourceControlTab key={runId} runId={runId} />;
-    }
-    if (body === 'files-changed') {
-      return <FilesChangedTab key={runId} runId={runId} />;
-    }
-    if (body === 'terminal') {
-      return <TerminalTab key={runId} runId={runId} />;
-    }
-    return (
-      <div className="flex flex-1 overflow-hidden min-h-0">
-        <div className="w-64 border-r border-border overflow-auto">
-          <DagNodeProgress
-            nodes={workflow.dagNodes}
-            activeNodeId={selectedDagNode}
-            onNodeClick={handleNodeClick}
-          />
-        </div>
-        {sequentialLogsPanel}
-      </div>
-    );
-  };
-
-  return (
-    <runUsageContext.Provider value={runUsageValue}>
-      <div className="legacy-run-view flex flex-col h-full min-h-0 overflow-hidden">
-        {/* Header */}
-        <div className="grid gap-2 border-b border-border px-8 pt-4">
-          <nav
-            aria-label="Breadcrumb"
-            className="flex flex-wrap items-center gap-1 text-sm text-text-secondary"
-          >
-            <button
-              type="button"
-              onClick={(): void => {
-                navigate('/dashboard');
-              }}
-              className="-ml-2 inline-flex min-h-11 cursor-pointer items-center rounded-[10px] px-2 transition-colors duration-150 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
-            >
-              Dashboard
-            </button>
-            <ChevronRight
-              aria-hidden="true"
-              strokeWidth={2}
-              className="h-4 w-4 text-text-tertiary"
-            />
-            <span>{workflow.workflowName}</span>
-            <ChevronRight
-              aria-hidden="true"
-              strokeWidth={2}
-              className="h-4 w-4 text-text-tertiary"
-            />
-            <span className="font-mono">{runId.slice(0, 8)}</span>
-          </nav>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex min-w-0 flex-wrap items-center gap-4">
-              <h1 className="min-w-0 truncate font-mono text-xl font-medium text-text-primary">
-                {workflow.workflowName}
-              </h1>
-              <StatusBadge status={workflow.status} />
-              <WorkflowAskChrome
-                status={workflow.status}
-                pendingInteractions={queryData?.pendingInteractions ?? []}
-                nodeStates={queryData?.nodeStates ?? []}
-                runError={queryData?.runError ?? null}
-                onSelectAwaitingNode={(nodeId, interaction): void => {
-                  const row = chooseExecutionForInteraction(executionRows, interaction);
-                  if (row === null) return;
-                  handleOpenRoom(row.id, nodeId, null, false);
-                  const requestId = interaction.tool_use_id;
-                  let attempts = 0;
-                  const focusAsk = (): void => {
-                    const card = document.getElementById(askCardId(requestId, 'room'));
-                    if (card === null) {
-                      if (attempts < 30) {
-                        attempts += 1;
-                        requestAnimationFrame(focusAsk);
-                      }
-                      return;
-                    }
-                    card.focus();
-                    const control = card.querySelector(
-                      'input:not([disabled]), textarea:not([disabled]), button:not([disabled])'
-                    );
-                    if (control instanceof HTMLElement) control.focus();
-                  };
-                  requestAnimationFrame(focusAsk);
-                }}
-                onRequestGraphView={(): void => undefined}
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {workerRunId && (
-                <button
-                  type="button"
-                  onClick={(): void => {
-                    navigate(`/workflows/runs/${workerRunId}`);
-                  }}
-                  className={HEADER_BUTTON_CLASS}
-                  title="View workflow run details"
-                >
-                  Run Details
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={workflow.status !== 'failed' && workflow.status !== 'paused'}
-                title={
-                  workflow.status === 'failed' || workflow.status === 'paused'
-                    ? 'Resume from the last completed node'
-                    : 'Only a failed or paused run can resume'
-                }
-                onClick={(): void => {
-                  void handleRunAction('resume');
-                }}
-                className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-accent px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-background disabled:text-text-tertiary motion-reduce:transition-none"
-              >
-                Resume
-              </button>
-              <button
-                type="button"
-                aria-pressed={showArtifacts}
-                onClick={(): void => {
-                  setShowArtifacts(value => !value);
-                }}
-                className={HEADER_BUTTON_CLASS}
-              >
-                <FileText aria-hidden="true" strokeWidth={2} className="h-4 w-4" />
-                Artifacts
-              </button>
-              <button
-                type="button"
-                disabled={isTerminal(workflow.status)}
-                onClick={(): void => {
-                  if (window.confirm('Abandon this run? It will be marked cancelled.')) {
-                    void handleRunAction('abandon');
-                  }
-                }}
-                className={`${HEADER_BUTTON_CLASS} text-error`}
-              >
-                Abandon
-              </button>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-text-tertiary">
-            <span>
-              run <b className="font-mono font-normal text-text-primary">{runId}</b>
-            </span>
-            {codebaseName && (
-              <span>
-                project <b className="font-mono font-normal text-text-primary">{codebaseName}</b>
-              </span>
-            )}
-            {startedAt > 0 && (
-              <span>
-                started{' '}
-                <b className="font-mono font-normal text-text-primary">
-                  {formatStarted(new Date(startedAt).toISOString())}
-                </b>
-              </span>
-            )}
-            <span>
-              active{' '}
-              <b className="font-mono font-normal text-text-primary">{formatDurationMs(elapsed)}</b>
-            </span>
-            <RunCostMeta />
-            {queryData?.envOverlay != null ? (
-              <RunEnvOverlayMeta overlay={queryData.envOverlay} />
-            ) : null}
-          </div>
-          {actionError !== null ? (
-            <p role="alert" className="text-xs text-error">
-              {actionError}
-            </p>
-          ) : null}
-          {isDag && (
-            <div className="-mx-3">
-              <DagRunTabs
-                activeView={activeView}
-                parentPlatformId={parentPlatformId}
-                onValueChange={setActiveView}
-              />
-            </div>
-          )}
-        </div>
-
-        {error ? <p className="px-8 py-1 text-xs text-error">Failed to load — retrying</p> : null}
-
-        <div data-testid="legacy-run-shell-chrome">{retryActionPanel}</div>
-        {/* The panel sits beside the body so an open node room stays usable. */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{renderBody()}</div>
-          {showArtifacts ? (
-            <RunArtifactsPanel
-              key={runId}
-              runId={runId}
-              reportedArtifacts={workflow.artifacts}
-              onClose={closeArtifacts}
-            />
-          ) : null}
-        </div>
       </div>
     </runUsageContext.Provider>
   );

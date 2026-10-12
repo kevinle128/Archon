@@ -191,7 +191,7 @@ async function openGuidanceRoom(
     await openRunDetail(page, runId, nodeId);
   } else {
     await openLegacyRunDetail(page, runId);
-    const logsTab = page.getByRole('tab', { name: 'Logs' });
+    const logsTab = page.getByRole('radio', { name: 'List' });
     await expect(logsTab).toBeVisible({ timeout: T.medium });
     await logsTab.click();
     const nodeButton = page.getByRole('button', { name: new RegExp(nodeId) }).first();
@@ -554,12 +554,12 @@ async function expectOperatorVisualContract(
   expect(metrics, 'operator row metrics available').not.toBeNull();
   if (metrics === null) return;
 
-  expect(metrics.roleFontSize).toBe('10px');
+  expect(metrics.roleFontSize).toBe('11px');
   expect(metrics.roleTransform).toBe('uppercase');
   const trackingPx = parseFloat(metrics.roleLetterSpacing);
   expect(
     Math.abs(trackingPx - 0.7),
-    `role tracking ${metrics.roleLetterSpacing} ≈ 0.07em`
+    `role tracking ${metrics.roleLetterSpacing} ≈ 0.06em`
   ).toBeLessThanOrEqual(0.15);
   expect(metrics.deliveryFontSize).toBe('11px');
   expect(metrics.deliveryTransform).toBe('none');
@@ -567,9 +567,9 @@ async function expectOperatorVisualContract(
   expect(metrics.deliveryRightAligned).toBe(true);
   expect(metrics.bodyText).toBe(expectedBody);
   expect(metrics.bodyChildElementCount, 'body is plain text, no Markdown children').toBe(0);
-  expect(metrics.bodyFontSize).toBe('12.5px');
-  expect(metrics.bodyLineHeight).toBe('19.375px');
-  expect(['400', 'normal']).toContain(metrics.bodyFontWeight);
+  expect(metrics.bodyFontSize).toBe('14px');
+  expect(metrics.bodyLineHeight).toBe('21.7px');
+  expect(metrics.bodyFontWeight).toBe('600');
   expect(metrics.bodyFontFamily.toLowerCase()).toMatch(/sans|inter|system|ui-sans/);
   expect(metrics.bodyWhiteSpace).toMatch(/pre-wrap/);
 
@@ -612,9 +612,10 @@ async function expectOperatorVisualContract(
   });
   expect(assistantMetrics, 'adjacent assistant body after operator rows').not.toBeNull();
   if (assistantMetrics !== null) {
-    expect(assistantMetrics.fontSize).toBe('12.5px');
-    expect(assistantMetrics.lineHeight).toBe('19.375px');
-    expect(assistantMetrics.color).toBe(secondary.resolved);
+    // Agent text uses the handoff stream type: 14.5px at 1.6, primary text.
+    expect(assistantMetrics.fontSize).toBe('14.5px');
+    expect(assistantMetrics.lineHeight).toBe('23.2px');
+    expect(assistantMetrics.color).toBe(primary.resolved);
   }
 
   const order = await room.evaluate(roomEl => {
@@ -734,7 +735,6 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(toolRow.locator('summary')).toContainText('interrupted', {
         timeout: T.medium,
       });
-      await expect(toolRow.locator('summary')).toContainText('⚠');
       interruptedToolId = await toolRow.getAttribute('data-tool-id');
       expect(interruptedToolId).not.toBeNull();
       await waitForSubState(page, run.runId, QUEUE_GUIDANCE_NODE, 'idle-after-interrupt');
@@ -800,7 +800,7 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(interruptedToolId).not.toBeNull();
       await expect(
         room.locator(`[data-tool-id="${interruptedToolId}"]`).locator('summary')
-      ).toContainText('⚠');
+      ).toContainText('interrupted');
       await expect(stopButton(room)).toBeVisible();
       await expect(room.locator('[data-operator-row]')).toHaveCount(3, { timeout: T.xlong });
       await expect(room.getByText(/resumed echo: first/).first()).toBeVisible({
@@ -1265,23 +1265,18 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(page.getByText(LOOP_DONE_TEXT).first()).toBeVisible();
     await expect(page.getByText('×2')).toHaveCount(0);
     if (surface === 'console') {
-      await page.getByRole('tab', { name: 'Logs' }).click();
+      // The stream shows the redirected echo before the loop sentinel.
       const order = await page.evaluate(() => {
         const text = (document.querySelector('main') ?? document.body).textContent ?? '';
         return {
-          text,
-          group: text.indexOf('steer-loop ×1'),
           echo: text.indexOf('[e2e-fake] resumed echo: finish now'),
           done: text.indexOf('E2E_LOOP_DONE'),
         };
       });
-      expect(order.group, '×1 group header exists').toBeGreaterThanOrEqual(0);
-      expect(order.echo).toBeGreaterThan(order.group);
+      expect(order.echo, 'redirect echo is in the stream').toBeGreaterThanOrEqual(0);
       expect(order.done).toBeGreaterThan(order.echo);
-      // Scoped to the node run list only: the open room's own header
-      // legitimately repeats the same "steer-loop ×1" label alongside it, so
-      // counting across the whole page would double-count one iteration
-      // instead of catching a genuine second one.
+      // History lists the iteration once: the redirect did not add a second one.
+      await page.getByRole('tab', { name: /^History/ }).click();
       await expect(
         page.getByRole('navigation', { name: 'Node runs' }).getByRole('button', {
           name: /steer-loop ×/,
@@ -1435,7 +1430,7 @@ for (const surface of ['console', 'legacy'] as const) {
       // the new turn's rows.
       await expect(
         room.locator(`[data-tool-id="${interruptedToolId}"]`).locator('summary')
-      ).toContainText('⚠');
+      ).toContainText('interrupted');
       await captureEvidence(room, `us-005-${surface}-460-generating-again.png`, testInfo);
       const afterGrow = await lastRowVisibility(room, surface);
       expect(afterGrow, 'last transcript row reachable after dock shrink').toBe('ok');

@@ -36,13 +36,7 @@ const ROOM_TOLERANCE_PX = 2;
 
 /** Design reference width: the room is authored at 460px. */
 const REFERENCE_WIDTH: Record<Surface, number> = { console: 460, legacy: 460 };
-const ROOM_PANEL_ID: Record<Surface, string> = {
-  console: 'legacy-run-room',
-  legacy: 'legacy-run-room',
-};
 // Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
-const ROOM_RATIO_MIN = 24;
-const ROOM_RATIO_MAX = 60;
 
 const OMP_IMAGE_URL = 'https://e2e.invalid/task-dispatch-diagram.png';
 const OMP_IMAGE_HOST = 'e2e.invalid';
@@ -87,7 +81,7 @@ async function openTaskRoom(
     await expect(page.getByText(/e2e-task-dispatch/i).first()).toBeVisible({
       timeout: T.medium,
     });
-    const logsTab = page.getByRole('tab', { name: 'Logs' });
+    const logsTab = page.getByRole('radio', { name: 'List' });
     if ((await logsTab.count()) > 0) await logsTab.click();
     await page
       .getByRole('button', { name: new RegExp(nodeId) })
@@ -103,7 +97,7 @@ async function openTaskRoom(
 /** Moves an already-open room to another node through the log-row button. */
 async function switchRoom(page: Page, nodeId: string): Promise<Locator> {
   // A deep-linked run opens on the graph; the node buttons live on the Logs tab.
-  const logsTab = page.getByRole('tab', { name: 'Logs' });
+  const logsTab = page.getByRole('radio', { name: 'List' });
   if ((await logsTab.count()) > 0) await logsTab.click();
   await page
     .getByRole('button', { name: new RegExp(nodeId) })
@@ -171,35 +165,19 @@ async function setRoomWidth(
   runId: string,
   nodeId: string
 ): Promise<Locator> {
-  const target = REFERENCE_WIDTH[surface];
-  const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
-  const metrics = await panel.evaluate(el => {
-    const panelRect = el.getBoundingClientRect();
-    const groupRect = el.parentElement?.getBoundingClientRect();
-    return { panel: panelRect.width, group: groupRect?.width ?? 0 };
-  });
-  expect(metrics.group, 'resizable group width').toBeGreaterThan(0);
-  const region = roomRegion(page, nodeId);
-  const regionWidth = (await region.boundingBox())?.width ?? 0;
-  const inset = metrics.panel - regionWidth;
-  const ratio = Math.min(
-    ROOM_RATIO_MAX,
-    Math.max(ROOM_RATIO_MIN, ((target + inset) / metrics.group) * 100)
-  );
-  await page.evaluate(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
-    },
-    [`archon.run-room.ratio.${surface}`, String(ratio)]
-  );
   const room = await openTaskRoom(page, surface, runId, nodeId);
   const width = (await room.boundingBox())?.width ?? 0;
-  expect(
-    Math.abs(width - target),
-    `measured room width ${String(width)} must land within ${String(target)}±${String(ROOM_TOLERANCE_PX)}`
-  ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+  const column = (await page.getByTestId('node-column').boundingBox())?.width ?? 0;
+  // The room fills the node column, a grid share of the Runs workspace: it must stay
+  // readable and never outgrow its column.
+  expect(width, `room width ${String(width)} is readable`).toBeGreaterThanOrEqual(360);
+  expect(width, 'room fits its node column').toBeLessThanOrEqual(column + ROOM_TOLERANCE_PX);
   return room;
 }
+
+/** One-line height bands: a tool row summary, and a subtask card summary inside its body. */
+const ROW_BAND = { min: 30, max: 36 } as const;
+const CARD_BAND = { min: 24, max: 30 } as const;
 
 /**
  * One-line proof for a row or card summary: bounded height, every direct
@@ -207,13 +185,15 @@ async function setRoomWidth(
  */
 async function expectSummaryOneLine(
   summary: Locator,
-  label: string
+  label: string,
+  band: { min: number; max: number } = ROW_BAND
 ): Promise<{ height: number; width: number }> {
   const box = await summary.boundingBox();
   expect(box, `${label} bounding box`).toBeTruthy();
   if (!box) throw new Error(`missing ${label} summary box`);
-  expect(box.height, `${label} summary keeps one line (24–30px)`).toBeGreaterThanOrEqual(24);
-  expect(box.height, `${label} summary keeps one line (24–30px)`).toBeLessThanOrEqual(30);
+  const range = `${String(band.min)}–${String(band.max)}px`;
+  expect(box.height, `${label} summary keeps one line (${range})`).toBeGreaterThanOrEqual(band.min);
+  expect(box.height, `${label} summary keeps one line (${range})`).toBeLessThanOrEqual(band.max);
   const fits = await summary.evaluate(el => el.scrollWidth <= el.clientWidth + 1);
   expect(fits, `${label} summary content fits horizontally without clipping`).toBe(true);
   const childrenInside = await summary.evaluate(el => {
@@ -625,7 +605,7 @@ for (const surface of ['console', 'legacy'] as const) {
       };
     });
     expect(cardGeometry.borderTopWidth, 'card 1px border').toBe('1px');
-    expect(cardGeometry.borderRadius, 'card 6px radius').toBe('6px');
+    expect(cardGeometry.borderRadius, 'card has square corners').toBe('0px');
     expect(cardGeometry.paddingTop, 'card 6px vertical padding').toBe('6px');
     expect(cardGeometry.paddingBottom, 'card 6px vertical padding').toBe('6px');
     expect(cardGeometry.paddingLeft, 'card 9px horizontal padding').toBe('9px');
@@ -646,7 +626,7 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(cardBg.resolved, 'card resolves --surface-elevated').toBe(elevated.resolved);
     const approval = await resolveColorIn(room, 'var(--node-approval)');
     const secondary = await resolveColorIn(room, 'var(--text-secondary)');
-    const inset = await resolveColorIn(room, 'var(--surface-inset)');
+    const codeBg = await resolveColorIn(room, 'var(--code-bg)');
     const agentColor = await firstParts.agent.evaluate(
       el => el.ownerDocument.defaultView?.getComputedStyle(el).color ?? ''
     );
@@ -664,7 +644,7 @@ for (const surface of ['console', 'legacy'] as const) {
     );
     expect(excerptColor, 'excerpt resolves --text-secondary').toBe(secondary.resolved);
     const promptBg = await effectiveBackground(firstParts.prompt);
-    expect(promptBg.resolved, 'prompt box resolves --surface-inset').toBe(inset.resolved);
+    expect(promptBg.resolved, 'prompt box is a code block on --code-bg').toBe(codeBg.resolved);
     const promptFits = await firstParts.prompt.evaluate(el => el.scrollWidth <= el.clientWidth + 1);
     expect(promptFits, 'prompt wraps without horizontal overflow').toBe(true);
 
@@ -787,7 +767,7 @@ for (const surface of ['console', 'legacy'] as const) {
         elevated: elevated.resolved,
         approval: approval.resolved,
         secondary: secondary.resolved,
-        inset: inset.resolved,
+        codeBg: codeBg.resolved,
         accent: accent.resolved,
       },
       focus,
@@ -825,7 +805,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await summary.press('Enter');
     await expect(row).toHaveJSProperty('open', true);
     const cardSummary = row.locator(`${CARD} > summary`).first();
-    await expectSummaryOneLine(cardSummary, 'card at reference width');
+    await expectSummaryOneLine(cardSummary, 'card at reference width', CARD_BAND);
     await cardSummary.press('Enter');
     const prompt = row.locator(`${CARD} pre`).first();
     await expect(prompt).toBeVisible();
@@ -844,7 +824,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await narrowSummary.press('Enter');
     await expect(narrowRow).toHaveJSProperty('open', true);
     const narrowCard = narrowRow.locator(`${CARD} > summary`).first();
-    await expectSummaryOneLine(narrowCard, 'card at 390px');
+    await expectSummaryOneLine(narrowCard, 'card at 390px', CARD_BAND);
     await narrowCard.press('Enter');
     const narrowPrompt = narrowRow.locator(`${CARD} pre`).first();
     await expect(narrowPrompt).toBeVisible();
@@ -877,7 +857,7 @@ for (const surface of ['console', 'legacy'] as const) {
       await zoomSummary.press('Enter');
       await expect(zoomRow).toHaveJSProperty('open', true);
       const zoomCard = zoomRow.locator(`${CARD} > summary`).first();
-      await expectSummaryOneLine(zoomCard, 'card at 200% zoom');
+      await expectSummaryOneLine(zoomCard, 'card at 200% zoom', CARD_BAND);
       await zoomCard.press('Enter');
       const zoomPrompt = zoomRow.locator(`${CARD} pre`).first();
       await expect(zoomPrompt).toBeVisible();

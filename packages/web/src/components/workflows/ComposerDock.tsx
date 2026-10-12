@@ -274,23 +274,38 @@ export interface ComposerDockProps {
 }
 
 const FIELD_CLASSES = cn(
-  'min-h-[56px] w-full resize-none rounded-md border border-border bg-surface-inset',
-  'px-[10px] py-[8px] font-sans text-[13px] leading-[1.45] text-text-primary',
+  'min-h-[40px] w-full resize-none border border-line-strong bg-background',
+  'px-3 py-2 font-sans text-[13px] leading-[1.45] text-text-primary placeholder:text-text-tertiary',
   'focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2'
 );
 
 const CONTROL_BASE_CLASSES = cn(
-  'min-h-[32px] flex-none rounded-md border bg-transparent px-3 font-mono text-[11px]',
+  'min-h-[40px] flex-none border bg-card px-4 text-[13px] font-semibold',
   'transition-colors motion-reduce:transition-none',
   'focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2'
 );
-const CONTROL_ENABLED_CLASSES = 'border-border-bright text-text-primary hover:bg-surface-inset';
+const CONTROL_ENABLED_CLASSES = 'border-line-strong text-text-primary hover:bg-selection';
 const CONTROL_DISABLED_CLASSES = 'border-border text-text-secondary';
+/** The send control is the dock's primary action: an accent fill while it can send. */
+const PRIMARY_ENABLED_CLASSES =
+  'border-primary bg-primary text-primary-foreground hover:bg-accent-hover';
 
 const BLOCKED_REASON_CLASSES =
   'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary';
 const REFUSAL_CLASSES = 'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-error';
 const DEFAULT_DRAFT_SAVE_DELAY_MS = 600;
+
+/**
+ * Drafts typed but not yet confirmed by the server, by (run, node). A dock can
+ * unmount inside the save debounce (the room remounts when the layout or the
+ * selected execution changes); the next dock for the same scope restores the
+ * text from here instead of losing it, and the unmount flushes the save.
+ */
+const unsavedDrafts = new Map<string, string>();
+
+function draftKeyOf(runId: string, nodeId: string): string {
+  return `${runId}\u0000${nodeId}`;
+}
 /** Stable empty-set default so an omitted `deliveredMessageIds` prop never allocates one per render. */
 const EMPTY_DELIVERED_MESSAGE_IDS: ReadonlySet<string> = new Set();
 
@@ -373,7 +388,7 @@ function QueueBandItem({
     <li
       {...(dataMessageId !== undefined ? { 'data-message-id': dataMessageId } : {})}
       className={cn(
-        'flex items-baseline gap-2 rounded-[4px] py-[1px] pr-[4px] pl-[2px] font-mono text-[11.5px] leading-[1.85]',
+        'flex items-baseline gap-2 rounded-none py-[1px] pr-[4px] pl-[2px] font-mono text-[11.5px] leading-[1.85]',
         accent ? cn('bg-surface text-text-primary', QUEUE_RUNNING_MARKER) : 'text-text-secondary'
       )}
     >
@@ -461,7 +476,7 @@ export function ComposerDock({
   // both mutations rather than one counter each — either one just needs the
   // dock's own poll to catch up immediately, not two independent triggers.
   const [forceKickTick, setForceKickTick] = useState(0);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(() => unsavedDrafts.get(draftKeyOf(runId, nodeId)) ?? '');
   // Shared across the four mutually-exclusive band renders below; only one
   // ever mounts at a time. Default open matches the approved mockup.
   const [queueBandOpen, setQueueBandOpen] = useState(true);
@@ -492,6 +507,14 @@ export function ComposerDock({
       (response): void => {
         const value = response.draft?.message ?? '';
         lastKnownServerDraftRef.current = value;
+        // An unsaved draft from an earlier dock for this scope wins over the
+        // server copy, and is saved again now that the server value is known.
+        const unsaved = unsavedDrafts.get(draftKeyOf(runId, nodeId));
+        if (unsaved !== undefined) {
+          if (!userEditedRef.current) setDraft(unsaved);
+          scheduleDraftSave(unsaved);
+          return;
+        }
         // A read that resolves after the operator already started typing must
         // never overwrite what they are mid-way through composing.
         if (!userEditedRef.current) setDraft(value);
@@ -513,14 +536,24 @@ export function ComposerDock({
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
+    const key = draftKeyOf(runId, nodeId);
     const known = lastKnownServerDraftRef.current;
-    if (known === null || known === nextDraft) return;
+    if (known !== null && known === nextDraft) {
+      unsavedDrafts.delete(key);
+      return;
+    }
+    if (known !== null || userEditedRef.current) unsavedDrafts.set(key, nextDraft);
+    if (known === null) return;
+    const settle = (): void => {
+      if (unsavedDrafts.get(key) === nextDraft) unsavedDrafts.delete(key);
+    };
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null;
       if (nextDraft.trim().length === 0) {
         void clearDraft(runId, nodeId).then(
           () => {
             lastKnownServerDraftRef.current = '';
+            settle();
           },
           () => {
             // Best-effort; a later edit reschedules.
@@ -530,6 +563,7 @@ export function ComposerDock({
         void saveDraft(runId, nodeId, { message: nextDraft }).then(
           () => {
             lastKnownServerDraftRef.current = nextDraft;
+            settle();
           },
           () => {
             // Best-effort; a later save reconciles.
@@ -538,6 +572,28 @@ export function ComposerDock({
       }
     }, draftSaveDelayMs);
   };
+
+  // Leaving a scope (unmount or a new run/node) flushes a draft still inside
+  // the save debounce, so a remount never loses what the operator typed.
+  useEffect(
+    () => (): void => {
+      const key = draftKeyOf(runId, nodeId);
+      const unsaved = unsavedDrafts.get(key);
+      if (unsaved === undefined) return;
+      const settle = (): void => {
+        if (unsavedDrafts.get(key) === unsaved) unsavedDrafts.delete(key);
+      };
+      const flushed =
+        unsaved.trim().length === 0
+          ? clearDraft(runId, nodeId)
+          : saveDraft(runId, nodeId, { message: unsaved });
+      void flushed.then(settle, (): void => {
+        // Best-effort; the entry stays so the next dock for this scope keeps the text.
+      });
+    },
+    // Keyed on scope only: the cleanup must run on unmount or scope change, not per keystroke.
+    [runId, nodeId]
+  );
 
   useEffect(() => {
     scheduleDraftSave(draft);
@@ -1317,7 +1373,7 @@ export function ComposerDock({
         <p
           role="alert"
           tabIndex={-1}
-          className="border-t border-border px-[10px] py-[8px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+          className="border-t border-border px-6 py-3 font-sans text-[13px] leading-[1.5] text-text-secondary"
         >
           {STEERING_RECOVERY_DISCLOSURE}
         </p>
@@ -1327,12 +1383,12 @@ export function ComposerDock({
 
   if (mode === 'detached') {
     return (
-      <div className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]">
+      <div className="flex-none border-t border-border bg-background px-6 py-3">
         <p
           role="alert"
           ref={detachedAlertRef}
           tabIndex={-1}
-          className="font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+          className="font-sans text-[13px] leading-[1.5] text-text-secondary"
         >
           {STEERING_DETACHED_DISCLOSURE}
         </p>
@@ -1393,7 +1449,7 @@ export function ComposerDock({
         <p
           ref={neverSentAlertRef}
           role="alert"
-          className="border-t border-border px-[10px] py-[8px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+          className="border-t border-border px-6 py-3 font-sans text-[13px] leading-[1.5] text-text-secondary"
         >
           {neverSentDisclosure(idleAwaitExpired)}
         </p>
@@ -1683,7 +1739,7 @@ export function ComposerDock({
           }
           focusInsideRef.current = false;
         }}
-        className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]"
+        className="flex-none border-t-2 border-line-strong bg-background px-6 py-3"
       >
         {idle ? (
           <>
@@ -1785,8 +1841,8 @@ export function ComposerDock({
             onClick={submit}
             className={cn(
               CONTROL_BASE_CLASSES,
-              'min-w-[84px]',
-              canSubmit ? CONTROL_ENABLED_CLASSES : CONTROL_DISABLED_CLASSES
+              'min-w-[96px]',
+              canSubmit ? PRIMARY_ENABLED_CLASSES : CONTROL_DISABLED_CLASSES
             )}
           >
             {idle ? 'Send now' : 'Queue'}

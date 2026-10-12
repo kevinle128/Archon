@@ -9,7 +9,7 @@ import {
   type ClipboardEvent,
 } from 'react';
 import { cn } from '@/lib/utils';
-import { Folder, Loader2, Paperclip, Send, X } from 'lucide-react';
+import { Loader2, Paperclip, X } from 'lucide-react';
 
 /** Binary (non-text) MIME types explicitly accepted */
 const ACCEPTED_BINARY_MIME_TYPES = new Set([
@@ -111,10 +111,14 @@ interface MessageInputProps {
   disabledReason?: string;
   /** Project the message runs against, shown as the scope chip. */
   projectName?: string;
+  /** Command texts offered as chips above the field. A click fills the field; it never sends. */
+  suggestions?: readonly string[];
 }
 
 export interface MessageInputHandle {
   focus: () => void;
+  /** Replaces the draft with `text` and focuses the field, cursor at the end. */
+  prefill: (text: string) => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -124,7 +128,7 @@ function formatBytes(bytes: number): string {
 }
 
 const messageInput = forwardRef<MessageInputHandle, MessageInputProps>(function MessageInputInner(
-  { onSend, disabled, disabledReason, projectName }: MessageInputProps,
+  { onSend, disabled, disabledReason, projectName, suggestions = [] }: MessageInputProps,
   ref
 ): React.ReactElement {
   const [value, setValue] = useState('');
@@ -134,10 +138,21 @@ const messageInput = forwardRef<MessageInputHandle, MessageInputProps>(function 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const prefill = useCallback((text: string): void => {
+    setValue(text);
+    requestAnimationFrame(() => {
+      const field = textareaRef.current;
+      if (field === null) return;
+      field.focus();
+      field.setSelectionRange(text.length, text.length);
+    });
+  }, []);
+
   useImperativeHandle(ref, () => ({
     focus: (): void => {
       textareaRef.current?.focus();
     },
+    prefill,
   }));
 
   const addFiles = useCallback((incoming: File[]): void => {
@@ -244,59 +259,82 @@ const messageInput = forwardRef<MessageInputHandle, MessageInputProps>(function 
 
   return (
     <div
-      className="sticky bottom-0 shrink-0 bg-background px-8 pb-4"
+      className="shrink-0 border-t-2 border-line-strong bg-background px-6 py-3"
       title={disabledReason}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div
-        className={cn(
-          'mx-auto max-w-[760px] rounded-xl border bg-background px-4 pb-2 pt-1 transition-colors duration-150 focus-within:border-accent focus-within:outline-2 focus-within:outline-accent',
-          dragging ? 'border-accent bg-accent-muted' : 'border-border'
-        )}
-      >
-        {/* File preview chips */}
-        {files.length > 0 && (
-          <div className="flex flex-wrap gap-1 pt-2">
-            {files.map(({ file, id }) => (
-              <div
-                key={id}
-                className="flex items-center gap-1 rounded-md border border-border bg-surface px-2 py-1 text-xs text-text-secondary"
+      {suggestions.length > 0 ? (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {suggestions.map(text => (
+            <button
+              key={text}
+              type="button"
+              disabled={disabled}
+              onClick={(): void => {
+                prefill(text);
+              }}
+              className="cursor-pointer border border-line-strong bg-card px-2 py-0.5 font-mono text-xs text-text-primary hover:border-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {text.trim()}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {/* File preview chips */}
+      {files.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1">
+          {files.map(({ file, id }) => (
+            <div
+              key={id}
+              className="flex items-center gap-1 border border-line-strong bg-surface px-2 py-1 text-xs text-text-secondary"
+            >
+              <span className="max-w-[140px] truncate" title={file.name}>
+                {file.name}
+              </span>
+              <span className="text-text-tertiary">({formatBytes(file.size)})</span>
+              <button
+                type="button"
+                onClick={() => {
+                  removeFile(id);
+                }}
+                className="ml-1 cursor-pointer text-text-tertiary hover:text-text-primary"
+                aria-label={`Remove ${file.name}`}
               >
-                <span className="max-w-[140px] truncate" title={file.name}>
-                  {file.name}
-                </span>
-                <span className="text-text-tertiary">({formatBytes(file.size)})</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    removeFile(id);
-                  }}
-                  className="ml-1 cursor-pointer text-text-tertiary hover:text-text-primary"
-                  aria-label={`Remove ${file.name}`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
-        {/* File error */}
-        {fileError !== null && <p className="pt-2 text-xs text-error">{fileError}</p>}
+      {/* File error */}
+      {fileError !== null && <p className="mb-2 text-xs text-error">{fileError}</p>}
 
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={ACCEPTED_EXTENSIONS}
-          className="hidden"
-          onChange={handleFilePickerChange}
-          disabled={disabled}
-        />
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={ACCEPTED_EXTENSIONS}
+        className="hidden"
+        onChange={handleFilePickerChange}
+        disabled={disabled}
+      />
 
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2">
+        <button
+          type="button"
+          disabled={disabled || files.length >= MAX_FILES}
+          onClick={() => fileInputRef.current?.click()}
+          className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center border border-line-strong bg-card text-text-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          title="Attach file"
+          aria-label="Attach a file"
+        >
+          <Paperclip className="h-4 w-4" strokeWidth={2} />
+        </button>
         <textarea
           ref={textareaRef}
           value={value}
@@ -305,52 +343,36 @@ const messageInput = forwardRef<MessageInputHandle, MessageInputProps>(function 
           onPaste={handlePaste}
           disabled={disabled}
           aria-label="Message Archon"
-          placeholder={dragging ? 'Drop files here...' : (disabledReason ?? 'Message Archon...')}
-          rows={1}
-          className="block min-h-11 w-full resize-none overflow-hidden border-0 bg-transparent pb-0.5 pt-2.5 text-base leading-normal text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed disabled:opacity-50"
+          placeholder={
+            dragging
+              ? 'Drop files here...'
+              : (disabledReason ??
+                (projectName ? `Ask about ${projectName}, or type a command` : 'Message Archon...'))
+          }
+          rows={2}
+          className={cn(
+            'block min-h-11 w-full resize-none overflow-hidden border bg-card px-3 py-2 text-sm leading-normal text-text-primary placeholder:text-text-tertiary disabled:cursor-not-allowed disabled:opacity-50',
+            dragging ? 'border-accent bg-selection' : 'border-line-strong'
+          )}
           style={{ maxHeight: '200px' }}
         />
-
-        <div className="-ml-2 flex items-center gap-2">
-          <button
-            type="button"
-            disabled={disabled || files.length >= MAX_FILES}
-            onClick={() => fileInputRef.current?.click()}
-            className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-[10px] text-text-secondary transition-colors duration-150 hover:bg-surface-elevated hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
-            title="Attach file"
-            aria-label="Attach a file"
-          >
-            <Paperclip className="h-5 w-5" strokeWidth={1.5} />
-          </button>
-          {projectName && (
-            <span className="inline-flex min-h-6 min-w-0 items-center gap-1 rounded-full border border-border px-2 text-xs text-text-secondary">
-              <Folder className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-              <span className="truncate">{projectName}</span>
-            </span>
-          )}
-          <span className="flex-1" />
-          <span className="hidden whitespace-nowrap text-xs text-text-tertiary sm:inline">
-            Enter to send &middot; Shift+Enter for a new line
-          </span>
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={disabled || !value.trim()}
-            aria-label="Send message"
-            className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-accent px-4 text-sm font-medium text-accent-foreground transition-colors duration-150 hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {disabled && !disabledReason ? (
-              <Loader2
-                className="h-4 w-4 animate-spin motion-reduce:animate-none"
-                strokeWidth={1.5}
-              />
-            ) : (
-              <Send className="h-4 w-4" strokeWidth={1.5} />
-            )}
-            Send
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={disabled || !value.trim()}
+          aria-label="Send message"
+          className="inline-flex min-h-11 min-w-24 cursor-pointer items-center justify-between gap-2 bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {disabled && !disabledReason ? (
+            <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" strokeWidth={2} />
+          ) : null}
+          <span>Send</span>
+          <span aria-hidden="true">↵</span>
+        </button>
       </div>
+      <p className="mt-1 text-[11px] text-text-tertiary">
+        Enter to send · Shift+Enter for a new line
+      </p>
     </div>
   );
 });

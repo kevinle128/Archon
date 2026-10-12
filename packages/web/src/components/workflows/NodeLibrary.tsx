@@ -81,7 +81,7 @@ function LoadingSkeleton(): React.ReactElement {
       {Array.from({ length: 6 }, (_, i) => (
         <div
           key={i}
-          className="h-10 rounded-[10px] bg-surface-elevated animate-pulse motion-reduce:animate-none"
+          className="h-10 rounded-none bg-surface-elevated animate-pulse motion-reduce:animate-none"
         />
       ))}
     </div>
@@ -107,7 +107,7 @@ function DraggableItem({
       onDragStart={(e): void => {
         onDragStart(e, type, name);
       }}
-      className="flex min-w-0 cursor-grab items-start gap-2.5 rounded-[10px] border border-border bg-background px-3 py-2 transition-colors duration-200 motion-reduce:transition-none hover:border-border-bright hover:bg-surface-hover active:cursor-grabbing"
+      className="flex min-w-0 cursor-grab items-start gap-2.5 rounded-none border border-border bg-background px-3 py-2 transition-colors duration-200 motion-reduce:transition-none hover:border-border-bright hover:bg-surface-hover active:cursor-grabbing"
     >
       <span className={cn('mt-1.5 size-2 shrink-0 rounded-full', NODE_TYPE_COLORS[type])} />
       <span className="flex min-w-0 flex-1 flex-col">
@@ -218,7 +218,7 @@ export function NodeLibrary({ commands, isLoading }: NodeLibraryProps): React.Re
             }}
             placeholder="Search"
             className={cn(
-              'h-10 w-full rounded-[10px] border border-border bg-background pl-9 pr-3 text-sm text-text-primary placeholder:text-text-tertiary',
+              'h-10 w-full rounded-none border border-border bg-background pl-9 pr-3 text-sm text-text-primary placeholder:text-text-tertiary',
               focusRing
             )}
           />

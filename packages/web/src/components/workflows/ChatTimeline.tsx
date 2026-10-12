@@ -119,7 +119,7 @@ export function ChatTimeline(props: ChatTimelineProps): React.ReactElement {
             <span className="text-text-secondary">{entry.detail}</span>
             <span
               className={cn(
-                'shrink-0 rounded-full px-2 py-0.5 text-xs font-medium',
+                'shrink-0 rounded-none px-2 py-0.5 text-xs font-medium',
                 STATUS_COLORS[entry.status]
               )}
             >
