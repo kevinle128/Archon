@@ -1,0 +1,38 @@
+{
+  "surface": "console",
+  "runId": "270e38e8ea024c955255a6af7f0a6cc7",
+  "queuedMessage": "finished-iteration-console-ebc2ce80b1d2",
+  "viewport": {
+    "narrow": {
+      "noPageOverflow": true,
+      "noRoomOverflow": true,
+      "goFullyVisible": true,
+      "goHeight": 32,
+      "disclosureWraps": false,
+      "bandFullWidth": true,
+      "bandHas33vhCap": true,
+      "bandMaxHeight": "297px"
+    },
+    "wide": {
+      "noPageOverflow": true,
+      "noRoomOverflow": true,
+      "goFullyVisible": true,
+      "goHeight": 32,
+      "disclosureWraps": false,
+      "bandFullWidth": true,
+      "bandHas33vhCap": true,
+      "bandMaxHeight": "297px"
+    }
+  },
+  "requestCounts": {
+    "successfulQueueGets": 26,
+    "finishedViewMutations": 0,
+    "totalJourneyMutations": 1
+  },
+  "timings": {
+    "iterationTwoStartedMs": 25389,
+    "finishedDockReadyMs": 27567,
+    "returnedLiveMs": 27778,
+    "completedMs": 50191
+  }
+}
