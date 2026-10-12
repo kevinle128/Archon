@@ -1,4 +1,7 @@
 ---
+import '../../styles/site.css';
+import SiteHead from '../../components/SiteHead.astro';
+import SiteHeader from '../../components/SiteHeader.astro';
 import { marketplaceEntries, tagConfig } from '../../data/marketplace';
 
 export function getStaticPaths() {
@@ -14,98 +17,67 @@ const sourceAtSha = entry.sourceUrl.replace(/\/blob\/[^/]+\//, `/blob/${entry.sh
 ---
 
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{entry.name} — Archon Workflows</title>
     <meta name="description" content={entry.description} />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
-    <script is:inline>
-      (function () {
-        const theme = localStorage.getItem('starlight-theme') || 'dark';
-        document.documentElement.dataset.theme = theme;
-      })();
-    </script>
+    <SiteHead />
   </head>
   <body>
-    <nav class="nav">
-      <div class="nav-inner">
-        <a href="/" class="nav-logo">
-          <img src="/favicon.png" alt="Archon" width="28" height="28" />
-          <span>Archon</span>
-        </a>
-        <div class="nav-links">
-          <a href="/docs/">Docs</a>
-          <a href="/roadmap/">Roadmap</a>
-          <a href="/workflows/" class="active">Workflows</a>
-          <a
-            href="https://github.com/coleam00/Archon"
-            target="_blank"
-            rel="noopener">GitHub</a
-          >
-        </div>
-      </div>
-    </nav>
+    <SiteHeader active="/workflows/" />
 
-    <main>
-      <div class="breadcrumb">
-        <a href="/workflows/">Workflows</a>
-        <span>›</span>
-        <span>{entry.name}</span>
-      </div>
+    <main class="page">
+      <p class="context">
+        <a href="/workflows/">Workflows</a> <span>›</span> <span>{entry.name}</span>
+      </p>
+      <h1>{entry.name}</h1>
 
-      <div class="workflow-header">
-        <h1>{entry.name}</h1>
-        <div class="meta">
+      <dl class="meta">
+        <dt>Author</dt>
+        <dd>
           <a
             href={`https://github.com/${entry.author}`}
             target="_blank"
-            rel="noopener"
-            class="author">@{entry.author}</a
+            rel="noopener">@{entry.author}</a
           >
-          <span class="compat-badge">{entry.archonVersionCompat}</span>
+        </dd>
+        <dt>Compatible</dt>
+        <dd>{entry.archonVersionCompat}</dd>
+        <dt>Tags</dt>
+        <dd class="tags">
           {
             entry.tags.map((tag) => (
-              <span
-                class="tag"
-                style={`color: ${tagConfig[tag]?.color ?? '#94a3b8'}; background: ${tagConfig[tag]?.bg ?? 'transparent'}; border-color: ${tagConfig[tag]?.border ?? '#1e293b'};`}
-              >
-                {tagConfig[tag]?.label ?? tag}
-              </span>
+              <span class="chip">{tagConfig[tag]?.label ?? tag}</span>
             ))
           }
-        </div>
-      </div>
+        </dd>
+      </dl>
 
       <p class="description">{entry.description}</p>
 
-      <div class="install-section">
-        <h2>Install</h2>
-        <div class="code-block">
+      <section>
+        <h2 class="section-label">Install</h2>
+        <div class="code-block install-row">
           <code>archon workflow install {entry.slug}</code>
           <button
-            class="copy-btn"
+            type="button"
+            class="btn btn-primary copy-btn"
             data-copy={`archon workflow install ${entry.slug}`}>Copy</button
           >
         </div>
-      </div>
+      </section>
 
-      <div class="source-section">
-        <h2>Source</h2>
-        <p>
+      <section>
+        <h2 class="section-label">Source</h2>
+        <p class="source-note">
           Pinned to commit <code class="sha">{entry.sha.slice(0, 8)}</code>
         </p>
-        <a href={sourceAtSha} target="_blank" rel="noopener" class="source-link"
+        <a href={sourceAtSha} target="_blank" rel="noopener" class="btn"
           >View YAML on GitHub →</a
         >
-      </div>
+      </section>
 
       <a href="/workflows/" class="back-link">← Back to all workflows</a>
     </main>
@@ -124,290 +96,98 @@ const sourceAtSha = entry.sourceUrl.replace(/\/blob\/[^/]+\//, `/blob/${entry.sh
     </script>
 
     <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      html {
-        background: #0f1219;
-        color: #e2e8f0;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        scroll-behavior: smooth;
-      }
-
-      body {
-        min-height: 100vh;
-        background: #0f1219;
-      }
-
-      a {
-        text-decoration: none;
-        color: inherit;
-      }
-
-      /* Nav */
-      .nav {
-        position: sticky;
-        top: 0;
-        z-index: 100;
-        background: rgba(15, 18, 25, 0.85);
-        backdrop-filter: blur(12px);
-        border-bottom: 1px solid #1e293b;
-      }
-
-      .nav-inner {
-        max-width: 1100px;
+      .page {
+        max-width: 760px;
         margin: 0 auto;
-        padding: 0.75rem 1.5rem;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        padding: 24px 24px 48px;
       }
-
-      .nav-logo {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-weight: 600;
-        font-size: 1.1rem;
-        color: #f1f5f9;
+      .context {
+        margin: 0 0 4px;
+        font-size: 12px;
+        color: var(--text-2);
       }
-
-      .nav-logo img {
-        border-radius: 6px;
+      .context a {
+        color: var(--text-2);
       }
-
-      .nav-links {
-        display: flex;
-        gap: 1.5rem;
-        font-size: 0.9rem;
+      h1 {
+        margin: 0 0 16px;
+        font-size: 24px;
+        font-weight: 800;
+        line-height: 1.15;
+        color: var(--text);
       }
-
-      .nav-links a {
-        color: #94a3b8;
-        transition: color 0.2s;
-      }
-
-      .nav-links a:hover,
-      .nav-links a.active {
-        color: #f1f5f9;
-      }
-
-      /* Breadcrumb */
-      .breadcrumb {
-        max-width: 760px;
-        margin: 1.5rem auto 0;
-        padding: 0 1.5rem;
-        font-size: 0.875rem;
-        color: #475569;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
-
-      .breadcrumb a {
-        color: #3b82f6;
-      }
-
-      .breadcrumb a:hover {
-        color: #60a5fa;
-      }
-
-      /* Header */
-      .workflow-header {
-        max-width: 760px;
-        margin: 2rem auto 0;
-        padding: 0 1.5rem;
-      }
-
-      .workflow-header h1 {
-        font-size: 2.25rem;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-        color: #f1f5f9;
-        margin-bottom: 0.75rem;
-      }
-
       .meta {
+        display: grid;
+        grid-template-columns: 96px 1fr;
+        gap: 6px 0;
+        margin: 0 0 16px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+      }
+      .meta dt {
+        color: var(--text-2);
+      }
+      .meta dd {
+        margin: 0;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .tags {
         display: flex;
-        align-items: center;
-        gap: 0.75rem;
         flex-wrap: wrap;
+        gap: 6px;
       }
-
-      .author {
-        color: #3b82f6;
-        font-size: 0.9rem;
-      }
-
-      .author:hover {
-        color: #60a5fa;
-      }
-
-      .compat-badge {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.72rem;
-        padding: 0.15rem 0.5rem;
-        border-radius: 4px;
-        background: rgba(148, 163, 184, 0.08);
-        color: #94a3b8;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-      }
-
-      .tag {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.72rem;
-        padding: 0.15rem 0.5rem;
-        border-radius: 4px;
-        border: 1px solid;
-      }
-
-      /* Description */
       .description {
-        max-width: 760px;
-        margin: 1.5rem auto 0;
-        padding: 0 1.5rem;
-        font-size: 1rem;
-        color: #94a3b8;
-        line-height: 1.7;
+        margin: 0 0 32px;
+        font-size: 14px;
+        line-height: 1.6;
+        color: var(--text-2);
       }
-
-      /* Install */
-      .install-section {
-        max-width: 760px;
-        margin: 2.5rem auto 0;
-        padding: 0 1.5rem;
+      section {
+        margin-bottom: 32px;
       }
-
-      .install-section h2 {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: #f1f5f9;
-        margin-bottom: 0.75rem;
+      section .section-label {
+        margin-bottom: 8px;
       }
-
-      .code-block {
+      .install-row {
         display: flex;
         align-items: center;
-        gap: 1rem;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid #1e293b;
-        border-radius: 8px;
-        padding: 0.75rem 1rem;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.875rem;
-        color: #e2e8f0;
+        gap: 16px;
       }
-
+      .install-row code {
+        flex: 1;
+        min-width: 0;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
       .copy-btn {
-        margin-left: auto;
-        padding: 0.35rem 0.75rem;
-        border: 1px solid #1e293b;
-        border-radius: 6px;
-        background: rgba(255, 255, 255, 0.05);
-        color: #94a3b8;
-        cursor: pointer;
-        font-size: 0.8rem;
-        font-family: inherit;
-        transition:
-          background 0.2s,
-          border-color 0.2s,
-          color 0.2s;
+        flex: none;
+        min-height: 32px;
+        padding: 0 12px;
+        font-size: 12px;
       }
-
-      .copy-btn:hover {
-        background: rgba(59, 130, 246, 0.12);
-        border-color: rgba(59, 130, 246, 0.35);
-        color: #f1f5f9;
+      .source-note {
+        margin: 0 0 12px;
+        font-size: 13px;
+        color: var(--text-2);
       }
-
-      /* Source */
-      .source-section {
-        max-width: 760px;
-        margin: 2.5rem auto 0;
-        padding: 0 1.5rem;
-      }
-
-      .source-section h2 {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: #f1f5f9;
-        margin-bottom: 0.75rem;
-      }
-
-      .source-section p {
-        color: #94a3b8;
-        font-size: 0.9rem;
-      }
-
       .sha {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.8rem;
-        padding: 0.1rem 0.4rem;
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 4px;
-        color: #e2e8f0;
+        padding: 1px 6px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 12px;
       }
-
-      .source-link {
-        display: inline-block;
-        margin-top: 0.5rem;
-        color: #3b82f6;
-        font-size: 0.9rem;
-      }
-
-      .source-link:hover {
-        color: #60a5fa;
-      }
-
-      /* Back link */
       .back-link {
-        display: inline-block;
-        max-width: 760px;
-        margin: 2rem auto 3rem;
-        padding: 0 1.5rem;
-        color: #475569;
-        font-size: 0.875rem;
+        font-size: 13px;
+        color: var(--text-2);
       }
-
-      .back-link:hover {
-        color: #94a3b8;
-      }
-
-      main {
-        display: flex;
-        flex-direction: column;
-      }
-
-      /* Scrollbar */
-      ::-webkit-scrollbar {
-        width: 8px;
-      }
-
-      ::-webkit-scrollbar-track {
-        background: #0f1219;
-      }
-
-      ::-webkit-scrollbar-thumb {
-        background: #1e293b;
-        border-radius: 4px;
-      }
-
-      ::-webkit-scrollbar-thumb:hover {
-        background: #334155;
-      }
-
-      /* Responsive */
       @media (max-width: 640px) {
-        .workflow-header h1 {
-          font-size: 1.75rem;
+        .page {
+          padding: 20px 16px 40px;
         }
-
-        .nav-links {
-          gap: 1rem;
-          font-size: 0.8rem;
+        .meta {
+          grid-template-columns: 80px 1fr;
         }
       }
     </style>
