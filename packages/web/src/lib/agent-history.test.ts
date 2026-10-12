@@ -316,6 +316,7 @@ describe('buildAgentHistory', () => {
       state: 'iteration_started',
       detail: '1',
       execution: null,
+      createdAt: CREATED_AT,
     });
 
     expect(truncatedTool).toMatchObject({
@@ -811,6 +812,7 @@ describe('buildAgentHistory', () => {
       state: 'iteration_started',
       detail: '2',
       execution: null,
+      createdAt: CREATED_AT,
     });
     // The second call never settled at all (no result row, no matching
     // tool_completed event) — with no proof either way it stays 'running',
@@ -1323,6 +1325,7 @@ describe('buildAgentHistory', () => {
           messageId: 'msg-op-1',
           delivery: 'sent',
           execution: EXECUTION,
+          createdAt: CREATED_AT,
         },
       ]);
     });
@@ -1545,6 +1548,7 @@ describe('buildAgentHistory', () => {
           role: 'thinking',
           text: 'weighing two approaches before acting',
           execution: null,
+          createdAt: CREATED_AT,
         },
       ]);
     });
@@ -1573,6 +1577,7 @@ describe('buildAgentHistory', () => {
           actorDisplayName: 'Kevin',
           source: 'command_file',
           execution: null,
+          createdAt: CREATED_AT,
         },
       ]);
     });
@@ -1618,6 +1623,7 @@ describe('buildAgentHistory', () => {
           text: 'use a channel-based shutdown',
           advisorModel: 'claude-opus-4-8',
           execution: null,
+          createdAt: CREATED_AT,
         },
       ]);
     });

@@ -1,5 +1,6 @@
 import { RoomPlaceholder, RoomRegion } from './NodeRoom';
 import type { ChildRunRef } from './select-room-data';
+import { buildRunPath } from '@/lib/runs/run-url';
 
 export interface ChildWorkflowRoomProps {
   nodeId: string;
@@ -22,10 +23,7 @@ export function ChildWorkflowRoom({ nodeId, child }: ChildWorkflowRoomProps): Re
           <p className="text-sm text-text-secondary">This node spawned multiple child runs</p>
         )}
         {child.childRunId !== null && (
-          <a
-            href={`/workflows/runs/${encodeURIComponent(child.childRunId)}`}
-            className="text-sm text-primary hover:underline"
-          >
+          <a href={buildRunPath(child.childRunId)} className="text-sm text-primary hover:underline">
             Open child run
           </a>
         )}

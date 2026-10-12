@@ -74,13 +74,14 @@ test('[P0] a workflow run started with an ENV overlay records the frozen overlay
   await expect(dialog).toBeHidden();
   await expect(environments.getByTestId('workflow-env-rows')).toContainText(OVERLAY_NAME);
 
-  // 3. Pick the overlay next to Run: the preview shows the patched model.
+  // 3. Pick the overlay in the start panel: the preview shows the patched model.
   await page.locator('#workflow-run-env').selectOption({ label: OVERLAY_NAME });
   await expect(page.getByText(OVERLAY_MODEL).first()).toBeVisible({ timeout: T.medium });
 
   // 4. Start the run with the overlay.
   await page.locator('#workflow-run-message').fill('run with overlay');
-  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await page.getByRole('button', { name: /^Start run/ }).click();
+  await expect(page.getByTestId('started-run-card')).toBeVisible({ timeout: T.medium });
 
   // 5. The run record carries the overlay name and the resolved patched model.
   let runId: string | undefined;

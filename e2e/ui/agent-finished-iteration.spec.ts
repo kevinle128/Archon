@@ -72,7 +72,7 @@ async function openGuidanceRoom(
     await openRunDetail(page, runId, nodeId);
   } else {
     await openLegacyRunDetail(page, runId);
-    const logsTab = page.getByRole('tab', { name: 'Logs' });
+    const logsTab = page.getByRole('radio', { name: 'List' });
     await expect(logsTab).toBeVisible({ timeout: T.medium });
     await logsTab.click();
     const nodeButton = page.getByRole('button', { name: new RegExp(nodeId) }).first();
@@ -228,14 +228,21 @@ async function assertFinishedDockVisualContract(
   await expect(disclosure).toBeVisible({ timeout: T.medium });
   await expect(go).toBeVisible();
   await expect(list).toBeVisible();
+  // A resize can switch the run view between one and two columns; wait until
+  // the dock has settled at the new size before measuring it.
+  await expect
+    .poll(async () => (await go.boundingBox())?.height ?? 0, { timeout: T.medium })
+    .toBeGreaterThanOrEqual(32);
 
   const facts = await room.evaluate(
     (roomEl, label) => {
       const disclosureEl = Array.from(roomEl.querySelectorAll('p')).find(
         element => element.textContent === label
       );
-      const goButton = Array.from(roomEl.querySelectorAll('button')).find(element =>
-        element.textContent?.startsWith('Go to iteration ')
+      const goButton = Array.from(roomEl.querySelectorAll('button')).find(
+        element =>
+          element.textContent?.startsWith('Go to iteration ') === true &&
+          element.getBoundingClientRect().height > 0
       );
       const listEl = roomEl.querySelector('ul[aria-label^="Queued messages"]');
       const wrapper = listEl?.parentElement ?? null;

@@ -36,7 +36,6 @@ const NARROW_VIEWPORT = { width: 390, height: 844 } as const;
 // (`packages/web/src/lib/room-split-layout.ts`). There is no user-adjustable
 // ratio to persist. The room only keeps this width when the run pane is at
 // least 60rem wide; a narrower pane shows it full width instead.
-const FIXED_ROOM_WIDTH = 460;
 const WIDTH_TOLERANCE_PX = 2;
 const ROOM_MIN_WIDTH_PX = 240;
 const DRAFT_OTHER = 'shared-ask-draft';
@@ -85,7 +84,7 @@ function formatRecordedDuration(durationMs: number): string {
 }
 
 async function openLegacyLogRow(page: Page, nodeId: string, index = 0): Promise<void> {
-  const logsTab = page.getByRole('tab', { name: 'Logs' });
+  const logsTab = page.getByRole('radio', { name: 'List' });
   if ((await logsTab.count()) > 0) {
     await logsTab.click();
   }
@@ -167,7 +166,7 @@ async function requireLongHistoryFixture(page: Page, archon: ArchonRuntime): Pro
   }
 }
 
-test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and fixed width', async ({
+test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable inside the node column', async ({
   page,
   archon,
 }) => {
@@ -181,7 +180,8 @@ test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and fixed width',
   expect(width, 'Legacy room must be wide enough to read tool output').toBeGreaterThan(
     ROOM_MIN_WIDTH_PX
   );
-  expect(Math.abs(width - FIXED_ROOM_WIDTH)).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
+  const column = await boxWidth(page.getByTestId('node-column'), 'node column');
+  expect(width, 'the room fills the node column').toBeLessThanOrEqual(column + WIDTH_TOLERANCE_PX);
   const row = room.locator('details[data-tool-id]').first();
   // The collapsed summary names the file family; the Story 1.3 body/Raw swap
   // contract is identical on both surfaces.
@@ -207,7 +207,7 @@ test('[P1] [V:hitl.graph-selection] Graph selection restores the last explicit e
   await expect(page.getByLabel('Execution').locator('option:checked')).toHaveText(/Iteration 1/);
   await page.getByRole('button', { name: 'Close' }).click();
 
-  await page.getByRole('tab', { name: 'Graph' }).click();
+  await page.getByRole('radio', { name: 'Graph' }).click();
   await page.locator(`.react-flow__node[data-id="${HITL_LOOP_NODE}"]`).click();
   const reopened = await waitForRoom(page, HITL_LOOP_NODE);
   await expect(page.getByLabel('Execution')).toHaveValue(firstValue ?? '');
@@ -421,7 +421,7 @@ test('[P1] [V:hitl.awaiting-focus] Awaiting input focuses the matching Ask', asy
   });
 });
 
-test('[P1] [V:hitl.legacy-mobile-back] Legacy narrow room restores Logs focus and Ask draft', async ({
+test('[P1] [V:hitl.legacy-mobile-back] Legacy narrow room restores step focus and Ask draft', async ({
   browser,
   archon,
 }) => {
@@ -432,21 +432,16 @@ test('[P1] [V:hitl.legacy-mobile-back] Legacy narrow room restores Logs focus an
     await waitForRunTitle(page, 'e2e-hitl-run');
     await openLegacyLogRow(page, HITL_ASK_NODE);
     const room = await waitForRoom(page, HITL_ASK_NODE);
-    const opener = page
-      .locator('button[id^="legacy-log-"]')
-      .filter({ hasText: HITL_ASK_NODE })
-      .first();
-    const openerId = await opener.getAttribute('id');
-    expect(openerId).toBeTruthy();
+    // A narrow screen shows one column: the step list returns once Back closes the room.
+    const openerId = `legacy-graph-${encodeURIComponent(HITL_ASK_NODE)}`;
+    const opener = page.locator(`[id="${openerId}"]`);
     await room.getByLabel('Other').check();
     await room.getByLabel(/Other answer for/).fill(DRAFT_OTHER);
     await page.getByRole('button', { name: 'Back', exact: true }).click();
 
-    await expect(page.getByRole('tab', { name: 'Logs' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('radio', { name: 'List' })).toHaveAttribute('aria-checked', 'true');
     await expect(opener).toBeVisible();
-    await expect
-      .poll(() => page.evaluate(() => document.activeElement?.id ?? ''))
-      .toBe(openerId ?? '');
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id ?? '')).toBe(openerId);
 
     await opener.dispatchEvent('click');
     const reopened = await waitForRoom(page, HITL_ASK_NODE);
@@ -495,22 +490,19 @@ test('[P1] [V:hitl.room-deeplink] Deep-link re-entry and focus restoration work'
   await expect(panelLocator(page, 'legacy-run-room')).toHaveCount(0);
   await expect(opener).toBeFocused();
 
+  // A fresh visit on a wide screen opens the run's most relevant node, as the
+  // Runs workspace always shows one node.
   await openLegacyRunDetail(page, started.runId);
   await waitForRunTitle(page, 'e2e-hitl-run');
-  await expect(panelLocator(page, 'legacy-run-room')).toHaveCount(0);
+  await expect(panelLocator(page, 'legacy-run-room')).toHaveCount(1);
 
   await openRunDetail(page, started.runId, HITL_INSPECT_NODE);
   await waitForRoom(page, HITL_INSPECT_NODE);
 });
 
-test('[P1] [V:hitl.room-width-reload] Reload keeps the fixed room width', async ({
-  page,
-  archon,
-}) => {
-  // The room panel has no drag handle or user-adjustable ratio to persist
-  // (packages/web/src/lib/room-split-layout.ts, LEGACY_ROOM_WIDTH_PX) — the
-  // surviving proof is that a reload never corrupts the fixed width, and no
-  // separator ever appears for a user to try dragging.
+test('[P1] [V:hitl.room-width-reload] Reload keeps the room width', async ({ page, archon }) => {
+  // The node column is a grid share with no drag handle or ratio to persist:
+  // a reload must give the same width, and no separator ever appears.
   await page.setViewportSize(SPLIT_VIEWPORT);
   const started = await archon.runHitlWorkflow();
   await openRunDetail(page, started.runId);
@@ -519,7 +511,7 @@ test('[P1] [V:hitl.room-width-reload] Reload keeps the fixed room width', async 
   const room = await waitForRoom(page, HITL_INSPECT_NODE);
   await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
   const before = await boxWidth(room, 'Legacy room before reload');
-  expect(Math.abs(before - FIXED_ROOM_WIDTH)).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
+  expect(before, 'room is readable').toBeGreaterThan(ROOM_MIN_WIDTH_PX);
 
   await page.reload();
   await waitForRunTitle(page, 'e2e-hitl-run');
@@ -527,7 +519,7 @@ test('[P1] [V:hitl.room-width-reload] Reload keeps the fixed room width', async 
   const reopened = await waitForRoom(page, HITL_INSPECT_NODE);
   await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
   const after = await boxWidth(reopened, 'Legacy room after reload');
-  expect(Math.abs(after - FIXED_ROOM_WIDTH)).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
+  expect(Math.abs(after - before)).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
 });
 
 test('[P1] [V:hitl.history-pagination] Complete history crosses a cursor boundary', async ({
@@ -637,7 +629,7 @@ test('[P1] [V:hitl.legacy-navigation] Legacy navigation and timeline survive wit
   await openLegacyRunDetail(page, started.runId);
   await waitForRunTitle(page, 'e2e-hitl-run');
   await expect(page.getByRole('tab', { name: 'Chat' })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Source Control' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Changes' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Terminal' })).toBeVisible();
   await page.getByRole('tab', { name: 'Chat' }).click();
   await expect(page.getByRole('form', { name: 'Run conversation composer' })).toBeVisible();

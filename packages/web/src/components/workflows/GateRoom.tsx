@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { ConfirmRunActionDialog } from '@/components/dashboard/ConfirmRunActionDialog';
+import { ConfirmRunActionDialog } from '@/components/runs/ConfirmRunActionDialog';
 import { submitWorkflowRunReviewFeedback } from '@/lib/api';
 
 import { RoomRegion } from './NodeRoom';

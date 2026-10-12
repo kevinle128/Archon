@@ -411,14 +411,14 @@ describe('ComposerDock', () => {
   test('dock chrome carries the visual contract classes', async () => {
     await renderDock();
     const well = field().closest('div');
-    expect(well?.className).toContain('bg-surface-elevated');
-    expect(well?.className).toContain('border-t');
-    expect(field().className).toContain('min-h-[56px]');
-    expect(field().className).toContain('bg-surface-inset');
+    expect(well?.className).toContain('border-t-2');
+    expect(well?.className).toContain('border-line-strong');
+    expect(field().className).toContain('min-h-[40px]');
+    expect(field().className).toContain('border-line-strong');
     expect(field().className).toContain('focus-visible:outline-accent-bright');
     const button = queueButton();
-    expect(button.className).toContain('min-h-[32px]');
-    expect(button.className).toContain('min-w-[84px]');
+    expect(button.className).toContain('min-h-[40px]');
+    expect(button.className).toContain('min-w-[96px]');
     expect(button.className).toContain('focus-visible:outline-accent-bright');
     expect(button.className).toContain('motion-reduce:transition-none');
   });
@@ -1132,6 +1132,43 @@ describe('ComposerDock', () => {
     expect(saved).toEqual(['typed text']);
   });
 
+  test('a dock that unmounts inside the save debounce flushes the draft and a remount restores it', async () => {
+    const saved: string[] = [];
+    const inFlight = deferred<SteeringDraftResponse>();
+    const save: SaveNodeDraft = async (_runId, _nodeId, body) => {
+      saved.push(body.message);
+      return inFlight.promise;
+    };
+    const first = draftReader(null);
+    await renderDock({ runId: 'run-flush', readDraft: first.read, saveDraft: save });
+    await first.settle();
+    await setDraft('half typed');
+    expect(saved).toHaveLength(0);
+
+    await act(async () => {
+      root.render(null);
+    });
+    await flush();
+    expect(saved).toEqual(['half typed']);
+
+    // The save has not landed yet, so the server still reads empty; the next
+    // dock for the same scope shows the unsaved text at once.
+    const second = draftReader(null);
+    // A fresh mount starts a fresh queue bootstrap, as a new scope would.
+    coldStartResolves = 0;
+    await renderDock({ runId: 'run-flush', readDraft: second.read, saveDraft: save });
+    expect(field().value).toBe('half typed');
+    await second.settle();
+    expect(field().value).toBe('half typed');
+
+    inFlight.resolve({
+      success: true,
+      draft: { message: 'half typed', updated_at: '2026-09-26T00:00:00.000Z' },
+      auto_send: false,
+    });
+    await flush();
+  });
+
   function buttonByText(text: string): HTMLButtonElement {
     const match = [...host.querySelectorAll('button')].find(
       button => (button.textContent ?? '').trim() === text
@@ -1173,14 +1210,14 @@ describe('ComposerDock', () => {
     await renderDock({ subState: 'generating' });
     const stop = stopButton();
     expect(stop.getAttribute('disabled')).toBeNull();
-    expect(stop.className).toContain('min-h-[32px]');
-    expect(stop.className).toContain('border-border-bright');
-    expect(stop.className).toContain('bg-transparent');
+    expect(stop.className).toContain('min-h-[40px]');
+    expect(stop.className).toContain('border-line-strong');
+    expect(stop.className).toContain('bg-card');
     await setDraft('a message enables send');
     const queue = queueButton();
     expect(queue.getAttribute('aria-disabled')).toBeNull();
-    expect(queue.className).toContain('border-border-bright');
-    expect(queue.className).toContain('bg-transparent');
+    expect(queue.className).toContain('border-primary');
+    expect(queue.className).toContain('bg-primary');
     const row = stop.parentElement;
     expect(row).not.toBeNull();
     const children = [...(row?.children ?? [])];

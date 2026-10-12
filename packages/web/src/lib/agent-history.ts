@@ -55,6 +55,8 @@ export type AgentHistoryItem =
       text: string;
       structuredFields?: { name: string; value: string }[];
       execution: TranscriptExecution | null;
+      /** When the row was written; drives the transcript time column. */
+      createdAt?: string;
     }
   | {
       kind: 'operator';
@@ -67,6 +69,8 @@ export type AgentHistoryItem =
       messageId: string | null;
       delivery: OperatorDeliveryState;
       execution: TranscriptExecution | null;
+      /** When the row was written; drives the transcript time column. */
+      createdAt?: string;
     }
   | {
       kind: 'thinking';
@@ -75,6 +79,8 @@ export type AgentHistoryItem =
       role: 'thinking';
       text: string;
       execution: TranscriptExecution | null;
+      /** When the row was written; drives the transcript time column. */
+      createdAt?: string;
     }
   | {
       kind: 'prompt';
@@ -87,6 +93,8 @@ export type AgentHistoryItem =
       actorDisplayName: string | null;
       source: 'node_prompt' | 'command_file' | 'reask';
       execution: TranscriptExecution | null;
+      /** When the row was written; drives the transcript time column. */
+      createdAt?: string;
     }
   | {
       kind: 'advisor';
@@ -96,6 +104,8 @@ export type AgentHistoryItem =
       text: string;
       advisorModel: string | null;
       execution: TranscriptExecution | null;
+      /** When the row was written; drives the transcript time column. */
+      createdAt?: string;
     }
   | {
       kind: 'tool';
@@ -114,6 +124,8 @@ export type AgentHistoryItem =
       presentation: ToolRowPresentation;
       messageId: string;
       execution: TranscriptExecution | null;
+      /** When the row was written; drives the transcript time column. */
+      createdAt?: string;
     }
   | {
       kind: 'lifecycle';
@@ -122,6 +134,8 @@ export type AgentHistoryItem =
       state: string;
       detail: string | null;
       execution: TranscriptExecution | null;
+      /** When the row was written; drives the transcript time column. */
+      createdAt?: string;
     };
 
 export interface AgentHistory {
@@ -416,6 +430,7 @@ function toToolItem(
     ),
     messageId: card.result?.id ?? card.call?.id ?? card.id,
     execution: card.call?.metadata?.execution ?? card.result?.metadata?.execution ?? null,
+    createdAt: card.call?.created_at ?? card.result?.created_at,
   };
 }
 
@@ -615,6 +630,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         messageId,
         delivery: resolveOperatorDelivery(messageId, input.deliveryStateByMessageId),
         execution: message.metadata.execution ?? null,
+        createdAt: message.created_at,
       });
       continue;
     }
@@ -626,6 +642,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         role: 'thinking',
         text: message.payload.text,
         execution: message.metadata.execution ?? null,
+        createdAt: message.created_at,
       });
       continue;
     }
@@ -640,6 +657,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         actorDisplayName: message.prompt_display_name ?? null,
         source: message.metadata.prompt_source ?? 'node_prompt',
         execution: message.metadata.execution ?? null,
+        createdAt: message.created_at,
       });
       continue;
     }
@@ -652,6 +670,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         text: message.payload.text,
         advisorModel: message.metadata.advisor_model ?? null,
         execution: message.metadata.execution ?? null,
+        createdAt: message.created_at,
       });
       continue;
     }
@@ -667,6 +686,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         state: 'unrecognized-origin',
         detail: null,
         execution: message.metadata.execution ?? null,
+        createdAt: message.created_at,
       });
       continue;
     }
@@ -680,6 +700,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         text: presentedText(envelopeKey, message.payload.text),
         ...(fields === undefined ? {} : { structuredFields: fields }),
         execution: message.metadata?.execution ?? null,
+        createdAt: message.created_at,
       });
       continue;
     }
@@ -691,6 +712,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         state: message.payload.state,
         detail: message.payload.detail ?? null,
         execution: message.metadata?.execution ?? null,
+        createdAt: message.created_at,
       });
     }
   }

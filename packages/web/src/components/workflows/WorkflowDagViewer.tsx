@@ -29,6 +29,8 @@ interface WorkflowDagViewerProps {
   onNodeClick?: (nodeId: string) => void;
 }
 
+const FIT_VIEW_OPTIONS = { padding: 0.15, minZoom: 1 } as const;
+
 export function WorkflowDagViewer({
   dagNodes,
   liveStatus,
@@ -83,7 +85,10 @@ export function WorkflowDagViewer({
               : undefined
           }
           fitView
-          fitViewOptions={{ padding: 0.15 }}
+          // The graph sits in the narrow run column: fitting a wide graph would
+          // shrink its cards past reading size, so fit stops at 100%
+          // and the rest is reached by panning.
+          fitViewOptions={FIT_VIEW_OPTIONS}
           panOnDrag
           // The default Space pan key calls preventDefault on every Space
           // keydown, which stops a focused tool row or card summary in the open
@@ -93,7 +98,11 @@ export function WorkflowDagViewer({
           className="bg-background"
         >
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
-          <Controls showInteractive={false} className="!bg-surface !border-border" />
+          <Controls
+            showInteractive={false}
+            fitViewOptions={FIT_VIEW_OPTIONS}
+            className="!bg-surface !border-border"
+          />
         </ReactFlow>
       </ReactFlowProvider>
     </div>

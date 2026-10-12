@@ -18,6 +18,7 @@ import {
   type AgentHistoryItem,
 } from '@/lib/agent-history';
 import { getWorkflowNodeMessage, type WorkflowNodeMessageResponse } from '@/lib/api';
+import { ensureUtc } from '@/lib/format';
 import { toHunkData } from '@/lib/git-hunk-adapter';
 import type { OccurrenceGrouping } from '@/lib/occurrence-groups';
 import {
@@ -28,8 +29,6 @@ import {
   type TaskSubtaskCard,
   type ToolBody,
   headlineAfterLabel,
-  type ToolFamily,
-  type ToolOutcome,
   type ToolPresentationInput,
   type ToolRowBadge,
   type ToolRowBadgeTone,
@@ -226,6 +225,14 @@ export function selectNodeRoomMessages(
   return ordered.slice(start, nextStartOffset >= 0 ? start + nextStartOffset + 1 : undefined);
 }
 
+/** Wall-clock time of a transcript row, as the stream time column shows it: "10:06:02". */
+function streamTime(createdAt: string | undefined): string {
+  if (createdAt === undefined) return '';
+  const date = new Date(ensureUtc(createdAt));
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-GB', { hour12: false });
+}
+
 export function RoomPlaceholder({ children }: { children: string }): React.ReactElement {
   return (
     <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-text-secondary">
@@ -264,16 +271,8 @@ function AssistantHistory({
 }): React.ReactElement {
   return (
     <div style={{ overflowWrap: 'anywhere' }}>
-      <div
-        className="text-[10px] tracking-[0.07em] uppercase text-text-secondary"
-        style={{ margin: '10px 2px 3px' }}
-      >
-        assistant
-      </div>
-      <div
-        className="chat-markdown max-w-none font-sans text-[12.5px] leading-[1.55] font-normal text-text-secondary"
-        style={{ margin: '0 2px 6px' }}
-      >
+      <span className="sr-only">assistant</span>
+      <div className="chat-markdown max-w-none font-sans text-[length:var(--rv-agent-font-size)] leading-[var(--rv-agent-line-height)] font-normal text-text-primary">
         {item.structuredFields === undefined ? (
           <ReactMarkdown
             remarkPlugins={REMARK_PLUGINS}
@@ -320,11 +319,12 @@ function OperatorHistory({
     item.operatorDisplayName === null ? 'operator' : `operator · ${item.operatorDisplayName}`;
   const delivery = operatorDeliveryPresentation(item.delivery);
   return (
-    <div data-operator-row="" style={{ overflowWrap: 'anywhere' }}>
-      <div
-        className="flex w-full items-center text-[10px] tracking-[0.07em] uppercase text-text-secondary"
-        style={{ margin: '10px 2px 3px' }}
-      >
+    <div
+      data-operator-row=""
+      className="border-l-[3px] border-foreground pl-3"
+      style={{ overflowWrap: 'anywhere' }}
+    >
+      <div className="mb-1 flex w-full items-center text-[11px] font-semibold tracking-[0.06em] uppercase text-text-secondary">
         <span data-operator-label="">{label}</span>
         <span
           data-operator-delivery=""
@@ -338,8 +338,7 @@ function OperatorHistory({
       </div>
       <div
         data-operator-body=""
-        className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
-        style={{ margin: '0 2px 6px' }}
+        className="font-sans text-[14px] leading-[1.55] font-semibold text-text-primary whitespace-pre-wrap"
       >
         {item.text}
       </div>
@@ -354,16 +353,13 @@ function ThinkingHistory({
 }): React.ReactElement {
   return (
     <details data-thinking-row="" style={{ overflowWrap: 'anywhere' }}>
-      <summary
-        className="cursor-pointer text-[10px] tracking-[0.07em] uppercase text-text-secondary"
-        style={{ margin: '10px 2px 3px' }}
-      >
-        thinking
+      <summary className="cursor-pointer list-none text-[13px] italic text-text-secondary [&::-webkit-details-marker]:hidden">
+        <span aria-hidden="true">▸ </span>
+        Thinking
       </summary>
       <div
         data-thinking-body=""
-        className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-secondary whitespace-pre-wrap"
-        style={{ margin: '4px 2px 6px' }}
+        className="mt-1.5 border-l-2 border-border pl-3 font-sans text-[13px] leading-[1.55] font-normal text-text-secondary whitespace-pre-wrap"
       >
         {item.text}
       </div>
@@ -378,10 +374,7 @@ function PromptHistory({
 }): React.ReactElement {
   return (
     <div data-prompt-row="" style={{ overflowWrap: 'anywhere' }}>
-      <div
-        className="text-[10px] tracking-[0.07em] uppercase text-text-secondary"
-        style={{ margin: '10px 2px 3px' }}
-      >
+      <div className="mb-1 text-[12px] font-bold tracking-[0.06em] uppercase text-text-secondary">
         <span data-prompt-label="">
           prompt · {promptActorLabel(item.actorUserId, item.actorDisplayName)}
           {promptSourceLabel(item.source) !== null ? ` · ${promptSourceLabel(item.source)}` : ''}
@@ -389,8 +382,7 @@ function PromptHistory({
       </div>
       <div
         data-prompt-body=""
-        className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
-        style={{ margin: '0 2px 6px' }}
+        className="font-sans text-[14px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
       >
         {item.text}
       </div>
@@ -406,18 +398,18 @@ function AdvisorHistory({
   return (
     <div
       data-advisor-row=""
-      className="rounded-[6px] border border-border bg-surface-elevated px-2.5 py-2"
-      style={{ overflowWrap: 'anywhere', margin: '10px 2px 6px' }}
+      className="border border-border bg-surface px-2.5 py-2"
+      style={{ overflowWrap: 'anywhere' }}
     >
       <div
         data-advisor-label=""
-        className="text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+        className="text-[12px] font-bold tracking-[0.06em] uppercase text-text-secondary"
       >
         advisor{item.advisorModel !== null ? ` · ${item.advisorModel}` : ''}
       </div>
       <div
         data-advisor-body=""
-        className="mt-1 font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
+        className="mt-1 font-sans text-[14px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
       >
         {item.text}
       </div>
@@ -431,60 +423,12 @@ function LifecycleHistory({
   item: Extract<AgentHistoryItem, { kind: 'lifecycle' }>;
 }): React.ReactElement {
   return (
-    <p className="text-xs text-text-secondary">
+    <p className="text-[12px] font-bold tracking-[0.06em] uppercase text-text-secondary">
       {item.state}
       {item.detail !== null && item.detail.length > 0 ? ` ${item.detail}` : ''}
     </p>
   );
 }
-
-const CHIP_TONE: Record<ToolFamily, { className?: string; style?: React.CSSProperties }> = {
-  shell: {
-    className: 'text-node-bash',
-    style: { borderColor: 'color-mix(in oklch, var(--node-bash) 40%, transparent)' },
-  },
-  file: {
-    className: 'text-node-command',
-    style: { borderColor: 'color-mix(in oklch, var(--node-command) 40%, transparent)' },
-  },
-  search: {
-    style: {
-      color: 'color-mix(in oklch, var(--node-prompt) 70%, var(--text-primary))',
-      borderColor: 'color-mix(in oklch, var(--node-prompt) 45%, transparent)',
-    },
-  },
-  glob: {
-    style: {
-      color: 'color-mix(in oklch, var(--node-prompt) 70%, var(--text-primary))',
-      borderColor: 'color-mix(in oklch, var(--node-prompt) 45%, transparent)',
-    },
-  },
-  code: {
-    className: 'text-node-bash',
-    style: { borderColor: 'color-mix(in oklch, var(--node-bash) 40%, transparent)' },
-  },
-  todo: {
-    className: 'text-node-approval',
-    style: { borderColor: 'color-mix(in oklch, var(--node-approval) 40%, transparent)' },
-  },
-  task: {
-    className: 'text-node-approval',
-    style: { borderColor: 'color-mix(in oklch, var(--node-approval) 40%, transparent)' },
-  },
-  web: {
-    className: 'text-node-command',
-    style: { borderColor: 'color-mix(in oklch, var(--node-command) 40%, transparent)' },
-  },
-  generic: { className: 'text-text-secondary' },
-};
-
-const GLYPH_TONE: Record<ToolOutcome, string> = {
-  succeeded: 'text-success',
-  failed: 'text-error',
-  running: 'text-accent-bright',
-  interrupted: 'text-warning',
-  unknown: 'text-text-secondary',
-};
 
 const BADGE_TONE: Record<ToolRowBadgeTone, { className?: string; style?: React.CSSProperties }> = {
   neutral: { className: 'text-text-secondary' },
@@ -566,7 +510,7 @@ function ToolBadge({ badge }: { badge: ToolRowBadge }): React.ReactElement {
 // closed, so `toolBodyPresentation` never runs for collapsed or Raw rows.
 
 const TOOL_BODY_BOX =
-  'tool-family-body min-w-0 whitespace-pre-wrap rounded-[6px] border border-border bg-surface-inset px-2.5 py-2 font-mono text-[11.5px] leading-[1.5] text-text-primary';
+  'tool-family-body min-w-0 whitespace-pre-wrap bg-code-bg px-2.5 py-2 font-mono text-[12px] leading-[1.5] text-code-fg';
 
 /** Visible text of a markdown node; element children contribute nothing. */
 function markdownTextOf(node: React.ReactNode): string {
@@ -906,9 +850,9 @@ function SubtaskCard({
   return (
     <details
       data-subtask-index={index}
-      className="group/subtask mt-[5px] rounded-[6px] border border-border bg-surface-elevated px-[9px] py-[6px]"
+      className="group/subtask mt-[5px] border border-border bg-surface-elevated px-[9px] py-[6px]"
     >
-      <summary className="flex min-h-[24px] cursor-pointer list-none items-baseline gap-2 overflow-hidden whitespace-nowrap rounded-[4px] font-mono text-[11.5px] leading-[1.5] focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2 [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-[24px] cursor-pointer list-none items-baseline gap-2 overflow-hidden whitespace-nowrap font-mono text-[11.5px] leading-[1.5] focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2 [&::-webkit-details-marker]:hidden">
         <span
           aria-hidden="true"
           className="w-[9px] flex-none text-center text-[10px] leading-none text-text-tertiary transition-transform duration-[120ms] motion-reduce:transition-none group-open/subtask:rotate-90"
@@ -928,7 +872,7 @@ function SubtaskCard({
           — {subtask.excerpt}
         </span>
       </summary>
-      <pre className="m-0 mt-1.5 overflow-x-auto whitespace-pre-wrap break-words rounded-[6px] border border-border bg-surface-inset px-[10px] py-2 font-mono text-[11.5px] leading-[1.5] text-text-primary">
+      <pre className="m-0 mt-1.5 overflow-x-auto whitespace-pre-wrap break-words bg-code-bg px-[10px] py-2 font-mono text-[12px] leading-[1.5] text-code-fg">
         {subtask.prompt}
       </pre>
     </details>
@@ -1054,14 +998,18 @@ function ToolHistory({
     setOpen(event.currentTarget.open);
   };
 
-  const chip = CHIP_TONE[presentation.family];
   const chipTitle =
     presentation.label === presentation.family
       ? presentation.family
       : `${presentation.family} · ${presentation.label}`;
   return (
-    <details data-tool-id={item.toolUseId} open={open} onToggle={onToggle}>
-      <summary className="relative flex min-h-[24px] cursor-pointer list-none items-baseline gap-2 overflow-hidden rounded-[6px] px-1.5 py-1 font-mono text-[12px] font-normal hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2 [&::-webkit-details-marker]:hidden">
+    <details
+      data-tool-id={item.toolUseId}
+      open={open}
+      onToggle={onToggle}
+      className="border border-border bg-surface"
+    >
+      <summary className="relative flex min-h-[32px] cursor-pointer list-none items-baseline gap-2 overflow-hidden px-2.5 py-[7px] font-sans text-[12px] font-normal hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2 [&::-webkit-details-marker]:hidden">
         <span
           aria-hidden="true"
           className={cn(
@@ -1073,27 +1021,16 @@ function ToolHistory({
         </span>{' '}
         <span className="sr-only">{presentation.statusLabel}</span>{' '}
         <span
-          aria-hidden="true"
-          className={cn(
-            'w-[12px] flex-none text-center text-[12px] font-bold leading-none',
-            GLYPH_TONE[presentation.statusLabel]
-          )}
-        >
-          {presentation.glyph}
-        </span>{' '}
-        <span
-          className={cn(
-            'max-w-[24ch] flex-none overflow-hidden text-ellipsis whitespace-nowrap rounded-[4px] border border-border bg-surface-elevated px-[7px] py-px text-[11px]',
-            chip.className
-          )}
-          style={chip.style}
+          className="max-w-[24ch] flex-none overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-extrabold text-text-primary"
           title={chipTitle}
           aria-label={chipTitle}
         >
           {presentation.label}
         </span>{' '}
-        <ToolHeadline presentation={presentation} />{' '}
-        <span className="flex min-w-0 items-baseline whitespace-nowrap text-[11px]">
+        <span className="flex min-w-0 flex-1 font-mono">
+          <ToolHeadline presentation={presentation} />
+        </span>{' '}
+        <span className="flex min-w-0 items-baseline whitespace-nowrap text-[12px]">
           {presentation.badges.map((badge, index) => (
             <span key={`${badge.kind}-${index}`} className="contents">
               {index > 0 ? (
@@ -1107,7 +1044,7 @@ function ToolHistory({
         </span>
       </summary>
       {open ? (
-        <div className="mb-2 ml-[29px] mt-0.5 border-l-2 border-border pl-2.5">
+        <div className="border-t border-border px-2.5 py-2">
           <div className="mb-1.5 flex items-center gap-2 font-mono text-[10.5px] text-text-secondary">
             <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
               {presentation.bodyBar.label}
@@ -1120,7 +1057,7 @@ function ToolHistory({
               aria-expanded={rawOpen}
               aria-controls={rawOpen ? rawPanelId : undefined}
               className={cn(
-                'flex min-h-[24px] flex-none items-center rounded-[4px] border px-[7px] font-mono text-[10.5px] focus-visible:outline-2 focus-visible:outline-accent-bright',
+                'flex min-h-[24px] flex-none items-center border px-[7px] font-mono text-[10.5px] focus-visible:outline-2 focus-visible:outline-accent-bright',
                 rawOpen
                   ? 'border-border-bright text-text-primary'
                   : 'border-border text-text-secondary hover:border-border-bright hover:text-text-primary focus-visible:border-border-bright focus-visible:text-text-primary'
@@ -1136,7 +1073,7 @@ function ToolHistory({
           {rawOpen ? (
             <pre
               id={rawPanelId}
-              className="m-0 min-w-0 max-w-full whitespace-pre-wrap rounded-[6px] border border-border bg-surface-inset px-2.5 py-2 font-mono text-[11.5px] leading-[1.5] text-text-primary [overflow-wrap:anywhere]"
+              className="m-0 min-w-0 max-w-full whitespace-pre-wrap bg-code-bg px-2.5 py-2 font-mono text-[12px] leading-[1.5] text-code-fg [overflow-wrap:anywhere]"
             >
               {toolRawPayloadJson(presentation.rawPayload)}
             </pre>
@@ -1249,67 +1186,46 @@ export function NodeRoom({
     }
   }
 
-  const renderItem = (item: AgentHistoryItem): React.ReactElement => {
-    if (item.kind === 'assistant') {
-      return (
-        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
-          <AssistantHistory item={item} />
-          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
-        </div>
-      );
-    }
-    if (item.kind === 'operator') {
-      return (
-        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
-          <OperatorHistory item={item} />
-          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
-        </div>
-      );
-    }
-    if (item.kind === 'thinking') {
-      return (
-        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
-          <ThinkingHistory item={item} />
-          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
-        </div>
-      );
-    }
-    if (item.kind === 'prompt') {
-      return (
-        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
-          <PromptHistory item={item} />
-          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
-        </div>
-      );
-    }
-    if (item.kind === 'advisor') {
-      return (
-        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
-          <AdvisorHistory item={item} />
-          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
-        </div>
-      );
-    }
-    if (item.kind === 'tool') {
-      return (
-        <div key={item.id} className={lastRowRing(item)} {...lastRowMarker(item)}>
-          <ToolHistory
-            item={item}
-            runId={runId}
-            nodeId={nodeId}
-            loadMessage={loadMessage}
-            checklist={item.id === latestTodoItemId ? todos : null}
-          />
-          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
-        </div>
-      );
-    }
-    return (
-      <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
-        <LifecycleHistory item={item} />
-        {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
+  // One stream row per item: the time column, then the item and anything attached to it.
+  const streamRow = (item: AgentHistoryItem, content: React.ReactNode): React.ReactElement => (
+    <div
+      key={item.id}
+      data-stream-row=""
+      className={cn(
+        'grid grid-cols-[64px_minmax(0,1fr)] border-b border-border py-2.5',
+        lastRowRing(item)
+      )}
+      {...lastRowMarker(item)}
+    >
+      <span className="pt-1 text-[11px] leading-none tabular-nums text-text-tertiary">
+        {streamTime(item.createdAt)}
+      </span>
+      <div className="min-w-0">
+        {content}
+        {renderAfterItem ? <div className="mt-2.5">{renderAfterItem(item)}</div> : null}
       </div>
-    );
+    </div>
+  );
+
+  const renderItem = (item: AgentHistoryItem): React.ReactElement => {
+    if (item.kind === 'assistant') return streamRow(item, <AssistantHistory item={item} />);
+    if (item.kind === 'operator') return streamRow(item, <OperatorHistory item={item} />);
+    if (item.kind === 'thinking') return streamRow(item, <ThinkingHistory item={item} />);
+    if (item.kind === 'prompt') return streamRow(item, <PromptHistory item={item} />);
+    if (item.kind === 'advisor') return streamRow(item, <AdvisorHistory item={item} />);
+    if (item.kind === 'tool') {
+      return streamRow(
+        item,
+        <ToolHistory
+          item={item}
+          runId={runId}
+          nodeId={nodeId}
+          loadMessage={loadMessage}
+          checklist={item.id === latestTodoItemId ? todos : null}
+        />
+      );
+    }
+    return streamRow(item, <LifecycleHistory item={item} />);
   };
 
   let body: React.ReactNode;
@@ -1329,7 +1245,7 @@ export function NodeRoom({
   } else {
     body = (
       <div
-        className="flex min-h-0 flex-1 flex-col px-3 py-2.5"
+        className="flex min-h-0 flex-1 flex-col px-6 pb-2.5"
         style={{ overflowWrap: 'anywhere' }}
       >
         {unknownScope ? (

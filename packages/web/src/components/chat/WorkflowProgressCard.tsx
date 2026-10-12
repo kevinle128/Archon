@@ -1,23 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import {
-  ArrowRight,
-  CheckCircle,
-  ChevronRight,
-  GitBranch,
-  Loader2,
-  Pause,
-  XCircle,
-} from 'lucide-react';
+import { CheckCircle, Loader2, Pause, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { approveWorkflowRun, getWorkflowRunByWorker, rejectWorkflowRun } from '@/lib/api';
 import { useWorkflowStore } from '@/stores/workflow-store';
-import { ConfirmRunActionDialog } from '@/components/dashboard/ConfirmRunActionDialog';
+import { ConfirmRunActionDialog } from '@/components/runs/ConfirmRunActionDialog';
 import { StatusIcon } from '@/components/workflows/StatusIcon';
 import { formatDurationMs } from '@/lib/format';
 import { isTerminalStatus } from '@/lib/workflow-utils';
 import type { DagNodeState } from '@/lib/types';
+import { buildRunPath } from '@/lib/runs/run-url';
+import { getStatusPresentation, STATUS_TONE_TEXT_CLASS } from '@/lib/status-presentation';
+import { ProgressStrip } from '@/components/ui/progress-strip';
 
 const STATUS_CHIP: Record<string, { label: string; className: string }> = {
   pending: { label: 'Starting', className: 'text-text-secondary' },
@@ -75,7 +70,6 @@ export function WorkflowProgressCard({
   const totalNodes = dagNodes.length;
   const currentNode = dagNodes.find(n => n.status === 'running');
   const chip = STATUS_CHIP[status ?? 'pending'] ?? STATUS_CHIP.pending;
-  const progressPct = totalNodes > 0 ? Math.round((completedCount / totalNodes) * 100) : 0;
   const isRunning = status === 'running' || status === 'pending';
   const isPaused = status === 'paused';
 
@@ -126,7 +120,7 @@ export function WorkflowProgressCard({
 
   const handleViewFullScreen = (): void => {
     if (runId) {
-      navigate(`/workflows/runs/${runId}`);
+      navigate(buildRunPath(runId));
     } else {
       navigate(`/chat/${encodeURIComponent(workerConversationId)}`);
     }
@@ -135,8 +129,8 @@ export function WorkflowProgressCard({
   // Loading state: no run data yet
   if (!runData && !isError) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 text-xs">
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+      <div className="flex max-w-[520px] items-center gap-2 border border-line-strong bg-card px-4 py-3 text-xs">
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary motion-reduce:animate-none" />
         <span className="truncate text-text-primary font-medium">{workflowName}</span>
         <span className="text-text-tertiary">Starting...</span>
       </div>
@@ -146,7 +140,7 @@ export function WorkflowProgressCard({
   // Error state: couldn't fetch run
   if (isError && !runData) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 text-xs">
+      <div className="flex max-w-[520px] items-center gap-2 border border-line-strong bg-card px-4 py-3 text-xs">
         <span className="text-error text-xs shrink-0">&#x26A0;</span>
         <span className="truncate text-text-primary font-medium">{workflowName}</span>
         <button
@@ -164,83 +158,61 @@ export function WorkflowProgressCard({
   const visibleNodes = dagNodes.slice(0, VISIBLE_NODE_ROWS);
   const hiddenCount = dagNodes.length - visibleNodes.length;
 
+  const presentation = getStatusPresentation(status ?? 'pending');
+
   return (
     <article
       aria-label={`Run ${workflowName}`}
       className={cn(
-        'overflow-hidden rounded-xl border border-border bg-surface',
-        isPaused && 'border-l-[3px] border-l-accent'
+        'max-w-[520px] border bg-card',
+        isPaused ? 'border-status-waiting' : 'border-line-strong'
       )}
     >
-      {/* Header: identity, status chip, and the way into the run */}
-      <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+      {/* Header: identity, status, and the expand control */}
+      <div className="flex items-baseline justify-between gap-2 px-4 pt-3 pb-2">
         <button
           type="button"
           onClick={handleHeaderClick}
           aria-expanded={expanded}
           aria-label={expanded ? 'Collapse run details' : 'Expand run details'}
-          className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-tertiary transition-colors duration-150 hover:bg-surface-elevated hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
+          className="min-w-0 cursor-pointer text-left"
         >
-          <ChevronRight
-            className={cn(
-              'h-4 w-4 transition-transform duration-200 motion-reduce:transition-none',
-              expanded && 'rotate-90'
-            )}
-            strokeWidth={1.5}
-          />
+          <span className="block text-[11px] text-text-secondary">
+            {runId !== undefined ? runId.slice(0, 8) : 'Starting'}
+          </span>
+          <span className="block text-sm font-bold break-words text-text-primary">
+            {workflowName}
+          </span>
         </button>
-        <GitBranch className="h-4 w-4 shrink-0 text-text-secondary" strokeWidth={1.5} />
-        <span className="min-w-0 truncate font-mono text-sm font-medium text-text-primary">
-          {workflowName}
+        <span
+          className={cn('flex-none text-xs font-bold', STATUS_TONE_TEXT_CLASS[presentation.tone])}
+        >
+          {presentation.glyph} {chip.label}
         </span>
-        <span className={cn('shrink-0 text-xs font-medium', chip.className)}>{chip.label}</span>
-        <span className="flex-1" />
+      </div>
+      {totalNodes > 0 && (
+        <ProgressStrip statuses={dagNodes.map(node => node.status)} className="mx-4" />
+      )}
+      <div className="flex items-baseline justify-between gap-2 px-4 pt-2 pb-3 text-xs text-text-secondary">
+        <span>
+          {totalNodes > 0
+            ? `${String(completedCount)} of ${String(totalNodes)} nodes`
+            : 'Waiting for nodes'}
+          {currentNode ? <span className="text-accent"> · {currentNode.name}</span> : null}
+          {isRunning && elapsed > 0 ? (
+            <span className="font-mono"> · {formatDurationMs(elapsed)}</span>
+          ) : finalDuration != null ? (
+            <span className="font-mono"> · {formatDurationMs(finalDuration)}</span>
+          ) : null}
+        </span>
         <button
           type="button"
           onClick={handleViewFullScreen}
-          className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-[10px] border border-border px-4 text-sm text-text-primary transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent"
+          className="flex-none cursor-pointer font-bold text-accent hover:underline"
         >
-          Open run
-          <ArrowRight className="h-4 w-4" strokeWidth={1.5} />
+          Open in Runs →
         </button>
       </div>
-
-      {/* Stats + progress */}
-      <div className="flex flex-wrap gap-x-6 gap-y-1 px-4 text-xs text-text-secondary">
-        {totalNodes > 0 && (
-          <span>
-            <b className="font-medium text-text-primary">
-              {String(completedCount)}/{String(totalNodes)}
-            </b>{' '}
-            nodes
-          </span>
-        )}
-        {currentNode && (
-          <span>
-            now <span className="font-mono text-accent">{currentNode.name}</span>
-          </span>
-        )}
-        {isRunning && elapsed > 0 ? (
-          <span className="font-mono">{formatDurationMs(elapsed)}</span>
-        ) : finalDuration != null ? (
-          <span className="font-mono">{formatDurationMs(finalDuration)}</span>
-        ) : null}
-      </div>
-      {totalNodes > 0 && (
-        <div
-          role="progressbar"
-          aria-label="Workflow progress"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={progressPct}
-          className="mx-4 mt-3 h-1 overflow-hidden rounded-full bg-surface-elevated"
-        >
-          <div
-            className="h-full rounded-full bg-accent transition-[width] duration-200 motion-reduce:transition-none"
-            style={{ width: `${String(progressPct)}%` }}
-          />
-        </div>
-      )}
 
       {/* Expanded body */}
       {expanded && (
@@ -297,7 +269,7 @@ export function WorkflowProgressCard({
                     approveMutation.mutate();
                   }}
                   disabled={!runId || approveMutation.isPending || rejectMutation.isPending}
-                  className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-[10px] px-3 text-sm text-success transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
+                  className="flex min-h-11 cursor-pointer items-center gap-1.5 px-3 text-sm text-success transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
                 >
                   <CheckCircle className="h-4 w-4" strokeWidth={1.5} />
                   Approve
@@ -306,7 +278,7 @@ export function WorkflowProgressCard({
                   trigger={
                     <button
                       disabled={!runId || approveMutation.isPending || rejectMutation.isPending}
-                      className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-[10px] px-3 text-sm text-error transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
+                      className="flex min-h-11 cursor-pointer items-center gap-1.5 px-3 text-sm text-error transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
                     >
                       <XCircle className="h-4 w-4" strokeWidth={1.5} />
                       Reject
@@ -362,7 +334,6 @@ export function WorkflowProgressCard({
           )}
         </div>
       )}
-      <div className="h-3" />
     </article>
   );
 }

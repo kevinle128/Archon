@@ -70,7 +70,7 @@ describe('WorkflowAskChrome', () => {
     const awaiting = renderChrome();
     const awaitingMarkup = renderToStaticMarkup(awaiting);
     expect(awaitingMarkup).toContain('Awaiting input (2)');
-    expect(awaitingMarkup).toContain('text-warning');
+    expect(awaitingMarkup).toContain('text-status-waiting');
     expect(awaitingMarkup).toContain('aria-live="polite"');
     expect(awaitingMarkup).not.toContain('text-error');
 
@@ -111,6 +111,6 @@ describe('WorkflowAskChrome', () => {
     expect(cap7Markup).toContain('role="alert"');
     expect(cap7Markup).toContain('text-error');
     expect(cap7Markup).not.toContain('Awaiting input');
-    expect(cap7Markup).not.toContain('text-warning');
+    expect(cap7Markup).not.toContain('text-status-waiting');
   });
 });

@@ -55,7 +55,7 @@ export function NodeUsageDisclosure({ nodeId }: { nodeId: string }): ReactElemen
         onClick={(): void => {
           setExpanded(open => !open);
         }}
-        className="-ml-2 inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-[10px] px-2 text-xs text-text-tertiary transition-colors duration-150 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
+        className="-ml-2 inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-none px-2 text-xs text-text-tertiary transition-colors duration-150 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
       >
         {expanded ? (
           <ChevronDown aria-hidden="true" strokeWidth={2} className="h-3.5 w-3.5" />

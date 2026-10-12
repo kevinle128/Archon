@@ -62,7 +62,7 @@ function TodoStripRow({ item, current }: { item: TodoItem; current: boolean }): 
   return (
     <li
       className={cn(
-        'flex items-baseline gap-2 rounded-[4px] py-[1px] pr-[4px] pl-[2px] font-mono text-[11.5px] leading-[1.85]',
+        'flex items-baseline gap-2 rounded-none py-[1px] pr-[4px] pl-[2px] font-mono text-[11.5px] leading-[1.85]',
         current ? cn('bg-surface text-text-primary', RUNNING_MARKER) : 'text-text-secondary'
       )}
     >
@@ -124,7 +124,7 @@ export function TodoStrip({ phases }: TodoStripProps): React.ReactElement | null
   const representative = summary.current;
 
   return (
-    <section aria-label="Todo" className="flex-none border-t border-border bg-surface-elevated">
+    <section aria-label="Todo" className="flex-none border-t border-border bg-surface">
       <button
         type="button"
         aria-expanded={open}
@@ -132,7 +132,7 @@ export function TodoStrip({ phases }: TodoStripProps): React.ReactElement | null
         onClick={(): void => {
           setOpen(value => !value);
         }}
-        className="flex min-h-[24px] w-full items-center gap-2 overflow-hidden whitespace-nowrap px-[10px] py-[6px] text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2"
+        className="flex min-h-[24px] w-full items-center gap-2 overflow-hidden whitespace-nowrap px-6 py-[6px] text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2"
       >
         <span className="flex-none text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary">
           TODO
@@ -183,7 +183,7 @@ export function TodoStrip({ phases }: TodoStripProps): React.ReactElement | null
         id={bodyId}
         data-testid="todo-list"
         hidden={!open}
-        className="max-h-[168px] overflow-y-auto border-t border-border px-[10px] pb-[8px] pt-[4px]"
+        className="max-h-[168px] overflow-y-auto border-t border-border px-6 pb-[8px] pt-[4px]"
       >
         <TodoChecklist phases={phases} />
       </div>

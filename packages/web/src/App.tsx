@@ -5,14 +5,15 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from '@/components/layout/Layout';
 import { ProjectProvider } from '@/contexts/ProjectContext';
 import { queryClient } from '@/lib/query-client';
-import { DashboardPage } from '@/routes/DashboardPage';
 import { ChatPage } from '@/routes/ChatPage';
+import { RunsPage } from '@/routes/RunsPage';
+import { LegacyRunRedirect } from '@/components/runs/LegacyRunRedirect';
 import { WorkflowsPage } from '@/routes/WorkflowsPage';
-import { WorkflowExecutionPage } from '@/routes/WorkflowExecutionPage';
 import { WorkflowBuilderPage } from '@/routes/WorkflowBuilderPage';
 import { SettingsPage } from '@/routes/SettingsPage';
 import { LoginPage } from '@/routes/LoginPage';
 import { SessionGate } from '@/components/auth/SessionGate';
+import { RedirectWithSearch } from '@/components/shell/RedirectWithSearch';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -78,13 +79,16 @@ export function App(): React.ReactElement {
                   </SessionGate>
                 }
               >
-                <Route path="/" element={<Navigate to="/chat" replace />} />
+                <Route path="/" element={<Navigate to="/runs" replace />} />
+                <Route path="/runs" element={<RunsPage />} />
+                <Route path="/runs/:runId" element={<RunsPage />} />
+                <Route path="/runs/:runId/:nodeId" element={<RunsPage />} />
+                <Route path="/dashboard" element={<RedirectWithSearch to="/runs" />} />
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/chat/*" element={<ChatPage />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/workflows" element={<WorkflowsPage />} />
                 <Route path="/workflows/builder" element={<WorkflowBuilderPage />} />
-                <Route path="/workflows/runs/:runId" element={<WorkflowExecutionPage />} />
+                <Route path="/workflows/runs/:runId" element={<LegacyRunRedirect />} />
                 <Route path="/workflows/runs" element={<Navigate to="/workflows" replace />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/modernist-e24aa044-ad6a-428b-b2d0-5369bdd0a859/styles.css">
+  <script src="_ds/modernist-e24aa044-ad6a-428b-b2d0-5369bdd0a859/_ds_bundle.js"></script>
+  <script src="archon-runs.js"></script>
+  <script src="archon-app.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    button { font: inherit; color: inherit; }
+    a { color: #2563eb; } a:hover { color: #1d4ed8; }
+  </style>
+</helmet>
+<div style="height: 100vh; display: flex; flex-direction: column; font-family: var(--font-body); font-variant-numeric: tabular-nums; --color-bg: #f5f7fa; --color-surface: #eaeef3; --color-text: #1a2130; --color-divider: #e2e6ed; --color-accent: #2563eb; --color-accent-600: #1d4ed8; background: #f5f7fa; color: #1a2130;">
+
+  <div style="display: flex; align-items: stretch; height: 48px; flex: none; background: #1a2130; color: #f1f4f9;">
+    <a href="Archon%20Runs%20Workspace.dc.html" style="display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); color: #f1f4f9; text-decoration: none;"><svg viewBox="0 0 64 64" width="20" height="20" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true" style="display: block; flex: none;"><rect x="20" y="4" width="24" height="8"></rect><rect x="12" y="12" width="16" height="8"></rect><rect x="36" y="12" width="16" height="8"></rect><rect x="4" y="20" width="16" height="8"></rect><rect x="44" y="20" width="16" height="8"></rect><rect x="4" y="28" width="56" height="8"></rect><rect x="4" y="36" width="16" height="24"></rect><rect x="44" y="36" width="16" height="24"></rect></svg><span style="font-family: var(--font-heading); font-weight: 800; font-size: 16px;">Archon</span></a>
+    <nav style="display: flex; align-items: stretch; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none;">
+      <a href="Archon%20Runs%20Workspace.dc.html" style="flex: none; display: flex; align-items: center; padding: 0 var(--space-4); border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: #9aa5b8; text-decoration: none;" style-hover="color: #f1f4f9;">Runs</a>
+      <a href="Archon%20Workflows.dc.html" style="flex: none; display: flex; align-items: center; padding: 0 var(--space-4); border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: #9aa5b8; text-decoration: none;" style-hover="color: #f1f4f9;">Workflows</a>
+      <a href="Archon%20Chat.dc.html" style="flex: none; display: flex; align-items: center; padding: 0 var(--space-4); border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: #9aa5b8; text-decoration: none;" style-hover="color: #f1f4f9;">Chat</a>
+      <a href="Archon%20Builder.dc.html" style="flex: none; display: flex; align-items: center; padding: 0 var(--space-4); border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: #9aa5b8; text-decoration: none;" style-hover="color: #f1f4f9;">Builder</a>
+      <a href="Archon%20Settings.dc.html" style="flex: none; display: flex; align-items: center; padding: 0 var(--space-4); border-bottom: 3px solid #7aa2ff; font-size: 14px; font-weight: 600; color: #f1f4f9; text-decoration: none;">Settings</a>
+    </nav>
+    <label style="display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); border-left: 1px solid #2c364a; font-size: 12px; color: #9aa5b8; white-space: nowrap;">Project
+      <select value="{{ project }}" onChange="{{ setProject }}" style="height: 30px; padding: 0 var(--space-2); border: 1px solid #2c364a; border-radius: 0; background: #1a2130; color: #f1f4f9; font-family: var(--font-body); font-size: 13px; font-weight: 600; cursor: pointer; max-width: 240px;">
+        <sc-for list="{{ projectOpts }}" as="p" hint-placeholder-count="4"><option value="{{ p.value }}">{{ p.label }}</option></sc-for>
+      </select>
+    </label>
+    <a href="Archon%20Runs%20Workspace.dc.html" style="flex: none; display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); background: #d97706; color: #ffffff; font-size: 13px; font-weight: 600; text-decoration: none;"><span style="font-family: var(--font-heading); font-weight: 800; font-size: 20px;">{{ needsCount }}</span> Needs you</a>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);">
+    <aside style="display: flex; flex-direction: column; min-height: 0; overflow: auto; border-right: 2px solid #c9d0db;">
+      <div style="padding: var(--space-3) var(--space-4); font-family: var(--font-heading); font-weight: 800; font-size: 20px;">Settings</div>
+      <sc-for list="{{ secs }}" as="x" hint-placeholder-count="7">
+        <button type="button" onClick="{{ x.on }}" style="display: flex; justify-content: space-between; gap: var(--space-2); padding: 10px var(--space-4); border: 0; border-left: 3px solid {{ x.bar }}; background: {{ x.bg }}; cursor: pointer; text-align: left; font-size: 14px; font-weight: 600;" style-hover="background: #e4ecfb;"><span>{{ x.label }}</span><span style="font-size: 12px; font-weight: 400; color: {{ x.hintFg }};">{{ x.hint }}</span></button>
+      </sc-for>
+      <div style="flex: 1;"></div>
+      <div style="padding: var(--space-3) var(--space-4); border-top: 1px solid #e2e6ed; font-size: 12px; color: #5a6478;">
+        <div style="font-weight: 700; color: #1a2130;">kevin@archon.dev</div>
+        <a href="Archon%20Login.dc.html" style="display: inline-block; margin-top: 2px; font-weight: 600;">Sign out</a>
+      </div>
+    </aside>
+
+    <main style="min-height: 0; overflow: auto;">
+      <div style="max-width: 880px; padding: var(--space-6) var(--space-8) var(--space-8);">
+        <div style="font-family: var(--font-heading); font-weight: 800; font-size: 28px; line-height: 1.15;">{{ cur.label }}</div>
+        <div style="font-size: 14px; line-height: 1.55; color: #5a6478; margin-top: var(--space-1); max-width: 64ch;">{{ cur.desc }}</div>
+        <div style="height: 2px; background: #1a2130; margin: var(--space-4) 0 0;"></div>
+
+        <sc-if value="{{ s_providers }}" hint-placeholder-val="{{ true }}">
+          <sc-for list="{{ providers }}" as="p" hint-placeholder-count="5">
+            <div style="border-bottom: 1px solid #e2e6ed;">
+              <div style="display: grid; grid-template-columns: minmax(0, 1.2fr) 88px minmax(0, 1.2fr) 112px 120px; gap: var(--space-3); align-items: center; padding: var(--space-3) 0;">
+                <span style="font-size: 14px; font-weight: 700;">{{ p.name }}</span>
+                <span style="font-size: 12px; color: #5a6478;">{{ p.auth }}</span>
+                <span style="font-size: 13px; font-family: ui-monospace, Menlo, monospace; color: {{ p.valFg }}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.value }}</span>
+                <span style="font-size: 12px; font-weight: 700; color: {{ p.stFg }};">{{ p.stGlyph }} {{ p.stLabel }}</span>
+                <button type="button" class="btn btn-secondary" onClick="{{ p.on }}" style="padding: 4px 10px; font-size: 13px; white-space: nowrap;">{{ p.action }}</button>
+              </div>
+              <sc-if value="{{ p.editing }}" hint-placeholder-val="{{ false }}">
+                <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--space-2); padding: 0 0 var(--space-3);">
+                  <input class="input" type="{{ p.inputType }}" placeholder="{{ p.placeholder }}" value="{{ keyDraft }}" onChange="{{ setKeyDraft }}" style="background: #ffffff; font-family: ui-monospace, Menlo, monospace; font-size: 13px;">
+                  <button type="button" class="btn btn-primary" onClick="{{ p.save }}" style="background: #2563eb; border-color: #2563eb; color: #ffffff; padding: 6px 12px; font-size: 13px;">{{ p.saveLabel }}</button>
+                  <button type="button" class="btn btn-ghost" onClick="{{ cancelEdit }}" style="padding: 6px 12px; font-size: 13px;">Cancel</button>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </sc-if>
+
+        <sc-if value="{{ s_tiers }}" hint-placeholder-val="{{ false }}">
+          <sc-for list="{{ tierRows }}" as="t" hint-placeholder-count="3">
+            <div style="display: grid; grid-template-columns: 96px minmax(0, 1fr) minmax(200px, 260px); gap: var(--space-3); align-items: center; padding: var(--space-3) 0; border-bottom: 1px solid #e2e6ed;">
+              <span style="font-family: var(--font-heading); font-size: 18px; font-weight: 800;">{{ t.tier }}</span>
+              <span style="font-size: 13px; color: #5a6478;">{{ t.use }}</span>
+              <select class="input" value="{{ t.model }}" onChange="{{ t.onChange }}" style="min-height: 34px; font-size: 13px; background: #ffffff; color: #1a2130; border-radius: 0; font-family: ui-monospace, Menlo, monospace;">
+                <sc-for list="{{ models }}" as="m" hint-placeholder-count="6"><option value="{{ m.v }}">{{ m.v }}</option></sc-for>
+              </select>
+            </div>
+          </sc-for>
+          <div style="font-size: 12px; color: #5a6478; margin-top: var(--space-3);">Nodes set <span style="font-family: ui-monospace, Menlo, monospace;">model: small | medium | large</span>. Changes apply to the next node that starts.</div>
+        </sc-if>
+
+        <sc-if value="{{ s_aliases }}" hint-placeholder-val="{{ false }}">
+          <sc-for list="{{ aliases }}" as="a" hint-placeholder-count="3">
+            <div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; padding: var(--space-3) 0; border-bottom: 1px solid #e2e6ed;">
+              <span style="font-family: ui-monospace, Menlo, monospace; font-size: 14px; font-weight: 700;">{{ a.name }}</span>
+              <span style="font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: #5a6478;">→ {{ a.model }}</span>
+              <button type="button" class="btn btn-ghost" onClick="{{ a.remove }}" style="padding: 4px 10px; font-size: 13px;">Remove</button>
+            </div>
+          </sc-for>
+          <div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; padding: var(--space-3) 0;">
+            <input class="input" placeholder="@name" value="{{ aliasName }}" onChange="{{ setAliasName }}" style="background: #ffffff; font-family: ui-monospace, Menlo, monospace; font-size: 13px;">
+            <select class="input" value="{{ aliasModel }}" onChange="{{ setAliasModel }}" style="min-height: 34px; font-size: 13px; background: #ffffff; color: #1a2130; border-radius: 0; font-family: ui-monospace, Menlo, monospace;">
+              <sc-for list="{{ models }}" as="m" hint-placeholder-count="6"><option value="{{ m.v }}">{{ m.v }}</option></sc-for>
+            </select>
+            <button type="button" class="btn btn-primary" onClick="{{ addAlias }}" style="background: #2563eb; border-color: #2563eb; color: #ffffff; padding: 6px 12px; font-size: 13px;">Add alias</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ s_projects }}" hint-placeholder-val="{{ false }}">
+          <sc-for list="{{ projects }}" as="p" hint-placeholder-count="3">
+            <div style="display: grid; grid-template-columns: minmax(0, 1.4fr) 64px minmax(0, 1fr) 80px auto; gap: var(--space-3); align-items: center; padding: var(--space-3) 0; border-bottom: 1px solid #e2e6ed; background: {{ p.bg }};">
+              <span style="min-width: 0;"><span style="display: block; font-size: 14px; font-weight: 700; word-break: break-word;">{{ p.name }}</span><span style="display: block; font-size: 12px; color: #5a6478; font-family: ui-monospace, Menlo, monospace;">{{ p.path }}</span></span>
+              <span style="font-size: 12px; color: #5a6478;">{{ p.kind }}</span>
+              <span style="font-size: 12px; font-family: ui-monospace, Menlo, monospace;">{{ p.branchText }}</span>
+              <span style="font-size: 12px; color: #5a6478;">{{ p.runsText }}</span>
+              <button type="button" class="btn btn-ghost" onClick="{{ p.remove }}" style="padding: 4px 10px; font-size: 13px;">Remove</button>
+            </div>
+          </sc-for>
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); padding: var(--space-3) 0;">
+            <input class="input" placeholder="Path or GitHub URL, e.g. ~/code/api or github.com/acme/api" value="{{ projDraft }}" onChange="{{ setProjDraft }}" style="background: #ffffff; font-size: 13px;">
+            <button type="button" class="btn btn-primary" onClick="{{ addProject }}" style="background: #2563eb; border-color: #2563eb; color: #ffffff; padding: 6px 12px; font-size: 13px;">Add project</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ s_github }}" hint-placeholder-val="{{ false }}">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; padding: var(--space-4) 0; border-bottom: 1px solid #e2e6ed;">
+            <span><span style="display: block; font-size: 15px; font-weight: 700;">GitHub App</span><span style="display: block; font-size: 13px; color: #5a6478; margin-top: 2px;">{{ ghText }}</span></span>
+            <button type="button" onClick="{{ toggleGh }}" style="width: 52px; height: 28px; padding: 3px; border: 2px solid #1a2130; background: {{ ghTrack }}; cursor: pointer; display: flex; justify-content: {{ ghAlign }};"><span style="width: 18px; height: 18px; background: {{ ghKnob }};"></span></button>
+          </div>
+          <sc-if value="{{ gh }}" hint-placeholder-val="{{ true }}">
+            <div style="display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: var(--space-2) var(--space-3); padding: var(--space-4) 0; font-size: 13px;">
+              <span style="color: #5a6478;">Account</span><span style="font-weight: 600;">kevinle128</span>
+              <span style="color: #5a6478;">Repositories</span><span style="font-weight: 600;">kevinle128/Archon, kevinle128/billing-service</span>
+              <span style="color: #5a6478;">Webhook</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px;">https://archon.local/webhooks/github</span>
+              <span style="color: #5a6478;">Trigger on</span><span style="display: flex; flex-wrap: wrap; gap: var(--space-2);"><sc-for list="{{ ghTriggers }}" as="g" hint-placeholder-count="3"><button type="button" onClick="{{ g.on }}" style="padding: 3px 8px; border: 1px solid {{ g.bd }}; background: {{ g.bg }}; color: {{ g.fg }}; font-size: 12px; font-weight: 600; cursor: pointer;">{{ g.label }}</button></sc-for></span>
+            </div>
+          </sc-if>
+        </sc-if>
+
+        <sc-if value="{{ s_usage }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; gap: var(--space-4); margin-top: var(--space-3); border-bottom: 1px solid #e2e6ed;">
+            <sc-for list="{{ periods }}" as="p" hint-placeholder-count="3"><button type="button" onClick="{{ p.on }}" style="padding: var(--space-2) 0; border: 0; border-bottom: 3px solid {{ p.bd }}; margin-bottom: -1px; background: none; font-size: 13px; font-weight: 600; color: {{ p.fg }}; cursor: pointer;">{{ p.label }}</button></sc-for>
+          </div>
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) 80px 100px 120px; gap: var(--space-3); padding: var(--space-3) 0 var(--space-2); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #5a6478; border-bottom: 1px solid #c9d0db;"><span>Provider</span><span style="text-align: right;">Runs</span><span style="text-align: right;">Tokens</span><span style="text-align: right;">Cost</span></div>
+          <sc-for list="{{ usage }}" as="u" hint-placeholder-count="3">
+            <div style="display: grid; grid-template-columns: minmax(0, 1fr) 80px 100px 120px; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid #e2e6ed; font-size: 14px;"><span style="font-weight: 700;">{{ u.p }}</span><span style="text-align: right;">{{ u.runs }}</span><span style="text-align: right;">{{ u.tok }}</span><span style="text-align: right; font-weight: 600;">{{ u.cost }}</span></div>
+          </sc-for>
+          <div style="font-size: 12px; color: #5a6478; margin-top: var(--space-3);">Sample values. Subscription providers do not report per-run cost.</div>
+        </sc-if>
+
+        <sc-if value="{{ s_system }}" hint-placeholder-val="{{ false }}">
+          <div style="display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: var(--space-2) var(--space-3); padding: var(--space-4) 0; font-size: 13px; border-bottom: 1px solid #e2e6ed;">
+            <span style="color: #5a6478;">Version</span><span style="font-weight: 600;">0.9.4</span>
+            <span style="color: #5a6478;">Data directory</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px;">~/.archon</span>
+            <span style="color: #5a6478;">Database</span><span style="font-weight: 600;">SQLite · 23 migrations applied</span>
+            <span style="color: #5a6478;">Worktrees</span><span style="font-weight: 600;">{{ wtText }}</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-4) 0;">
+            <button type="button" class="btn btn-secondary" onClick="{{ checkUpdate }}" style="padding: 6px 12px; font-size: 13px;">{{ updLabel }}</button>
+            <button type="button" class="btn btn-secondary" onClick="{{ pruneWt }}" style="padding: 6px 12px; font-size: 13px;">Prune finished worktrees</button>
+          </div>
+        </sc-if>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { project: 'all', sec: 'providers', edit: -1, keyDraft: '', prov: null, tiers: null, aliases: null, aliasName: '', aliasModel: 'claude-sonnet-4-5', projects: null, projDraft: '', gh: true, trig: { 'Issue labeled archon': true, 'PR opened': true, '@archon mention': false }, period: '30d', upd: 0, wt: 7 };
+  componentDidMount() {
+    const go = () => { const A = window.ArchonApp; this.setState({ project: A.loadProject(), prov: A.settings.providers.map(p => ({ ...p })), tiers: A.settings.tiers.map(t => ({ ...t })), aliases: A.settings.aliases.slice(), projects: A.projects.slice() }); };
+    if (window.ArchonApp && window.ArchonRuns) go(); else this._p = setInterval(() => { if (window.ArchonApp && window.ArchonRuns) { clearInterval(this._p); go(); } }, 50);
+  }
+  componentWillUnmount() { clearInterval(this._p); }
+  renderVals() {
+    const A = window.ArchonApp, RD = window.ArchonRuns, s = this.state;
+    if (!A || !RD || !s.prov) return {};
+    const c = A.c;
+    const missing = s.prov.filter(p => !p.ok).length;
+    const S = [
+      ['providers', 'Providers', 'Accounts and keys Archon uses to run agents. Keys stay on this machine.', missing ? missing + ' not set' : ''],
+      ['tiers', 'Model tiers', 'Workflows ask for a tier, not a model. Pick which model each tier uses.', ''],
+      ['aliases', 'Aliases', 'Short names you can use in chat and in node model fields.', String(s.aliases.length)],
+      ['projects', 'Projects', 'Folders and repositories Archon can run workflows in.', String(s.projects.length)],
+      ['github', 'GitHub', 'Start runs from issues and pull requests, and post results back.', s.gh ? 'On' : 'Off'],
+      ['usage', 'Usage', 'Runs, tokens and spend by provider.', ''],
+      ['system', 'System', 'Version, storage and maintenance.', '']
+    ];
+    const secs = S.map(([k, label, , hint]) => ({ label, hint, hintFg: k === 'providers' && missing ? c.wait : c.muted, on: () => this.setState({ sec: k, edit: -1 }), bg: s.sec === k ? c.sel : 'transparent', bar: s.sec === k ? c.accent : 'transparent' }));
+    const cs = S.find(x => x[0] === s.sec);
+    const flags = {}; S.forEach(x => { flags['s_' + x[0]] = s.sec === x[0]; });
+    const providers = s.prov.map((p, i) => {
+      const login = p.auth === 'Login';
+      return { ...p, valFg: p.ok ? c.text : c.faint, stGlyph: p.ok ? '✓' : '○', stLabel: p.ok ? 'Connected' : 'Not set', stFg: p.ok ? c.done : c.muted,
+        action: p.ok ? (login ? 'Sign out' : 'Replace key') : (login ? 'Sign in' : 'Add key'), editing: s.edit === i, inputType: login ? 'text' : 'password', placeholder: login ? 'Account email' : p.name + ' API key', saveLabel: login ? 'Sign in' : 'Save key',
+        on: () => { if (p.ok && login) { const pr = s.prov.slice(); pr[i] = { ...p, ok: false, value: 'Not set' }; this.setState({ prov: pr, edit: -1 }); } else this.setState({ edit: s.edit === i ? -1 : i, keyDraft: '' }); },
+        save: () => { const v = s.keyDraft.trim(); if (!v) return; const pr = s.prov.slice(); pr[i] = { ...p, ok: true, value: login ? v : v.slice(0, 6) + '••••' + v.slice(-4) }; this.setState({ prov: pr, edit: -1, keyDraft: '' }); } };
+    });
+    const models = A.settings.models.map(v => ({ v }));
+    const tierRows = s.tiers.map((t, i) => ({ ...t, onChange: e => { const ts = s.tiers.slice(); ts[i] = { ...t, model: e.target.value }; this.setState({ tiers: ts }); } }));
+    const aliases = s.aliases.map((a, i) => ({ ...a, remove: () => this.setState({ aliases: s.aliases.filter((_, j) => j !== i) }) }));
+    const projects = s.projects.map((p, i) => ({ ...p, branchText: p.branch || 'no git', runsText: RD.runs.filter(r => r.project === p.name).length + ' runs', bg: s.project === p.name ? c.sel : 'transparent', remove: () => this.setState({ projects: s.projects.filter((_, j) => j !== i) }) }));
+    const u = A.settings.usage[s.period].map(([p, runs, tok, cost]) => ({ p, runs: String(runs), tok, cost }));
+    return {
+      project: s.project, projectOpts: A.projectOpts(RD.runs), setProject: e => { A.saveProject(e.target.value); this.setState({ project: e.target.value }); }, needsCount: String(A.needs(RD.runs)),
+      secs, cur: { label: cs[1], desc: cs[2] }, ...flags,
+      providers, keyDraft: s.keyDraft, setKeyDraft: e => this.setState({ keyDraft: e.target.value }), cancelEdit: () => this.setState({ edit: -1 }),
+      tierRows, models, aliases, aliasName: s.aliasName, aliasModel: s.aliasModel, setAliasName: e => this.setState({ aliasName: e.target.value }), setAliasModel: e => this.setState({ aliasModel: e.target.value }),
+      addAlias: () => { let n = s.aliasName.trim(); if (!n) return; if (n[0] !== '@') n = '@' + n; this.setState({ aliases: s.aliases.concat([{ name: n, model: s.aliasModel }]), aliasName: '' }); },
+      projects, projDraft: s.projDraft, setProjDraft: e => this.setState({ projDraft: e.target.value }),
+      addProject: () => { const v = s.projDraft.trim(); if (!v) return; const gh = v.includes('github.com'); const name = gh ? v.split('github.com/')[1].replace(/\/$/, '') : v.split('/').filter(Boolean).slice(-1)[0]; this.setState({ projects: s.projects.concat([{ name, kind: gh ? 'GitHub' : 'Folder', branch: gh ? 'main' : '', path: gh ? '~/.archon/repos/' + name : v }]), projDraft: '' }); },
+      gh: s.gh, toggleGh: () => this.setState({ gh: !s.gh }), ghText: s.gh ? 'Connected as kevinle128. Runs can start from GitHub events.' : 'Off. Runs only start from Archon.', ghTrack: s.gh ? c.accent : '#ffffff', ghKnob: s.gh ? '#ffffff' : c.text, ghAlign: s.gh ? 'flex-end' : 'flex-start',
+      ghTriggers: Object.keys(s.trig).map(k => ({ label: (s.trig[k] ? '✓ ' : '') + k, on: () => this.setState({ trig: { ...s.trig, [k]: !s.trig[k] } }), bg: s.trig[k] ? c.sel : '#ffffff', bd: s.trig[k] ? c.accent : c.strong, fg: s.trig[k] ? c.accent : c.muted })),
+      periods: [['7d', '7 days'], ['30d', '30 days'], ['all', 'All time']].map(([k, label]) => ({ label, on: () => this.setState({ period: k }), bd: s.period === k ? c.accent : 'transparent', fg: s.period === k ? c.text : c.muted })), usage: u,
+      wtText: s.wt + ' on disk · ' + (s.wt ? '2 in use by active runs' : 'none in use'), pruneWt: () => this.setState({ wt: Math.min(s.wt, 2) }),
+      updLabel: ['Check for updates', 'Checking…', 'Up to date · 0.9.4'][s.upd], checkUpdate: () => { this.setState({ upd: 1 }); setTimeout(() => this.setState({ upd: 2 }), 900); }
+    };
+  }
+}
+</script>
+</body>
+</html>

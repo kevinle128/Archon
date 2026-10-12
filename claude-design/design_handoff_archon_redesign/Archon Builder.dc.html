@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/modernist-e24aa044-ad6a-428b-b2d0-5369bdd0a859/styles.css">
+  <script src="_ds/modernist-e24aa044-ad6a-428b-b2d0-5369bdd0a859/_ds_bundle.js"></script>
+  <script src="archon-runs.js"></script>
+  <script src="archon-app.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    button { font: inherit; color: inherit; }
+    a { color: #2563eb; } a:hover { color: #1d4ed8; }
+  </style>
+</helmet>
+<div style="height: 100vh; display: flex; flex-direction: column; font-family: var(--font-body); font-variant-numeric: tabular-nums; --color-bg: #f5f7fa; --color-surface: #eaeef3; --color-text: #1a2130; --color-divider: #e2e6ed; --color-accent: #2563eb; --color-accent-600: #1d4ed8; background: #f5f7fa; color: #1a2130;">
+
+  <div style="display: flex; align-items: stretch; height: 48px; flex: none; background: #1a2130; color: #f1f4f9;">
+    <a href="Archon%20Runs%20Workspace.dc.html" style="display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); color: #f1f4f9; text-decoration: none;"><svg viewBox="0 0 64 64" width="20" height="20" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true" style="display: block; flex: none;"><rect x="20" y="4" width="24" height="8"></rect><rect x="12" y="12" width="16" height="8"></rect><rect x="36" y="12" width="16" height="8"></rect><rect x="4" y="20" width="16" height="8"></rect><rect x="44" y="20" width="16" height="8"></rect><rect x="4" y="28" width="56" height="8"></rect><rect x="4" y="36" width="16" height="24"></rect><rect x="44" y="36" width="16" height="24"></rect></svg><span style="font-family: var(--font-heading); font-weight: 800; font-size: 16px;">Archon</span></a>
+    <nav style="display: flex; align-items: stretch; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none;">
+      <a href="Archon%20Runs%20Workspace.dc.html" style="flex: none; display: flex; align-items: center; padding: 0 var(--space-4); border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: #9aa5b8; text-decoration: none;" style-hover="color: #f1f4f9;">Runs</a>
+      <a href="Archon%20Workflows.dc.html" style="flex: none; display: flex; align-items: center; padding: 0 var(--space-4); border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: #9aa5b8; text-decoration: none;" style-hover="color: #f1f4f9;">Workflows</a>
+      <a href="Archon%20Chat.dc.html" style="flex: none; display: flex; align-items: center; padding: 0 var(--space-4); border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: #9aa5b8; text-decoration: none;" style-hover="color: #f1f4f9;">Chat</a>
+      <a href="Archon%20Builder.dc.html" style="flex: none; display: flex; align-items: center; padding: 0 var(--space-4); border-bottom: 3px solid #7aa2ff; font-size: 14px; font-weight: 600; color: #f1f4f9; text-decoration: none;">Builder</a>
+      <a href="Archon%20Settings.dc.html" style="flex: none; display: flex; align-items: center; padding: 0 var(--space-4); border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: #9aa5b8; text-decoration: none;" style-hover="color: #f1f4f9;">Settings</a>
+    </nav>
+    <label style="display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); border-left: 1px solid #2c364a; font-size: 12px; color: #9aa5b8; white-space: nowrap;">Project
+      <select value="{{ project }}" onChange="{{ setProject }}" style="height: 30px; padding: 0 var(--space-2); border: 1px solid #2c364a; border-radius: 0; background: #1a2130; color: #f1f4f9; font-family: var(--font-body); font-size: 13px; font-weight: 600; cursor: pointer; max-width: 240px;">
+        <sc-for list="{{ projectOpts }}" as="p" hint-placeholder-count="4"><option value="{{ p.value }}">{{ p.label }}</option></sc-for>
+      </select>
+    </label>
+    <a href="Archon%20Runs%20Workspace.dc.html" style="flex: none; display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); background: #d97706; color: #ffffff; font-size: 13px; font-weight: 600; text-decoration: none;"><span style="font-family: var(--font-heading); font-weight: 800; font-size: 20px;">{{ needsCount }}</span> Needs you</a>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(300px, 380px);">
+
+    <aside style="display: flex; flex-direction: column; min-height: 0; overflow: auto; border-right: 2px solid #c9d0db;">
+      <div style="padding: var(--space-3) var(--space-4);">
+        <div style="font-family: var(--font-heading); font-weight: 800; font-size: 20px;">Builder</div>
+        <label style="display: flex; flex-direction: column; gap: 4px; margin-top: var(--space-2); font-size: 12px; font-weight: 600; color: #5a6478;">Start from
+          <select class="input" value="{{ base }}" onChange="{{ setBase }}" style="min-height: 32px; font-size: 13px; background: #ffffff; color: #1a2130; border-radius: 0;">
+            <sc-for list="{{ baseOpts }}" as="o" hint-placeholder-count="5"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+          </select>
+        </label>
+      </div>
+      <div style="padding: 0 var(--space-4); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #5a6478;">Add node</div>
+      <div style="padding: var(--space-1) var(--space-4) var(--space-3); font-size: 12px; color: #5a6478; line-height: 1.4;">{{ addHint }}</div>
+      <div style="border-top: 1px solid #e2e6ed;">
+        <sc-for list="{{ palette }}" as="k" hint-placeholder-count="5">
+          <button type="button" onClick="{{ k.add }}" style="width: 100%; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: var(--space-2); align-items: baseline; padding: var(--space-2) var(--space-4); border: 0; border-bottom: 1px solid #e2e6ed; background: none; cursor: pointer; text-align: left;" style-hover="background: #e4ecfb;">
+            <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.04em; color: #5a6478;">{{ k.code }}</span>
+            <span><span style="display: block; font-size: 13px; font-weight: 700;">{{ k.label }}</span><span style="display: block; font-size: 12px; color: #5a6478;">{{ k.desc }}</span></span>
+            <span style="font-weight: 800; color: #2563eb;">+</span>
+          </button>
+        </sc-for>
+      </div>
+    </aside>
+
+    <section style="display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #e2e6ed;">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-6); border-bottom: 1px solid #e2e6ed;">
+        <input class="input" value="{{ name }}" onChange="{{ setName }}" style="flex: 1; min-width: 200px; font-family: var(--font-heading); font-weight: 800; font-size: 20px; min-height: 40px; background: #ffffff;">
+        <span style="font-size: 12px; font-weight: 600; color: {{ statsFg }};">{{ stats }}</span>
+        <button type="button" class="btn btn-secondary" onClick="{{ validate }}" style="padding: 6px 12px; font-size: 13px;">Validate</button>
+        <button type="button" class="btn btn-primary" onClick="{{ save }}" style="padding: 6px 12px; font-size: 13px; background: #2563eb; border-color: #2563eb; color: #ffffff;">{{ saveLabel }}</button>
+      </div>
+      <sc-if value="{{ hasNotice }}" hint-placeholder-val="{{ false }}"><div style="padding: var(--space-2) var(--space-6); font-size: 13px; font-weight: 600; background: {{ noticeBg }}; color: {{ noticeFg }}; border-bottom: 1px solid #e2e6ed;">{{ notice }}</div></sc-if>
+      <div style="flex: 1; min-height: 0; overflow: auto; padding: var(--space-4) var(--space-6);">
+        <div style="display: flex; align-items: stretch; min-height: 100%; width: max-content;">
+          <sc-for list="{{ cols }}" as="L" hint-placeholder-count="4">
+            <div style="display: flex; align-items: stretch;">
+              <sc-if value="{{ L.notFirst }}" hint-placeholder-val="{{ false }}"><div style="width: 36px; display: flex; align-items: flex-start; justify-content: center; padding-top: 52px; color: #98a1b2; font-weight: 800;">→</div></sc-if>
+              <div style="width: 220px; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-top: 2px solid #1a2130; background: {{ L.bg }};">
+                <div style="display: flex; justify-content: space-between; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #5a6478;"><span>Step {{ L.num }}</span><span>{{ L.par }}</span></div>
+                <sc-for list="{{ L.nodes }}" as="n" hint-placeholder-count="1">
+                  <button type="button" onClick="{{ n.on }}" style="display: flex; flex-direction: column; gap: 4px; padding: var(--space-2) var(--space-3); border: {{ n.bd }}; background: {{ n.bg }}; cursor: pointer; text-align: left;" style-hover="border-color: #2563eb;">
+                    <span style="display: flex; justify-content: space-between; gap: var(--space-2); font-size: 10px; font-weight: 800; letter-spacing: 0.04em; color: #5a6478;"><span>{{ n.code }}</span><span>{{ n.tier }}</span></span>
+                    <span style="font-size: 13px; font-weight: 700; word-break: break-word;">{{ n.id }}</span>
+                    <sc-if value="{{ n.hasWhen }}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; color: #d97706; font-weight: 600;">conditional</span></sc-if>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <sc-if value="{{ canvasEmpty }}" hint-placeholder-val="{{ false }}"><div style="font-size: 14px; color: #5a6478;">No nodes. Add one from the left.</div></sc-if>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; min-height: 0; background: #f5f7fa;">
+      <div style="display: flex; padding: 0 var(--space-6); border-bottom: 1px solid #e2e6ed; flex: none;">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="2">
+          <button type="button" onClick="{{ t.on }}" style="flex: none; padding: var(--space-3) 0 var(--space-2); margin-right: var(--space-4); border: 0; border-bottom: 3px solid {{ t.bd }}; margin-bottom: -1px; background: none; font-size: 13px; font-weight: 600; color: {{ t.fg }}; cursor: pointer;">{{ t.label }}</button>
+        </sc-for>
+      </div>
+      <sc-if value="{{ tabNode }}" hint-placeholder-val="{{ true }}">
+        <div style="flex: 1; overflow: auto; padding: var(--space-4) var(--space-6);">
+          <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; flex-direction: column; gap: var(--space-3);">
+              <div style="font-size: 12px; color: #5a6478;">{{ sel.kindLabel }} node</div>
+              <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: #5a6478;">ID
+                <input class="input" value="{{ sel.id }}" onChange="{{ setId }}" style="font-size: 14px; font-weight: 700; background: #ffffff; font-family: ui-monospace, Menlo, monospace;">
+              </label>
+              <div style="display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 4px var(--space-3); font-size: 13px; align-items: center;">
+                <span style="color: #5a6478;">Step</span>
+                <span style="display: flex; align-items: center; gap: var(--space-2);"><button type="button" class="btn btn-secondary" onClick="{{ moveLeft }}" disabled="{{ cantLeft }}" style="padding: 2px 8px; font-size: 13px;">←</button><span style="font-weight: 700;">{{ sel.num }}</span><button type="button" class="btn btn-secondary" onClick="{{ moveRight }}" style="padding: 2px 8px; font-size: 13px;">→</button></span>
+                <span style="color: #5a6478;">Depends on</span><span style="font-weight: 600; word-break: break-word;">{{ sel.deps }}</span>
+              </div>
+              <sc-if value="{{ sel.hasModel }}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: #5a6478;">Model tier
+                  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; border: 1px solid #c9d0db;">
+                    <sc-for list="{{ tiers }}" as="o" hint-placeholder-count="3"><button type="button" onClick="{{ o.on }}" style="padding: 7px var(--space-3); border: 0; background: {{ o.bg }}; color: {{ o.fg }}; font-size: 13px; font-weight: 600; cursor: pointer; text-align: left;">{{ o.label }}</button></sc-for>
+                  </div>
+                  <span style="font-weight: 400;">{{ tierModel }}</span>
+                </div>
+              </sc-if>
+              <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: #5a6478;">{{ sel.bodyLabel }}
+                <textarea class="input" rows="5" value="{{ sel.body }}" onChange="{{ setBody }}" style="font-size: 13px; background: #ffffff; font-family: ui-monospace, Menlo, monospace; resize: vertical;"></textarea>
+              </label>
+              <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: #5a6478;">Run only when (optional)
+                <input class="input" value="{{ sel.when }}" onChange="{{ setWhen }}" placeholder="$plan.output.ok == true" style="font-size: 13px; background: #ffffff; font-family: ui-monospace, Menlo, monospace;">
+              </label>
+              <button type="button" class="btn btn-secondary" onClick="{{ remove }}" style="align-self: flex-start; padding: 5px 10px; font-size: 13px; color: #dc2626; border-color: #dc2626;">Delete node</button>
+            </div>
+          </sc-if>
+          <sc-if value="{{ noSel }}" hint-placeholder-val="{{ false }}"><div style="font-size: 14px; color: #5a6478;">Select a node to edit it.</div></sc-if>
+        </div>
+      </sc-if>
+      <sc-if value="{{ tabYaml }}" hint-placeholder-val="{{ false }}">
+        <div style="flex: 1; overflow: auto; padding: var(--space-4) var(--space-6);">
+          <div style="font-size: 12px; color: #5a6478; margin-bottom: var(--space-2);">.archon/workflows/{{ name }}.yaml</div>
+          <pre style="margin: 0; padding: var(--space-4); background: #1a2130; color: #e6e9f0; font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;">{{ yaml }}</pre>
+        </div>
+      </sc-if>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { project: 'all', base: '', name: '', nodes: [], sel: '', tab: 'node', notice: '', noticeKind: 'ok', saved: false, n: 0 };
+  componentDidMount() {
+    const go = () => { this.setState({ project: window.ArchonApp.loadProject() }); this.load('archon-issue-review-full'); };
+    if (window.ArchonApp && window.ArchonRuns) go(); else this._p = setInterval(() => { if (window.ArchonApp && window.ArchonRuns) { clearInterval(this._p); go(); } }, 50);
+  }
+  componentWillUnmount() { clearInterval(this._p); }
+  load(name) {
+    const A = window.ArchonApp, W = A.workflows.find(w => w.name === name);
+    if (!W) { this.setState({ base: 'blank', name: 'my-workflow', nodes: [], sel: '', notice: '', saved: false }); return; }
+    const nodes = W.nodes.map(([id, kind, layer]) => ({ id, kind, layer, tier: kind === 'bash' || kind === 'approval' ? '' : layer === 0 ? 'large' : 'medium', when: '', body: this.defBody(id, kind) }));
+    this.setState({ base: name, name: W.name + '-copy', nodes, sel: nodes[1] ? nodes[1].id : nodes[0].id, notice: '', saved: false });
+  }
+  defBody(id, kind) {
+    return { command: id, prompt: 'Review the changes for ' + id.replace(/^review__/, '') + '. Report findings with file and line.', bash: 'bun run verify', loop: 'until: ALL_TASKS_DONE\nmax_iterations: 8', approval: 'Approve to continue' }[kind];
+  }
+  renderVals() {
+    const A = window.ArchonApp, RD = window.ArchonRuns, s = this.state;
+    if (!A || !RD) return {};
+    const c = A.c, pad = n => String(n).padStart(2, '0');
+    const nodes = s.nodes, maxL = nodes.length ? Math.max(...nodes.map(n => n.layer)) : -1;
+    const upd = (id, patch) => this.setState({ nodes: nodes.map(n => n.id === id ? { ...n, ...patch } : n), saved: false, notice: '' });
+    const depsOf = n => nodes.filter(m => m.layer === n.layer - 1).map(m => m.id);
+    const ids = nodes.map(n => n.id), dupIds = ids.filter((x, i) => ids.indexOf(x) !== i);
+    const gaps = []; for (let L = 0; L <= maxL; L++) if (!nodes.some(n => n.layer === L)) gaps.push(L + 1);
+    const errs = dupIds.map(d => 'Duplicate id "' + d + '"').concat(gaps.map(g => 'Step ' + pad(g) + ' is empty')).concat(nodes.filter(n => !n.id.trim()).map(() => 'A node has no id'));
+    const cols = [];
+    for (let L = 0; L <= maxL; L++) {
+      const ns = nodes.filter(n => n.layer === L).map(n => { const sel = n.id === s.sel; return { ...n, code: A.kinds[n.kind].code, tier: n.tier, hasWhen: !!n.when.trim(), on: () => this.setState({ sel: n.id, tab: 'node' }), bg: sel ? c.sel : '#ffffff', bd: sel ? '2px solid ' + c.accent : '1px solid ' + c.strong }; });
+      cols.push({ num: pad(L + 1), nodes: ns, par: ns.length > 1 ? 'Parallel · ' + ns.length : '', notFirst: L > 0, bg: ns.length ? c.surface : '#fdecea' });
+    }
+    const S = nodes.find(n => n.id === s.sel);
+    const sel = S ? { ...S, num: pad(S.layer + 1), kindLabel: A.kinds[S.kind].label, deps: depsOf(S).join(', ') || 'Nothing, runs first', hasModel: !!S.tier, bodyLabel: { command: 'Command file', prompt: 'Prompt', bash: 'Script', loop: 'Loop settings', approval: 'Message to the approver' }[S.kind] } : {};
+    const models = { small: 'claude-haiku-4-5', medium: 'claude-sonnet-4-5', large: 'claude-opus-4-1' };
+    const tiers = ['small', 'medium', 'large'].map(t => ({ label: t, on: () => upd(S.id, { tier: t }), bg: S && S.tier === t ? c.text : 'transparent', fg: S && S.tier === t ? '#ffffff' : c.text }));
+    const add = kind => {
+      const n = s.n + 1, layer = S ? S.layer + 1 : maxL + 1, base = 'new-' + kind + (n > 1 ? '-' + n : '');
+      this.setState({ nodes: nodes.concat([{ id: base, kind, layer, tier: kind === 'bash' || kind === 'approval' ? '' : 'medium', when: '', body: this.defBody(base, kind) }]), sel: base, n, tab: 'node', saved: false, notice: '' });
+    };
+    const ind = (t, k) => t.split('\n').map(l => ' '.repeat(k) + l).join('\n');
+    const yaml = 'name: ' + s.name + '\ndescription: Built in Archon Builder\nnodes:\n' + nodes.slice().sort((a, b) => a.layer - b.layer).map(n => {
+      const d = depsOf(n);
+      let b = n.kind === 'command' ? '    command: ' + n.body : n.kind === 'bash' ? '    bash: |\n' + ind(n.body, 6) : n.kind === 'prompt' ? '    prompt: |\n' + ind(n.body, 6) : n.kind === 'loop' ? '    loop:\n' + ind(n.body, 6) : '    approval:\n      message: ' + n.body;
+      return '  - id: ' + n.id + '\n' + b + (d.length ? '\n    depends_on: [' + d.join(', ') + ']' : '') + (n.tier ? '\n    model: ' + n.tier : '') + (n.when.trim() ? '\n    when: "' + n.when.trim() + '"' : '');
+    }).join('\n');
+    const noticeMap = { ok: [c.sel, c.accent], err: ['#fdecea', c.fail], saved: ['#e7f6ec', c.done] };
+    const nm = noticeMap[s.noticeKind] || noticeMap.ok;
+    return {
+      project: s.project, projectOpts: A.projectOpts(RD.runs), setProject: e => { A.saveProject(e.target.value); this.setState({ project: e.target.value }); }, needsCount: String(A.needs(RD.runs)),
+      base: s.base, baseOpts: [{ value: 'blank', label: 'Blank workflow' }].concat(A.workflows.map(w => ({ value: w.name, label: w.name }))), setBase: e => this.load(e.target.value),
+      addHint: S ? 'Adds to the step after ' + S.id + '.' : 'Adds a new step at the end.',
+      palette: Object.keys(A.kinds).map(k => ({ ...A.kinds[k], add: () => add(k) })),
+      name: s.name, setName: e => this.setState({ name: e.target.value.replace(/\s+/g, '-'), saved: false }),
+      stats: nodes.length + ' nodes · ' + (maxL + 1) + ' steps · ' + (errs.length ? errs.length + ' error' + (errs.length > 1 ? 's' : '') : '0 errors'), statsFg: errs.length ? c.fail : c.muted,
+      validate: () => this.setState(errs.length ? { notice: errs.join(' · '), noticeKind: 'err' } : { notice: 'Valid. ' + nodes.length + ' nodes, every dependency resolves.', noticeKind: 'ok' }),
+      save: () => this.setState(errs.length ? { notice: 'Fix before saving: ' + errs.join(' · '), noticeKind: 'err' } : { saved: true, notice: 'Saved to .archon/workflows/' + s.name + '.yaml in ' + (s.project === 'all' ? A.projects[0].name : s.project) + '.', noticeKind: 'saved' }),
+      saveLabel: s.saved ? 'Saved' : 'Save', hasNotice: !!s.notice, notice: s.notice, noticeBg: nm[0], noticeFg: nm[1],
+      cols, canvasEmpty: nodes.length === 0,
+      tabs: [['node', 'Inspector'], ['yaml', 'YAML']].map(([k, label]) => ({ label, on: () => this.setState({ tab: k }), bd: s.tab === k ? c.accent : 'transparent', fg: s.tab === k ? c.text : c.muted })),
+      tabNode: s.tab === 'node', tabYaml: s.tab === 'yaml', hasSel: !!S, noSel: !S, sel, tiers, tierModel: S && S.tier ? 'Resolves to ' + models[S.tier] + ' (Settings › Model tiers)' : '',
+      setId: e => { const v = e.target.value.replace(/\s+/g, '-'); upd(S.id, { id: v }); this.setState({ sel: v }); },
+      setBody: e => upd(S.id, { body: e.target.value }), setWhen: e => upd(S.id, { when: e.target.value }),
+      moveLeft: () => S && S.layer > 0 && upd(S.id, { layer: S.layer - 1 }), moveRight: () => S && upd(S.id, { layer: S.layer + 1 }), cantLeft: !S || S.layer === 0,
+      remove: () => { const rest = nodes.filter(n => n.id !== S.id); this.setState({ nodes: rest, sel: rest[0] ? rest[0].id : '', saved: false }); },
+      yaml
+    };
+  }
+}
+</script>
+</body>
+</html>

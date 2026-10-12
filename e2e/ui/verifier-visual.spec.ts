@@ -18,10 +18,9 @@ import {
 
 const tooling = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const target = env.ARCHON_E2E_REPO_ROOT ?? tooling;
-const designRoot =
-  '_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups';
 const mockRoot = '_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup';
 const steeringMockRoot = 'claude-design/design_handoff_node_room_transcript_steering';
+const redesignRoot = 'claude-design/design_handoff_archon_redesign';
 const queueMessages = ['wrong suite — use -p archon-workflows', 'and skip the doctests'] as const;
 // States captured from the prepared transcript-display run rather than the HITL run.
 const transcriptStates = new Set(['assistant-report', 'runtime-graph']);
@@ -77,7 +76,7 @@ async function openRoom(
   if (surface === 'console') await openRunDetail(page, runId, nodeId);
   else {
     await openLegacyRunDetail(page, runId);
-    await page.getByRole('tab', { name: 'Logs', exact: true }).click();
+    await page.getByRole('radio', { name: 'List', exact: true }).click();
     await page
       .getByRole('button', { name: new RegExp(rowName) })
       .first()
@@ -149,8 +148,9 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
               });
             } else {
               await openLegacyRunDetail(page, runId);
-              const graphTab = page.getByRole('tab', { name: 'Graph', exact: true });
-              if ((await graphTab.count()) > 0) await graphTab.click();
+              const graphTab = page.getByRole('radio', { name: 'Graph', exact: true });
+              await expect(graphTab).toBeVisible({ timeout: 30_000 });
+              await graphTab.click();
               await expect(page.locator('.react-flow__node').first()).toBeVisible({
                 timeout: 30_000,
               });
@@ -164,31 +164,6 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
                   ? TRANSCRIPT_STRUCTURED_NODE
                   : HITL_INSPECT_NODE;
             room = await openRoom(page, surface, runId, node, node.split('.').at(-1) ?? node);
-            if (viewport.width === 1440) {
-              // Both rooms are fixed pixel widths with no drag handle
-              // (packages/web/src/lib/room-split-layout.ts) — 520px Console,
-              // 460px Legacy. The ratio write below is inert on both
-              // surfaces (kept for a minimal diff); the measured width
-              // always lands on the fixed value for its surface.
-              const desktopRoomWidth = surface === 'console' ? 520 : 460;
-              const panel = page.locator(`#${surface}-run-room`);
-              const metrics = await panel.evaluate(el => ({
-                width: el.getBoundingClientRect().width,
-                group: el.parentElement!.getBoundingClientRect().width,
-              }));
-              const width = (await room.boundingBox())!.width;
-              const ratio = ((desktopRoomWidth + metrics.width - width) / metrics.group) * 100;
-              await page.evaluate(
-                ({ key, ratio }): void => {
-                  localStorage.setItem(key, String(ratio));
-                },
-                { key: `archon.run-room.ratio.${surface}`, ratio }
-              );
-              room = await openRoom(page, surface, runId, node, node.split('.').at(-1) ?? node);
-              expect(
-                Math.abs((await room.boundingBox())!.width - desktopRoomWidth)
-              ).toBeLessThanOrEqual(2);
-            }
             // Enter keyboard modality before setting the capture's focus target.
             // Legacy reaches the room by pointer, which suppresses :focus-visible.
             await page.keyboard.press('Tab');
@@ -237,13 +212,6 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
             const header = reference.getByRole('button', { name: /Queued.*2/i });
             await expect(header).toBeVisible({ timeout: 30_000 });
             expected = header.locator('xpath=..');
-          } else if (state === 'ask-pending') {
-            source = `${mockRoot}/${surface === 'console' ? 'console' : 'index'}.html`;
-            await reference.goto(pathToFileURL(join(target, source)).href);
-            if (surface === 'legacy')
-              await reference.getByRole('button', { name: 'Chat', exact: true }).click();
-            expected = reference.locator('#ask-clarify');
-            await expect(expected).toBeVisible({ timeout: 30_000 });
           } else if (state === 'runtime-graph') {
             source = `${mockRoot}/${surface === 'console' ? 'console' : 'index'}.html`;
             await reference.goto(pathToFileURL(join(target, source)).href);
@@ -251,19 +219,24 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
             expected = reference.locator(surface === 'console' ? '#cc-graph' : '#tab-graph');
             await expect(reference.locator('.gnode').first()).toBeVisible({ timeout: 30_000 });
           } else {
-            source =
-              state === 'raw-open'
-                ? `${designRoot}/key-transcript-states.html`
-                : `${designRoot}/key-${surface}-node-room.html`;
+            source = `${redesignRoot}/Archon Runs Workspace.dc.html`;
             await reference.goto(pathToFileURL(join(target, source)).href);
-            expected =
-              state === 'raw-open'
-                ? reference
-                    .locator('details')
-                    .filter({ has: reference.getByRole('button', { name: 'Raw ▾', exact: true }) })
-                : state === 'assistant-report'
-                  ? reference.locator('.asst').last()
-                  : reference.locator('.tcall').first();
+            // The handoff renders stream rows from template ids; the file is sha-pinned.
+            const streamRow = (text: RegExp): Locator =>
+              reference.getByText(text).first().locator('xpath=ancestor::*[@data-dc-tpl="146"][1]');
+            if (state === 'ask-pending') {
+              await reference.getByText('ak-feature · Issue #266', { exact: true }).click();
+              expected = reference
+                .getByText(/agent is asking you/i)
+                .first()
+                .locator('xpath=ancestor::*[@data-dc-tpl="171"][1]');
+            } else if (state === 'assistant-report') {
+              expected = streamRow(/^Picking up from investigate/);
+            } else {
+              expected = streamRow(/^214 lines$/);
+              if (state === 'raw-open') await expected.getByRole('button').first().click();
+            }
+            await expect(expected).toBeVisible({ timeout: 30_000 });
           }
           await expect(expected).toBeVisible();
           await expected.evaluate((element, width): void => {
@@ -271,6 +244,12 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
             region.style.width = `${width}px`;
             region.style.maxWidth = `${width}px`;
           }, actualGeometry.width);
+          if (state === 'runtime-graph') {
+            // The mockup lays its graph out for the full width; refit it to the
+            // narrowed region so the nodes stay inside the reference capture.
+            await reference.getByRole('button', { name: 'Fit', exact: true }).first().click();
+            await expect(reference.locator('.gnode').first()).toBeInViewport();
+          }
           await expected.scrollIntoViewIfNeeded();
           await reference.evaluate(async (): Promise<void> => {
             await document.fonts.ready;

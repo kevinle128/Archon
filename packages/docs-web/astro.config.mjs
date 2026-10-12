@@ -8,15 +8,25 @@ export default defineConfig({
     starlight({
       title: 'Archon',
       favicon: '/favicon.png',
+      // The top bar is navy in both themes, so the light logo uses the top bar text color.
       logo: {
-        src: './src/assets/logo.png',
+        light: './src/assets/logo-header.svg',
+        dark: './src/assets/logo-dark.svg',
         alt: 'Archon',
       },
       description: 'AI workflow engine — package your coding workflows as YAML, run them anywhere.',
       head: [
+        { tag: 'link', attrs: { rel: 'preconnect', href: 'https://fonts.googleapis.com' } },
         {
-          tag: 'script',
-          content: `if(!localStorage.getItem('archon-theme-init')){localStorage.setItem('archon-theme-init','1');localStorage.setItem('starlight-theme','dark');document.documentElement.dataset.theme='dark';}`,
+          tag: 'link',
+          attrs: { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: true },
+        },
+        {
+          tag: 'link',
+          attrs: {
+            rel: 'stylesheet',
+            href: 'https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap',
+          },
         },
         {
           tag: 'link',
@@ -33,9 +43,9 @@ export default defineConfig({
         baseUrl: 'https://github.com/coleam00/Archon/edit/main/packages/docs-web/',
       },
       sidebar: [
-        { label: '✦  Marketplace', link: '/workflows/' },
-        { label: '🗺️  Roadmap', link: '/roadmap/' },
-        { label: '🎨  Brand', link: '/brand/' },
+        { label: 'Marketplace', link: '/workflows/' },
+        { label: 'Roadmap', link: '/roadmap/' },
+        { label: 'Brand', link: '/brand/' },
         {
           label: 'The Book of Archon',
           autogenerate: { directory: 'book' },
@@ -66,6 +76,35 @@ export default defineConfig({
         },
       ],
       customCss: ['./src/styles/custom.css'],
+      // Code blocks are dark in both themes, as in the web app. One theme, and
+      // the colors come from tokens in custom.css.
+      expressiveCode: {
+        themes: ['github-dark-dimmed'],
+        useStarlightDarkModeSwitch: false,
+        useStarlightUiThemeColors: false,
+        styleOverrides: {
+          borderRadius: '0',
+          borderColor: 'var(--archon-code-bg)',
+          codeBackground: 'var(--archon-code-bg)',
+          codeForeground: 'var(--archon-code-fg)',
+          codeFontFamily: 'ui-monospace, Menlo, monospace',
+          uiFontFamily: 'var(--__sl-font)',
+          frames: {
+            shadowColor: 'transparent',
+            editorTabBarBackground: 'var(--archon-code-bar)',
+            editorActiveTabBackground: 'var(--archon-code-bg)',
+            editorActiveTabIndicatorTopColor: 'var(--archon-code-accent)',
+            editorTabBarBorderBottomColor: 'var(--archon-code-line)',
+            terminalTitlebarBackground: 'var(--archon-code-bar)',
+            terminalTitlebarBorderBottomColor: 'var(--archon-code-line)',
+            terminalTitlebarDotsForeground: 'var(--archon-code-muted)',
+            terminalBackground: 'var(--archon-code-bg)',
+            inlineButtonBorder: 'var(--archon-code-muted)',
+            inlineButtonForeground: 'var(--archon-code-fg)',
+            tooltipSuccessBackground: 'var(--archon-code-accent)',
+          },
+        },
+      },
       plugins: [
         starlightLlmsTxt({
           description:

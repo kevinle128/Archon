@@ -1,27 +1,31 @@
 {
   "id": "run-ui",
-  "description": "Console and Legacy workflow rooms, tools and Ask with visual proof",
+  "description": "Runs workspace run view and node rooms, tools and Ask with visual proof against the redesign handoff",
   "impact_paths": [
     "packages/web/src/components/workflows/",
+    "packages/web/src/components/runs/",
+    "packages/web/src/routes/RunsPage.tsx",
     "packages/web/src/experiments/console/",
     "packages/web/src/lib/",
     "packages/web/src/index.css",
     "e2e/",
+    "claude-design/design_handoff_archon_redesign/",
     "claude-design/design_handoff_node_room_transcript_steering/",
     "_bmad-output/specs/spec-workflow-run-view-hitl/",
-    "_bmad-output/specs/spec-agent-node-room/",
-    "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/",
     ".agents/skills/verify-archon/"
   ],
   "behaviors": [
     {
       "id": "ui.rooms",
-      "description": "Rooms preserve navigation, Log/Graph/Artifacts state, deep links and narrow layout.",
+      "description": "The Runs workspace preserves the run list, run column, node room tabs, List/Graph state, deep links, legacy redirects and narrow layout.",
       "priority": 1,
       "impact_paths": [
         "packages/web/src/components/workflows/",
         "packages/web/src/experiments/console/components/inspect/",
-        "packages/web/src/lib/room-split-layout.ts"
+        "packages/web/src/lib/room-split-layout.ts",
+        "packages/web/src/components/runs/",
+        "packages/web/src/routes/RunsPage.tsx",
+        "packages/web/src/lib/runs/"
       ],
       "scenarios": [
         "ui.rooms",
@@ -191,7 +195,7 @@
       "id": "ui.visual",
       "runner": {
         "kind": "browser",
-        "id": "visual-1a141953a52b15333d95a67d17a60b676dbd435c7df2812e92c5e66c919400dc"
+        "id": "visual-ad63942d258074df12dd2729c97f648c4e85412ac10f46a5d08fd140e70cf19a"
       },
       "prerequisites": [
         "Bun and installed target dependencies",

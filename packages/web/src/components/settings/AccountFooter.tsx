@@ -1,0 +1,83 @@
+import { useNavigate } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
+import { LogOut } from 'lucide-react';
+import { getUpdateCheck, getAuthStatus } from '@/lib/api';
+import { useSession, signOut } from '@/lib/auth-client';
+
+const iconButtonClass =
+  'flex h-8 w-8 shrink-0 items-center justify-center text-text-secondary hover:bg-selection hover:text-text-primary';
+
+/** Identity, version, update notice and sign out (web auth only). */
+export function AccountFooter(): React.ReactElement {
+  const navigate = useNavigate();
+
+  // Web-auth identity (only shown when auth is enabled).
+  const { data: authStatus } = useQuery({
+    queryKey: ['auth-status'],
+    queryFn: getAuthStatus,
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: session } = useSession();
+
+  const { data: updateCheck } = useQuery({
+    queryKey: ['update-check'],
+    queryFn: getUpdateCheck,
+    staleTime: 60 * 60 * 1000,
+    refetchInterval: 60 * 60 * 1000,
+    retry: false,
+  });
+
+  async function handleSignOut(): Promise<void> {
+    await signOut();
+    navigate('/login', { replace: true });
+  }
+
+  const user = authStatus?.enabled ? session?.user : undefined;
+  const displayName = user ? user.name || user.email : null;
+
+  return (
+    <div className="flex items-center gap-2 border-t border-border px-4 py-3">
+      {displayName && (
+        <span
+          className="flex h-7 w-7 shrink-0 items-center justify-center border border-line-strong bg-card text-xs font-bold text-text-primary"
+          aria-hidden
+        >
+          {displayName.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <div className="grid min-w-0 flex-1 leading-snug">
+        {displayName && (
+          <span className="truncate text-xs font-bold text-text-primary" title={user?.email}>
+            {displayName}
+          </span>
+        )}
+        <span className="truncate text-xs text-text-tertiary">
+          Archon v{import.meta.env.VITE_APP_VERSION as string}
+          {updateCheck?.updateAvailable && updateCheck.releaseUrl && (
+            <a
+              href={updateCheck.releaseUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-1.5 inline-flex items-center gap-1 text-accent hover:underline"
+              title={`v${updateCheck.latestVersion} available`}
+            >
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
+              v{updateCheck.latestVersion}
+            </a>
+          )}
+        </span>
+      </div>
+      {user && (
+        <button
+          type="button"
+          onClick={() => void handleSignOut()}
+          title="Sign out"
+          aria-label="Sign out"
+          className={iconButtonClass}
+        >
+          <LogOut className="h-5 w-5" strokeWidth={1.5} />
+        </button>
+      )}
+    </div>
+  );
+}

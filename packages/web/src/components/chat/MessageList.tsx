@@ -3,13 +3,9 @@ import { useNavigate } from 'react-router';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDown, ArrowRight, MessageSquare } from 'lucide-react';
-import { PixelLogo } from '@/components/brand/PixelLogo';
+import { ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MessageBubble } from './MessageBubble';
-import { ToolCallCard } from './ToolCallCard';
-import { ErrorCard } from './ErrorCard';
-import { WorkflowProgressCard } from './WorkflowProgressCard';
 import { ArtifactViewerModal } from '@/components/workflows/ArtifactViewerModal';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { useWorkflowStore } from '@/stores/workflow-store';
@@ -18,6 +14,7 @@ import { StatusIcon } from '@/components/workflows/StatusIcon';
 import { ArtifactSummary } from '@/components/workflows/ArtifactSummary';
 import { formatDurationMs, ensureUtc } from '@/lib/format';
 import type { ChatMessage, WorkflowArtifact, ArtifactType } from '@/lib/types';
+import { buildRunPath } from '@/lib/runs/run-url';
 
 // Matches artifact paths (forward- and back-slash safe); groups: [1] runId, [2] filename
 const ARTIFACT_PATH_RE = /artifacts[/\\]runs[/\\]([a-fA-F0-9-]+)[/\\](.+)/;
@@ -220,13 +217,13 @@ function WorkflowResultCard({
             </span>
           )}
           {!fetchFailed && duration != null && (
-            <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] text-text-secondary shrink-0">
+            <span className="rounded-none bg-surface px-2 py-0.5 text-[10px] text-text-secondary shrink-0">
               {formatDurationMs(duration)}
             </span>
           )}
           <button
             onClick={(): void => {
-              navigate(`/workflows/runs/${runId}`);
+              navigate(buildRunPath(runId));
             }}
             className="text-[10px] text-primary hover:text-accent-bright transition-colors shrink-0"
           >
@@ -285,8 +282,6 @@ interface MessageListProps {
   projectName?: string;
   /** Provider or model label shown in each agent message byline. */
   assistantLabel?: string;
-  /** Called when user clicks a quick action: receives a message string to send or 'focus'. */
-  onQuickAction?: (action: string) => void;
 }
 
 function MessageListRaw({
@@ -298,9 +293,7 @@ function MessageListRaw({
   isNewChat,
   projectName,
   assistantLabel,
-  onQuickAction,
 }: MessageListProps): React.ReactElement {
-  const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const { isAtBottom, scrollToBottom } = useAutoScroll(
     containerRef,
@@ -331,54 +324,18 @@ function MessageListRaw({
   }, [scrollToTimestamp, scrollToTrigger]);
 
   if (messages.length === 0) {
-    if (isNewChat) {
-      return (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="flex w-full max-w-md flex-col items-center gap-6 px-8">
-            <div className="flex flex-col items-center gap-4 text-center">
-              <PixelLogo label="" className="h-10 w-10 text-text-primary" />
-              <h2 className="text-xl font-semibold text-text-primary">
-                What would you like to do?
-              </h2>
-            </div>
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button
-                variant="outline"
-                onClick={(): void => {
-                  navigate('/workflows');
-                }}
-                className="min-h-11 gap-1.5 rounded-[10px]"
-              >
-                Run a workflow
-                <ArrowRight className="h-4 w-4" strokeWidth={1.5} />
-              </Button>
-              <Button
-                variant="outline"
-                onClick={(): void => onQuickAction?.('focus')}
-                className="min-h-11 rounded-[10px]"
-              >
-                Ask a question
-              </Button>
-              <Button
-                variant="outline"
-                onClick={(): void => onQuickAction?.('/status')}
-                className="min-h-11 rounded-[10px] font-mono"
-              >
-                /status
-              </Button>
-            </div>
-            {projectName && (
-              <p className="text-center text-xs text-text-tertiary">Project: {projectName}</p>
-            )}
-          </div>
-        </div>
-      );
-    }
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="flex flex-col items-center gap-3 text-text-tertiary">
-          <MessageSquare className="h-10 w-10" />
-          <p className="text-sm">Send a message to start chatting</p>
+      <div className="min-h-0 flex-1 overflow-auto px-6">
+        <div className="max-w-[52ch] py-8">
+          <h2 className="text-xl font-extrabold text-text-primary">
+            {isNewChat
+              ? `Ask about ${projectName ?? 'your project'}, or start a workflow.`
+              : 'Send a message to start chatting.'}
+          </h2>
+          <p className="mt-2 text-sm leading-[1.55] text-text-secondary">
+            Archon answers from the project and can start runs. Runs show up in the Runs tab and
+            report back here.
+          </p>
         </div>
       </div>
     );
@@ -387,44 +344,29 @@ function MessageListRaw({
   return (
     <div className="relative flex-1 overflow-hidden">
       <div ref={containerRef} className="h-full overflow-y-auto">
-        <div className="mx-auto flex max-w-[760px] flex-col gap-4 px-8 py-4">
+        <div className="flex flex-col px-6 pt-2 pb-6">
           {messages.map(msg =>
             msg.role === 'system' ? (
               <div
                 key={msg.id}
                 data-timestamp={String(msg.timestamp)}
-                className="flex items-center justify-center gap-2 py-1 text-xs text-muted-foreground"
+                className="flex items-center gap-2 border-b border-border py-2 text-xs font-bold tracking-[0.06em] text-text-secondary uppercase"
               >
-                <span className="h-px flex-1 bg-border" />
                 <span>{msg.content}</span>
-                <span className="h-px flex-1 bg-border" />
               </div>
             ) : (
-              <div
-                key={msg.id}
-                data-timestamp={String(msg.timestamp)}
-                className="flex flex-col gap-3"
-              >
+              <div key={msg.id} data-timestamp={String(msg.timestamp)}>
                 {msg.workflowResult ? (
-                  <WorkflowResultCard
-                    workflowName={msg.workflowResult.workflowName}
-                    runId={msg.workflowResult.runId}
-                    content={msg.content}
-                  />
+                  <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 border-b border-border py-3">
+                    <span className="text-xs font-extrabold text-accent">Archon</span>
+                    <WorkflowResultCard
+                      workflowName={msg.workflowResult.workflowName}
+                      runId={msg.workflowResult.runId}
+                      content={msg.content}
+                    />
+                  </div>
                 ) : (
-                  <>
-                    <MessageBubble message={msg} assistantLabel={assistantLabel} />
-                    {msg.toolCalls?.map(tool => (
-                      <ToolCallCard key={tool.id} tool={tool} />
-                    ))}
-                    {msg.error && <ErrorCard error={msg.error} />}
-                    {msg.workflowDispatch && (
-                      <WorkflowProgressCard
-                        workflowName={msg.workflowDispatch.workflowName}
-                        workerConversationId={msg.workflowDispatch.workerConversationId}
-                      />
-                    )}
-                  </>
+                  <MessageBubble message={msg} assistantLabel={assistantLabel} />
                 )}
               </div>
             )
@@ -439,7 +381,7 @@ function MessageListRaw({
             onClick={scrollToBottom}
             size="sm"
             variant="secondary"
-            className="rounded-full border border-border bg-surface-elevated"
+            className="border border-border bg-surface-elevated"
           >
             <ArrowDown className="mr-1 h-3 w-3" />
             Jump to bottom

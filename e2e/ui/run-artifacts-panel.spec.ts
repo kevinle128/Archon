@@ -59,7 +59,7 @@ test('[P1] [V:artifacts.panel-lists-disk-files] the panel lists files on disk an
   writeFileSync(join(dir as string, 'logs', 'out.txt'), 'plain text line\n');
 
   await openRunDetail(page, runId);
-  await page.getByRole('button', { name: /^Artifacts/ }).click();
+  await page.getByRole('tab', { name: 'Artifacts' }).click();
 
   const panel = page.getByTestId('run-artifacts-panel');
   await expect(panel).toBeVisible({ timeout: T.medium });
@@ -87,40 +87,37 @@ test('[P1] [V:artifacts.panel-lists-disk-files] the panel lists files on disk an
   await shoot(page, 'panel-with-files');
 });
 
-test('[P1] [V:artifacts.panel-empty-room-stays] the empty panel keeps the node room open and closes with Escape', async ({
+test('[P1] [V:artifacts.panel-empty-room-stays] the empty Artifacts tab returns to the node room on Close and Escape', async ({
   page,
   archon,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   const started = await archon.runHitlWorkflow();
   await openRunDetail(page, started.runId, HITL_ASK_NODE);
-  const room = page.getByTestId('legacy-node-room');
+  const room = page.getByRole('region', { name: `${HITL_ASK_NODE} room` });
   await expect(room).toBeVisible({ timeout: T.medium });
 
-  const button = page.getByRole('button', { name: /^Artifacts/ });
-  await expect(button).toBeEnabled();
-  await button.click();
+  // Artifacts is a run tab of the node column: it replaces the room view while open.
+  const tab = page.getByRole('tab', { name: 'Artifacts' });
+  await expect(tab).toBeEnabled();
+  await tab.click();
 
   const panel = page.getByTestId('run-artifacts-panel');
   await expect(panel).toBeVisible({ timeout: T.medium });
   await expect(panel.getByText('No artifacts written to disk for this run.')).toBeVisible({
     timeout: T.medium,
   });
-  // The room stays visible and both surfaces have real width side by side.
-  await expect(room).toBeVisible();
-  const roomBox = await room.boundingBox();
   const panelBox = await panel.boundingBox();
-  expect(roomBox?.width ?? 0).toBeGreaterThan(240);
-  expect((roomBox?.x ?? 0) + (roomBox?.width ?? 0)).toBeLessThanOrEqual((panelBox?.x ?? 0) + 1);
+  expect(panelBox?.width ?? 0).toBeGreaterThan(240);
   await shoot(page, 'panel-empty');
 
   await panel.getByRole('button', { name: 'Close artifacts' }).click();
-  await expect(panel).toHaveCount(0);
+  await expect(panel).toBeHidden();
   await expect(room).toBeVisible();
 
-  await button.click();
+  await tab.click();
   await expect(panel).toBeVisible({ timeout: T.medium });
   await page.keyboard.press('Escape');
-  await expect(panel).toHaveCount(0);
+  await expect(panel).toBeHidden();
   await expect(room).toBeVisible();
 });

@@ -52,7 +52,7 @@ function findDefinitionNode(
   return null;
 }
 
-function nodeBodyKind(node: DagNode): NodeBodyKind {
+export function nodeBodyKind(node: DagNode): NodeBodyKind {
   if (node.route_loop !== undefined) return 'route_loop';
   if (node.loop_group !== undefined) return 'loop_group';
   if (node.loop !== undefined) return 'loop';

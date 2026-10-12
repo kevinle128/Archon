@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { Position, type EdgeProps } from '@xyflow/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { LayoutRoute } from '@/lib/run-graph';
-import { RunGraphRouteEdge, type RunGraphFlowEdge } from './RunGraphRouteEdge';
+import { RunGraphRouteEdge, shortEdgeLabel, type RunGraphFlowEdge } from './RunGraphRouteEdge';
 
 const SHARED_PATH = 'M 90 80 C 90 116 90 124 90 160';
 
@@ -99,5 +99,21 @@ describe('RunGraphRouteEdge', () => {
 
   test('empty path renders an empty string', () => {
     expect(render(route({ path: '' }))).toBe('');
+  });
+});
+
+describe('shortEdgeLabel', () => {
+  test('keeps short labels and missing labels as they are', () => {
+    expect(shortEdgeLabel(undefined)).toBeUndefined();
+    expect(shortEdgeLabel('positive')).toBe('positive');
+    expect(shortEdgeLabel('x'.repeat(24))).toBe('x'.repeat(24));
+  });
+
+  test('cuts a long condition to 24 characters with an ellipsis', () => {
+    const label = "$seed.output == 'sentinel-never-produced-e2e'";
+    const short = shortEdgeLabel(label);
+    expect(short).toHaveLength(24);
+    expect(short?.endsWith('…')).toBe(true);
+    expect(label.startsWith(short?.slice(0, -1) ?? '')).toBe(true);
   });
 });

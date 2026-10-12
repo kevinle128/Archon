@@ -356,6 +356,15 @@ describe('LegacyGraphLogsPane', () => {
     );
   }
 
+  /** Maps the old Graph/Logs/Chat view to the new run column view and node column tab. */
+  function viewProps(
+    view: 'graph' | 'logs' | 'chat' | undefined
+  ): Pick<LegacyGraphLogsPaneProps, 'nodeView' | 'tab'> {
+    if (view === 'graph') return { nodeView: 'graph', tab: 'stream' };
+    if (view === 'chat') return { nodeView: 'list', tab: 'conversation' };
+    return { nodeView: 'list', tab: 'stream' };
+  }
+
   function PaneHarness(
     props: {
       activeView?: 'graph' | 'logs' | 'chat';
@@ -390,6 +399,16 @@ describe('LegacyGraphLogsPane', () => {
     const [lastExplicitRowByNode, setLastExplicitRowByNode] = react.useState<
       Record<string, string>
     >({});
+    // Mirrors the page: the tab is held outside the pane, and opening another
+    // node returns to the stream unless Output or Raw is open.
+    const [tab, setTab] = react.useState(viewProps(props.activeView).tab);
+    const view = viewProps(props.activeView);
+    const viewKey = props.activeView ?? 'logs';
+    const previousViewKey = react.useRef(viewKey);
+    if (previousViewKey.current !== viewKey) {
+      previousViewKey.current = viewKey;
+      setTab(view.tab);
+    }
     const skipRunReset = react.useRef(true);
     const onSelectNodeRef = react.useRef(props.onSelectNode);
     onSelectNodeRef.current = props.onSelectNode;
@@ -404,15 +423,16 @@ describe('LegacyGraphLogsPane', () => {
       onSelectNodeRef.current(null);
     }, [props.runId]);
     return createElement(legacyGraphLogsPane.LegacyGraphLogsPane, {
-      activeView: props.activeView ?? 'logs',
+      nodeView: view.nodeView,
+      tab,
+      onTabChange: setTab,
       renderGraph: defaultRenderGraph,
       selectedNodeId,
       selectedLogRowId,
       lastExplicitRowByNode,
       splitMode: 'split',
-      roomRatio: 40,
-      onRoomRatioChange: (): void => undefined,
       onOpenRoom: (rowId: string, nodeId: string): void => {
+        if (nodeId !== selectedNodeId && tab !== 'output' && tab !== 'raw') setTab('stream');
         setSelectedNodeId(nodeId);
         setSelectedLogRowId(rowId);
         setLastExplicitRowByNode(previous => ({ ...previous, [nodeId]: rowId }));
@@ -506,6 +526,46 @@ describe('LegacyGraphLogsPane', () => {
     return button;
   }
 
+  async function clickTabNamed(prefix: string): Promise<void> {
+    const tab = Array.from(host.querySelectorAll('[role="tab"]')).find(candidate =>
+      (candidate.textContent ?? '').trim().startsWith(prefix)
+    );
+    if (tab === undefined) throw new Error(`missing ${prefix} tab`);
+    await act(async () => {
+      (tab as HTMLElement).click();
+    });
+  }
+
+  /** Opens a node from the run column's step list. */
+  async function openStep(nodeId: string): Promise<void> {
+    const step = host.querySelector(`#legacy-graph-${nodeId}`);
+    if (step === null) throw new Error(`missing ${nodeId} step`);
+    await act(async () => {
+      (step as HTMLElement).click();
+    });
+  }
+
+  /**
+   * Opens one execution of a node: the node from the run column's step list,
+   * then the labeled row from its History tab. Returns the History row.
+   */
+  async function openExecution(nodeId: string, label: string): Promise<HTMLElement> {
+    const step = host.querySelector(`#legacy-graph-${nodeId}`);
+    if (step === null) throw new Error(`missing ${nodeId} step`);
+    await act(async () => {
+      (step as HTMLElement).click();
+    });
+    await clickTabNamed('History');
+    const row = Array.from(host.querySelectorAll('nav[aria-label="Node runs"] button')).find(
+      candidate => (candidate.textContent ?? '').includes(label)
+    );
+    if (row === undefined) throw new Error(`missing ${label} row`);
+    await act(async () => {
+      (row as HTMLElement).click();
+    });
+    return row as HTMLElement;
+  }
+
   function requireComposerTextarea(node: Element | null): {
     disabled: boolean;
     value: string;
@@ -556,7 +616,7 @@ describe('LegacyGraphLogsPane', () => {
     onCloseRoom?: () => void;
   }): LegacyGraphLogsPaneProps {
     return {
-      activeView: 'logs',
+      ...viewProps('logs'),
       renderGraph: defaultRenderGraph,
       selectedNodeId: overrides.selectedNodeId,
       selectedLogRowId: overrides.selectedLogRowId,
@@ -564,8 +624,6 @@ describe('LegacyGraphLogsPane', () => {
       lastExplicitRowByNode: {},
       onOpenRoom: (): void => undefined,
       onCloseRoom: overrides.onCloseRoom ?? ((): void => undefined),
-      roomRatio: 40,
-      onRoomRatioChange: (): void => undefined,
       runId: 'run-1',
       runStartedAt: CREATED_AT,
       nodeStates: [REVIEW_STATE],
@@ -592,94 +650,56 @@ describe('LegacyGraphLogsPane', () => {
     };
   }
 
-  test('opens a fixed-width room on demand and hides the main view in single mode', async () => {
+  test('shows the run and node columns side by side, and one at a time in single mode', async () => {
     const closes: number[] = [];
     const onCloseRoom = (): void => {
       closes.push(1);
     };
-
-    await act(async () => {
-      root.render(
-        createElement(
-          reactQuery.QueryClientProvider,
-          { client: queryClient },
+    async function renderPane(
+      selectedNodeId: string | null,
+      selectedLogRowId: string | null,
+      splitMode: 'split' | 'single'
+    ): Promise<void> {
+      await act(async () => {
+        root.render(
           createElement(
-            legacyGraphLogsPane.LegacyGraphLogsPane,
-            paneProps({
-              selectedNodeId: null,
-              selectedLogRowId: null,
-              splitMode: 'split',
-              onCloseRoom,
-            })
+            reactQuery.QueryClientProvider,
+            { client: queryClient },
+            createElement(
+              legacyGraphLogsPane.LegacyGraphLogsPane,
+              paneProps({ selectedNodeId, selectedLogRowId, splitMode, onCloseRoom })
+            )
           )
-        )
-      );
-    });
-    await flush();
+        );
+      });
+      await flush();
+    }
+
+    await renderPane(null, null, 'split');
     expect(host.querySelector('[data-testid="legacy-node-room"]')).toBeNull();
+    expect(host.querySelector('[data-testid="run-column"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="node-column"]')).not.toBeNull();
     expect(host.querySelector('[role="separator"]')).toBeNull();
 
-    await act(async () => {
-      root.render(
-        createElement(
-          reactQuery.QueryClientProvider,
-          { client: queryClient },
-          createElement(
-            legacyGraphLogsPane.LegacyGraphLogsPane,
-            paneProps({
-              selectedNodeId: 'review',
-              selectedLogRowId: 'start-review',
-              splitMode: 'split',
-              onCloseRoom,
-            })
-          )
-        )
-      );
-    });
-    await flush();
-    const viewPanel = host.querySelector('#legacy-run-view');
-    const roomPanel = host.querySelector('#legacy-run-room');
-    expect(viewPanel).not.toBeNull();
-    expect(roomPanel).not.toBeNull();
+    await renderPane('review', 'start-review', 'split');
+    const runColumn = host.querySelector('[data-testid="run-column"]');
+    const nodeColumn = host.querySelector('[data-testid="node-column"]');
+    expect(runColumn).not.toBeNull();
+    expect(nodeColumn).not.toBeNull();
     expect(host.querySelector('[data-testid="legacy-node-room"]')).not.toBeNull();
-    // The approved node panel is a fixed width, not a user-resizable share of
-    // the window, so it carries no drag handle.
+    // The columns are grid cells, not a resizable split, so there is no drag handle.
     expect(host.querySelector('[role="separator"]')).toBeNull();
-    expect((roomPanel as HTMLElement).style.width).toBe('460px');
-    expect((roomPanel as HTMLElement).style.flexShrink).toBe('0');
-    // The panel is a shrinkable overflow boundary — without it a long
-    // transcript stretches the document below the fixed run shell.
-    const roomPanelClass = roomPanel?.getAttribute('class') ?? '';
-    expect(roomPanelClass).toContain('min-h-0');
-    expect(roomPanelClass).toContain('overflow-hidden');
-    // A flex child defaults to min-width:auto, which lets its content (a long
-    // unwrapped tool row) grow the column past the viewport and push the
-    // fixed-width room off screen. min-w-0 caps the view pane at the space
-    // the flex layout actually gives it.
-    expect((viewPanel as HTMLElement).className).toContain('min-w-0');
+    // Each column is a shrinkable overflow boundary: a long transcript or an
+    // unwrapped tool row must not stretch the page past the viewport.
+    const nodeClass = nodeColumn?.getAttribute('class') ?? '';
+    expect(nodeClass).toContain('min-h-0');
+    expect(nodeClass).toContain('min-w-0');
+    expect(nodeClass).toContain('overflow-hidden');
+    expect(runColumn?.getAttribute('class') ?? '').toContain('min-w-0');
 
-    await act(async () => {
-      root.render(
-        createElement(
-          reactQuery.QueryClientProvider,
-          { client: queryClient },
-          createElement(
-            legacyGraphLogsPane.LegacyGraphLogsPane,
-            paneProps({
-              selectedNodeId: 'review',
-              selectedLogRowId: 'start-review',
-              splitMode: 'single',
-              onCloseRoom,
-            })
-          )
-        )
-      );
-    });
-    await flush();
-    const mainView = host.querySelector('#legacy-run-view');
-    expect(mainView).toBe(viewPanel);
-    expect((mainView as HTMLElement).hidden).toBe(true);
-    expect((mainView as HTMLElement).classList.contains('hidden')).toBe(true);
+    await renderPane('review', 'start-review', 'single');
+    expect(host.querySelector('[data-testid="run-column"]')).toBeNull();
+    expect(host.querySelector('[data-testid="node-column"]')).not.toBeNull();
     const back = Array.from(host.querySelectorAll('button')).find(candidate =>
       (candidate.textContent ?? '').includes('Back')
     );
@@ -689,28 +709,8 @@ describe('LegacyGraphLogsPane', () => {
     });
     expect(closes).toEqual([1]);
 
-    await act(async () => {
-      root.render(
-        createElement(
-          reactQuery.QueryClientProvider,
-          { client: queryClient },
-          createElement(
-            legacyGraphLogsPane.LegacyGraphLogsPane,
-            paneProps({
-              selectedNodeId: null,
-              selectedLogRowId: null,
-              splitMode: 'single',
-              onCloseRoom,
-            })
-          )
-        )
-      );
-    });
-    await flush();
-    const closedMain = host.querySelector('#legacy-run-view');
-    expect(closedMain).not.toBeNull();
-    expect((closedMain as HTMLElement).hidden).toBe(false);
-    expect((closedMain as HTMLElement).classList.contains('flex')).toBe(true);
+    await renderPane(null, null, 'single');
+    expect(host.querySelector('[data-testid="run-column"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="legacy-node-room"]')).toBeNull();
   });
 
@@ -741,14 +741,14 @@ describe('LegacyGraphLogsPane', () => {
     });
     await flush();
 
-    expect(host.textContent).toContain('Review');
+    expect(host.querySelector('#legacy-graph-review')?.textContent).toContain('review');
     expect(host.querySelector('[data-testid="legacy-node-room"]')).toBeNull();
     expect(selected).toEqual([]);
     expect(calls).toEqual([]);
     expect(host.querySelectorAll('[role="region"]')).toHaveLength(0);
     expectNoAskHumanChrome(host);
 
-    await clickRow('Review');
+    await openStep('review');
     await flush();
     expect(selected).toEqual(['review']);
 
@@ -844,10 +844,8 @@ describe('LegacyGraphLogsPane', () => {
         onReject: async (): Promise<void> => undefined,
       });
     });
-    const setup = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Setup')
-    );
-    if (setup === undefined) throw new Error('missing Setup row');
+    const setup = host.querySelector<HTMLElement>('#legacy-graph-setup');
+    if (setup === null) throw new Error('missing Setup step');
     await act(async () => {
       setup.click();
     });
@@ -880,7 +878,7 @@ describe('LegacyGraphLogsPane', () => {
         onSelectNode: (): void => undefined,
       });
     });
-    await clickRow('Review');
+    await openExecution('review', 'Review');
     await flushUntil(host, 'approval message', () => (host.textContent ?? '').includes('Ship?'));
     const buttons = Array.from(host.querySelectorAll('button')).map(
       button => button.textContent ?? ''
@@ -914,7 +912,7 @@ describe('LegacyGraphLogsPane', () => {
         onSelectNode: (): void => undefined,
       });
     });
-    await clickRow('review');
+    await openExecution('review', '');
     await flushUntil(host, 'approval row from metadata', () =>
       (host.textContent ?? '').includes('Ship?')
     );
@@ -959,7 +957,7 @@ describe('LegacyGraphLogsPane', () => {
         onSelectNode: (): void => undefined,
       });
     });
-    await clickRow('review');
+    await openExecution('review', '');
     await flushUntil(host, 'plannotator row from metadata', () =>
       (host.textContent ?? '').includes('Open Plannotator')
     );
@@ -997,12 +995,12 @@ describe('LegacyGraphLogsPane', () => {
         onSelectNode: (): void => undefined,
       });
     });
-    await clickRow('child');
+    await openExecution('child', '');
     await flushUntil(host, 'child workflow row from metadata', () =>
       (host.textContent ?? '').includes('Open child run')
     );
 
-    expect(host.querySelector('a[href="/workflows/runs/child-run-1"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/runs/child-run-1"]')).not.toBeNull();
     expect(calls).toEqual([]);
     expect(host.querySelector('[aria-label="child room"]')).not.toBeNull();
     expect(host.textContent).not.toContain('AskHuman');
@@ -1043,11 +1041,11 @@ describe('LegacyGraphLogsPane', () => {
         onSelectNode: (): void => undefined,
       });
     });
-    await clickRow('Child');
+    await openExecution('child', 'Child');
     await flushUntil(host, 'child run link', () =>
       (host.textContent ?? '').includes('Open child run')
     );
-    expect(host.querySelector('a[href="/workflows/runs/child-1"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/runs/child-1"]')).not.toBeNull();
     expect(calls).toEqual([]);
     expect(host.querySelector('[aria-label="child room"]')).not.toBeNull();
     expectNoAskHumanChrome(host);
@@ -1112,7 +1110,7 @@ describe('LegacyGraphLogsPane', () => {
         onSelectNode: (): void => undefined,
       });
     });
-    await clickRow('Router #2');
+    await openExecution('router', 'Router #2');
     await flushUntil(host, 'route decision 2', () => (host.textContent ?? '').includes('positive'));
     expect(host.textContent).toContain('done');
     expect(host.textContent).not.toContain('exhausted');
@@ -1193,7 +1191,7 @@ describe('LegacyGraphLogsPane', () => {
         onSelectNode: (): void => undefined,
       });
     });
-    await clickRow('Group ×2');
+    await openExecution('group', 'Group ×2');
     await flushUntil(host, 'loop group body', () =>
       (host.textContent ?? '').includes('Body nodes')
     );
@@ -1243,7 +1241,7 @@ describe('LegacyGraphLogsPane', () => {
         onSelectNode: (): void => undefined,
       });
     });
-    await clickRow('group ×1');
+    await openExecution('group', 'group ×1');
     await flushUntil(host, 'loop group row from iteration events', () =>
       (host.textContent ?? '').includes('Body nodes')
     );
@@ -1306,18 +1304,18 @@ describe('LegacyGraphLogsPane', () => {
         onSelectNode: (): void => undefined,
       });
     });
-    await clickRow('Setup');
+    await openStep('setup');
     await flushUntil(host, 'bash first', () => (host.textContent ?? '').includes('ready'));
     expect(calls).toEqual([]);
-    expect(host.querySelectorAll('[aria-label="Node runs"]')).toHaveLength(1);
+    expect(host.querySelectorAll('ol[aria-label="Nodes"]')).toHaveLength(1);
     expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
 
-    await clickRow('Review');
+    await openStep('review');
     await flushUntil(host, 'command after bash', () =>
       (host.textContent ?? '').includes('hello from review')
     );
     expect(calls).toEqual([['run-1', 'review']]);
-    expect(host.querySelectorAll('[aria-label="Node runs"]')).toHaveLength(1);
+    expect(host.querySelectorAll('ol[aria-label="Nodes"]')).toHaveLength(1);
     expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
     expect(host.querySelector('[aria-label="review room"]')).not.toBeNull();
     expectNoAskHumanChrome(host);
@@ -1540,10 +1538,8 @@ describe('LegacyGraphLogsPane', () => {
     await flush();
     expect(host.querySelector('[aria-label="review room"]')).toBe(room);
     expect(calls).toEqual([['run-1', 'review']]);
-    const selectedRow = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Review')
-    );
-    expect(selectedRow?.getAttribute('aria-current')).toBe('true');
+    const selectedStep = host.querySelector('#legacy-graph-review');
+    expect(selectedStep?.getAttribute('aria-current')).toBe('true');
     expectNoAskHumanChrome(host);
   });
 
@@ -1562,13 +1558,14 @@ describe('LegacyGraphLogsPane', () => {
         onSelectNode: (): void => undefined,
       });
     });
-    await clickRow('Group ×1');
+    await openExecution('group', 'Group ×1');
     await flushUntil(host, 'preserve iteration 1', () =>
       (host.textContent ?? '').includes('Body nodes')
     );
     expect(host.querySelector('details[open]')?.textContent).toContain('×1 completed');
-    const first = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Group ×1')
+    await clickTabNamed('History');
+    const first = Array.from(host.querySelectorAll('nav[aria-label="Node runs"] button')).find(
+      button => (button.textContent ?? '').includes('Group ×1')
     );
     expect(first?.getAttribute('aria-current')).toBe('true');
   });
@@ -1588,7 +1585,7 @@ describe('LegacyGraphLogsPane', () => {
     await act(async () => {
       renderLogs({ ...paneArgs, activeView: 'logs' });
     });
-    await clickRow('Group ×1');
+    await openExecution('group', 'Group ×1');
     await flushUntil(host, 'iteration 1 before graph', () =>
       (host.querySelector('details[open]')?.textContent ?? '').includes('×1 completed')
     );
@@ -1606,8 +1603,9 @@ describe('LegacyGraphLogsPane', () => {
       renderLogs({ ...paneArgs, activeView: 'logs' });
     });
     await flush();
-    const last = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Group ×2')
+    await clickTabNamed('History');
+    const last = Array.from(host.querySelectorAll('nav[aria-label="Node runs"] button')).find(
+      button => (button.textContent ?? '').includes('Group ×2')
     );
     expect(last?.getAttribute('aria-current')).toBe('true');
     expectNoAskHumanChrome(host);
@@ -1877,7 +1875,7 @@ describe('LegacyGraphLogsPane', () => {
     expect(host.querySelector('details[open]')?.textContent).toContain('×1 completed');
   });
 
-  test('graph bash room survives Chat then Logs without fetching node messages', async () => {
+  test('graph bash room returns after Chat then Logs without fetching node messages', async () => {
     const calls: [string, string][] = [];
     const paneArgs = {
       runId: 'run-1',
@@ -1913,17 +1911,22 @@ describe('LegacyGraphLogsPane', () => {
       'chat after graph',
       () => host.querySelector('[aria-label="Run chat timeline"]') !== null
     );
-    expect(host.querySelector('[aria-label="setup room"]')).toBe(room);
+    // The conversation tab replaces the room body; the selection stays.
+    expect(host.querySelector('[aria-label="setup room"]')).toBeNull();
 
     await act(async () => {
       renderLogs({ ...paneArgs, activeView: 'logs' });
     });
-    await flush();
-    expect(host.querySelector('[aria-label="setup room"]')).toBe(room);
+    await flushUntil(
+      host,
+      'room back',
+      () => host.querySelector('[aria-label="setup room"]') !== null
+    );
+    expect(host.textContent).toContain('ready');
     expect(calls).toEqual([]);
   });
 
-  test('opens the command room from the exact completed status and preserves it across tabs', async () => {
+  test('opens the command room from the exact completed status and keeps it across views', async () => {
     const calls: [string, string][] = [];
     const paneArgs = {
       runId: 'run-1',
@@ -1963,8 +1966,14 @@ describe('LegacyGraphLogsPane', () => {
     const room = host.querySelector('[aria-label="review room"]');
     expect(room).not.toBeNull();
     expect(calls).toEqual([['run-1', 'review']]);
-    expect(host.querySelectorAll('[aria-current="true"]')).toHaveLength(1);
-    expect(host.querySelector('[aria-current="true"]')?.textContent).toContain('completed');
+    // One selection in the step list and one in the timeline.
+    expect(host.querySelector('#legacy-graph-review')?.getAttribute('aria-current')).toBe('true');
+    expect(
+      host.querySelectorAll('[aria-label="Run chat timeline"] [aria-current="true"]')
+    ).toHaveLength(1);
+    expect(
+      host.querySelector('[aria-label="Run chat timeline"] [aria-current="true"]')?.textContent
+    ).toContain('completed');
 
     await act(async () => {
       renderLogs({ ...paneArgs, activeView: 'graph' });
@@ -1973,8 +1982,11 @@ describe('LegacyGraphLogsPane', () => {
     await act(async () => {
       renderLogs({ ...paneArgs, activeView: 'chat' });
     });
-    expect(host.querySelector('[aria-label="review room"]')).toBe(room);
-    expect(host.querySelector('[aria-current="true"]')?.textContent).toContain('completed');
+    // The conversation tab hides the room; the timeline keeps its selection.
+    expect(host.querySelector('[aria-label="review room"]')).toBeNull();
+    expect(
+      host.querySelector('[aria-label="Run chat timeline"] [aria-current="true"]')?.textContent
+    ).toContain('completed');
     expect(calls).toEqual([['run-1', 'review']]);
   });
 
@@ -2305,10 +2317,14 @@ describe('LegacyGraphLogsPane', () => {
       () => host.querySelector('[aria-label="ghost room"]') !== null
     );
     expect(host.querySelector('[aria-label="ghost room"]')).not.toBeNull();
-    expect(host.querySelector('[aria-current="true"]')?.textContent).toContain('started');
+    expect(
+      host.querySelector('[aria-label="Run chat timeline"] [aria-current="true"]')?.textContent
+    ).toContain('started');
     await flush();
     expect(host.querySelector('[aria-label="ghost room"]')).not.toBeNull();
-    expect(host.querySelector('[aria-current="true"]')?.textContent).toContain('started');
+    expect(
+      host.querySelector('[aria-label="Run chat timeline"] [aria-current="true"]')?.textContent
+    ).toContain('started');
   });
 
   function pendingReviewAsk(): PendingInteraction {
@@ -2367,7 +2383,7 @@ describe('LegacyGraphLogsPane', () => {
     await act(async () => {
       renderLogs({ ...paneArgs, activeView: 'logs' });
     });
-    await clickRow('Review');
+    await openExecution('review', 'Review');
     await flushUntil(host, 'logs ask', () => (host.textContent ?? '').includes('Ship it?'));
     expect(host.querySelector('[aria-label="review room"]')).not.toBeNull();
     expect(
@@ -2430,7 +2446,7 @@ describe('LegacyGraphLogsPane', () => {
         onSelectNode: (): void => undefined,
       });
     });
-    await clickRow('Setup');
+    await openExecution('setup', 'Setup');
     await flushUntil(host, 'bash room', () => (host.textContent ?? '').includes('ready'));
     expect(host.querySelector('[aria-label="setup room"]')).not.toBeNull();
     expect(host.textContent).toContain('Bash');
@@ -2887,7 +2903,7 @@ describe('LegacyGraphLogsPane', () => {
       expect(props?.nodeExecutionKey).toBe('occ-a');
 
       // Sibling beta is running — click selects it without remounting the harness.
-      await clickRow('Beta');
+      await openExecution('beta', 'Beta');
       await flush();
       const betaRoom = host.querySelector('[data-testid="legacy-node-room"]');
       expect(betaRoom).not.toBeNull();

@@ -2,16 +2,28 @@
   "version": 1,
   "sources": [
     {
-      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/SPEC.md",
-      "sha256": "7889c1167cdac5c26eb61fd974aa51c30ffc21fa6a90e797734d214b7178af0c"
+      "path": "claude-design/design_handoff_archon_redesign/README.md",
+      "sha256": "8ae688ad0a5ef337078adba2f18c1140604c473462a09cfde241f2c8b7a7d1ec"
     },
     {
-      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md",
-      "sha256": "9f424167f815ad0e8452828ca90992ebacc44289117ca46727216182ec0069f8"
+      "path": "claude-design/design_handoff_archon_redesign/Archon Runs Workspace.dc.html",
+      "sha256": "f73ef91e15cbc64a85db9692d84aee17cd451040a0b90634624fe02fc6dbcd3f"
     },
     {
-      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-design.md",
-      "sha256": "b2f5c1a6e565676e4e4c137059866789f77981ab5204b3a82d11513f8c296750"
+      "path": "claude-design/design_handoff_archon_redesign/archon-runs.js",
+      "sha256": "5509eecb162bc030d267e7a9bab29af299ed8bb14d5d7896667229bec5b58626"
+    },
+    {
+      "path": "claude-design/design_handoff_archon_redesign/support.js",
+      "sha256": "8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe"
+    },
+    {
+      "path": "claude-design/design_handoff_archon_redesign/_ds/modernist-e24aa044-ad6a-428b-b2d0-5369bdd0a859/styles.css",
+      "sha256": "cf9fcf75ac84dfe7517177eb14acf5a20ca4410c55691ab9879c6af7b2168400"
+    },
+    {
+      "path": "claude-design/design_handoff_archon_redesign/_ds/modernist-e24aa044-ad6a-428b-b2d0-5369bdd0a859/_ds_bundle.js",
+      "sha256": "6138a8418649050c65574c0abd8394e05a58cfb233f29cc3c2502923753a18ca"
     },
     {
       "path": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/README.md",
@@ -38,34 +50,6 @@
       "sha256": "381e7192d65defb041bda04818d818da493489b23dacda0ce9b1ad199e381bff"
     },
     {
-      "path": "_bmad-output/specs/spec-agent-node-room/SPEC.md",
-      "sha256": "cf4bc516b30f244f840c0f27be89e3adb6d4ff757bdf108c52eed92ecc9d29bc"
-    },
-    {
-      "path": "_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md",
-      "sha256": "bfad1fd363e44aedf6acb4a4a34775334e765a3845bc76e5cf7319a5113644b1"
-    },
-    {
-      "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md",
-      "sha256": "a8b18bd4be07c61c1ec8994a0f16f59b18df519bf2b03f20e3def0f9b99a779a"
-    },
-    {
-      "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md",
-      "sha256": "77b681e3a0f451901de084a6e259236dbdc5360141a2ff234769c50f35e2a987"
-    },
-    {
-      "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-transcript-states.html",
-      "sha256": "d1786484041cf3743002628facd741eae7f3d1474f18515690c70d469497c065"
-    },
-    {
-      "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-console-node-room.html",
-      "sha256": "c8030476e41d15df39b2998645aeb56e7178f5537280cf72a22e91cb3cc5633a"
-    },
-    {
-      "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-legacy-node-room.html",
-      "sha256": "da27302ac4074bca763b8e0e51762bc8e9929ccd83a16567b607849464a77e1a"
-    },
-    {
       "path": "claude-design/design_handoff_node_room_transcript_steering/README.md",
       "sha256": "99396fa9788da3688635241d21668701198183dcec2659a62833895552947dbc"
     },
@@ -83,11 +67,11 @@
     },
     {
       "path": "packages/docs-web/src/content/docs/brand/index.md",
-      "sha256": "16537cfa117c513592c28cd4d8836d14335945d1ac0dcf6428d65b99faff827e"
+      "sha256": "449048705c65996f10937336c81f26ddfa1961e1d38603b317bb06e3522715aa"
     },
     {
       "path": "packages/web/src/index.css",
-      "sha256": "66f67d3ac1a68bc8689655033d84dad2f337c13518564dd8f3ab3259fad930fc"
+      "sha256": "59aa658102f3f2c93b1c5fa19c42e08748a960844cd8b6f97ecfe09f0af3d697"
     }
   ],
   "criteria": [
@@ -96,32 +80,32 @@
       "states": [
         "row-closed"
       ],
-      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md#components",
-      "expected": "One scan line, chevron then status then family then target then facts; legible text, balanced spacing, and visible state glyph. Compare style and order, not fixture text."
+      "source": "claude-design/design_handoff_archon_redesign/README.md#1-runs-workspace-archon-runs-workspacedchtml",
+      "expected": "A tool call is one bordered row on the muted surface: caret, then the tool name in heavy weight, then the monospace target with ellipsis, then right-aligned facts; no status icon. Error facts use the failed color in bold. Compare style and order, not fixture text."
     },
     {
       "id": "raw-disclosure",
       "states": [
         "raw-open"
       ],
-      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md#components",
-      "expected": "Raw control at the right of the body bar, open suffix, inset wrapped JSON, readable foreground, minimum 24 px target. Final DESIGN overrides the stale mockup tertiary JSON and 22 px row."
+      "source": "claude-design/design_handoff_archon_redesign/README.md#1-runs-workspace-archon-runs-workspacedchtml",
+      "expected": "The opened tool row keeps its one-line header and shows the body below it as a dark code block with light monospace text, wrapped inside the row. The product puts the payload behind a Raw control in the opened body; that control is part of the accepted anatomy."
     },
     {
       "id": "ask-card",
       "states": [
         "ask-pending"
       ],
-      "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-design.md#core-user-experience",
-      "expected": "Warning-toned pending card, readable question, selectable options and reachable Submit; no content or controls clipped in the selected card."
+      "source": "claude-design/design_handoff_archon_redesign/README.md#1-runs-workspace-archon-runs-workspacedchtml",
+      "expected": "The Ask card has a 2px waiting-color border and a filled waiting-color header with the white asking label and, for a single question, the question in large heavy white text. Options are rows with a letter A/B/C and a label; the selected option uses the selection tint. A footer holds the primary Submit button. Nothing is clipped."
     },
     {
       "id": "assistant-report",
       "states": [
         "assistant-report"
       ],
-      "source": "_bmad-output/specs/spec-agent-node-room/SPEC.md#read-half",
-      "expected": "One assistant block carries the ASSISTANT label and readable Markdown report text with no JSON envelope, braces, or serialized quoting; styling matches the surface's other assistant text. Compare presentation, not fixture wording."
+      "source": "claude-design/design_handoff_archon_redesign/README.md#1-runs-workspace-archon-runs-workspacedchtml",
+      "expected": "Agent text is a stream row with the time column on the left and readable 14.5px text at 1.6 line height, with no JSON envelope, braces, or serialized quoting. Compare presentation, not fixture wording."
     },
     {
       "id": "runtime-graph",
@@ -129,7 +113,7 @@
         "runtime-graph"
       ],
       "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/README.md#the-graph-renderer",
-      "expected": "The runtime graph fills the run view with status-marked node cards, connecting edges, and zoom and fit controls; no minimap is present. Compare structure and controls, not node count or labels."
+      "expected": "The runtime graph fills the run column of the Runs workspace with readable status-marked node cards (fit stops at a readable zoom and the rest is reached by panning), connecting edges, and zoom and fit controls; no minimap is present. Compare structure, readability and controls, not node count or labels."
     },
     {
       "id": "queue-anatomy",
@@ -147,8 +131,8 @@
         "ask-pending",
         "queue-waiting"
       ],
-      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md#accessibility-floor",
-      "expected": "Required content fits the measured region; keyboard focus is visible; desktop and narrow states remain readable. Check only the selected room/card, not future mockup features."
+      "source": "claude-design/design_handoff_archon_redesign/README.md#column-vocabulary-shared-by-runs-workflows-chat-builder",
+      "expected": "Required content fits the measured region with square corners and hairline rules; keyboard focus is visible; desktop and narrow states remain readable. Check only the selected row or card."
     }
   ],
   "surfaces": [
@@ -172,22 +156,24 @@
       "height": 844
     }
   ],
-  "desktop_room_width": 460,
-  "theme": "dark",
+  "theme": "light",
   "device_scale_factor": 1,
   "zoom": 1,
   "comparison": "Side-by-side review plus measured geometry; fixture text, node counts and durations differ, so no single pixel threshold is valid.",
   "accepted_differences": [
-    "DESIGN.md wins over mockup-only 22 px targets and tertiary Raw text.",
-    "Current semantic tokens apply separately on Console and Legacy.",
-    "Mockup-only Replay, view-as, Stop and idle-after-interrupt transitions, provider-specific per-item Send now, future tool family bodies and unrelated nodes are excluded.",
+    "The handoff Runs workspace has no graph view; the product keeps the Graph view as a List/Graph switch in the run column (user decision), so the graph lives in that column and keeps the earlier run-view mockup as its structural reference.",
+    "The handoff shows queued guidance as operator rows; the product keeps the approved queue band from the steering handoff, so the queue reference is that handoff.",
+    "The product's opened tool row shows its payload behind a Raw control; the handoff shows the body directly.",
+    "The handoff Ask note field has no API: an answer carries only option values or a decline, and free text goes through the Other option. The footer therefore has no note field and keeps the Submit label; the product adds Decline and View payload.",
+    "Captures use the light theme, as the handoff does; the dark theme (midnight palette) is not part of this comparison.",
+    "Prototype-only sample values (durations, costs, tokens), provider-specific per-item Send now, and unrelated nodes are excluded.",
     "References are resized to the measured region width; browser and region dimensions are recorded separately.",
-    "Transcript-display captures come from a separate prepared run; its seeded fixture text, node names, and graph shape differ from the HITL run and mockup data."
+    "Transcript-display captures come from a separate prepared run; its seeded fixture text, node names, and graph shape differ from the HITL run and the handoff data."
   ],
   "width_tolerance_px": 2,
   "measurement_rules": [
-    "The 2 px tolerance applies only to the desktop room width and matching actual/reference region widths. It does not apply to image height.",
-    "Judge height through the configured content-fit and single-line criteria. The final DESIGN minimum target size takes precedence over older mockup row heights.",
+    "The 2 px tolerance applies only to matching actual/reference region widths. It does not apply to image height.",
+    "Judge height through the configured content-fit and single-line criteria.",
     "Report only a mismatch to a configured criterion; do not invent additional pixel-equality rules."
   ]
 }

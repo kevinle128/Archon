@@ -502,11 +502,10 @@ describe('NodeTranscriptPane', () => {
     });
     await flushUntil(host, 'settled row', () => (host.textContent ?? '').includes('sleep 120'));
     // Recovery is reported without the row's own status ever leaving
-    // 'running' — the still-open call settles to unknown (glyph –) anyway,
-    // since no live process backs it either way, and never renders the
-    // running glyph (◐).
-    expect(host.textContent).toContain('–');
-    expect(host.textContent).not.toContain('◐');
+    // 'running' — the still-open call settles to unknown anyway, since no
+    // live process backs it either way, and never reads as running.
+    expect(host.textContent).toContain('▶ unknown');
+    expect(host.textContent).not.toContain('running');
   });
 
   test('unwraps an exact one-string envelope only when the definition schema is supplied', async () => {

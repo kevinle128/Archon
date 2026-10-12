@@ -1,0 +1,29 @@
+---
+// Shared <head> parts of the pages outside Starlight: the font, the favicon,
+// and the theme script.
+//
+// The theme script runs before first paint. It reads the same key as the
+// Starlight theme select, so a choice made in the docs also applies on these
+// pages. Without a stored choice, the theme follows the system setting.
+---
+
+<link rel="icon" href="/favicon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap"
+  rel="stylesheet"
+/>
+<script is:inline>
+  (() => {
+    let stored = '';
+    try {
+      stored = localStorage.getItem('starlight-theme') ?? '';
+    } catch {
+      stored = '';
+    }
+    const system = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme =
+      stored === 'light' || stored === 'dark' ? stored : system;
+  })();
+</script>

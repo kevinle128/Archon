@@ -511,8 +511,16 @@ describe('AskCard actions', () => {
   }
 
   function findButton(label: string, rootNode: Element = host): HTMLButtonElement {
+    // Match the visible label without aria-hidden decoration, as a screen reader names it.
+    const labelOf = (candidate: Element): string => {
+      const copy = candidate.cloneNode(true) as Element;
+      copy.querySelectorAll('[aria-hidden="true"]').forEach(node => {
+        node.remove();
+      });
+      return (copy.textContent ?? '').trim();
+    };
     const button = Array.from(rootNode.querySelectorAll('button')).find(
-      candidate => (candidate.textContent ?? '').trim() === label
+      candidate => labelOf(candidate) === label
     );
     if (!(button instanceof HTMLButtonElement)) {
       throw new Error('missing button: ' + label);
