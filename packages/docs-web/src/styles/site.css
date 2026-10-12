@@ -1,0 +1,310 @@
+/* Archon site tokens for the pages outside Starlight (landing, marketplace,
+ * roadmap).
+ *
+ * The values are the same as the product tokens in packages/web/src/index.css
+ * and the brand guide: a navy top bar over a light page, one blue accent, 2px
+ * and 1px rules, no radius, no shadows, no gradients. Dark is the midnight
+ * palette. SiteHead.astro sets data-theme before first paint.
+ */
+
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  --header-bg: #1a2130;
+  --header-fg: #f1f4f9;
+  --header-muted: #9aa5b8;
+  --header-line: #2c364a;
+  --header-accent: #7aa2ff;
+
+  --bg: #f5f7fa;
+  --surface: #eaeef3;
+  --card: #ffffff;
+  --line: #e2e6ed;
+  --line-strong: #c9d0db;
+  --rule: #1a2130;
+  --selection: #e4ecfb;
+
+  --text: #1a2130;
+  --text-2: #5a6478;
+  --text-3: #98a1b2;
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-text: #2563eb;
+  --on-accent: #ffffff;
+
+  --code-bg: #1a2130;
+  --code-fg: #e6e9f0;
+  --code-muted: #9aa5b8;
+
+  --status-running: #2563eb;
+  --status-waiting: #d97706;
+  --status-waiting-fg: #ffffff;
+  --status-done: #16a34a;
+  --status-failed: #dc2626;
+  --status-pending: #98a1b2;
+  --segment-pending: #d3d9e3;
+  --tint-error: #fdecea;
+  --tint-success: #e7f6ec;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --header-bg: #0f1218;
+  --header-fg: #e6e8ee;
+  --header-muted: #9aa3b2;
+  --header-line: #2e3746;
+  --header-accent: #8b9bff;
+
+  --bg: #0f1218;
+  --surface: #161a22;
+  --card: #1c2230;
+  --line: #232a36;
+  --line-strong: #2e3746;
+  --rule: #e6e8ee;
+  --selection: #1c2230;
+
+  --text: #e6e8ee;
+  --text-2: #9aa3b2;
+  --text-3: #667085;
+
+  --accent: #8b9bff;
+  --accent-hover: #a5b1ff;
+  --accent-text: #a5b1ff;
+  --on-accent: #0f1218;
+
+  --code-bg: #0a0c11;
+  --code-fg: #cdd3de;
+  --code-muted: #9aa3b2;
+
+  --status-running: #8b9bff;
+  --status-waiting: #f0a54a;
+  --status-waiting-fg: #0f1218;
+  --status-done: #5fbf8f;
+  --status-failed: #f07167;
+  --status-pending: #667085;
+  --segment-pending: #2e3746;
+  --tint-error: #2a1a1d;
+  --tint-success: #14261e;
+}
+
+:root {
+  --font: 'Archivo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, Menlo, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-radius: 0;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent-text);
+}
+
+code,
+pre,
+kbd,
+.mono {
+  font-family: var(--font-mono);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Top bar */
+
+.site-bar {
+  display: flex;
+  align-items: stretch;
+  height: 48px;
+  background: var(--header-bg);
+  color: var(--header-fg);
+  border-bottom: 1px solid var(--header-line);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.site-brand {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-right: 1px solid var(--header-line);
+  color: var(--header-fg);
+  font-size: 16px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.site-nav {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: stretch;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.site-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.site-nav a,
+.site-bar-link {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 3px solid transparent;
+  color: var(--header-muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.site-nav a:hover,
+.site-bar-link:hover {
+  color: var(--header-fg);
+}
+
+.site-nav a[aria-current='page'] {
+  color: var(--header-fg);
+  border-bottom-color: var(--header-accent);
+}
+
+.site-bar-end {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  border-left: 1px solid var(--header-line);
+}
+
+.site-theme {
+  flex: none;
+  padding: 0 16px;
+  border: 0;
+  border-left: 1px solid var(--header-line);
+  background: transparent;
+  color: var(--header-muted);
+  font: 600 13px var(--font);
+  cursor: pointer;
+}
+
+.site-theme:hover {
+  color: var(--header-fg);
+}
+
+@media (max-width: 640px) {
+  .site-brand span,
+  .site-bar-link {
+    display: none;
+  }
+}
+
+/* Shared primitives */
+
+.section-label {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  background: var(--card);
+  color: var(--text);
+  font: 600 14px var(--font);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--selection);
+}
+
+.btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn-primary:hover {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.code-block {
+  margin: 0;
+  padding: 12px 16px;
+  overflow-x: auto;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* A strip with one 4px segment per step, 2px gaps. */
+.strip {
+  display: flex;
+  gap: 2px;
+}
+
+.strip > span {
+  flex: 1;
+  height: 4px;
+  background: var(--segment-pending);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

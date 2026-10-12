@@ -1,0 +1,65 @@
+---
+// The 48px top bar of the pages outside Starlight. It matches the top bar of
+// the web app: brand on the left, nav links with a 3px underline on the active
+// link, and a theme button on the right.
+import PixelLogo from './PixelLogo.astro';
+
+interface Props {
+  /** Path prefix of the active link, for example '/roadmap/'. */
+  active?: string;
+}
+
+const { active } = Astro.props;
+const GITHUB = 'https://github.com/coleam00/Archon';
+const links = [
+  { href: '/docs/', label: 'Docs' },
+  { href: '/workflows/', label: 'Marketplace' },
+  { href: '/roadmap/', label: 'Roadmap' },
+];
+---
+
+<header class="site-bar">
+  <a href="/" class="site-brand" aria-label="Archon home">
+    <PixelLogo size={20} />
+    <span>Archon</span>
+  </a>
+  <nav class="site-nav" aria-label="Main">
+    {
+      links.map(({ href, label }) => (
+        <a href={href} aria-current={active === href ? 'page' : undefined}>
+          {label}
+        </a>
+      ))
+    }
+  </nav>
+  <div class="site-bar-end">
+    <a href={GITHUB} target="_blank" rel="noopener" class="site-bar-link">GitHub</a>
+    <button type="button" class="site-theme" data-site-theme aria-label="Switch theme">
+      <span data-site-theme-label>Theme</span>
+    </button>
+  </div>
+</header>
+
+<script is:inline>
+  (() => {
+    const button = document.querySelector('[data-site-theme]');
+    const label = document.querySelector('[data-site-theme-label]');
+    if (!button || !label) return;
+    const render = () => {
+      const dark = document.documentElement.dataset.theme === 'dark';
+      label.textContent = dark ? 'Light' : 'Dark';
+      button.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
+    };
+    button.addEventListener('click', () => {
+      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      try {
+        localStorage.setItem('starlight-theme', next);
+      } catch {
+        // Storage can be blocked. The choice then lasts for this page only.
+      }
+      render();
+    });
+    render();
+  })();
+</script>
