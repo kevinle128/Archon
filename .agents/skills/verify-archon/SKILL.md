@@ -1,6 +1,6 @@
 ---
 name: verify-archon
-description: Drive Archon through its CLI, HTTP API, and Console/Legacy UI; check user-facing behavior and retain evidence.
+description: Drive Archon through its CLI, HTTP API, and workflow run UI; check user-facing behavior and retain evidence.
 disable-model-invocation: true
 ---
 

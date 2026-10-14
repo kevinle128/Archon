@@ -9,7 +9,7 @@ The helper starts isolated resources and retains evidence for the selected recip
 | [CLI discovery](install.md) | Version, help, workflow discovery, DAG validation | `install.health` |
 | [Workflow control](workflow-cli.md) | Run, inspect, retry, approve, resume, reject, cancel | `workflow.execution`, `workflow.governance`, `workflow.invalid-input` |
 | [HTTP lifecycle](http-api.md) | Projects, conversations, workflow definitions, Ask answer | `http.lifecycle` |
-| [Workflow rooms](run-ui.md) | Console and Legacy rooms, tools, Ask, transcripts, queue | `ui.rooms`, `ui.tools`, `ui.ask`, `ui.transcript-display`, `ui.queue-guidance`, `ui.visual` |
+| [Workflow rooms](run-ui.md) | Run room, tools, Ask, transcripts, queue | `ui.rooms`, `ui.tools`, `ui.ask`, `ui.transcript-display`, `ui.queue-guidance`, `ui.visual` |
 
 Use `bun "$VERIFY_HELPER" prove --scenario ID --repo "$TARGET" --evidence-root "$EVIDENCE"` for one recipe.
 Use the selector's selection file to run several behaviors together.

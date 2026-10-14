@@ -7,18 +7,19 @@ The Runs workspace (runs list, run column, node column), node rooms, tool rows a
 ## How to get to it (user POV)
 
 Open a run at `/runs/:runId` and select a node; the room opens at `/runs/:runId/:nodeId`.
-Use the List and Graph views and the run tabs (Changes, Files, Terminal, Artifacts, Logs); open the same room through a deep link, an old `/workflows/runs/:runId?node=` link, and a narrow viewport.
+Use the List and Graph views. The node column tabs are Live stream or Transcript, History, Output, and Raw, then the run tabs Changes, Files, Terminal, Artifacts, Logs, and Chat.
+Open the same room through a deep link, an old `/workflows/runs/:runId?node=` link, and a narrow viewport.
 Open Raw on a tool row, answer a pending Ask, and queue guidance while the agent is running.
 
 ## Driving it with Playwright
 
 Run the recipes that match the requested behavior.
-`ui.rooms` checks navigation, the two-column run layout, graph selection, artifacts, deep links, legacy redirects, and mobile Back.
+`ui.rooms` checks navigation, the two-column run layout, graph selection, the Artifacts panel, deep links, legacy redirects, and mobile Back. It does not drive History, Output, the node-column Raw tab, Changes, Files, Terminal, or Chat. Tool-row Raw disclosure is `ui.tools`.
 `ui.tools` checks Raw disclosure, keyboard access, geometry, and contrast.
 `ui.ask` checks real pending requests, submitted answers, retained decisions, focus, mobile layout, and CLI/web resume behavior.
-`ui.transcript-display` checks structured report rendering, the Legacy scroller at desktop and narrow sizes, and graph interaction.
-`ui.queue-guidance` checks direct and loop delivery, blocked and detached states, dock geometry, and both routes.
-`ui.visual` captures matched product/reference states and evaluates the approved design criteria in `../visual-config.json`.
+`ui.transcript-display` checks one-string report unwrap, multi-field labeled values with a collapsed Raw JSON disclosure, the Legacy scroller at desktop and narrow sizes, and graph interaction.
+`ui.queue-guidance` checks direct and loop delivery, blocked and detached states, and dock geometry on the run room.
+`ui.visual` captures matched product/reference states for the Legacy room and evaluates the approved design criteria in `../visual-config.json`.
 Select visual checks for affected UI behavior.
 The helper maps these recipes to real tests in `e2e/ui/` through `lib/browser-scenarios.ts`.
 
