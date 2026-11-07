@@ -243,7 +243,7 @@ are more current than any tree drawn here.
 
 ### Database Schema
 
-**23 application tables (all prefixed with `remote_agent_`) plus 4 PostgreSQL-only Better Auth tables:**
+**24 application tables (all prefixed with `remote_agent_`) plus 4 PostgreSQL-only Better Auth tables:**
 1. **`codebases`** - Repository/project metadata and commands (JSONB); `kind` (`'repo'`/`'folder'`, default `'repo'`) discriminates git repos from **folder projects** (non-git workspaces — multi-repo roots or plain ops folders — that run in place with named `_folder/<slug>/` storage; `repository_url`/`default_branch` are null)
 2. **`codebase_env_vars`** - Per-project env vars injected into project-scoped execution surfaces (Claude, Codex, Grok, bash/script nodes, and direct chat when codebase-scoped), managed via Web UI or `env:` in config
 3. **`users`** - Archon-internal identity (one row per human/bot); created lazily on first sight by any adapter; `role` (`'admin'`(default)`/'member'`) is the identity seam for future per-resource scoping (visibility stays open today)
@@ -267,7 +267,8 @@ are more current than any tree drawn here.
 21. **`workflow_envs`** - Named install-wide workflow ENV overlays (`patches` JSON); `UNIQUE(workflow_name, name)`; optional `created_by_user_id` provenance only (not an ACL)
 22. **`workflow_node_messages`** - Immutable sequenced per-node transcript rows (`kind` text/tool/status, JSON `payload`); `UNIQUE(workflow_run_id, node_id, seq)` is the lookup/order index (`seq >= 1`); cascade-deletes with the run
 23. **`pending_interactions`** - Structured pending AskHuman and permission rows (`kind` ask|permission, `status` pending|answered|purged, JSON `envelope`/`answer`); `UNIQUE(workflow_run_id, tool_use_id)` is the covering lookup; cascade-deletes with the run
-24–27. **`remote_agent_auth_user` / `remote_agent_auth_session` / `remote_agent_auth_account` / `remote_agent_auth_verification`** - Better Auth tables for opt-in web login (**PostgreSQL only**; always created on Postgres via the idempotent schema apply, but populated only when web auth is enabled — `DATABASE_URL` + `BETTER_AUTH_SECRET`). Owned and shaped by Better Auth (text ids, camelCase columns); Archon never queries them directly — a session maps to the canonical `users` row via `user_identities('web', <betterAuthUserId>)`
+24. **`workflow_run_status_log`** - Append-only durable log of observed run state changes (status, open gate key, PR link) served as MCP `workflow_run.status_changed` events; global `position` (`UNIQUE`, the replay cursor) and per-run `seq` (`UNIQUE(workflow_run_id, seq)`, event id `<run_id>:<seq>`); JSON `data` is the event payload; written only by the server's status-log writer (`packages/server/src/mcp/run-status-log.ts`), which observes runs and never changes them; cascade-deletes with the run
+25–28. **`remote_agent_auth_user` / `remote_agent_auth_session` / `remote_agent_auth_account` / `remote_agent_auth_verification`** - Better Auth tables for opt-in web login (**PostgreSQL only**; always created on Postgres via the idempotent schema apply, but populated only when web auth is enabled — `DATABASE_URL` + `BETTER_AUTH_SECRET`). Owned and shaped by Better Auth (text ids, camelCase columns); Archon never queries them directly — a session maps to the canonical `users` row via `user_identities('web', <betterAuthUserId>)`
 
 **Key Patterns:**
 - Conversation ID format: Platform-specific (`thread_ts`, `chat_id`, `user/repo#123`)
@@ -538,6 +539,7 @@ Structured logging uses Pino via `createLogger('<module>')` from `@archon/paths`
 - `DELETE /api/workflows/:name/node-sessions` - Reset persisted per-node provider sessions; optional `?scope=` and `?node=` narrow the deletion; omitting `?scope=` is a cross-scope wipe and requires `?confirm=all-scopes`; returns `{ success, deleted }`
 
 **Workflow Run Lifecycle:**
+- `POST /api/workflows/{name}/run` - Start a run through the orchestrator (JSON or multipart); optional `runId` (UUID) sets the created run row's id and is echoed in the response (`400 invalid_run_id` otherwise); a dispatch that would resume an existing run instead refuses
 - `POST /api/workflows/runs/{runId}/resume` - Resume a failed or paused run from where it left off (skips already-completed DAG nodes; AI session context is not restored).
 - `POST /api/workflows/runs/{runId}/abandon` - Abandon a non-terminal run (marks as cancelled); cascade-cancels non-terminal `workflow:` sub-run descendants (#2121 Phase 2) and reports `cascadeFailures`/`blockedParentRunId`
 - `DELETE /api/workflows/runs/{runId}` - Delete a terminal workflow run and its events
@@ -602,6 +604,9 @@ Structured logging uses Pino via `createLogger('<module>')` from `@archon/paths`
 **System:**
 - `GET /api/health` - Health check with adapter/system status
 - `GET /api/update-check` - Check for available updates; returns `{ updateAvailable, currentVersion, latestVersion, releaseUrl }`; skips GitHub API call for non-binary builds
+
+**MCP (`packages/server/src/mcp/`):**
+- `POST /mcp` - MCP Streamable HTTP, protocol revision `2026-07-28` only (`legacy: 'reject'`), behind the same access gate as `/api/*` plus an Origin check (`ARCHON_PUBLIC_URL` origin or loopback). Tools `run_workflow` / `get_run` / `list_runs`; tasks extension (`tasks/get|update|cancel`, task id = run id, approval gates as `approval-<nodeId>` input requests); events extension (`events/list|poll|stream`, event `workflow_run.status_changed`, cursor = global status-log position). Tools call the REST routes in-process with the caller's identity headers. Guide: `packages/docs-web/src/content/docs/guides/mcp-server.md`
 
 **OpenAPI Spec:**
 - `GET /api/openapi.json` - Generated OpenAPI 3.0 spec for all Zod-validated routes

@@ -276,6 +276,48 @@ describe('server-side /api/* gate', () => {
     expect(res.status).toBe(200);
   });
 
+  const mcpDiscover = (headers: Record<string, string> = {}): RequestInit => ({
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+      'mcp-protocol-version': '2026-07-28',
+      'mcp-method': 'server/discover',
+      ...headers,
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'server/discover',
+      params: {
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+          'io.modelcontextprotocol/clientInfo': { name: 'test', version: '1' },
+          'io.modelcontextprotocol/clientCapabilities': {},
+        },
+      },
+    }),
+  });
+
+  test('gate on + no identity → 401 on /mcp (same gate as /api/*)', async () => {
+    apiGateEnabled = true;
+    const res = await makeApp().request('/mcp', mcpDiscover());
+    expect(res.status).toBe(401);
+  });
+
+  test('gate on + X-Archon-User header → /mcp passes the gate', async () => {
+    apiGateEnabled = true;
+    const res = await makeApp().request('/mcp', mcpDiscover({ 'X-Archon-User': 'alice' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { result: { supportedVersions: string[] } };
+    expect(body.result.supportedVersions).toContain('2026-07-28');
+  });
+
+  test('gate off → /mcp is reachable unauthenticated', async () => {
+    const res = await makeApp().request('/mcp', mcpDiscover());
+    expect(res.status).toBe(200);
+  });
+
   // Fail-closed: a session lookup that throws (e.g. DB outage) with NO trusted
   // header must NOT admit the request. resolveAuthContext swallows the throw and
   // returns undefined, which the gate maps to 401 — never access-granted.

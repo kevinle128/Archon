@@ -1282,6 +1282,25 @@ describe('executeWorkflow', () => {
       expect(store.createWorkflowRun).toHaveBeenCalledTimes(1);
     });
 
+    it('creates the run row with the caller-chosen run id', async () => {
+      const store = makeStore();
+      const deps = makeDeps(store);
+      await executeWorkflow(
+        deps,
+        makePlatform(),
+        'conv-1',
+        '/tmp',
+        makeWorkflow(),
+        'test message',
+        'db-conv-1',
+        { runId: '5d6e7f80-91a2-4b3c-8d4e-5f60718293a4' }
+      );
+      const createArgs = (store.createWorkflowRun as ReturnType<typeof mock>).mock.calls[0][0] as {
+        id?: string;
+      };
+      expect(createArgs.id).toBe('5d6e7f80-91a2-4b3c-8d4e-5f60718293a4');
+    });
+
     it('runs the dag-executor with priorCompletedNodes when caller supplies them', async () => {
       const resumed = makeRun({ id: 'resumed-run', status: 'running' });
       const priorCompletedNodes = new Map([

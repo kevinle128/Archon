@@ -29,6 +29,10 @@ How-to guides for building and running AI coding workflows with Archon.
 - [Per-Node MCP Servers](/guides/mcp-servers/) — Connect external tools (GitHub, Postgres, etc.) to individual nodes
 - [Per-Node Skills](/guides/skills/) — Preload specialized knowledge into node agents
 
+## Running Archon from Other Tools
+
+- [Archon as an MCP Server](/guides/mcp-server/) — Start, follow, and answer workflow runs from an MCP client (tasks and events extensions)
+
 ## Bundled Workflows
 
 Archon ships with ready-to-use workflows that cover common coding tasks. You do not need to write any YAML to use these -- just describe what you want and the router picks the right one.

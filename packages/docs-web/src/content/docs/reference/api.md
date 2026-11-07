@@ -373,6 +373,15 @@ curl -X POST http://localhost:3090/api/workflows/review-block/run \
 
 Values are validated against the workflow's declaration before any worktree, clone, or AI cost: a missing **required** input and an **undeclared** name are both refused up front, through the same contract a composing `with:` map goes through. `400` if `inputs` is not an object of strings (or, on multipart, not valid JSON). An empty object is the same as omitting the field.
 
+**Optional `runId`.** A UUID string (a plain field on multipart) that becomes the id of the run row this dispatch creates. The dispatch is fire-and-forget, so this is how a caller can poll `GET /api/workflows/runs/{runId}` before the row exists. The response echoes it: `{ "accepted": true, "status": "started", "runId": "<uuid>" }`. A value that is not a UUID string → `400 { "error": "invalid_run_id" }` before any side effect. If the conversation already has a resumable run for that workflow, the dispatch refuses (a conversation message explains why) instead of resuming under a different id; use a new conversation. A duplicate id fails on the primary key and no run starts.
+
+```bash
+curl -X POST http://localhost:3090/api/workflows/archon-assist/run \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Explain the auth module", "conversationId": "conv-123",
+       "runId": "2f1c9a4e-5b6d-4e7f-8a9b-0c1d2e3f4a5b"}'
+```
+
 #### List Run Artifacts
 
 ```bash
@@ -492,6 +501,12 @@ Server control messages:
 A second active tab takes over the existing PTY, receives bounded replay (newest 256 KiB), and closes the previous socket with code `4001`.
 A disconnected session may reconnect with the matching resume token for two minutes; after that, or after `close`, process exit, overflow, or server shutdown, the PTY is destroyed.
 No terminal input, output, command history, resume tokens, or session rows are persisted.
+
+---
+
+## MCP Endpoint
+
+`POST /mcp` serves the [Model Context Protocol](https://modelcontextprotocol.io/) (revision `2026-07-28`, Streamable HTTP) with the tasks and events extensions. It is outside `/api/*` and not in the OpenAPI spec, but it sits behind the same access gate. See the [MCP server guide](/guides/mcp-server/).
 
 ---
 

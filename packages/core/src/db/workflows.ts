@@ -472,6 +472,12 @@ function completedWorkflowMetadataExpression(
 }
 
 export async function createWorkflowRun(data: {
+  /**
+   * Run id chosen by the caller, so a client that starts a run can address it
+   * before dispatch returns. Omitted → the database generates one. A duplicate
+   * id fails on the primary key and the error propagates.
+   */
+  id?: string;
   workflow_name: string;
   conversation_id: string;
   codebase_id?: string;
@@ -513,22 +519,27 @@ export async function createWorkflowRun(data: {
   }
 
   try {
+    const columns =
+      'workflow_name, conversation_id, codebase_id, user_message, metadata, working_path, parent_conversation_id, user_id, parent_run_id';
+    const values: unknown[] = [
+      data.workflow_name,
+      data.conversation_id,
+      data.codebase_id ?? null,
+      data.user_message,
+      metadataJson,
+      data.working_path ?? null,
+      data.parent_conversation_id ?? null,
+      data.user_id ?? null,
+      data.parent_run_id ?? null,
+    ];
+    if (data.id !== undefined) values.unshift(data.id);
+    const placeholders = values.map((_, i) => `$${String(i + 1)}`).join(', ');
     const result = await pool.query<WorkflowRun>(
       `INSERT INTO remote_agent_workflow_runs
-       (workflow_name, conversation_id, codebase_id, user_message, metadata, working_path, parent_conversation_id, user_id, parent_run_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (${data.id !== undefined ? 'id, ' : ''}${columns})
+       VALUES (${placeholders})
        RETURNING *`,
-      [
-        data.workflow_name,
-        data.conversation_id,
-        data.codebase_id ?? null,
-        data.user_message,
-        metadataJson,
-        data.working_path ?? null,
-        data.parent_conversation_id ?? null,
-        data.user_id ?? null,
-        data.parent_run_id ?? null,
-      ]
+      values
     );
     const row = result.rows[0];
     if (!row) {

@@ -96,5 +96,7 @@ export const dispatchResponseSchema = z
   .object({
     accepted: z.boolean(),
     status: z.string(),
+    /** Run route only: the caller-supplied `runId`, echoed when one was sent. */
+    runId: z.string().optional(),
   })
   .openapi('DispatchResponse');

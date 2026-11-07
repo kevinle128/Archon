@@ -669,6 +669,12 @@ interface WorkflowDispatchOptions {
    * Continuations ignore a newly supplied candidate when the run already owns one.
    */
   envOverlay?: EnvOverlayCandidate;
+  /**
+   * Run id the caller chose for the fresh run row (`HandleMessageContext.requestedRunId`).
+   * A dispatch that would continue an existing run is refused instead, so the caller
+   * never waits on an id that no row will ever carry.
+   */
+  requestedRunId?: string;
 }
 
 const FAILED_RUN_PROMPT_PREVIEW_MAX = 160;
@@ -810,6 +816,29 @@ async function dispatchOrchestratorWorkflow(
         conversation.id,
         codebase.id
       )));
+
+  // A caller that chose the run id is waiting for a FRESH row with that id. Any
+  // continuation (explicit or auto-detected resume, or the failed-run prompt) keeps the
+  // existing row's id, so refuse before any gate, worktree, or AI cost.
+  if (options?.requestedRunId && resumableRun) {
+    getLog().info(
+      {
+        workflowName: workflow.name,
+        conversationId,
+        requestedRunId: options.requestedRunId,
+        resumableRunId: resumableRun.id,
+      },
+      'orchestrator.requested_run_id_conflicts_with_resume'
+    );
+    await platform.sendMessage(
+      conversationId,
+      `Cannot start **${workflow.name}** with run id \`${options.requestedRunId}\`: this ` +
+        `conversation already has a resumable run (\`${resumableRun.id}\`). Start the run ` +
+        'from a new conversation, or resume or abandon the existing run first.'
+    );
+    return;
+  }
+
   // Whether this dispatch will CONTINUE existing work rather than create a fresh run
   // row. Deliberately the exact negation of the resume/abandon/force menu's condition
   // below: a candidate that is neither paused nor the explicitly-targeted run does not
@@ -1297,6 +1326,7 @@ async function dispatchOrchestratorWorkflow(
           parseWarnings: options?.parseWarnings,
           inputs: resolvedInputs,
           appliedEnvOverlay,
+          runId: options?.requestedRunId,
         },
         executionWorkflow
       );
@@ -1331,6 +1361,7 @@ async function dispatchOrchestratorWorkflow(
         resolveChildIsolation,
         inputs: resolvedInputs,
         ...(appliedEnvOverlay ? { appliedEnvOverlay } : {}),
+        ...(options?.requestedRunId ? { runId: options.requestedRunId } : {}),
       }
     );
   }
@@ -1759,6 +1790,7 @@ export async function handleMessage(
               // caller that sets them today.
               inputs: context?.workflowInputs,
               envOverlay: context?.envOverlay,
+              requestedRunId: context?.requestedRunId,
             }
           );
         }

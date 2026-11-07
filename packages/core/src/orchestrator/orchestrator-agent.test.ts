@@ -2022,6 +2022,61 @@ describe('workflow dispatch routing — interactive flag', () => {
     expect(ctx.inputs).toEqual({ diff: 'D1' });
   });
 
+  test('threads context.requestedRunId into dispatchBackgroundWorkflow as the run id', async () => {
+    mockGetOrCreateConversation.mockReturnValueOnce(Promise.resolve(makeDispatchConversation()));
+    mockGetCodebase.mockReturnValueOnce(Promise.resolve(makeDispatchCodebase()));
+    mockHandleCommand.mockReturnValueOnce(Promise.resolve(makeWorkflowResult(undefined)));
+
+    await handleMessage(makePlatform(), 'conv-1', '/workflow run test-workflow', {
+      requestedRunId: '3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7',
+    });
+
+    expect(mockDispatchBackgroundWorkflow).toHaveBeenCalled();
+    const ctx = mockDispatchBackgroundWorkflow.mock.calls[0][0] as { runId?: string };
+    expect(ctx.runId).toBe('3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7');
+  });
+
+  test('threads context.requestedRunId into executeWorkflow for a fresh foreground run', async () => {
+    mockGetOrCreateConversation.mockReturnValueOnce(Promise.resolve(makeDispatchConversation()));
+    mockGetCodebase.mockReturnValueOnce(Promise.resolve(makeDispatchCodebase()));
+    mockHandleCommand.mockReturnValueOnce(Promise.resolve(makeWorkflowResult(true)));
+
+    await handleMessage(makePlatform(), 'conv-1', '/workflow run test-workflow', {
+      requestedRunId: '3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7',
+    });
+
+    expect(mockExecuteWorkflow).toHaveBeenCalled();
+    const opts = mockExecuteWorkflow.mock.calls[0][7] as { runId?: string };
+    expect(opts.runId).toBe('3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7');
+  });
+
+  test('refuses a requested run id when the dispatch would resume an existing run', async () => {
+    mockGetOrCreateConversation.mockReturnValueOnce(Promise.resolve(makeDispatchConversation()));
+    mockGetCodebase.mockReturnValueOnce(Promise.resolve(makeDispatchCodebase()));
+    mockHandleCommand.mockReturnValueOnce(Promise.resolve(makeWorkflowResult(true)));
+    mockFindResumableRunByParentConversation.mockReturnValueOnce(
+      Promise.resolve({
+        id: 'paused-run-1',
+        workflow_name: 'test-workflow',
+        working_path: '/repos/test-repo/worktrees/paused',
+        parent_conversation_id: 'conv-1',
+        status: 'paused',
+      })
+    );
+
+    const platform = makePlatform();
+    await handleMessage(platform, 'conv-1', '/workflow run test-workflow', {
+      requestedRunId: '3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7',
+    });
+
+    expect(mockExecuteWorkflow).not.toHaveBeenCalled();
+    expect(mockDispatchBackgroundWorkflow).not.toHaveBeenCalled();
+    expect(mockHydrateResumableRun).not.toHaveBeenCalled();
+    const sent = platform.sendMessage.mock.calls.map(c => String(c[1])).join('\n');
+    expect(sent).toContain('3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7');
+    expect(sent).toContain('paused-run-1');
+  });
+
   test('refuses a required-input workflow when nothing is supplied, starting nothing', async () => {
     mockGetOrCreateConversation.mockReturnValueOnce(Promise.resolve(makeDispatchConversation()));
     mockGetCodebase.mockReturnValueOnce(Promise.resolve(makeDispatchCodebase()));
