@@ -205,6 +205,19 @@ mcp tasks/get "$RUN" "\"taskId\":\"$RUN\"" | jq .result
 mcp events/stream workflow_run.status_changed "\"name\":\"workflow_run.status_changed\",\"arguments\":{\"run_id\":\"$RUN\"},\"cursor\":\"$CURSOR\""
 ```
 
+### Without AI cost
+
+The bundled `mcp-smoke` workflow has no AI nodes. It waits 15 seconds (time to see the
+`working` state or cancel it), pauses at an approval gate, then finishes. Use it to check
+tasks, approval input requests, cancel, failure and events on a real server. The run message
+is the mode: exactly `pass`, or `fail` to fail on purpose before the gate. Register a folder
+project (a non-git directory) for it: in a git checkout the engine records per-node git
+snapshots.
+
+```bash
+RUN=$(mcp tools/call run_workflow '"name":"run_workflow","arguments":{"workflow":"mcp-smoke","codebase":"mcp-smoke-folder","message":"pass"}' | jq -r .result.taskId)
+```
+
 ### With the MCP Inspector
 
 Run `npx @modelcontextprotocol/inspector`, choose the Streamable HTTP transport, and enter

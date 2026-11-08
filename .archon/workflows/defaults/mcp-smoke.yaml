@@ -1,0 +1,43 @@
+name: mcp-smoke
+description: |
+  Use when: Checking the Archon MCP server (tasks, approval input requests, cancel,
+            failure, events) against a real server without AI cost.
+  Does: Waits 15 seconds, pauses at an approval gate, then finishes. It has no AI
+        nodes and touches no repository, network or GitHub. The run message is the
+        mode and must be exactly "pass" (wait, gate, finish) or "fail" (wait, then
+        fail before the gate).
+  NOT for: Real work. Run it on a folder project (a non-git directory): in a git
+           checkout the engine records per-node git snapshots, which this check
+           does not need.
+
+# Nothing here writes to the working directory, so runs on one folder can overlap.
+mutates_checkout: false
+
+nodes:
+  - id: wait
+    bash: |
+      set -euo pipefail
+      # The run message is an exact mode value, not prose.
+      case "$ARGUMENTS" in
+        pass|fail) ;;
+        *) echo "mcp-smoke: the run message must be exactly 'pass' or 'fail'" >&2; exit 2 ;;
+      esac
+      # Long enough for a client to see the working state and cancel it.
+      sleep 15
+      if [ "$ARGUMENTS" = fail ]; then
+        echo "mcp-smoke: failing on purpose" >&2
+        exit 1
+      fi
+      echo "waited"
+
+  - id: gate
+    depends_on: [wait]
+    approval:
+      message: |
+        mcp-smoke gate. Approve to finish the run, reject to cancel it.
+
+  - id: finish
+    depends_on: [gate]
+    bash: |
+      set -euo pipefail
+      echo '{"smoke":"finished"}'
