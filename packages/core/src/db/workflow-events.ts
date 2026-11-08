@@ -42,7 +42,13 @@ function toDbDateParam(d: Date): string {
  * whole batch — for the dashboard poller that would freeze the cursor and stop
  * all live updates (the same query keeps re-throwing). Bad data degrades to `{}`.
  */
-function parseEventRow(row: WorkflowEventRow): WorkflowEventRow {
+function parseEventRow(input: WorkflowEventRow): WorkflowEventRow {
+  // The PostgreSQL driver returns TIMESTAMPTZ columns as Date objects, while the
+  // row type (and every reader) expects the string that SQLite returns. Convert
+  // here so readers never see a Date.
+  const createdAt: unknown = input.created_at;
+  const row: WorkflowEventRow =
+    createdAt instanceof Date ? { ...input, created_at: createdAt.toISOString() } : input;
   if (typeof row.data !== 'string') return row;
   try {
     return { ...row, data: JSON.parse(row.data) as Record<string, unknown> };
@@ -152,10 +158,7 @@ export async function listWorkflowEvents(workflowRunId: string): Promise<Workflo
        ORDER BY created_at ASC, COALESCE(event_order, 0) ASC, id ASC`,
       [workflowRunId]
     );
-    return [...result.rows].map(row => ({
-      ...row,
-      data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
-    }));
+    return [...result.rows].map(parseEventRow);
   } catch (error) {
     getLog().error({ err: error as Error, runId: workflowRunId }, 'db.workflow_events_list_failed');
     throw new Error(`Failed to list workflow events: ${(error as Error).message}`);
@@ -177,10 +180,7 @@ export async function listRecentEvents(
          ORDER BY created_at ASC, COALESCE(event_order, 0) ASC, id ASC`,
         [workflowRunId, since.toISOString()]
       );
-      return [...result.rows].map(row => ({
-        ...row,
-        data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
-      }));
+      return [...result.rows].map(parseEventRow);
     }
     return await listWorkflowEvents(workflowRunId);
   } catch (error) {
