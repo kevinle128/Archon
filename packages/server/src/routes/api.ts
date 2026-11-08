@@ -8,6 +8,7 @@ import {
   steeringValidationErrorHook,
   workflowEnvValidationErrorHook,
 } from './openapi-defaults';
+import { registerMcpRoute } from '../mcp/route';
 import { streamSSE } from 'hono/streaming';
 import { cors } from 'hono/cors';
 import type { WebAdapter } from '../adapters/web';
@@ -16,7 +17,7 @@ import { rm, readFile, writeFile, unlink, mkdir, readdir, stat } from 'fs/promis
 import { existsSync, readFileSync } from 'fs';
 import { normalize, join, sep, basename, dirname, resolve } from 'path';
 import { randomUUID } from 'crypto';
-import type { Context } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { requestLogPath } from '../request-log-path';
 import type {
   ConversationLockManager,
@@ -1227,6 +1228,9 @@ const deleteEnvVarRoute = createRoute({
 // branching), mirroring sendMessageRoute. The OpenAPI spec describes the
 // shapes via the description; declaring `request.body` would force JSON
 // validation to run on multipart payloads and reject them.
+/** Canonical 8-4-4-4-12 hex UUID, any version. */
+const RUN_ID_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const runWorkflowRoute = createRoute({
   method: 'post',
   path: '/api/workflows/{name}/run',
@@ -1246,7 +1250,12 @@ const runWorkflowRoute = createRoute({
     'or run-start message persistence, then hands the candidate to the orchestrator ' +
     'out-of-band. Missing id → `env_not_found`; workflow mismatch → `env_workflow_mismatch`. ' +
     'Compatibility/provider/profile/graph errors still travel through the dispatch/SSE ' +
-    'path, not as synchronous Start 400s.',
+    'path, not as synchronous Start 400s. An optional `runId` (a UUID string, also a ' +
+    'plain multipart field) sets the id of the run row the dispatch creates, so the ' +
+    'caller can poll `GET /api/workflows/runs/{runId}` before the row exists; it is ' +
+    'echoed as `runId` in the response. A non-UUID value → `400 { error: ' +
+    "'invalid_run_id' }`. If the dispatch would resume an existing run instead of " +
+    'creating one, it refuses with a conversation message and no row gets that id.',
   request: {
     params: z.object({ name: z.string() }),
   },
@@ -2615,6 +2624,21 @@ export function registerApiRoutes(
   }
 
   /**
+   * Optional caller-chosen `runId` for the run route. Absent → the server picks the
+   * id. Present → it must be a UUID string (the PostgreSQL column type), else
+   * `invalid_run_id`. A multipart duplicate arrives as an array and is refused.
+   */
+  function parseOptionalRunIdField(
+    raw: unknown
+  ): { ok: true; runId?: string } | { ok: false; error: 'invalid_run_id' } {
+    if (raw === undefined) return { ok: true };
+    if (typeof raw !== 'string' || !RUN_ID_UUID_PATTERN.test(raw)) {
+      return { ok: false, error: 'invalid_run_id' };
+    }
+    return { ok: true, runId: raw.toLowerCase() };
+  }
+
+  /**
    * Validate that a caller-supplied `cwd` is rooted at a registered codebase path.
    * This prevents path traversal — callers cannot read/write outside known project roots.
    */
@@ -2729,14 +2753,19 @@ export function registerApiRoutes(
   // the proxy auth sidecar, the proxy MUST still strip that header — otherwise a
   // client can forge it and walk straight through this gate.
   const PUBLIC_API_GATE_PREFIXES = ['/api/auth/', '/api/health'];
-  app.use('/api/*', async (c, next) => {
+  const apiAccessGate: MiddlewareHandler = async (c, next) => {
     if (!isApiGateEnabled()) return next();
     const path = c.req.path;
     if (PUBLIC_API_GATE_PREFIXES.some(p => path === p || path.startsWith(p))) return next();
     const ctx = await resolveAuthContext(c);
     if (!ctx) return apiError(c, 401, 'Authentication required');
     return next();
-  });
+  };
+  app.use('/api/*', apiAccessGate);
+  // The MCP endpoint sits outside /api/* but is the same access boundary: it reuses
+  // this gate instance, and its tools call back into these routes with the caller's
+  // identity headers.
+  registerMcpRoute(app, { accessGate: apiAccessGate });
 
   /**
    * Resolve the per-request auth context: `{ userId, role }`, or undefined when
@@ -4654,6 +4683,7 @@ export function registerApiRoutes(
     let conversationId: string;
     let workflowInputs: Record<string, string> | undefined;
     let envId: string | undefined;
+    let requestedRunId: string | undefined;
     let pendingFileEntries: File[] = [];
     let savedFiles: AttachedFile[] = [];
     let uploadDir = '';
@@ -4704,6 +4734,10 @@ export function registerApiRoutes(
       if (!envIdParsed.ok) return apiError(c, 400, envIdParsed.error);
       envId = envIdParsed.envId;
 
+      const runIdParsed = parseOptionalRunIdField(body.runId);
+      if (!runIdParsed.ok) return apiError(c, 400, runIdParsed.error);
+      requestedRunId = runIdParsed.runId;
+
       // Collect files only — persistence waits until ENV identity succeeds so a
       // missing/mismatched/corrupt envId never leaves upload side effects.
       const rawFiles = body.files;
@@ -4719,6 +4753,7 @@ export function registerApiRoutes(
         message?: unknown;
         inputs?: unknown;
         envId?: unknown;
+        runId?: unknown;
       };
       try {
         body = await c.req.json();
@@ -4741,6 +4776,10 @@ export function registerApiRoutes(
       const envIdParsed = parseOptionalEnvIdField(body.envId);
       if (!envIdParsed.ok) return apiError(c, 400, envIdParsed.error);
       envId = envIdParsed.envId;
+
+      const runIdParsed = parseOptionalRunIdField(body.runId);
+      if (!runIdParsed.ok) return apiError(c, 400, runIdParsed.error);
+      requestedRunId = runIdParsed.runId;
     }
 
     // Freeze the selected ENV row before any Start side effect (files / message).
@@ -4856,6 +4895,7 @@ export function registerApiRoutes(
         ...(savedFiles.length > 0 ? { attachedFiles: savedFiles } : {}),
         ...(workflowInputs ? { workflowInputs } : {}),
         ...(envOverlay ? { envOverlay } : {}),
+        ...(requestedRunId ? { requestedRunId } : {}),
       };
       const filesToCleanup = savedFiles.length > 0 ? { files: savedFiles, uploadDir } : undefined;
       const result = await dispatchToOrchestrator(
@@ -4864,7 +4904,7 @@ export function registerApiRoutes(
         extraContext,
         filesToCleanup
       );
-      return c.json(result);
+      return c.json(requestedRunId ? { ...result, runId: requestedRunId } : result);
     } catch (error) {
       getLog().error({ err: error }, 'run_workflow_failed');
       return apiError(c, 500, 'Failed to run workflow');

@@ -73,6 +73,14 @@ export interface HandleMessageContext {
    * command string. Chat platforms leave it unset.
    */
   readonly envOverlay?: EnvOverlayCandidate;
+  /**
+   * Run id chosen by the caller, so it can address the run before the
+   * fire-and-forget dispatch creates the row. Set ONLY by the
+   * `POST /api/workflows/:name/run` route (optional `runId`). The dispatch uses it
+   * for the fresh run row and refuses to continue an existing run instead,
+   * because that run already has a different id.
+   */
+  readonly requestedRunId?: string;
 }
 
 export interface CommandResult {

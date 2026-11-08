@@ -415,6 +415,8 @@ export interface IWorkflowStore
     IWorkflowSteeringStore {
   // Run lifecycle
   createWorkflowRun(data: {
+    /** Caller-chosen run id; omitted → the store generates one. A duplicate id throws. */
+    id?: string;
     workflow_name: string;
     conversation_id: string;
     codebase_id?: string;

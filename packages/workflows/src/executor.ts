@@ -583,6 +583,12 @@ export type ExecuteWorkflowOptions = ResumePayload & {
    */
   inputs?: Readonly<Record<string, string>>;
   /**
+   * Run id chosen by the caller (the run route's optional `runId`), used when the
+   * executor creates the run row itself, so the caller can address the run before
+   * dispatch returns. Ignored when a run row is passed in (`preCreatedRun`).
+   */
+  runId?: string;
+  /**
    * Frozen ENV overlay already applied to `workflow` by the caller (orchestrator
    * Start path). When set, the executor verifies identity/patched-field equality
    * and owns the pending→complete run metadata snapshot. Resume/retry callers omit
@@ -1379,6 +1385,7 @@ export async function executeWorkflow(
     resolveChildIsolation,
     inputs: suppliedInputs,
     appliedEnvOverlay,
+    runId: requestedRunId,
   } = opts;
 
   // Guard: a container run MUST be resumed with its container rewired (the CLI does
@@ -1685,6 +1692,7 @@ export async function executeWorkflow(
     // Create workflow run record
     try {
       workflowRun = await deps.store.createWorkflowRun({
+        ...(requestedRunId !== undefined ? { id: requestedRunId } : {}),
         workflow_name: workflow.name,
         conversation_id: conversationDbId,
         codebase_id: codebaseId,

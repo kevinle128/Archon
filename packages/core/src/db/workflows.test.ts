@@ -186,6 +186,27 @@ describe('workflows database', () => {
       );
     });
 
+    test('inserts a caller-chosen id as the first column when one is given', async () => {
+      mockQuery.mockResolvedValueOnce(createQueryResult([mockWorkflowRun]));
+
+      await createWorkflowRun({
+        id: '9b2f7c1e-3a4d-4e5f-8a6b-7c8d9e0f1a2b',
+        workflow_name: 'feature-development',
+        conversation_id: 'conv-456',
+        user_message: 'Add dark mode support',
+      });
+
+      const [sql, params] = mockQuery.mock.calls[mockQuery.mock.calls.length - 1] as unknown as [
+        string,
+        unknown[],
+      ];
+      expect(sql).toContain('(id, workflow_name,');
+      expect(sql).toContain('$10');
+      expect(params[0]).toBe('9b2f7c1e-3a4d-4e5f-8a6b-7c8d9e0f1a2b');
+      expect(params[1]).toBe('feature-development');
+      expect(params).toHaveLength(10);
+    });
+
     test('creates workflow run with metadata', async () => {
       const runWithMetadata = {
         ...mockWorkflowRun,

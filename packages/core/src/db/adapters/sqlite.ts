@@ -931,6 +931,22 @@ export class SqliteAdapter implements IDatabase {
         ended_at TEXT
       );
 
+      -- Durable log of workflow run status changes, served as MCP events.
+      -- position is global and strictly increasing (the replay cursor); seq
+      -- counts per run from 1. Written only by the server's status-log writer.
+      CREATE TABLE IF NOT EXISTS remote_agent_workflow_run_status_log (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        workflow_run_id TEXT NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        seq INTEGER NOT NULL CHECK (seq >= 1),
+        status TEXT NOT NULL,
+        gate_key TEXT,
+        data TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CONSTRAINT uq_workflow_run_status_log_position UNIQUE (position),
+        CONSTRAINT uq_workflow_run_status_log_run_seq UNIQUE (workflow_run_id, seq)
+      );
+
       -- Per-node provider session IDs persisted across workflow re-runs
       CREATE TABLE IF NOT EXISTS remote_agent_workflow_node_sessions (
         workflow_name TEXT NOT NULL,
@@ -963,6 +979,8 @@ export class SqliteAdapter implements IDatabase {
         ON remote_agent_workflow_node_execution_evidence(workflow_run_id);
       CREATE INDEX IF NOT EXISTS idx_node_execution_evidence_run_node_epoch
         ON remote_agent_workflow_node_execution_evidence(workflow_run_id, node_id, retry_epoch DESC);
+      CREATE INDEX IF NOT EXISTS idx_workflow_run_status_log_created_at
+        ON remote_agent_workflow_run_status_log(created_at);
       -- NOTE: the idx_workflow_events_run_order index and the assign_order trigger
       -- are deliberately NOT created here. Both reference event_order, which does
       -- not exist on databases created before it was introduced — and CREATE INDEX

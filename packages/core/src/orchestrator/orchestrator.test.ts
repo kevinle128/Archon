@@ -1924,3 +1924,74 @@ describe('US-021 dispatchBackgroundWorkflow overlay preamble fail-closed', () =>
     expect(platform.sendMessage).toHaveBeenCalled();
   });
 });
+
+describe('dispatchBackgroundWorkflow with a caller-chosen run id', () => {
+  beforeEach(() => {
+    clearAllMocks();
+  });
+
+  function makeCtx(platform: MockPlatformAdapter): WorkflowRoutingContext {
+    return {
+      platform,
+      conversationId: 'parent-conv',
+      cwd: '/parent/cwd',
+      originalMessage: 'run it',
+      conversationDbId: 'parent-db-id',
+      codebaseId: 'codebase-789',
+      availableWorkflows: [],
+      runId: '6c1f0e9d-2b3a-4c5d-8e7f-0a1b2c3d4e5f',
+    };
+  }
+
+  test('pre-creates the run row with the requested id', async () => {
+    const { promise: executed, resolve } = Promise.withResolvers<void>();
+    mockExecuteWorkflow.mockImplementationOnce(async () => {
+      queueMicrotask(resolve);
+      return { success: true as const, workflowRunId: '6c1f0e9d-2b3a-4c5d-8e7f-0a1b2c3d4e5f' };
+    });
+    mockGetOrCreateConversation.mockResolvedValueOnce({
+      ...mockConversation,
+      id: 'worker-conv-id',
+      platform_conversation_id: 'web-worker-id',
+    });
+    mockGetCodebase.mockResolvedValueOnce(mockCodebase);
+
+    const platform = new MockPlatformAdapter();
+    const workflow = makeTestWorkflow({
+      name: 'bg-run-id',
+      worktree: { enabled: false },
+      nodes: [{ id: 'n1', prompt: 'x' }],
+    });
+    await dispatchBackgroundWorkflow(makeCtx(platform), workflow);
+    await executed;
+
+    const createArgs = (mockCreateWorkflowRun.mock.calls as unknown as [{ id?: string }][])[0][0];
+    expect(createArgs.id).toBe('6c1f0e9d-2b3a-4c5d-8e7f-0a1b2c3d4e5f');
+    expect(mockExecuteWorkflow).toHaveBeenCalled();
+  });
+
+  test('a failed pre-create stops the dispatch instead of falling back to the executor', async () => {
+    mockCreateWorkflowRun.mockRejectedValueOnce(new Error('duplicate key value'));
+    mockGetOrCreateConversation.mockResolvedValueOnce({
+      ...mockConversation,
+      id: 'worker-conv-dup',
+      platform_conversation_id: 'web-worker-dup',
+    });
+    mockGetCodebase.mockResolvedValueOnce(mockCodebase);
+
+    const platform = new MockPlatformAdapter();
+    const workflow = makeTestWorkflow({
+      name: 'bg-run-id-dup',
+      worktree: { enabled: false },
+      nodes: [{ id: 'n1', prompt: 'x' }],
+    });
+    await dispatchBackgroundWorkflow(makeCtx(platform), workflow);
+
+    expect(mockExecuteWorkflow).not.toHaveBeenCalled();
+    const sent = (platform.sendMessage.mock.calls as unknown as [string, string][])
+      .map(c => String(c[1]))
+      .join('\n');
+    expect(sent).toContain('6c1f0e9d-2b3a-4c5d-8e7f-0a1b2c3d4e5f');
+    expect(sent).toContain('duplicate key value');
+  });
+});

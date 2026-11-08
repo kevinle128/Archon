@@ -5450,6 +5450,7 @@ export interface components {
         DispatchResponse: {
             accepted: boolean;
             status: string;
+            runId?: string;
         };
         CodebaseListResponse: components["schemas"]["Codebase"][];
         Codebase: {
