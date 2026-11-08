@@ -8,7 +8,7 @@
  * test reaches the network: the fake `git` blocks every fetch or push it does not
  * redirect to a local repository, and the fake `gh` fails on any unexpected call.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
@@ -30,6 +30,7 @@ import {
 import { substituteWorkflowVariables } from '../executor-shared';
 import { evaluateCondition } from '../condition-evaluator';
 import type { DagNode, NodeOutput, WorkflowDefinition } from '../schemas';
+import { createGitVisibleChangesCommit } from '@archon/git';
 import { BUNDLED_COMMANDS, BUNDLED_WORKFLOWS } from './bundled-defaults';
 
 const NAME = 'paseo-fork-upstream-resolve';
@@ -155,9 +156,13 @@ case "$1 $2" in
   "pr comment")
     for a in "$@"; do if [ "$prev" = --body-file ]; then cat "$a" >> "$FAKE_LOG.bodies"; fi; prev=$a; done
     echo "https://github.com/$FAKE_REPO/pull/77#issuecomment-2" ;;
+  "pr edit")
+    for a in "$@"; do if [ "$prev" = --body-file ]; then cat "$a" >> "$FAKE_LOG.bodies"; fi; prev=$a; done
+    echo "https://github.com/$FAKE_REPO/pull/77" ;;
   "pr create") echo "https://github.com/$FAKE_REPO/pull/77" ;;
   "pr view")
     case "$*" in
+      *baseRefName*) cat "$FAKE_PR_VIEW_JSON" ;;
       *headRefOid*) printf '%s\\n' "$FAKE_PR_HEAD" ;;
       *) echo 77 ;;
     esac ;;
@@ -239,6 +244,7 @@ function makeSandbox(): Sandbox {
       FAKE_REPO: FORK_REPO,
       FAKE_ISSUE_JSON: join(root, 'issue.json'),
       FAKE_PR_LIST_JSON: join(root, 'pr-list.json'),
+      FAKE_PR_VIEW_JSON: join(root, 'pr-view.json'),
       FAKE_CHECKS_DIR: join(root, 'checks'),
       GIT_CONFIG_GLOBAL: gitConfig,
       GIT_CONFIG_NOSYSTEM: '1',
@@ -250,8 +256,9 @@ function makeSandbox(): Sandbox {
   };
 }
 
-afterAll(() => {
-  for (const dir of sandboxes) rmSync(dir, { recursive: true, force: true });
+// Each test removes its own sandboxes, so no single hook carries the whole cleanup.
+afterEach(() => {
+  for (const dir of sandboxes.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 function run(
@@ -272,6 +279,26 @@ function git(sb: Sandbox, cwd: string, ...args: string[]): string {
   const result = spawnSync(REAL_GIT, args, { cwd, env: sb.env, encoding: 'utf8' });
   if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
   return result.stdout.trim();
+}
+
+/** Write the scripts `prepare` creates, so later nodes can be run on their own. */
+function installSyncScripts(sb: Sandbox): void {
+  const prepare = bashOf('prepare');
+  writeFileSync(join(sb.sync, 'checks.sh'), heredoc(prepare, 'CHECKS_SH'));
+  writeFileSync(join(sb.sync, 'clean-tree.sh'), heredoc(prepare, 'CLEAN_TREE_SH'));
+  writeFileSync(join(sb.sync, 'merge-commit.sh'), heredoc(prepare, 'MERGE_COMMIT_SH'));
+}
+
+/** A committed repository whose origin/main is HEAD, as prepare leaves it. */
+function cleanRepo(sb: Sandbox): string {
+  const work = join(sb.root, 'work');
+  mkdirSync(work, { recursive: true });
+  git(sb, work, 'init', '-q', '-b', 'main');
+  writeFileSync(join(work, 'f'), 'x\n');
+  git(sb, work, 'add', 'f');
+  git(sb, work, 'commit', '-q', '-m', 'c');
+  git(sb, work, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  return work;
 }
 
 function calls(sb: Sandbox): string[] {
@@ -334,7 +361,9 @@ describe('paseo-fork-upstream-resolve structure', () => {
       'ask-human',
       'apply-guidance',
       'final-verify',
-      'publish',
+      'push-branch',
+      'create-pr',
+      'verify-pr',
       'wait-ci',
       'fix-ci',
       'finalize',
@@ -352,13 +381,19 @@ describe('paseo-fork-upstream-resolve structure', () => {
       'ask-human': 'all_success',
       'apply-guidance': 'all_success',
       'final-verify': 'none_failed_min_one_success',
-      publish: 'all_success',
+      'push-branch': 'all_success',
+      'create-pr': 'all_success',
+      'verify-pr': 'all_success',
       'wait-ci': 'all_success',
       'fix-ci': 'all_success',
       finalize: 'all_done',
     });
     expect(nodeById('decide').depends_on).toEqual(['resolve', 'verify', 'fix']);
     expect(nodeById('final-verify').depends_on).toEqual(['decide', 'apply-guidance']);
+    expect(nodeById('push-branch').depends_on).toEqual(['final-verify']);
+    expect(nodeById('create-pr').depends_on).toEqual(['push-branch']);
+    expect(nodeById('verify-pr').depends_on).toEqual(['create-pr']);
+    expect(nodeById('wait-ci').depends_on).toEqual(['verify-pr']);
     expect(nodeById('finalize').depends_on).toEqual(['wait-ci', 'fix-ci']);
     expect(WORKFLOW.returns).toBe('finalize');
   });
@@ -371,14 +406,29 @@ describe('paseo-fork-upstream-resolve structure', () => {
     expect(YAML_TEXT).not.toContain('INPUTS_');
   });
 
-  it('reads the issue number with a structured AI node on the install default model', () => {
+  it('pins one verified model on every AI node and leaves the provider to the install', () => {
+    const aiNodes = [...WORKFLOW.nodes, ...loopGroupOf('fix-ci').nodes].filter(
+      n => 'prompt' in n || 'command' in n
+    ) as Array<DagNode & { provider?: string }>;
+    expect(aiNodes.map(n => n.id)).toEqual([
+      'read-request',
+      'resolve',
+      'fix',
+      'apply-guidance',
+      'create-pr',
+      'fix-ci-attempt',
+    ]);
+    for (const node of aiNodes) {
+      expect(node.model).toBe('gpt-6-luna');
+      expect(node.provider).toBeUndefined();
+    }
+  });
+
+  it('reads the issue number with a structured AI node', () => {
     const node = nodeById('read-request') as DagNode & {
       prompt?: string;
       output_format?: { properties?: Record<string, { type?: string }> };
     };
-    // A model tier resolves per install, and the built-in tier default can name a
-    // model the install's provider account cannot use; the default model always works.
-    expect(node.model).toBeUndefined();
     expect(node.prompt).toContain('$ARGUMENTS');
     expect(node.output_format?.properties?.issue_number?.type).toBe('integer');
   });
@@ -408,17 +458,24 @@ describe('paseo-fork-upstream-resolve structure', () => {
 
   it('gives every slow bash node an explicit timeout', () => {
     const timeouts = Object.fromEntries(
-      ['prepare', 'verify', 'decide', 'final-verify', 'publish', 'wait-ci', 'finalize'].map(id => [
-        id,
-        nodeById(id).timeout,
-      ])
+      [
+        'prepare',
+        'verify',
+        'decide',
+        'final-verify',
+        'push-branch',
+        'verify-pr',
+        'wait-ci',
+        'finalize',
+      ].map(id => [id, nodeById(id).timeout])
     );
     expect(timeouts).toEqual({
       prepare: 1_800_000,
       verify: 2_700_000,
       decide: 2_700_000,
       'final-verify': 2_700_000,
-      publish: 600_000,
+      'push-branch': 600_000,
+      'verify-pr': 300_000,
       'wait-ci': 6_000_000,
       finalize: 300_000,
     });
@@ -444,12 +501,28 @@ describe('paseo-fork-upstream-resolve structure', () => {
 describe('paseo-fork-upstream-resolve policy', () => {
   const allText = [YAML_TEXT, ...COMMAND_NAMES.map(n => BUNDLED_COMMANDS[n] ?? '')];
 
-  it('never merges a pull request and never uses auto, squash or rebase merges', () => {
+  it('never merges a pull request and never uses auto, squash, rebase or force-push', () => {
     for (const text of allText) {
       expect(text).not.toContain('gh pr merge');
       expect(text).not.toContain('--auto');
       expect(text).not.toContain('--squash');
       expect(text).not.toContain('--rebase');
+      expect(text).not.toContain('push --force');
+    }
+  });
+
+  it('makes the resolve command create exactly one merge commit, or abort cleanly', () => {
+    const text = BUNDLED_COMMANDS['paseo-fork-resolve-upstream-merge'] ?? '';
+    expect(text).toContain('git merge --no-ff --no-commit "$upstream_sha"');
+    expect(text).toContain(
+      'git commit -m "Merge $upstream_repo ${upstream_sha:0:9} into $fork_ref"'
+    );
+    expect(text).toContain('exactly one merge commit');
+    expect(text).toContain('git merge --abort');
+    expect(text).not.toContain('git commit --no-edit');
+    expect(text).not.toContain('--no-verify');
+    for (const name of COMMAND_NAMES) {
+      expect(BUNDLED_COMMANDS[name]).toContain('git status --porcelain --untracked-files=all');
     }
   });
 
@@ -471,13 +544,29 @@ describe('paseo-fork-upstream-resolve policy', () => {
     expect(bashOf('prepare')).toContain('branch="sync/upstream-$issue-${WORKFLOW_ID:0:8}"');
   });
 
-  it('opens the pull request against the validated fork_ref, never a literal main', () => {
-    const publish = bashOf('publish');
-    expect(publish).toContain('--base "$fork_ref"');
-    expect(publish).not.toMatch(/--base\s+["']?main\b/);
-    expect(publish).toContain('Closes #');
-    expect(publish).toContain('Merge with **Create a merge commit**, not squash.');
-    expect(publish).toContain('--title "sync: merge upstream $upstream_repo $(date +%F)"');
+  it('opens the pull request with the unchanged bundled archon-create-pr after pushing the branch', () => {
+    const node = nodeById('create-pr') as DagNode & { command?: string; prompt_suffix?: string };
+    expect(node.command).toBe('archon-create-pr');
+    const disk = readFileSync(
+      join(REPO_ROOT, '.archon/commands/defaults/archon-create-pr.md'),
+      'utf-8'
+    );
+    expect(BUNDLED_COMMANDS['archon-create-pr']).toBe(disk.replace(/\r\n/g, '\n'));
+    expect(COMMAND_NAMES as readonly string[]).not.toContain('archon-create-pr');
+    const suffix = node.prompt_suffix ?? '';
+    expect(suffix).toContain('The base is `$BASE_BRANCH` (main).');
+    expect(suffix).toContain('`sync: merge upstream getpaseo/paseo <yyyy-mm-dd>`');
+    expect(suffix).toContain('`Closes #<issue>`');
+    expect(suffix).toContain('$ARTIFACTS_DIR/sync/resolution.md');
+    expect(suffix).toContain('`Merge with **Create a merge commit**, not squash.`');
+    expect(suffix).toContain('Do not push, pull, rebase, force-push or amend');
+    // The branch is on origin before the command runs, so its own push is a no-op.
+    expect(bashOf('push-branch')).toContain('git push -u origin HEAD');
+    expect(bashOf('verify-pr')).toContain('PR_BASE=main');
+  });
+
+  it('has no test mode', () => {
+    expect(YAML_TEXT).not.toMatch(/sync-test|\[test\]|TEST - do not merge|test_run/);
   });
 
   it('waits for CI with gh pr checks inside the documented windows', () => {
@@ -557,7 +646,9 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
     expect(d['ask-human']).toBe('skip:when');
     expect(d['apply-guidance']).toBe('skip:trigger');
     expect(d['final-verify']).toBe('run');
-    expect(d.publish).toBe('run');
+    expect(d['push-branch']).toBe('run');
+    expect(d['create-pr']).toBe('run');
+    expect(d['verify-pr']).toBe('run');
     expect(d['fix-ci']).toBe('skip:when');
     expect(d.finalize).toBe('run');
   });
@@ -586,7 +677,9 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
       'ask-human',
       'apply-guidance',
       'final-verify',
-      'publish',
+      'push-branch',
+      'create-pr',
+      'verify-pr',
       'wait-ci',
       'fix-ci',
     ]) {
@@ -602,7 +695,9 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
       decide: completed({ needs_human: false, question: '', issue_url: 'u', run_url: 'r' }),
       'final-verify': { state: 'failed', output: '', error: 'checks fail' },
     });
-    expect(d.publish).toBe('skip:trigger');
+    expect(d['push-branch']).toBe('skip:trigger');
+    expect(d['create-pr']).toBe('skip:trigger');
+    expect(d['verify-pr']).toBe('skip:trigger');
     expect(d['wait-ci']).toBe('skip:trigger');
     expect(d['fix-ci']).toBe('skip:trigger');
     expect(d.finalize).toBe('run');
@@ -617,20 +712,19 @@ describe('fork-sync-conflict block validation (executable)', () => {
   let sb: Sandbox;
   const checks = region(bashOf('prepare'), 'sync-request-checks');
 
-  beforeAll(() => {
+  beforeEach(() => {
     sb = makeSandbox();
   });
 
   function validate(
     body: string,
-    labels: string[],
     repo = FORK_REPO
   ): { status: number | null; block: Record<string, unknown> | null; refusal: string } {
     const bodyFile = join(sb.root, 'body.md');
     writeFileSync(bodyFile, body);
     rmSync(join(sb.sync, 'refusal.txt'), { force: true });
-    const result = run(sb, `set -euo pipefail\n${checks}\nvalidate_sync_block "$1" "$2" "$3"`, {
-      args: [bodyFile, repo, JSON.stringify(labels)],
+    const result = run(sb, `set -euo pipefail\n${checks}\nvalidate_sync_block "$1" "$2"`, {
+      args: [bodyFile, repo],
     });
     const refusalPath = join(sb.sync, 'refusal.txt');
     let block: Record<string, unknown> | null = null;
@@ -642,143 +736,88 @@ describe('fork-sync-conflict block validation (executable)', () => {
     };
   }
 
-  const PROD_LABELS = ['upstream-sync-conflict'];
-  const TEST_LABELS = ['upstream-sync-conflict', 'sync-test'];
-  const TEST_BASE = 'sync-test/20261108-1-base';
-
   it('accepts a valid production block', () => {
-    const r = validate(`${blockLine()}\n\n## Upstream sync conflict\n`, PROD_LABELS);
+    const r = validate(`${blockLine()}\n\n## Upstream sync conflict\n`);
     expect(r.status).toBe(0);
     expect(r.refusal).toBe('');
     expect(r.block?.upstream_sha).toBe(SHA_A);
     expect(r.block?.fork_ref).toBe('main');
   });
 
-  it('accepts a valid test block with the sync-test label and a sync-test base', () => {
-    const r = validate(blockLine({ test: true, fork_ref: TEST_BASE }), TEST_LABELS);
-    expect(r.status).toBe(0);
-    expect(r.block?.fork_ref).toBe(TEST_BASE);
-  });
-
   it('accepts CRLF line endings and file names with escaped comment markers', () => {
     const line = blockLine({ files: ['a-->b<c>.txt'] })
       .replace('a-->b<c>.txt', 'a--\\u003eb\\u003cc\\u003e.txt')
       .concat('\r\n');
-    const r = validate(line, PROD_LABELS);
+    const r = validate(line);
     expect(r.status).toBe(0);
     expect(r.block?.files).toEqual(['a-->b<c>.txt']);
   });
 
-  const refusals: Array<[string, string, string[], string]> = [
+  const refusals: Array<[string, string, string]> = [
     [
       'a body without the block',
       '## Upstream sync conflict\n',
-      PROD_LABELS,
       'line 1 of the issue body is not a fork-sync-conflict:v1 block',
     ],
     [
       'a block on line 2',
       `intro\n${blockLine()}\n`,
-      PROD_LABELS,
       'line 1 of the issue body is not a fork-sync-conflict:v1 block',
     ],
-    [
-      'a block that is not JSON',
-      '<!-- fork-sync-conflict:v1 {nope -->\n',
-      PROD_LABELS,
-      'is not a JSON object',
-    ],
-    ['a wrong schema', blockLine({ schema: 2 }), PROD_LABELS, 'schema must be 1'],
-    [
-      'a wrong label',
-      blockLine({ label: 'other' }),
-      PROD_LABELS,
-      'label must be "upstream-sync-conflict"',
-    ],
+    ['a block that is not JSON', '<!-- fork-sync-conflict:v1 {nope -->\n', 'is not a JSON object'],
+    ['a wrong schema', blockLine({ schema: 2 }), 'schema must be 1'],
+    ['a wrong label', blockLine({ label: 'other' }), 'label must be "upstream-sync-conflict"'],
     [
       'another upstream repository',
       blockLine({ upstream_repo: 'evil/paseo' }),
-      PROD_LABELS,
       'upstream_repo must be "getpaseo/paseo"',
     ],
     [
       'a short upstream SHA',
       blockLine({ upstream_sha: 'aaaaaaaaa' }),
-      PROD_LABELS,
       'upstream_sha must be 40 lowercase hex characters',
     ],
     [
       'an uppercase fork SHA',
       blockLine({ fork_sha: 'B'.repeat(40) }),
-      PROD_LABELS,
       'fork_sha must be 40 lowercase hex characters',
     ],
     [
       'a missing merge base',
       blockLine({ merge_base: undefined }),
-      PROD_LABELS,
       'merge_base must be 40 lowercase hex characters',
     ],
     [
       'a fork_repo of another repository',
       blockLine({ fork_repo: 'someone/paseo' }),
-      PROD_LABELS,
       `fork_repo must be "${FORK_REPO}"`,
     ],
     [
       'a feature branch as fork_ref',
       blockLine({ fork_ref: 'feature/x' }),
-      PROD_LABELS,
-      'fork_ref must be "main" or sync-test/<yyyymmdd>-<n>-base',
+      'fork_ref must be "main"',
     ],
     [
-      'a test block without the sync-test label',
-      blockLine({ test: true, fork_ref: TEST_BASE }),
-      PROD_LABELS,
-      'test is true but the issue has no sync-test label',
+      'a throwaway test base as fork_ref',
+      blockLine({ fork_ref: 'sync-test/20261108-1-base' }),
+      'fork_ref must be "main"',
     ],
-    [
-      'the sync-test label on a production block',
-      blockLine(),
-      TEST_LABELS,
-      'the issue has the sync-test label but test is false',
-    ],
-    [
-      'a test base with test false',
-      blockLine({ fork_ref: TEST_BASE }),
-      PROD_LABELS,
-      'fork_ref is a sync-test/ base but test is false',
-    ],
-    [
-      'a test block that targets main',
-      blockLine({ test: true }),
-      TEST_LABELS,
-      'test is true but fork_ref is not a sync-test/ base',
-    ],
-    [
-      'a non-boolean test flag',
-      blockLine({ test: 'false' }),
-      PROD_LABELS,
-      'test must be a boolean',
-    ],
-    [
-      'files that are not strings',
-      blockLine({ files: [1] }),
-      PROD_LABELS,
-      'files must be an array of strings',
-    ],
+    ['a test block', blockLine({ test: true }), 'test blocks are not supported'],
+    ['a non-boolean test flag', blockLine({ test: 'false' }), 'test must be the boolean false'],
+    ['a missing test flag', blockLine({ test: undefined }), 'test must be the boolean false'],
+    ['files that are not strings', blockLine({ files: [1] }), 'files must be an array of strings'],
   ];
 
-  for (const [label, body, labels, reason] of refusals) {
+  for (const [label, body, reason] of refusals) {
     it(`refuses ${label} and records the reason`, () => {
-      const r = validate(body, labels);
+      const r = validate(body);
       expect(r.status).toBe(1);
       expect(r.refusal).toContain(reason);
     });
   }
 
   it('lists every reason when several fields are wrong', () => {
-    const r = validate(blockLine({ schema: 3, fork_ref: 'feature/x' }), PROD_LABELS);
+    const r = validate(blockLine({ schema: 3, fork_ref: 'feature/x' }));
     expect(r.status).toBe(1);
     expect(r.refusal).toContain('schema must be 1; ');
     expect(r.refusal).toContain('fork_ref must be');
@@ -922,15 +961,15 @@ describe('prepare node (executable)', () => {
     expect(calls(sb).some(c => c.startsWith('git fetch'))).toBe(false);
   });
 
-  it('applies the test guard before fetching', () => {
+  it('refuses a test block before fetching, so no run takes another path', () => {
     const sb = makeSandbox();
     const r = runPrepare(sb, null, {
-      body: blockLine(),
+      body: blockLine({ test: true }),
       labels: ['upstream-sync-conflict', 'sync-test'],
     });
     expect(r.status).toBe(1);
     expect(readFileSync(join(sb.sync, 'refusal.txt'), 'utf-8')).toContain(
-      'the issue has the sync-test label but test is false'
+      'test blocks are not supported'
     );
     expect(calls(sb).some(c => c.startsWith('git fetch'))).toBe(false);
   });
@@ -960,7 +999,7 @@ describe('prepare node (executable)', () => {
     expect(calls(sb)).toEqual([]);
   });
 
-  it('starts the merge on a new per-run branch and writes sync.json and checks.sh', () => {
+  it('finds the conflicts with a trial merge and ends clean on a new per-run branch', () => {
     const sb = makeSandbox();
     const repos = makeForkRepos(sb);
     const r = runPrepare(sb, repos, {});
@@ -974,20 +1013,43 @@ describe('prepare node (executable)', () => {
       upstream_repo: 'getpaseo/paseo',
       upstream_sha: repos.upstreamSha,
       fork_ref: 'main',
-      fork_sha: repos.forkSha,
+      base_sha: repos.forkSha,
       merge_base: repos.mergeBase,
       branch: `sync/upstream-${ISSUE}-abcdef01`,
       files: ['src/grid.ts'],
       force_human: false,
-      test: false,
     });
     expect(readJson<unknown>(join(sb.sync, 'sync.json'))).toEqual(sync);
     expect(git(sb, repos.work, 'symbolic-ref', '--short', 'HEAD')).toBe(
       `sync/upstream-${ISSUE}-abcdef01`
     );
-    expect(git(sb, repos.work, 'rev-parse', 'MERGE_HEAD')).toBe(repos.upstreamSha);
+    // The engine commits whatever a node leaves behind, so prepare must leave
+    // no merge in progress and no change.
+    expect(existsSync(join(repos.work, '.git', 'MERGE_HEAD'))).toBe(false);
+    expect(git(sb, repos.work, 'status', '--porcelain', '--untracked-files=all')).toBe('');
+    expect(git(sb, repos.work, 'rev-parse', 'HEAD')).toBe(repos.forkSha);
     expect(existsSync(join(sb.sync, 'checks.sh'))).toBe(true);
+    expect(existsSync(join(sb.sync, 'clean-tree.sh'))).toBe(true);
     expect(readFileSync(join(sb.sync, 'issue.md'), 'utf-8')).toContain('## Upstream sync conflict');
+  });
+
+  it('starts from origin/main and only notes an older fork_sha in the issue', () => {
+    const sb = makeSandbox();
+    const repos = makeForkRepos(sb);
+    const r = runPrepare(sb, repos, {
+      body: blockLine({
+        upstream_sha: repos.upstreamSha,
+        fork_sha: repos.mergeBase,
+        merge_base: repos.mergeBase,
+        files: ['src/grid.ts'],
+      }),
+    });
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain(
+      `note: origin/main is at ${repos.forkSha}; the issue recorded ${repos.mergeBase}`
+    );
+    expect((JSON.parse(r.stdout) as { base_sha: string }).base_sha).toBe(repos.forkSha);
+    expect(git(sb, repos.work, 'rev-parse', 'HEAD')).toBe(repos.forkSha);
   });
 
   it('marks force_human when the issue asks for a human review', () => {
@@ -1008,6 +1070,8 @@ describe('prepare node (executable)', () => {
     expect(r.stderr).toBe('');
     expect(r.status).toBe(0);
     expect((JSON.parse(r.stdout) as { files: string[] }).files).toEqual(files);
+    expect(existsSync(join(repos.work, '.git', 'MERGE_HEAD'))).toBe(false);
+    expect(git(sb, repos.work, 'status', '--porcelain', '--untracked-files=all')).toBe('');
   });
 
   it('refuses an upstream commit that the fork already contains', () => {
@@ -1032,7 +1096,7 @@ describe('prepare node (executable)', () => {
 describe('local checks script (executable)', () => {
   const CHECKS_SH = heredoc(bashOf('prepare'), 'CHECKS_SH');
 
-  function setup(options: { failing?: string; nodeMajor?: string } = {}): {
+  function setup(options: { failing?: string; nodeMajor?: string; messy?: string } = {}): {
     sb: Sandbox;
     work: string;
     script: string;
@@ -1050,6 +1114,8 @@ describe('local checks script (executable)', () => {
     ]) {
       writeFileSync(join(work, 'src', f), 'x\n');
     }
+    git(sb, work, 'add', '.');
+    git(sb, work, 'commit', '-q', '-m', 'fixture');
     writeFileSync(
       join(sb.sync, 'sync.json'),
       JSON.stringify({ files: ['src/grid.ts', 'src/panel.tsx', 'src/gone.ts'] })
@@ -1064,6 +1130,13 @@ printf '%s NODE_ENV=%s\\n' "${tool}" "\${NODE_ENV-unset}" >> "$FAKE_LOG.env"
 if [ "$1" != -p ]; then printf '[%s]' "${tool}" "$@" >> "$FAKE_LOG.args"; echo >> "$FAKE_LOG.args"; fi
 if [ "$1" = -p ]; then echo ${options.nodeMajor ?? '22'}; exit 0; fi
 if [ "$1" = --version ]; then echo v${options.nodeMajor ?? '22'}.0.0; exit 0; fi
+case "${tool} $*" in *"${options.messy || '__none__'}"*)
+  # A check that rewrites a tracked file, stages and deletes others, and leaves build output.
+  echo changed > src/grid.ts
+  echo staged > src/panel.tsx && git add src/panel.tsx
+  rm -f src/grid.test.ts
+  mkdir -p out && echo built > out/build.txt ;;
+esac
 case "${tool} $*" in *"${failing || '__none__'}"*) echo "boom from ${tool}"; exit 1 ;; esac
 exit 0
 `;
@@ -1121,6 +1194,24 @@ exit 0
     const envLines = readFileSync(`${sb.env.FAKE_LOG}.env`, 'utf-8').trim().split('\n');
     expect(envLines.length).toBeGreaterThan(0);
     for (const line of envLines) expect(line).toEndWith('NODE_ENV=unset');
+  });
+
+  it('restores what the checks changed and keeps changes that were there before', () => {
+    const { sb, work, script } = setup({ messy: 'run format:check', failing: 'run format:check' });
+    writeFileSync(join(work, 'src/panel.test.tsx'), 'edited by the agent\n');
+    writeFileSync(join(work, 'notes.txt'), 'untracked before the checks\n');
+    const r = run(sb, `bash "${script}" format-check`, { cwd: work });
+    expect(r.status).toBe(0);
+    expect((JSON.parse(r.stdout) as { failed: string[] }).failed).toEqual(['format-check']);
+    expect(readFileSync(join(work, 'src/grid.ts'), 'utf-8')).toBe('x\n');
+    expect(readFileSync(join(work, 'src/panel.tsx'), 'utf-8')).toBe('x\n');
+    expect(readFileSync(join(work, 'src/grid.test.ts'), 'utf-8')).toBe('x\n');
+    expect(existsSync(join(work, 'out/build.txt'))).toBe(false);
+    expect(readFileSync(join(work, 'src/panel.test.tsx'), 'utf-8')).toBe('edited by the agent\n');
+    expect(readFileSync(join(work, 'notes.txt'), 'utf-8')).toBe('untracked before the checks\n');
+    expect(git(sb, work, 'diff', '--name-only')).toBe('src/panel.test.tsx');
+    expect(git(sb, work, 'diff', '--cached', '--name-only')).toBe('');
+    expect(git(sb, work, 'ls-files', '--others', '--exclude-standard')).toBe('notes.txt');
   });
 
   it('reruns only the named checks as a partial run', () => {
@@ -1197,17 +1288,21 @@ describe('decide node (executable)', () => {
   function runDecide(
     sb: Sandbox,
     resolve: { resolved: boolean; question: string },
-    options: { checks?: unknown; forceHuman?: boolean } = {}
-  ): { status: number | null; stdout: string } {
+    options: { checks?: unknown; forceHuman?: boolean; work?: string } = {}
+  ): { status: number | null; stdout: string; stderr: string } {
+    const work = options.work ?? cleanRepo(sb);
     writeFileSync(
       join(sb.sync, 'sync.json'),
       JSON.stringify({
         repo: FORK_REPO,
         issue: ISSUE,
         issue_url: 'https://github.com/kevinle128/paseo/issues/42',
+        fork_ref: 'main',
+        base_sha: git(sb, work, 'rev-parse', 'refs/remotes/origin/main'),
         force_human: options.forceHuman ?? false,
       })
     );
+    installSyncScripts(sb);
     writeFileSync(
       join(sb.sync, 'issue.json'),
       JSON.stringify({
@@ -1220,8 +1315,21 @@ describe('decide node (executable)', () => {
     const script = render(bashOf('decide'), sb.artifacts, {
       resolve: completed(resolve, ['resolved', 'question']),
     });
-    return run(sb, script);
+    return run(sb, script, { cwd: work });
   }
+
+  it('fails before asking anyone when the resolver left a change for the engine to commit', () => {
+    const sb = makeSandbox();
+    const work = cleanRepo(sb);
+    writeFileSync(join(work, 'f'), 'left behind\n');
+    git(sb, work, 'commit', '-q', '-am', 'archon evidence: resolve end');
+    const r = runDecide(sb, { resolved: true, question: '' }, { work });
+    expect(r.status).toBe(1);
+    expect(readFileSync(join(sb.sync, 'guard-failure.txt'), 'utf-8')).toContain(
+      'archon evidence: resolve end'
+    );
+    expect(calls(sb)).toEqual([]);
+  });
 
   it('asks a human and comments once when the resolver cannot decide', () => {
     const sb = makeSandbox();
@@ -1269,42 +1377,72 @@ describe('decide node (executable)', () => {
 // final-verify
 // ---------------------------------------------------------------------------
 
-describe('final-verify node (executable)', () => {
-  function committedMerge(files: string[] = ['src/grid.ts']): { sb: Sandbox; repos: ForkRepos } {
-    const sb = makeSandbox();
-    const repos = makeForkRepos(sb, files);
-    git(sb, repos.work, 'fetch', '-q', repos.origin, '+refs/heads/main:refs/remotes/origin/main');
-    git(sb, repos.work, 'fetch', '-q', repos.upstream, 'main');
-    git(sb, repos.work, 'switch', '-q', '-c', `sync/upstream-${ISSUE}-abcdef01`);
-    spawnSync(REAL_GIT, ['merge', '--no-ff', '--no-commit', repos.upstreamSha], {
-      cwd: repos.work,
-      env: sb.env,
-    });
+/** A fork whose sync branch holds the resolved merge commit, as resolve leaves it. */
+function committedMerge(
+  files: string[] = ['src/grid.ts'],
+  message?: string
+): { sb: Sandbox; repos: ForkRepos } {
+  // One repository holds both sides, which keeps this fixture to few processes.
+  const sb = makeSandbox();
+  const work = join(sb.root, 'work');
+  mkdirSync(work, { recursive: true });
+  const writeAll = (content: string): void => {
     for (const file of files) {
-      writeFileSync(join(repos.work, file), 'export const grid = "fork+upstream";\n');
-      git(sb, repos.work, 'add', '--', file);
+      mkdirSync(dirname(join(work, file)), { recursive: true });
+      writeFileSync(join(work, file), `export const grid = "${content}";\n`);
     }
-    git(sb, repos.work, 'commit', '-q', '--no-edit');
-    writeFileSync(
-      join(sb.sync, 'sync.json'),
-      JSON.stringify({
-        upstream_sha: repos.upstreamSha,
-        fork_ref: 'main',
-        branch: `sync/upstream-${ISSUE}-abcdef01`,
-        files,
-      })
-    );
-    writeFileSync(
-      join(sb.sync, 'checks.json'),
-      JSON.stringify({ passed: true, failed: [], ran: [], full: true })
-    );
-    writeFileSync(
-      join(sb.sync, 'decision.json'),
-      JSON.stringify({ needs_human: false, passed: true })
-    );
-    return { sb, repos };
-  }
+  };
+  git(sb, work, 'init', '-q', '-b', 'main');
+  writeAll('base');
+  git(sb, work, 'add', '-A');
+  git(sb, work, 'commit', '-q', '-m', 'base');
+  const mergeBase = git(sb, work, 'rev-parse', 'HEAD');
+  git(sb, work, 'switch', '-q', '-c', 'upstream');
+  writeAll('upstream');
+  git(sb, work, 'commit', '-q', '-am', 'upstream change');
+  const upstreamSha = git(sb, work, 'rev-parse', 'HEAD');
+  git(sb, work, 'switch', '-q', 'main');
+  writeAll('fork');
+  git(sb, work, 'commit', '-q', '-am', 'fork change');
+  const forkSha = git(sb, work, 'rev-parse', 'HEAD');
+  git(sb, work, 'update-ref', 'refs/remotes/origin/main', forkSha);
+  git(sb, work, 'switch', '-q', '-c', `sync/upstream-${ISSUE}-abcdef01`);
+  spawnSync(REAL_GIT, ['merge', '--no-ff', '--no-commit', upstreamSha], { cwd: work, env: sb.env });
+  writeAll('fork+upstream');
+  git(sb, work, 'add', '-A');
+  const repos: ForkRepos = { work, origin: '', upstream: '', upstreamSha, forkSha, mergeBase };
+  git(
+    sb,
+    repos.work,
+    'commit',
+    '-q',
+    '-m',
+    message ?? `Merge getpaseo/paseo ${repos.upstreamSha.slice(0, 9)} into main`
+  );
+  writeFileSync(
+    join(sb.sync, 'sync.json'),
+    JSON.stringify({
+      upstream_repo: 'getpaseo/paseo',
+      upstream_sha: repos.upstreamSha,
+      fork_ref: 'main',
+      base_sha: repos.forkSha,
+      branch: `sync/upstream-${ISSUE}-abcdef01`,
+      files,
+    })
+  );
+  installSyncScripts(sb);
+  writeFileSync(
+    join(sb.sync, 'checks.json'),
+    JSON.stringify({ passed: true, failed: [], ran: [], full: true })
+  );
+  writeFileSync(
+    join(sb.sync, 'decision.json'),
+    JSON.stringify({ needs_human: false, passed: true })
+  );
+  return { sb, repos };
+}
 
+describe('final-verify node (executable)', () => {
   it('passes for a committed merge with notes for every conflicted file', () => {
     const { sb, repos } = committedMerge();
     writeFileSync(join(sb.sync, 'resolution.md'), '`src/grid.ts`: keeps both.\n');
@@ -1339,6 +1477,16 @@ describe('final-verify node (executable)', () => {
     );
   });
 
+  it('fails when the merge commit does not carry the agreed message', () => {
+    const { sb, repos } = committedMerge(['src/grid.ts'], 'Merge whatever');
+    writeFileSync(join(sb.sync, 'resolution.md'), '`src/grid.ts`: keeps both.\n');
+    const r = run(sb, render(bashOf('final-verify'), sb.artifacts), { cwd: repos.work });
+    expect(r.status).toBe(1);
+    expect(readFileSync(join(sb.sync, 'verify-problems.txt'), 'utf-8')).toContain(
+      `the merge commit message is not "Merge getpaseo/paseo ${repos.upstreamSha.slice(0, 9)} into main"`
+    );
+  });
+
   it('fails while the merge is still uncommitted', () => {
     const sb = makeSandbox();
     const repos = makeForkRepos(sb);
@@ -1353,6 +1501,7 @@ describe('final-verify node (executable)', () => {
       JSON.stringify({
         upstream_sha: repos.upstreamSha,
         fork_ref: 'main',
+        base_sha: repos.forkSha,
         branch: 'main',
         files: ['src/grid.ts'],
       })
@@ -1366,104 +1515,175 @@ describe('final-verify node (executable)', () => {
       JSON.stringify({ needs_human: false, passed: true })
     );
     writeFileSync(join(sb.sync, 'resolution.md'), '`src/grid.ts`\n');
+    installSyncScripts(sb);
     const r = run(sb, render(bashOf('final-verify'), sb.artifacts), { cwd: repos.work });
     expect(r.status).toBe(1);
-    expect(readFileSync(join(sb.sync, 'verify-problems.txt'), 'utf-8')).toContain(
-      'the merge is not committed'
+    expect(readFileSync(join(sb.sync, 'guard-failure.txt'), 'utf-8')).toContain(
+      'a merge is still in progress'
     );
   });
 });
 
 // ---------------------------------------------------------------------------
-// PR body and publish
+// push-branch and verify-pr
 // ---------------------------------------------------------------------------
 
-describe('publish node (executable)', () => {
-  const SYNC = {
-    repo: FORK_REPO,
-    issue: ISSUE,
-    upstream_repo: 'getpaseo/paseo',
-    upstream_sha: SHA_A,
-    fork_ref: 'sync-test/20261108-1-base',
-    fork_sha: SHA_B,
-    merge_base: SHA_C,
-    branch: `sync/upstream-${ISSUE}-abcdef01`,
-    files: ['src/grid.ts', 'docs/pinned-grid.md'],
-  };
-  const RESOLUTION =
-    '`src/grid.ts`: upstream renamed the layout hook; the fork keeps the pinned row on the new hook.\n\n' +
-    '`docs/pinned-grid.md`: upstream reworded the intro; the fork section stays below it.\n';
-  const CHECKS = {
-    passed: true,
-    failed: [],
-    ran: [
-      { name: 'install', status: 'pass' },
-      { name: 'lint', status: 'pass' },
-    ],
-    full: true,
-  };
-
-  function seed(sb: Sandbox): void {
-    writeFileSync(join(sb.sync, 'sync.json'), JSON.stringify(SYNC));
-    writeFileSync(join(sb.sync, 'resolution.md'), RESOLUTION);
-    writeFileSync(join(sb.sync, 'checks.json'), JSON.stringify(CHECKS));
-  }
-
-  it('builds a body with Closes, one paragraph per file, checks and the merge rule', () => {
-    const sb = makeSandbox();
-    seed(sb);
-    const fn = region(bashOf('publish'), 'pr-body');
-    const r = run(sb, `set -euo pipefail\n${fn}\nbuild_pr_body "$1" "$2" "$3"`, {
-      args: [
-        join(sb.sync, 'sync.json'),
-        join(sb.sync, 'resolution.md'),
-        join(sb.sync, 'checks.json'),
-      ],
-    });
-    expect(r.status).toBe(0);
-    const body = r.stdout;
-    expect(body.startsWith(`Closes #${ISSUE}\n`)).toBe(true);
-    expect(body).toContain(`https://github.com/getpaseo/paseo/compare/${SHA_C}...${SHA_A}`);
-    const paragraphs = body
-      .split('\n\n')
-      .filter(p => SYNC.files.some(f => p.startsWith(`\`${f}\``)));
-    expect(paragraphs).toHaveLength(SYNC.files.length);
-    expect(body).toContain('## Local checks\n\n- `install`: pass\n- `lint`: pass\n');
-    expect(body.trimEnd().endsWith('Merge with **Create a merge commit**, not squash.')).toBe(true);
-  });
-
-  it('pushes the branch and opens the PR against fork_ref without merging it', () => {
-    const sb = makeSandbox();
-    seed(sb);
-    const r = run(sb, render(bashOf('publish'), sb.artifacts), {
+describe('push-branch node (executable)', () => {
+  it('pushes the branch before archon-create-pr runs', () => {
+    const { sb, repos } = committedMerge();
+    const r = run(sb, render(bashOf('push-branch'), sb.artifacts), {
+      cwd: repos.work,
       env: { FAKE_GIT_ALLOW_PUSH: '1' },
     });
+    expect(r.status).toBe(0);
+    expect(calls(sb)).toEqual(['git push -u origin HEAD']);
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      pushed: true,
+      branch: `sync/upstream-${ISSUE}-abcdef01`,
+    });
+  });
+
+  it('fails when the push fails', () => {
+    const { sb, repos } = committedMerge();
+    const r = run(sb, render(bashOf('push-branch'), sb.artifacts), { cwd: repos.work });
+    expect(r.status).toBe(1);
+  });
+});
+
+describe('verify-pr node (executable)', () => {
+  const RESOLUTION =
+    '`src/grid.ts`: upstream renamed the layout hook; the fork keeps the pinned row.\n\n' +
+    '`src/naïve grid.ts`: upstream reworded a label; the fork keeps its order.\n';
+  const GOOD_BODY =
+    'Summary of the sync.\n\n' +
+    RESOLUTION +
+    `\nCloses #${ISSUE}\n\nMerge with **Create a merge commit**, not squash.\n`;
+
+  function setup(view: Record<string, unknown>): { sb: Sandbox; work: string; head: string } {
+    const { sb, repos } = committedMerge(['src/grid.ts', 'src/naïve grid.ts']);
+    const head = git(sb, repos.work, 'rev-parse', 'HEAD');
+    const sync = readJson<Record<string, unknown>>(join(sb.sync, 'sync.json'));
+    writeFileSync(
+      join(sb.sync, 'sync.json'),
+      JSON.stringify({ ...sync, repo: FORK_REPO, issue: ISSUE })
+    );
+    writeFileSync(join(sb.sync, 'resolution.md'), RESOLUTION);
+    writeFileSync(join(sb.artifacts, '.pr-number'), '77\n');
+    writeFileSync(
+      sb.env.FAKE_PR_VIEW_JSON as string,
+      JSON.stringify({
+        number: 77,
+        url: `https://github.com/${FORK_REPO}/pull/77`,
+        baseRefName: 'main',
+        headRefName: `sync/upstream-${ISSUE}-abcdef01`,
+        headRefOid: head,
+        title: 'sync: merge upstream getpaseo/paseo 2026-11-08',
+        body: GOOD_BODY,
+        autoMergeRequest: null,
+        state: 'OPEN',
+        ...view,
+      })
+    );
+    return { sb, work: repos.work, head };
+  }
+
+  function verifyPr(sb: Sandbox, work: string): { status: number | null; stdout: string } {
+    return run(sb, render(bashOf('verify-pr'), sb.artifacts), { cwd: work });
+  }
+
+  it('accepts a PR that meets the contract and edits nothing', () => {
+    const { sb, work } = setup({});
+    const r = verifyPr(sb, work);
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout)).toEqual({
       pr_url: `https://github.com/${FORK_REPO}/pull/77`,
       number: 77,
     });
     expect(readJson<unknown>(join(sb.sync, 'pr.json'))).toEqual(JSON.parse(r.stdout));
-    const log = calls(sb);
-    expect(log[0]).toBe(`git push --quiet -u origin HEAD:refs/heads/${SYNC.branch}`);
-    const create = log.find(c => c.startsWith('gh pr create'));
-    expect(create).toMatch(
-      new RegExp(
-        `^gh pr create --repo ${FORK_REPO} --base sync-test/20261108-1-base --head ${SYNC.branch} ` +
-          '--title sync: merge upstream getpaseo/paseo \\d{4}-\\d{2}-\\d{2} --body-file '
-      )
-    );
-    expect(log.some(c => c.includes('pr merge'))).toBe(false);
-    expect(readFileSync(join(sb.sync, 'pr-body.md'), 'utf-8')).toContain(`Closes #${ISSUE}`);
+    expect(calls(sb).some(c => c.startsWith('gh pr edit'))).toBe(false);
   });
 
-  it('fails without opening a PR when the push fails', () => {
-    const sb = makeSandbox();
-    seed(sb);
-    const r = run(sb, render(bashOf('publish'), sb.artifacts));
+  const mismatches: Array<[string, Record<string, unknown>, string]> = [
+    ['a base other than main', { baseRefName: 'develop' }, 'the base is develop, not main'],
+    [
+      'another head branch',
+      { headRefName: 'feature/x' },
+      `the head branch is feature/x, not sync/upstream-${ISSUE}-abcdef01`,
+    ],
+    [
+      'a head commit that is not the local HEAD',
+      { headRefOid: 'e'.repeat(40) },
+      'not the local HEAD',
+    ],
+    ['auto-merge', { autoMergeRequest: { mergeMethod: 'SQUASH' } }, 'auto-merge is enabled'],
+    ['a closed PR', { state: 'CLOSED' }, 'the state is CLOSED, not OPEN'],
+  ];
+  for (const [label, view, reason] of mismatches) {
+    it(`fails without editing on ${label}`, () => {
+      const { sb, work } = setup(view);
+      const r = verifyPr(sb, work);
+      expect(r.status).toBe(1);
+      expect(readFileSync(join(sb.sync, 'pr-problems.txt'), 'utf-8')).toContain(reason);
+      expect(calls(sb).some(c => c.startsWith('gh pr edit'))).toBe(false);
+      expect(existsSync(join(sb.sync, 'pr.json'))).toBe(false);
+    });
+  }
+
+  it('fails when the branch does not hold the expected merge commit', () => {
+    const { sb, work } = setup({});
+    const sync = readJson<Record<string, unknown>>(join(sb.sync, 'sync.json'));
+    writeFileSync(
+      join(sb.sync, 'sync.json'),
+      JSON.stringify({ ...sync, upstream_sha: 'd'.repeat(40) })
+    );
+    const r = verifyPr(sb, work);
     expect(r.status).toBe(1);
-    expect(calls(sb).some(c => c.startsWith('gh pr create'))).toBe(false);
-    expect(existsSync(join(sb.sync, 'pr.json'))).toBe(false);
+    expect(readFileSync(join(sb.sync, 'pr-problems.txt'), 'utf-8')).toContain(
+      `the second parent of the merge commit`
+    );
+  });
+
+  it('fails when archon-create-pr confirmed no PR', () => {
+    const { sb, work } = setup({});
+    rmSync(join(sb.artifacts, '.pr-number'));
+    const r = verifyPr(sb, work);
+    expect(r.status).toBe(1);
+    expect(readFileSync(join(sb.sync, 'pr-problems.txt'), 'utf-8')).toContain('no .pr-number');
+  });
+
+  it('adds a missing title and body elements with one gh pr edit and keeps the rest', () => {
+    const { sb, work } = setup({
+      title: 'Merge upstream changes',
+      body: 'Summary of the sync.\n\n`src/grid.ts`: different words.\n',
+    });
+    const r = verifyPr(sb, work);
+    expect(r.status).toBe(0);
+    const edits = calls(sb).filter(c => c.startsWith('gh pr edit'));
+    expect(edits).toHaveLength(1);
+    expect(edits[0]).toMatch(
+      new RegExp(
+        `^gh pr edit 77 --repo ${FORK_REPO} --title sync: merge upstream getpaseo/paseo \\d{4}-\\d{2}-\\d{2} --body-file `
+      )
+    );
+    const body = readFileSync(`${sb.log}.bodies`, 'utf-8');
+    expect(body.startsWith('Summary of the sync.\n\n`src/grid.ts`: different words.\n\n')).toBe(
+      true
+    );
+    expect(body).toContain(`\nCloses #${ISSUE}\n`);
+    expect(body).toContain(`## Resolution\n\n${RESOLUTION}`);
+    expect(body.trimEnd().endsWith('Merge with **Create a merge commit**, not squash.')).toBe(true);
+  });
+
+  it('edits only the body when only the merge line is missing', () => {
+    const { sb, work } = setup({
+      body: GOOD_BODY.replace('Merge with **Create a merge commit**, not squash.\n', ''),
+    });
+    const r = verifyPr(sb, work);
+    expect(r.status).toBe(0);
+    const edits = calls(sb).filter(c => c.startsWith('gh pr edit'));
+    expect(edits).toHaveLength(1);
+    expect(edits[0]).not.toContain('--title');
+    expect(readFileSync(`${sb.log}.bodies`, 'utf-8')).not.toContain('## Resolution');
   });
 });
 
@@ -1482,18 +1702,17 @@ describe('CI wait (executable)', () => {
     work: string;
   } {
     const sb = makeSandbox();
-    const work = join(sb.root, 'work');
-    mkdirSync(work, { recursive: true });
-    git(sb, work, 'init', '-q', '-b', 'main');
-    writeFileSync(join(work, 'f'), 'x\n');
-    git(sb, work, 'add', 'f');
-    git(sb, work, 'commit', '-q', '-m', 'c');
+    const work = cleanRepo(sb);
     const head = git(sb, work, 'rev-parse', 'HEAD');
+    installSyncScripts(sb);
     responses.forEach((resp, i) => {
       writeFileSync(join(sb.root, 'checks', `${i + 1}.out`), resp.out);
       writeFileSync(join(sb.root, 'checks', `${i + 1}.code`), String(resp.code));
     });
-    writeFileSync(join(sb.sync, 'sync.json'), JSON.stringify({ repo: FORK_REPO }));
+    writeFileSync(
+      join(sb.sync, 'sync.json'),
+      JSON.stringify({ repo: FORK_REPO, fork_ref: 'main', base_sha: head })
+    );
     writeFileSync(join(sb.sync, 'pr.json'), JSON.stringify({ pr_url: 'u', number: 77 }));
     writeFileSync(join(sb.sync, 'wait-ci.sh'), WAIT_CI_SH);
     sb.env.FAKE_PR_HEAD = prHeadLag > 0 ? 'f'.repeat(40) : head;
@@ -1607,6 +1826,17 @@ describe('CI wait (executable)', () => {
     expect(JSON.parse(second.stdout)).toMatchObject({ conclusion: 'failure', attempt: 1 });
   });
 
+  it('the loop body fails before waiting when the fix left a change for the engine to commit', () => {
+    const { sb, work } = setup([{ out: checksJson(['build', 'fail']), code: 1 }]);
+    writeFileSync(join(sb.sync, 'ci.json'), JSON.stringify({ conclusion: 'failure', attempt: 0 }));
+    writeFileSync(join(work, 'f'), 'uncommitted fix\n');
+    const again = loopGroupOf('fix-ci').nodes[1] as { bash?: string };
+    const r = run(sb, render(again.bash ?? '', sb.artifacts), { cwd: work });
+    expect(r.status).toBe(1);
+    expect(readFileSync(join(sb.sync, 'guard-failure.txt'), 'utf-8')).toContain(' M f');
+    expect(calls(sb).some(c => c.startsWith('gh pr checks'))).toBe(false);
+  });
+
   it('fix-ci stops after a non-failure conclusion or after the second attempt', () => {
     const sb = makeSandbox();
     const untilBash = render(loopGroupOf('fix-ci').until_bash ?? '', sb.artifacts);
@@ -1622,6 +1852,220 @@ describe('CI wait (executable)', () => {
       expect(run(sb, untilBash).status).toBe(status);
     }
   });
+});
+
+// ---------------------------------------------------------------------------
+// Clean worktree at every node boundary
+// ---------------------------------------------------------------------------
+
+describe('clean-tree guard (executable)', () => {
+  function setup(): { sb: Sandbox; work: string; guard: string } {
+    const sb = makeSandbox();
+    const work = cleanRepo(sb);
+    installSyncScripts(sb);
+    writeFileSync(
+      join(sb.sync, 'sync.json'),
+      JSON.stringify({ fork_ref: 'main', base_sha: git(sb, work, 'rev-parse', 'HEAD') })
+    );
+    return { sb, work, guard: join(sb.sync, 'clean-tree.sh') };
+  }
+
+  it('passes on a clean tree with normal commits, and ignores ignored files', () => {
+    const { sb, work, guard } = setup();
+    writeFileSync(join(work, '.gitignore'), 'node_modules/\n');
+    git(sb, work, 'add', '.gitignore');
+    git(sb, work, 'commit', '-q', '-m', 'fix(sync): lint after upstream merge');
+    mkdirSync(join(work, 'node_modules'), { recursive: true });
+    writeFileSync(join(work, 'node_modules/x.js'), 'x\n');
+    const r = run(sb, `bash "${guard}" "the end of verify"`, { cwd: work });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+  });
+
+  it('fails on a tracked change and names the stage', () => {
+    const { sb, work, guard } = setup();
+    writeFileSync(join(work, 'f'), 'changed\n');
+    const r = run(sb, `bash "${guard}" "the end of verify"`, { cwd: work });
+    expect(r.status).toBe(1);
+    const failure = readFileSync(join(sb.sync, 'guard-failure.txt'), 'utf-8');
+    expect(failure).toContain('the end of verify');
+    expect(failure).toContain(' M f');
+    expect(r.stderr).toContain('the worktree has changes the engine would commit');
+  });
+
+  it('fails on an untracked file, because the engine snapshot also commits those', () => {
+    const { sb, work, guard } = setup();
+    writeFileSync(join(work, 'scratch.txt'), 'x\n');
+    expect(run(sb, `bash "${guard}" s`, { cwd: work }).status).toBe(1);
+  });
+
+  it('fails while a merge is in progress even when nothing is left to stage', () => {
+    const { sb, work, guard } = setup();
+    git(sb, work, 'update-ref', 'MERGE_HEAD', 'HEAD');
+    const r = run(sb, `bash "${guard}" s`, { cwd: work });
+    expect(r.status).toBe(1);
+    expect(readFileSync(join(sb.sync, 'guard-failure.txt'), 'utf-8')).toContain(
+      'a merge is still in progress'
+    );
+  });
+
+  it('fails when an earlier node left changes that the engine committed', () => {
+    const { sb, work, guard } = setup();
+    writeFileSync(join(work, 'f'), 'changed\n');
+    git(sb, work, 'commit', '-q', '-am', 'archon checkpoint: paseo-fork-upstream-resolve/fix');
+    const r = run(sb, `bash "${guard}" "the start of decide"`, { cwd: work });
+    expect(r.status).toBe(1);
+    expect(readFileSync(join(sb.sync, 'guard-failure.txt'), 'utf-8')).toContain(
+      'archon checkpoint: paseo-fork-upstream-resolve/fix'
+    );
+  });
+});
+
+describe('node boundaries across prepare, resolve and the checks', () => {
+  // The engine's git calls read process.env; keep them on the sandbox git config.
+  const saved = {
+    GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL,
+    GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM,
+  };
+  beforeAll(() => {
+    process.env.GIT_CONFIG_NOSYSTEM = '1';
+  });
+  afterAll(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  // This test runs four real node bodies end to end over three local repositories,
+  // which is several hundred short git, jq and bash processes. Its cost grows with
+  // machine load (2 to 5 s measured at load 20), so it gets its own budget. It does
+  // no network or database I/O: the fake git blocks every remote command.
+  it('leaves the engine nothing to snapshot, so the branch has one merge commit and no engine commits', async () => {
+    const sb = makeSandbox();
+    const repos = makeForkRepos(sb, ['src/grid.ts', 'src/naïve grid.ts']);
+    git(sb, repos.work, 'config', 'user.name', 'Engine');
+    git(sb, repos.work, 'config', 'user.email', 'engine@example.test');
+    // The engine's own snapshot, run at the start and end of every node.
+    const snapshots: boolean[] = [];
+    process.env.GIT_CONFIG_GLOBAL = sb.env.GIT_CONFIG_GLOBAL;
+    const boundary = async (label: string): Promise<void> => {
+      const result = await createGitVisibleChangesCommit(repos.work, `archon evidence: ${label}`);
+      snapshots.push(result.createdCommit);
+    };
+
+    // Control: the snapshot does commit a change in this repository.
+    writeFileSync(join(repos.work, 'probe.txt'), 'x\n');
+    const probe = await createGitVisibleChangesCommit(repos.work, 'probe');
+    expect(probe.createdCommit).toBe(true);
+    git(sb, repos.work, 'reset', '-q', '--hard', 'HEAD~1');
+
+    // prepare
+    writeFileSync(
+      sb.env.FAKE_ISSUE_JSON as string,
+      issueJson(
+        `${blockLine({
+          upstream_sha: repos.upstreamSha,
+          fork_sha: repos.forkSha,
+          merge_base: repos.mergeBase,
+          files: ['src/grid.ts', 'src/naïve grid.ts'],
+        })}\n`,
+        ['upstream-sync-conflict']
+      )
+    );
+    writeFileSync(sb.env.FAKE_PR_LIST_JSON as string, '[]');
+    const env = { FAKE_UPSTREAM_DIR: repos.upstream, FAKE_ORIGIN_DIR: repos.origin };
+    await boundary('prepare start');
+    const prepare = run(
+      sb,
+      render(bashOf('prepare'), sb.artifacts, {
+        'read-request': completed({ issue_number: ISSUE }, ['issue_number']),
+      }),
+      { cwd: repos.work, env }
+    );
+    expect(prepare.status).toBe(0);
+    await boundary('prepare end');
+
+    // resolve, as the command instructs: start the merge, resolve, one merge commit.
+    await boundary('resolve start');
+    const resolve = run(
+      sb,
+      `set -euo pipefail
+      sync="$ARTIFACTS_DIR/sync/sync.json"
+      upstream_sha=$(jq -r .upstream_sha "$sync")
+      upstream_repo=$(jq -r .upstream_repo "$sync")
+      fork_ref=$(jq -r .fork_ref "$sync")
+      git merge --no-ff --no-commit "$upstream_sha" >/dev/null 2>&1 || true
+      jq -j '.files[] | . + "\\u0000"' "$sync" | while IFS= read -r -d '' f; do
+        echo 'export const grid = "fork+upstream";' > "$f"
+        git add -- "$f"
+        printf '\x60%s\x60: keeps both.\n\n' "$f" >> "$ARTIFACTS_DIR/sync/resolution.md"
+      done
+      git commit -q -m "Merge $upstream_repo \${upstream_sha:0:9} into $fork_ref"`,
+      { cwd: repos.work }
+    );
+    expect(resolve.status).toBe(0);
+    await boundary('resolve end');
+
+    // verify, with a check that dirties the tree; checks.sh must restore it.
+    writeExecutable(
+      join(sb.bin, 'npm'),
+      `#!/bin/bash\nif [ "$2" = lint ]; then echo dirty > src/grid.ts; mkdir -p out; echo b > out/b.txt; fi\nexit 0\n`
+    );
+    writeExecutable(
+      join(sb.bin, 'node'),
+      `#!/bin/bash\nif [ "$1" = -p ]; then echo 22; fi\nexit 0\n`
+    );
+    writeExecutable(join(sb.bin, 'npx'), '#!/bin/bash\nexit 0\n');
+    await boundary('verify start');
+    const verify = run(
+      sb,
+      render(bashOf('verify'), sb.artifacts, {
+        resolve: completed({ resolved: true, question: '' }, ['resolved', 'question']),
+      }),
+      { cwd: repos.work }
+    );
+    expect(verify.status).toBe(0);
+    expect((JSON.parse(verify.stdout) as { passed: boolean }).passed).toBe(true);
+    await boundary('verify end');
+
+    // final-verify reuses the passing run and checks the merge commit.
+    writeFileSync(
+      join(sb.sync, 'decision.json'),
+      JSON.stringify({ needs_human: false, passed: true })
+    );
+    await boundary('final-verify start');
+    const finalVerify = run(sb, render(bashOf('final-verify'), sb.artifacts), {
+      cwd: repos.work,
+    });
+    expect(finalVerify.stderr).not.toContain('problems');
+    expect(finalVerify.status).toBe(0);
+    await boundary('final-verify end');
+
+    expect(snapshots).toEqual(Array(8).fill(false));
+    const subjects = git(sb, repos.work, 'log', '--format=%s', 'refs/remotes/origin/main..HEAD')
+      .split('\n')
+      .filter(Boolean);
+    expect(subjects.filter(s => /^archon (evidence|checkpoint)/.test(s))).toEqual([]);
+    const merges = git(
+      sb,
+      repos.work,
+      'rev-list',
+      '--merges',
+      '--first-parent',
+      'refs/remotes/origin/main..HEAD'
+    )
+      .split('\n')
+      .filter(Boolean);
+    expect(merges).toHaveLength(1);
+    const parents = git(sb, repos.work, 'rev-list', '--parents', '-n', '1', merges[0] ?? '').split(
+      ' '
+    );
+    expect(parents.slice(1)).toEqual([repos.forkSha, repos.upstreamSha]);
+    expect(git(sb, repos.work, 'log', '-1', '--format=%s', merges[0] ?? '')).toBe(
+      `Merge getpaseo/paseo ${repos.upstreamSha.slice(0, 9)} into main`
+    );
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -1736,7 +2180,7 @@ describe('finalize node (executable)', () => {
     writeFileSync(join(sb.sync, 'decision.json'), '{}');
     writeFileSync(join(sb.sync, 'verify-problems.txt'), '- local checks fail: lint\n');
     const out = runFinalize(sb);
-    expect(out.stage).toBe('final-verify or publish (pr.json)');
+    expect(out.stage).toBe('final-verify, push-branch, create-pr or verify-pr (pr.json)');
     expect(out.reason).toBe('- local checks fail: lint');
   });
 

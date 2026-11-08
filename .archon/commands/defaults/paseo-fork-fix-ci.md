@@ -72,4 +72,11 @@ Read only the logs of the checks in `failed`.
 - When the failure is not caused by this merge (for example a flaky or broken
   check on the base branch), make no change and say so in your final message.
 
+## Leave the worktree clean
+
+The engine snapshots the worktree with a commit when a step leaves anything in
+it, and the workflow then fails the run. Commit and push every change you keep,
+delete scratch files, and finish with
+`git status --porcelain --untracked-files=all` printing nothing.
+
 The workflow waits for the new CI run after this step.

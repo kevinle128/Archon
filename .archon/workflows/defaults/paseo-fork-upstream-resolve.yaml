@@ -4,11 +4,12 @@ description: |
             an open "upstream-sync-conflict" issue of the Paseo fork (kevinle128/paseo).
             The run message names the issue number; the run's codebase is the fork.
   Does: Reads the machine block on line 1 of the issue body, merges the named upstream
-        getpaseo/paseo commit into the named fork branch on a new sync/upstream-<issue>-<run>
-        branch, resolves the conflicts, runs the fork's bounded local checks, asks a human
-        when it cannot decide, opens a pull request (merge commit, merged by hand), waits for
-        its CI, fixes failed CI at most twice, and returns a JSON result with the PR URL and
-        the CI conclusion.
+        getpaseo/paseo commit on a new sync/upstream-<issue>-<run> branch from main,
+        resolves the conflicts in one merge
+        commit, runs the fork's bounded local checks, asks a human when it cannot decide,
+        opens a pull request to main with archon-create-pr (merge commit, merged by hand),
+        waits for its CI, fixes failed CI at most twice, and returns a JSON result with the
+        PR URL and the CI conclusion.
   NOT for: Starting from chat, merging the pull request, closing the issue, generic merge
            conflicts (use archon-resolve-conflicts), or repositories other than the Paseo fork.
 
@@ -25,6 +26,7 @@ nodes:
       <request>
       $ARGUMENTS
       </request>
+    model: gpt-6-luna
     allowed_tools: []
     output_format:
       type: object
@@ -43,10 +45,9 @@ nodes:
       UPSTREAM_URL=https://github.com/getpaseo/paseo.git
       UPSTREAM_REPO=getpaseo/paseo
       UPSTREAM_BRANCH=main
-      PROD_BASE=main
+      # Every sync pull request targets main.
+      PR_BASE=main
       CONFLICT_LABEL=upstream-sync-conflict
-      TEST_LABEL=sync-test
-      TEST_BASE_PREFIX=sync-test/
       FORCE_LABEL=sync-force-human-review
       SYNC_DIR="$ARTIFACTS_DIR/sync"
 
@@ -59,10 +60,10 @@ nodes:
 
       # The issue body is untrusted input. Line 1 must be the machine block
       # `<!-- fork-sync-conflict:v1 {JSON} -->` written by the fork's sync job.
-      # Usage: validate_sync_block <body-file> <repo> <labels-json-array>
+      # Usage: validate_sync_block <body-file> <repo>
       # Prints the block JSON; refuses with every reason it found.
       validate_sync_block() {
-        local body_file=$1 repo=$2 labels=$3
+        local body_file=$1 repo=$2
         local prefix='<!-- fork-sync-conflict:v1 ' suffix=' -->'
         local line1 json reasons
         line1=$(head -n 1 "$body_file" | tr -d '\r')
@@ -77,16 +78,11 @@ nodes:
         fi
         reasons=$(jq -r \
           --arg repo "$repo" \
-          --argjson labels "$labels" \
           --arg upstream_repo "$UPSTREAM_REPO" \
           --arg conflict_label "$CONFLICT_LABEL" \
-          --arg test_label "$TEST_LABEL" \
-          --arg test_prefix "$TEST_BASE_PREFIX" \
-          --arg prod_base "$PROD_BASE" '
+          --arg pr_base "$PR_BASE" '
           def sha40: type == "string" and test("^[0-9a-f]{40}$");
-          ($labels | any(.[]; . == $test_label)) as $has_test_label
-          | ((.fork_ref | type) == "string" and (.fork_ref | startswith($test_prefix))) as $test_base
-          | [
+          [
               (if .schema == 1 then empty else "schema must be 1" end),
               (if .label == $conflict_label then empty else "label must be \"\($conflict_label)\"" end),
               (if .upstream_repo == $upstream_repo then empty else "upstream_repo must be \"\($upstream_repo)\"" end),
@@ -94,20 +90,11 @@ nodes:
               (if (.fork_sha | sha40) then empty else "fork_sha must be 40 lowercase hex characters" end),
               (if (.merge_base | sha40) then empty else "merge_base must be 40 lowercase hex characters" end),
               (if .fork_repo == $repo then empty else "fork_repo must be \"\($repo)\", the repository of this checkout" end),
-              (if (.fork_ref | type) == "string"
-                   and (.fork_ref == $prod_base
-                        or (.fork_ref | test("^" + $test_prefix + "[0-9]{8}-[0-9]+-base$")))
-               then empty
-               else "fork_ref must be \"\($prod_base)\" or \($test_prefix)<yyyymmdd>-<n>-base" end),
-              (if (.test | type) != "boolean" then "test must be a boolean"
-               else
-                 (if .test == $has_test_label then empty
-                  elif .test then "test is true but the issue has no \($test_label) label"
-                  else "the issue has the \($test_label) label but test is false" end),
-                 (if .test == $test_base then empty
-                  elif .test then "test is true but fork_ref is not a \($test_prefix) base"
-                  else "fork_ref is a \($test_prefix) base but test is false" end)
-               end),
+              (if .fork_ref == $pr_base then empty else "fork_ref must be \"\($pr_base)\"" end),
+              # Every run takes the production path, so a test block is refused.
+              (if .test == false then empty
+               elif .test == true then "test blocks are not supported"
+               else "test must be the boolean false" end),
               (if (.files | type) == "array" and (.files | all(type == "string")) then empty
                else "files must be an array of strings" end)
             ]
@@ -157,13 +144,12 @@ nodes:
         "$SYNC_DIR/issue-view.json" > "$SYNC_DIR/issue.json"
       jq -r .body "$SYNC_DIR/issue-view.json" > "$SYNC_DIR/issue.md"
 
-      block=$(validate_sync_block "$SYNC_DIR/issue.md" "$repo" "$labels") || exit 1
+      block=$(validate_sync_block "$SYNC_DIR/issue.md" "$repo") || exit 1
       upstream_sha=$(jq -r .upstream_sha <<<"$block")
       fork_ref=$(jq -r .fork_ref <<<"$block")
       block_fork_sha=$(jq -r .fork_sha <<<"$block")
       block_merge_base=$(jq -r .merge_base <<<"$block")
       block_files=$(jq -c .files <<<"$block")
-      test_run=$(jq -r .test <<<"$block")
 
       open_sync_prs=$(gh pr list --repo "$repo" --state open --limit 1000 --json headRefName,url \
         | jq -r --arg p "sync/upstream-$issue-" \
@@ -182,11 +168,12 @@ nodes:
       git rev-parse --verify --quiet "$upstream_sha^{commit}" >/dev/null \
         || refuse "upstream_sha $upstream_sha is not a commit"
 
-      git fetch --no-tags --quiet origin "+refs/heads/$fork_ref:refs/remotes/origin/$fork_ref" \
-        || refuse "cannot fetch the base branch $fork_ref from origin"
-      fork_sha=$(git rev-parse "refs/remotes/origin/$fork_ref")
-      if [ "$fork_sha" != "$block_fork_sha" ]; then
-        echo "note: origin/$fork_ref is at $fork_sha; the issue recorded $block_fork_sha" >&2
+      git fetch --no-tags --quiet origin "+refs/heads/$PR_BASE:refs/remotes/origin/$PR_BASE" \
+        || refuse "cannot fetch $PR_BASE from origin"
+      # The branch starts from the current main; base_sha records that commit.
+      base_sha=$(git rev-parse "refs/remotes/origin/$PR_BASE")
+      if [ "$base_sha" != "$block_fork_sha" ]; then
+        echo "note: origin/$PR_BASE is at $base_sha; the issue recorded $block_fork_sha" >&2
       fi
 
       # One branch per attempt, unique by run id. Nothing is ever deleted.
@@ -194,22 +181,24 @@ nodes:
       if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
         git merge --abort
       fi
-      git switch --quiet --no-track -C "$branch" "refs/remotes/origin/$fork_ref"
+      git switch --quiet --no-track -C "$branch" "$base_sha"
 
-      # The merge stops before the commit, also when it is clean, so `resolve`
-      # always makes the merge commit. Conflicts give a non-zero exit code.
+      # Trial merge, only to list the conflicted files. The engine commits every
+      # change a node leaves in the worktree, so prepare aborts the merge and ends
+      # clean; `resolve` makes the real merge and its one merge commit.
       git merge --no-ff --no-commit "$upstream_sha" > "$SYNC_DIR/merge.log" 2>&1 || true
       if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
-        refuse "merging $upstream_sha into $fork_ref started no merge: $(tail -n 1 "$SYNC_DIR/merge.log")"
-      fi
-      merge_base=$(git merge-base "refs/remotes/origin/$fork_ref" "$upstream_sha")
-      if [ "$merge_base" != "$block_merge_base" ]; then
-        echo "note: the merge base is $merge_base; the issue recorded $block_merge_base" >&2
+        refuse "merging $upstream_sha into $base_sha started no merge: $(tail -n 1 "$SYNC_DIR/merge.log")"
       fi
       # NUL-separated and unquoted, so paths with spaces, newlines or non-ASCII
       # characters arrive in sync.json exactly as git stores them.
       files=$(git -c core.quotepath=false diff -z --name-only --diff-filter=U \
         | jq -R -s -c 'split("\u0000") | map(select(length > 0))')
+      git merge --abort
+      merge_base=$(git merge-base "$base_sha" "$upstream_sha")
+      if [ "$merge_base" != "$block_merge_base" ]; then
+        echo "note: the merge base is $merge_base; the issue recorded $block_merge_base" >&2
+      fi
       if ! jq -en --argjson a "$files" --argjson b "$block_files" '($a | sort) == ($b | sort)' >/dev/null; then
         echo "note: conflicted files $files differ from the issue's list $block_files" >&2
       fi
@@ -326,6 +315,31 @@ nodes:
         fi
       done < "$names_file"
 
+      # The engine commits every Git-visible change (tracked, and untracked but not
+      # ignored) at each node boundary, so the checks must leave the tree as they
+      # found it. Only paths the checks changed are put back; paths that were
+      # already changed or untracked before the checks stay as they were.
+      nul_json() { jq -R -s -c 'split("\u0000") | map(select(length > 0))'; }
+      changed_paths() { { git diff --name-only -z; git diff --cached --name-only -z; } | nul_json; }
+      untracked_paths() { git ls-files --others --exclude-standard -z | nul_json; }
+      changed_before=$(changed_paths)
+      untracked_before=$(untracked_paths)
+      restore_check_changes() {
+        jq -n -j --argjson before "$changed_before" --argjson after "$(changed_paths)" \
+          '($after - $before) | unique | .[] | . + "\u0000"' \
+          | while IFS= read -r -d '' path; do
+              git restore --source=HEAD --staged --worktree -- "$path"
+              echo "checks: restored $path, which a check changed" >&2
+            done
+        jq -n -j --argjson before "$untracked_before" --argjson after "$(untracked_paths)" \
+          '($after - $before) | .[] | . + "\u0000"' \
+          | while IFS= read -r -d '' path; do
+              rm -f -- "$path"
+              echo "checks: removed $path, which a check created" >&2
+            done
+      }
+      trap restore_check_changes EXIT
+
       : > "$log"
       results='[]'
       while IFS= read -r -d '' name; do
@@ -342,6 +356,79 @@ nodes:
       cat "$sync_dir/checks.json"
       CHECKS_SH
 
+      # Node-boundary guard. The engine snapshots the worktree with a commit
+      # ("archon evidence: ..." / "archon checkpoint: ...") at the start and end of
+      # every node when anything Git-visible changed. Bash nodes call this at their
+      # start and end; the start call also catches a change an AI node left,
+      # because the engine has committed it by then.
+      cat > "$SYNC_DIR/clean-tree.sh" <<'CLEAN_TREE_SH'
+      #!/usr/bin/env bash
+      # Usage: clean-tree.sh <stage>. Exit 0 when nothing is left for the engine to
+      # commit; else writes guard-failure.txt beside this script and exits 1.
+      set -euo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      stage=$1
+      cd "$(git rev-parse --show-toplevel)"
+      base_sha=$(jq -er .base_sha "$sync_dir/sync.json")
+      if ! git rev-parse --verify --quiet "$base_sha^{commit}" >/dev/null; then
+        echo "clean-tree guard: base_sha $base_sha is not a commit" >&2
+        exit 2
+      fi
+      problems=""
+      if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+        problems="${problems}a merge is still in progress. "
+      fi
+      status=$(git status --porcelain --untracked-files=all)
+      if [ -n "$status" ]; then
+        problems="${problems}the worktree has changes the engine would commit: $(head -n 10 <<<"$status" | tr '\n' ';'). "
+      fi
+      subjects=$(git log --format=%s "$base_sha..HEAD")
+      snapshots=$(grep -E '^archon (evidence|checkpoint)' <<<"$subjects" || true)
+      if [ -n "$snapshots" ]; then
+        problems="${problems}an earlier node left changes that the engine committed: $(tr '\n' ';' <<<"$snapshots"). "
+      fi
+      if [ -n "$problems" ]; then
+        printf '%s: %s\n' "$stage" "$problems" > "$sync_dir/guard-failure.txt"
+        echo "clean-tree guard failed at $stage: $problems" >&2
+        exit 1
+      fi
+      CLEAN_TREE_SH
+
+      # The branch must hold exactly one merge commit, made by resolve right on
+      # top of base_sha; fix commits come after it. Used by final-verify and verify-pr.
+      cat > "$SYNC_DIR/merge-commit.sh" <<'MERGE_COMMIT_SH'
+      #!/usr/bin/env bash
+      # Usage: merge-commit.sh. Exit 0 when the merge commit is right; exit 10 with
+      # one problem per line when it is not; any other code is an error.
+      set -euo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      cd "$(git rev-parse --show-toplevel)"
+      base_sha=$(jq -er .base_sha "$sync_dir/sync.json")
+      upstream_sha=$(jq -er .upstream_sha "$sync_dir/sync.json")
+      expected="Merge $(jq -er .upstream_repo "$sync_dir/sync.json") ${upstream_sha:0:9} into $(jq -er .fork_ref "$sync_dir/sync.json")"
+      merges=$(git rev-list --merges --first-parent "$base_sha..HEAD")
+      count=$(printf '%s' "$merges" | grep -c . || true)
+      if [ "$count" != 1 ]; then
+        echo "the branch has $count merge commits after $base_sha, not exactly one"
+        exit 10
+      fi
+      status=0
+      if [ "$(git rev-parse "$merges^1")" != "$base_sha" ]; then
+        echo "the merge commit $merges is not the first commit after $base_sha"
+        status=10
+      fi
+      # A missing second parent is a finding, not an error.
+      if [ "$(git rev-parse -q --verify "$merges^2" || true)" != "$upstream_sha" ]; then
+        echo "the second parent of the merge commit $merges is not upstream $upstream_sha"
+        status=10
+      fi
+      if [ "$(git log -1 --format=%s "$merges")" != "$expected" ]; then
+        echo "the merge commit message is not \"$expected\""
+        status=10
+      fi
+      exit "$status"
+      MERGE_COMMIT_SH
+
       jq -n \
         --arg repo "$repo" \
         --argjson issue "$issue" \
@@ -349,20 +436,21 @@ nodes:
         --arg upstream_repo "$UPSTREAM_REPO" \
         --arg upstream_sha "$upstream_sha" \
         --arg fork_ref "$fork_ref" \
-        --arg fork_sha "$fork_sha" \
+        --arg base_sha "$base_sha" \
         --arg merge_base "$merge_base" \
         --arg branch "$branch" \
         --argjson files "$files" \
         --argjson force_human "$force_human" \
-        --argjson test "$test_run" \
         '{repo: $repo, issue: $issue, issue_url: $issue_url, upstream_repo: $upstream_repo,
-          upstream_sha: $upstream_sha, fork_ref: $fork_ref, fork_sha: $fork_sha,
+          upstream_sha: $upstream_sha, fork_ref: $fork_ref, base_sha: $base_sha,
           merge_base: $merge_base, branch: $branch, files: $files,
-          force_human: $force_human, test: $test}' > "$SYNC_DIR/sync.json"
+          force_human: $force_human}' > "$SYNC_DIR/sync.json"
+      bash "$SYNC_DIR/clean-tree.sh" "the end of prepare"
       cat "$SYNC_DIR/sync.json"
 
   - id: resolve
     command: paseo-fork-resolve-upstream-merge
+    model: gpt-6-luna
     depends_on: [prepare]
     output_format:
       type: object
@@ -380,10 +468,14 @@ nodes:
     timeout: 2700000
     bash: |
       set -euo pipefail
-      bash "$ARTIFACTS_DIR/sync/checks.sh"
+      bash "$ARTIFACTS_DIR/sync/clean-tree.sh" "the start of verify (after resolve)"
+      bash "$ARTIFACTS_DIR/sync/checks.sh" >/dev/null
+      bash "$ARTIFACTS_DIR/sync/clean-tree.sh" "the end of verify"
+      cat "$ARTIFACTS_DIR/sync/checks.json"
 
   - id: fix
     command: paseo-fork-fix-checks
+    model: gpt-6-luna
     depends_on: [verify]
     when: "$verify.output.passed == 'false'"
 
@@ -396,6 +488,7 @@ nodes:
     bash: |
       set -euo pipefail
       SYNC_DIR="$ARTIFACTS_DIR/sync"
+      bash "$SYNC_DIR/clean-tree.sh" "the start of decide (after resolve or fix)"
       resolved=$resolve.output.resolved
       question=$resolve.output.question
       repo=$(jq -r .repo "$SYNC_DIR/sync.json")
@@ -442,6 +535,7 @@ nodes:
         --argjson passed "$passed" --argjson force_human "$force_human" --arg question "$reason" \
         '{needs_human: $needs_human, resolved: $resolved, passed: $passed, force_human: $force_human, question: $question}' \
         > "$SYNC_DIR/decision.json"
+      bash "$SYNC_DIR/clean-tree.sh" "the end of decide"
       jq -c --arg issue_url "$issue_url" --arg run_url "$run_url" \
         '{needs_human, question, issue_url: $issue_url, run_url: $run_url}' "$SYNC_DIR/decision.json"
 
@@ -463,6 +557,7 @@ nodes:
 
   - id: apply-guidance
     command: paseo-fork-resolve-upstream-merge
+    model: gpt-6-luna
     depends_on: [ask-human]
     prompt_suffix: |
       ## Human guidance
@@ -496,8 +591,8 @@ nodes:
         echo "decision.json is missing; decide did not finish." >&2
         exit 1
       fi
+      bash "$SYNC_DIR/clean-tree.sh" "the start of final-verify (after decide or apply-guidance)"
       upstream_sha=$(jq -r .upstream_sha "$SYNC_DIR/sync.json")
-      fork_ref=$(jq -r .fork_ref "$SYNC_DIR/sync.json")
       branch=$(jq -r .branch "$SYNC_DIR/sync.json")
 
       if jq -e '.needs_human == false and .passed == true' "$SYNC_DIR/decision.json" >/dev/null \
@@ -509,15 +604,20 @@ nodes:
 
       problems=""
       problem() { problems="$problems- $1"$'\n'; }
-      if git rev-parse -q --verify MERGE_HEAD >/dev/null; then problem "the merge is not committed"; fi
       if [ -n "$(git diff --name-only --diff-filter=U)" ]; then problem "unmerged paths remain"; fi
       if ! git merge-base --is-ancestor "$upstream_sha" HEAD; then problem "HEAD does not contain upstream $upstream_sha"; fi
-      if ! git merge-base --is-ancestor "refs/remotes/origin/$fork_ref" HEAD; then problem "HEAD does not contain origin/$fork_ref"; fi
       if [ "$(git symbolic-ref --quiet --short HEAD || true)" != "$branch" ]; then problem "HEAD is not on $branch"; fi
-      if ! git diff --check >/dev/null 2>&1; then problem "uncommitted changes contain conflict markers or whitespace errors"; fi
-      if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-        echo "warning: tracked files have uncommitted changes; publish pushes HEAD only" >&2
-      fi
+      merge_status=0
+      merge_findings=$(bash "$SYNC_DIR/merge-commit.sh") || merge_status=$?
+      case "$merge_status" in
+        0|10) ;;
+        *) echo "merge-commit.sh failed with exit code $merge_status" >&2; exit 1 ;;
+      esac
+      while IFS= read -r line; do
+        if [ -n "$line" ]; then problem "$line"; fi
+      done <<EOF
+      $merge_findings
+      EOF
       if [ ! -s "$SYNC_DIR/resolution.md" ]; then problem "resolution.md is missing or empty"; fi
       # Paths are NUL-separated and passed after -e/--, so a path that starts
       # with a dash is never read as an option.
@@ -538,48 +638,153 @@ nodes:
         printf 'final-verify found problems:\n%s' "$problems" >&2
         exit 1
       fi
+      bash "$SYNC_DIR/clean-tree.sh" "the end of final-verify"
       jq -nc --arg head "$(git rev-parse HEAD)" '{verified: true, head: $head}'
 
-  - id: publish
+  # archon-create-pr pushes with `git push -u origin HEAD` and falls back to a
+  # pull with rebase when that push fails, which would drop the merge commit.
+  # Pushing here first makes its push a no-op, so it never reaches the fallback.
+  - id: push-branch
     depends_on: [final-verify]
     timeout: 600000
     bash: |
       set -euo pipefail
       SYNC_DIR="$ARTIFACTS_DIR/sync"
-
-      # BEGIN pr-body
-      # Usage: build_pr_body <sync.json> <resolution.md> <checks.json>
-      build_pr_body() {
-        jq -r '"Closes #\(.issue)\n\nMerges upstream \(.upstream_repo) `\(.upstream_sha)` into `\(.fork_ref)` (fork `\(.fork_sha)`).\n\nUpstream range: https://github.com/\(.upstream_repo)/compare/\(.merge_base)...\(.upstream_sha)\n\n## Resolution\n"' "$1"
-        cat "$2"
-        printf '\n## Local checks\n\n'
-        jq -r '.ran[] | "- `\(.name)`: \(.status)"' "$3"
-        printf '\nMerge with **Create a merge commit**, not squash.\n'
-      }
-      # END pr-body
-
-      repo=$(jq -r .repo "$SYNC_DIR/sync.json")
+      bash "$SYNC_DIR/clean-tree.sh" "the start of push-branch"
       branch=$(jq -r .branch "$SYNC_DIR/sync.json")
-      fork_ref=$(jq -r .fork_ref "$SYNC_DIR/sync.json")
-      upstream_repo=$(jq -r .upstream_repo "$SYNC_DIR/sync.json")
-      build_pr_body "$SYNC_DIR/sync.json" "$SYNC_DIR/resolution.md" "$SYNC_DIR/checks.json" \
-        > "$SYNC_DIR/pr-body.md"
-
-      if ! git push --quiet -u origin "HEAD:refs/heads/$branch" > "$SYNC_DIR/push.log" 2>&1; then
+      if [ "$(git symbolic-ref --quiet --short HEAD || true)" != "$branch" ]; then
+        echo "HEAD is not on $branch" >&2
+        exit 1
+      fi
+      if ! git push -u origin HEAD > "$SYNC_DIR/push.log" 2>&1; then
         cat "$SYNC_DIR/push.log" >&2
         exit 1
       fi
-      # The user merges the pull request by hand with a merge commit.
-      pr_url=$(gh pr create --repo "$repo" --base "$fork_ref" --head "$branch" \
-        --title "sync: merge upstream $upstream_repo $(date +%F)" \
-        --body-file "$SYNC_DIR/pr-body.md" | tail -n 1)
-      number=$(gh pr view "$pr_url" --repo "$repo" --json number -q .number)
-      jq -nc --arg pr_url "$pr_url" --argjson number "$number" \
-        '{pr_url: $pr_url, number: $number}' > "$SYNC_DIR/pr.json"
+      jq -nc --arg branch "$branch" --arg head "$(git rev-parse HEAD)" \
+        '{pushed: true, branch: $branch, head: $head}'
+
+  - id: create-pr
+    command: archon-create-pr
+    model: gpt-6-luna
+    depends_on: [push-branch]
+    prompt_suffix: |
+      ## Paseo fork sync pull request
+
+      This pull request merges an upstream getpaseo/paseo commit into the fork.
+      Read `$ARTIFACTS_DIR/sync/sync.json` (`issue`, `upstream_sha`) and
+      `$ARTIFACTS_DIR/sync/resolution.md` first. These rules override the steps above:
+
+      - The base is `$BASE_BRANCH` (main).
+      - The branch is already pushed. Do not push, pull, rebase, force-push or amend,
+        and do not commit anything.
+      - Title: `sync: merge upstream getpaseo/paseo <yyyy-mm-dd>` with today's date.
+      - Body: include the line `Closes #<issue>` with the issue number from sync.json.
+        Include every paragraph of resolution.md word for word (one paragraph per
+        conflicted file). End with the line
+        `Merge with **Create a merge commit**, not squash.`
+      - Never merge the pull request and never enable auto-merge. A human merges it.
+
+  # Deterministic contract check on the PR that archon-create-pr opened. Text
+  # elements it missed are fixed here; a wrong base, head or merge commit fails.
+  - id: verify-pr
+    depends_on: [create-pr]
+    timeout: 300000
+    bash: |
+      set -euo pipefail
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+      bash "$SYNC_DIR/clean-tree.sh" "the start of verify-pr (after create-pr)"
+      PR_BASE=main
+      MERGE_LINE='Merge with **Create a merge commit**, not squash.'
+
+      fail() {
+        printf '%s\n' "$1" > "$SYNC_DIR/pr-problems.txt"
+        echo "verify-pr: $1" >&2
+        exit 1
+      }
+
+      # BEGIN pr-contract
+      # Usage: contract_body <body-file> <sync.json> <resolution.md>
+      # Prints the body with every missing required element added.
+      contract_body() {
+        local body issue
+        body=$(tr -d '\r' < "$1")
+        issue=$(jq -r .issue "$2")
+        if ! grep -qxF -e "Closes #$issue" <<<"$body"; then
+          body="$body"$'\n\n'"Closes #$issue"
+        fi
+        if ! jq -en --arg b "$body" --rawfile r "$3" '
+          ($r | split("\n\n") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $ps
+          | all($ps[]; . as $p | $b | contains($p))' >/dev/null; then
+          body="$body"$'\n\n'"## Resolution"$'\n\n'"$(cat "$3")"
+        fi
+        if ! grep -qxF -e "$MERGE_LINE" <<<"$body"; then
+          body="$body"$'\n\n'"$MERGE_LINE"
+        fi
+        printf '%s\n' "$body"
+      }
+
+      # Usage: contract_title <title> <sync.json>. Prints the title to use.
+      contract_title() {
+        local stem
+        stem="sync: merge upstream $(jq -r .upstream_repo "$2") "
+        case "$1" in
+          "$stem"[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) printf '%s\n' "$1" ;;
+          *) printf '%s%s\n' "$stem" "$(date +%F)" ;;
+        esac
+      }
+      # END pr-contract
+
+      repo=$(jq -r .repo "$SYNC_DIR/sync.json")
+      branch=$(jq -r .branch "$SYNC_DIR/sync.json")
+      if [ ! -s "$ARTIFACTS_DIR/.pr-number" ]; then
+        fail "archon-create-pr wrote no .pr-number, so no pull request was confirmed"
+      fi
+      number=$(tr -d '[:space:]' < "$ARTIFACTS_DIR/.pr-number")
+      case "$number" in
+        ''|*[!0-9]*) fail "archon-create-pr wrote an invalid .pr-number: $number" ;;
+      esac
+      gh pr view "$number" --repo "$repo" \
+        --json number,url,baseRefName,headRefName,headRefOid,title,body,autoMergeRequest,state \
+        > "$SYNC_DIR/pr-view.json"
+
+      problems=$(jq -r --arg base "$PR_BASE" --arg branch "$branch" --arg head "$(git rev-parse HEAD)" '
+        [ (if .baseRefName == $base then empty else "the base is \(.baseRefName), not \($base)" end),
+          (if .headRefName == $branch then empty else "the head branch is \(.headRefName), not \($branch)" end),
+          (if .headRefOid == $head then empty else "the head commit is \(.headRefOid), not the local HEAD \($head)" end),
+          (if .autoMergeRequest == null then empty else "auto-merge is enabled" end),
+          (if .state == "OPEN" then empty else "the state is \(.state), not OPEN" end)
+        ] | join("; ")' "$SYNC_DIR/pr-view.json")
+      merge_status=0
+      merge_findings=$(bash "$SYNC_DIR/merge-commit.sh") || merge_status=$?
+      case "$merge_status" in
+        0) ;;
+        10) problems="${problems:+$problems; }$(tr '\n' ';' <<<"$merge_findings")" ;;
+        *) fail "merge-commit.sh failed with exit code $merge_status" ;;
+      esac
+      if [ -n "$problems" ]; then
+        fail "pull request #$number does not match the sync contract: $problems"
+      fi
+
+      jq -r .body "$SYNC_DIR/pr-view.json" > "$SYNC_DIR/pr-body-live.md"
+      contract_body "$SYNC_DIR/pr-body-live.md" "$SYNC_DIR/sync.json" "$SYNC_DIR/resolution.md" \
+        > "$SYNC_DIR/pr-body.md"
+      title=$(jq -r .title "$SYNC_DIR/pr-view.json")
+      new_title=$(contract_title "$title" "$SYNC_DIR/sync.json")
+      edit_args=()
+      if [ "$new_title" != "$title" ]; then edit_args+=(--title "$new_title"); fi
+      if [ "$(cat "$SYNC_DIR/pr-body.md")" != "$(tr -d '\r' < "$SYNC_DIR/pr-body-live.md")" ]; then
+        edit_args+=(--body-file "$SYNC_DIR/pr-body.md")
+      fi
+      if [ "${#edit_args[@]}" -gt 0 ]; then
+        echo "verify-pr: adding the missing contract elements to pull request #$number" >&2
+        gh pr edit "$number" --repo "$repo" "${edit_args[@]}" >/dev/null
+      fi
+
+      jq -c '{pr_url: .url, number}' "$SYNC_DIR/pr-view.json" > "$SYNC_DIR/pr.json"
       cat "$SYNC_DIR/pr.json"
 
   - id: wait-ci
-    depends_on: [publish]
+    depends_on: [verify-pr]
     timeout: 6000000
     bash: |
       set -euo pipefail
@@ -672,12 +877,14 @@ nodes:
       nodes:
         - id: fix-ci-attempt
           command: paseo-fork-fix-ci
+          model: gpt-6-luna
         - id: wait-ci-again
           depends_on: [fix-ci-attempt]
           timeout: 6000000
           bash: |
             set -euo pipefail
             SYNC_DIR="$ARTIFACTS_DIR/sync"
+            bash "$SYNC_DIR/clean-tree.sh" "the start of wait-ci-again (after fix-ci-attempt)"
             attempt=$(( $(jq -r .attempt "$SYNC_DIR/ci.json") + 1 ))
             bash "$SYNC_DIR/wait-ci.sh" "$attempt"
 
@@ -735,18 +942,21 @@ nodes:
         repo=$(jq -r .repo "$SYNC_DIR/issue.json")
         issue=$(jq -r .issue "$SYNC_DIR/issue.json")
         run_url=$(jq -r .run_url "$SYNC_DIR/issue.json")
-        stage="final-verify or publish (pr.json)"
+        stage="final-verify, push-branch, create-pr or verify-pr (pr.json)"
         if [ ! -f "$SYNC_DIR/sync.json" ]; then stage="prepare (sync.json)"
         elif [ ! -f "$SYNC_DIR/resolution.md" ]; then stage="resolve (resolution.md)"
         elif [ ! -f "$SYNC_DIR/decision.json" ]; then stage="verify, fix or decide (decision.json)"
         fi
         reason=""
-        for file in refusal.txt verify-problems.txt; do
-          if [ -s "$SYNC_DIR/$file" ]; then reason=$(cat "$SYNC_DIR/$file"); fi
+        for file in refusal.txt guard-failure.txt verify-problems.txt pr-problems.txt; do
+          if [ -s "$SYNC_DIR/$file" ]; then reason="${reason:+$reason$'\n'}$(cat "$SYNC_DIR/$file")"; fi
         done
+        opened_pr=""
+        if [ -s "$ARTIFACTS_DIR/.pr-url" ]; then opened_pr=$(tr -d '[:space:]' < "$ARTIFACTS_DIR/.pr-url"); fi
         {
           printf 'Automatic upstream sync resolution failed at %s.\n\n' "$stage"
           if [ -n "$reason" ]; then printf 'Reason:\n\n%s\n\n' "$reason"; fi
+          if [ -n "$opened_pr" ]; then printf 'Pull request opened before the failure: %s\n\n' "$opened_pr"; fi
           printf 'Run: %s\n\n' "$run_url"
           printf 'The sync stays paused until a sync pull request merges.\n'
         } > "$SYNC_DIR/finalize-comment.md"

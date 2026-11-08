@@ -55,4 +55,11 @@ Stop when the rerun passes or after the third attempt.
 - When the remaining failure needs a human decision, stop and say so in your
   final message. The workflow then asks a human.
 
+## Leave the worktree clean
+
+The engine snapshots the worktree with a commit when a step leaves anything in
+it, and the workflow then fails the run. Commit every change you keep, delete
+scratch files, and finish with `git status --porcelain --untracked-files=all`
+printing nothing.
+
 The workflow runs every check again after this step.
