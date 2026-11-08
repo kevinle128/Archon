@@ -371,12 +371,14 @@ describe('paseo-fork-upstream-resolve structure', () => {
     expect(YAML_TEXT).not.toContain('INPUTS_');
   });
 
-  it('reads the issue number with a small structured AI node', () => {
+  it('reads the issue number with a structured AI node on the install default model', () => {
     const node = nodeById('read-request') as DagNode & {
       prompt?: string;
       output_format?: { properties?: Record<string, { type?: string }> };
     };
-    expect(node.model).toBe('small');
+    // A model tier resolves per install, and the built-in tier default can name a
+    // model the install's provider account cannot use; the default model always works.
+    expect(node.model).toBeUndefined();
     expect(node.prompt).toContain('$ARGUMENTS');
     expect(node.output_format?.properties?.issue_number?.type).toBe('integer');
   });
