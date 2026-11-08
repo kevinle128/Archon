@@ -16,6 +16,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -1144,6 +1145,7 @@ describe('local checks script (executable)', () => {
 printf '%s\\n' "${tool} $*" >> "$FAKE_LOG"
 printf '%s NODE_ENV=%s\\n' "${tool}" "\${NODE_ENV-unset}" >> "$FAKE_LOG.env"
 if [ "$1" != -p ]; then printf '[%s]' "${tool}" "$@" >> "$FAKE_LOG.args"; echo >> "$FAKE_LOG.args"; fi
+printf '%s %s\\n' "${tool}" "$PWD" >> "$FAKE_LOG.cwd"
 if [ "$1" = -p ]; then echo ${options.nodeMajor ?? '22'}; exit 0; fi
 if [ "$1" = --version ]; then echo v${options.nodeMajor ?? '22'}.0.0; exit 0; fi
 case "${tool} $*" in *"${options.messy || '__none__'}"*)
@@ -1269,6 +1271,44 @@ exit 0
       '[npx][vitest][run][./-x/a.test.ts][--bail=1]',
       '[npx][vitest][run][src/naïve grid.test.ts][--bail=1]',
     ]);
+  });
+
+  it('runs a test file from the nearest folder with its own vitest config', () => {
+    // packages/app defines globals such as __DEV__ only in its own vitest config,
+    // so a run from the repo root fails before any test starts.
+    const { sb, work, script } = setup();
+    for (const f of [
+      'packages/app/vitest.config.ts',
+      'packages/app/src/stores/store.ts',
+      'packages/app/src/stores/store.test.ts',
+    ]) {
+      mkdirSync(dirname(join(work, f)), { recursive: true });
+      writeFileSync(join(work, f), 'x\n');
+    }
+    writeFileSync(
+      join(sb.sync, 'sync.json'),
+      JSON.stringify({ files: ['packages/app/src/stores/store.ts', 'src/grid.ts'] })
+    );
+    const r = run(sb, `bash "${script}"`, { cwd: work });
+    expect(r.status).toBe(0);
+    const ran = (JSON.parse(r.stdout) as { ran: Array<{ name: string }> }).ran.map(c => c.name);
+    expect(ran.filter(n => n.startsWith('vitest:'))).toEqual([
+      'vitest:packages/app/src/stores/store.test.ts',
+      'vitest:src/grid.test.ts',
+    ]);
+    const vitestCalls = readFileSync(`${sb.log}.args`, 'utf-8')
+      .split('\n')
+      .filter(line => line.startsWith('[npx]'));
+    expect(vitestCalls).toEqual([
+      '[npx][vitest][run][src/stores/store.test.ts][--bail=1]',
+      '[npx][vitest][run][src/grid.test.ts][--bail=1]',
+    ]);
+    const npxDirs = readFileSync(`${sb.log}.cwd`, 'utf-8')
+      .split('\n')
+      .filter(line => line.startsWith('npx '))
+      .map(line => line.slice('npx '.length));
+    const real = realpathSync(work);
+    expect(npxDirs).toEqual([join(real, 'packages/app'), real]);
   });
 
   it('rejects a vitest check name that would start with a dash', () => {

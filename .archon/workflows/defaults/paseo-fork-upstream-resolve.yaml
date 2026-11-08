@@ -272,6 +272,33 @@ nodes:
         return 1
       }
 
+      # A package with its own vitest config (packages/app) defines globals and
+      # setup files that the root config does not, so a test file runs from the
+      # nearest folder that has a vitest config, the way the package's own test
+      # script runs it. A file outside such a package runs from the repo root.
+      run_vitest() {
+        local file=$1 dir rel cfg
+        case "$file" in
+          */*) dir=${file%/*} ;;
+          *) dir=. ;;
+        esac
+        while [ "$dir" != . ]; do
+          for cfg in vitest.config.ts vitest.config.mts vitest.config.js vitest.config.mjs; do
+            if [ -f "$dir/$cfg" ]; then
+              rel=${file#"$dir"/}
+              case "$rel" in -*) rel=./$rel ;; esac
+              (cd -- "$dir" && npx vitest run "$rel" --bail=1)
+              return
+            fi
+          done
+          case "$dir" in
+            */*) dir=${dir%/*} ;;
+            *) dir=. ;;
+          esac
+        done
+        npx vitest run "$file" --bail=1
+      }
+
       run_check() {
         case "$1" in
           install) node scripts/npm-retry.mjs ci ;;
@@ -282,7 +309,7 @@ nodes:
           fork-script-tests)
             node --test scripts/fork-desktop-manifest.test.mjs \
               scripts/fork-sync-conflict-report.test.mjs scripts/fork-release-changelog.test.mjs ;;
-          vitest:*) npx vitest run "${1#vitest:}" --bail=1 ;;
+          vitest:*) run_vitest "${1#vitest:}" ;;
         esac
       }
 
