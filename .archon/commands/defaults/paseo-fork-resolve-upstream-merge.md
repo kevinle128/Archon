@@ -1,5 +1,5 @@
 ---
-description: Merge the upstream getpaseo/paseo commit named by paseo-fork-upstream-resolve into the Paseo fork sync branch and resolve it in one merge commit
+description: Merge the upstream getpaseo/paseo commit named by paseo-fork-upstream-resolve into the Paseo fork sync branch, resolve it in one merge commit, and fix the local checks
 argument-hint: (none - reads $ARTIFACTS_DIR/sync/sync.json)
 ---
 
@@ -118,18 +118,37 @@ it reports, stage the fix and commit again; never bypass the hook. Do not amend
 earlier commits. Do not rebase. Do not push. Changes after the merge commit are
 normal commits.
 
-## Quick self-check (bounded)
+## Run the local checks and fix failures (at most 3 rounds)
 
-Run only cheap checks on the files you touched, through the workflow's check
-script, for example a test file beside a conflicted file:
+After the merge commit, run every local check with the workflow's check script:
 
 ```bash
-bash "$ARTIFACTS_DIR/sync/checks.sh" vitest:<path/to/file.test.ts>
+bash "$ARTIFACTS_DIR/sync/checks.sh"
 ```
 
-The script puts back every file the check itself changed. The full local check
-list runs in the next workflow step.
-Never run `npm run test`, `npm test` or Playwright.
+It prints `checks.json` (`passed`, `failed`, `ran`) and writes the output of
+each check to `$ARTIFACTS_DIR/sync/checks.log`, one `===== <name> =====` section
+per check. It puts back every file a check itself changed. When checks fail:
+
+1. Read the sections of the failed checks. Find the cause and fix the code, not
+   the check.
+2. Rerun only the failed checks, by name (for example `typecheck`, `lint`,
+   `vitest:packages/app/src/foo.test.ts`):
+   `bash "$ARTIFACTS_DIR/sync/checks.sh" <name> [<name> ...]`.
+   Never run commands the script does not run.
+   Never run `npm run test`, `npm test` or Playwright.
+3. Commit the fix as a new normal commit whose message names the check, for
+   example `fix(sync): typecheck after upstream merge`. Never amend, never
+   rebase, never push.
+
+Stop when the checks pass or after the third fix round. Never change a test
+expectation, skip a test, or weaken a lint rule to hide a real regression. When
+the upstream change makes a fork test wrong, change the test only when the new
+upstream behaviour is the intended behaviour, and say so in the commit message.
+When a fix changes how a conflicted file was resolved, update that file's
+paragraph in `$ARTIFACTS_DIR/sync/resolution.md`. Checks that still fail after
+three rounds are reported to a human by the next workflow step; still return
+`resolved: true` when the merge commit exists.
 
 ## Guidance pass
 
@@ -145,15 +164,10 @@ reviewed an earlier pass. Then:
      asks for as new commits on top.
 2. Update `$ARTIFACTS_DIR/sync/resolution.md` so every paragraph matches the
    final result.
-3. Run the full local checks: `bash "$ARTIFACTS_DIR/sync/checks.sh"`. When checks
-   fail, read `$ARTIFACTS_DIR/sync/checks.log`, fix only what the failed checks
-   report, and rerun only the failed checks by name
-   (`bash "$ARTIFACTS_DIR/sync/checks.sh" <name> ...`). Make at most 3 fix
-   attempts. Commit each fix as a new commit whose message names the check.
-   Never change a test expectation to hide a real regression.
+3. Run the local checks and fix failures as described above (at most 3 rounds).
 4. Return `resolved: true` only when the merge commit exists and the worktree is
-   clean. The workflow then runs every check again before it opens the pull
-   request.
+   clean. The workflow then runs the final checks again before it pushes the
+   branch.
 
 ## Output
 
