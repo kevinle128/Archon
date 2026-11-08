@@ -387,6 +387,11 @@ describe('buildStatusEventPayload', () => {
     expect(payload.question).toBe('Merge it?');
     expect(payload.task_status).toBe('input_required');
   });
+
+  test('a paused run names the gate node, not the last node that ran', () => {
+    const payload = buildStatusEventPayload(paused({}), [started('decide')], { baseUrl: BASE });
+    expect(payload.node).toBe('review');
+  });
 });
 
 describe('toIsoTimestamp', () => {

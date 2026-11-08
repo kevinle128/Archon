@@ -297,7 +297,9 @@ export function buildStatusEventPayload(
   options: MappingOptions
 ): StatusEventPayload {
   const gate = openAnswerableGate(run);
-  const node = currentNode(events);
+  // While a gate waits for an answer no node runs, so the gate's node is the one
+  // the client must show next to the question.
+  const node = gate?.nodeId ?? currentNode(events);
   const prUrl = findPrUrl(events);
   const error = runError(run);
   const ci =
