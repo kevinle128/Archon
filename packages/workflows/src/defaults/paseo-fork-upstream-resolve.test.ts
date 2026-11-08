@@ -1060,6 +1060,7 @@ describe('local checks script (executable)', () => {
     // Fake toolchain: records every call; the named check fails.
     const fake = (tool: string): string => `#!/bin/bash
 printf '%s\\n' "${tool} $*" >> "$FAKE_LOG"
+printf '%s NODE_ENV=%s\\n' "${tool}" "\${NODE_ENV-unset}" >> "$FAKE_LOG.env"
 if [ "$1" != -p ]; then printf '[%s]' "${tool}" "$@" >> "$FAKE_LOG.args"; echo >> "$FAKE_LOG.args"; fi
 if [ "$1" = -p ]; then echo ${options.nodeMajor ?? '22'}; exit 0; fi
 if [ "$1" = --version ]; then echo v${options.nodeMajor ?? '22'}.0.0; exit 0; fi
@@ -1106,6 +1107,20 @@ exit 0
       'npx vitest run src/grid.test.ts --bail=1',
       'npx vitest run src/panel.test.tsx --bail=1',
     ]);
+  });
+
+  it('runs the checks without NODE_ENV, like the fork CI, even when the server sets production', () => {
+    // A server started with NODE_ENV=production would make npm ci skip devDependencies
+    // (patch-package, the type checker, the linter), so every check would fail.
+    const { sb, work, script } = setup();
+    const r = run(sb, `bash "${script}" install lint`, {
+      cwd: work,
+      env: { NODE_ENV: 'production' },
+    });
+    expect(r.status).toBe(0);
+    const envLines = readFileSync(`${sb.env.FAKE_LOG}.env`, 'utf-8').trim().split('\n');
+    expect(envLines.length).toBeGreaterThan(0);
+    for (const line of envLines) expect(line).toEndWith('NODE_ENV=unset');
   });
 
   it('reruns only the named checks as a partial run', () => {

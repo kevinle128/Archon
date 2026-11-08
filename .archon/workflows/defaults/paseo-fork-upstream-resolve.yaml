@@ -234,6 +234,10 @@ nodes:
       cd "$(git rev-parse --show-toplevel)"
       log="$sync_dir/checks.log"
       export ONNXRUNTIME_NODE_INSTALL=skip
+      # The fork CI sets no NODE_ENV. A server started with NODE_ENV=production
+      # (the PM2 setup does) would make npm ci skip devDependencies such as
+      # patch-package, so every check would fail for a reason the PR does not have.
+      unset NODE_ENV
 
       for tool in node npm npx jq git; do
         if ! command -v "$tool" >/dev/null 2>&1; then
