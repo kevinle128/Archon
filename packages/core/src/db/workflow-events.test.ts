@@ -176,6 +176,21 @@ describe('workflow-events', () => {
       );
     });
 
+    test('returns created_at as an ISO string when the driver returns a Date (PostgreSQL)', async () => {
+      const pgRow = {
+        ...mockEvent,
+        created_at: new Date('2026-11-08T08:53:01.449Z') as unknown as string,
+      };
+      const sqliteRow = { ...mockEvent, id: 'evt-sqlite', created_at: '2026-11-08 08:53:01' };
+      mockQuery.mockResolvedValueOnce(createQueryResult([pgRow, sqliteRow]));
+
+      const result = await listWorkflowEvents('run-456');
+
+      expect(result[0]?.created_at).toBe('2026-11-08T08:53:01.449Z');
+      expect(typeof result[0]?.created_at).toBe('string');
+      expect(result[1]?.created_at).toBe('2026-11-08 08:53:01');
+    });
+
     test('preserves prior route attempts and node_routed metadata in event history', async () => {
       const negativeRouteDecision = {
         sources: ['review'],

@@ -455,6 +455,12 @@ export const runWorkflowBodySchema = z
      * string field (duplicates rejected).
      */
     envId: z.string().optional(),
+    /**
+     * Optional caller-chosen id (UUID) for the run row this dispatch creates, so the
+     * caller can poll the run before the fire-and-forget dispatch returns a row. A
+     * non-UUID value is refused as `invalid_run_id`; it is echoed as `runId`.
+     */
+    runId: z.string().uuid().optional(),
   })
   .openapi('RunWorkflowBody');
 

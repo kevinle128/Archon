@@ -1288,6 +1288,76 @@ describe('POST /api/workflows/:name/run', () => {
     expect(body.status).toBe('started');
   });
 
+  test('accepts a UUID runId, passes it to the orchestrator, and echoes it', async () => {
+    mockFindConversationByPlatformId.mockImplementationOnce(async () => MOCK_CONV);
+    mockHandleMessage.mockImplementationOnce(async () => {});
+    const runId = 'A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D';
+
+    const { app } = makeApp();
+    const response = await app.request('/api/workflows/deploy/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId: 'web-test-abc', message: 'Go', runId }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { accepted: boolean; runId?: string };
+    expect(body.accepted).toBe(true);
+    expect(body.runId).toBe(runId.toLowerCase());
+    const ctx = mockHandleMessage.mock.calls[0][3] as { requestedRunId?: string };
+    expect(ctx.requestedRunId).toBe(runId.toLowerCase());
+  });
+
+  test('accepts runId as a plain multipart field', async () => {
+    mockFindConversationByPlatformId.mockImplementationOnce(async () => MOCK_CONV);
+    mockHandleMessage.mockImplementationOnce(async () => {});
+    const form = new FormData();
+    form.set('conversationId', 'web-test-abc');
+    form.set('message', 'Go');
+    form.set('runId', 'b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e');
+
+    const { app } = makeApp();
+    const response = await app.request('/api/workflows/deploy/run', { method: 'POST', body: form });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { runId?: string };
+    expect(body.runId).toBe('b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e');
+  });
+
+  test('omits runId from the response when none was sent', async () => {
+    mockFindConversationByPlatformId.mockImplementationOnce(async () => MOCK_CONV);
+    mockHandleMessage.mockImplementationOnce(async () => {});
+
+    const { app } = makeApp();
+    const response = await app.request('/api/workflows/deploy/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId: 'web-test-abc', message: 'Go' }),
+    });
+
+    const body = (await response.json()) as Record<string, unknown>;
+    expect('runId' in body).toBe(false);
+    const ctx = mockHandleMessage.mock.calls[0][3] as Record<string, unknown>;
+    expect('requestedRunId' in ctx).toBe(false);
+  });
+
+  test.each([['not-a-uuid'], [42], [null], ['']])(
+    'refuses a runId that is not a UUID string (%p) before dispatch',
+    async raw => {
+      const { app } = makeApp();
+      const response = await app.request('/api/workflows/deploy/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: 'web-test-abc', message: 'Go', runId: raw }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'invalid_run_id' });
+      expect(mockHandleMessage).not.toHaveBeenCalled();
+      expect(mockAddMessage).not.toHaveBeenCalled();
+    }
+  );
+
   test('sends /workflow run <name> <message> to orchestrator', async () => {
     mockFindConversationByPlatformId.mockImplementationOnce(async () => MOCK_CONV);
     mockAddMessage.mockImplementationOnce(async () => ({

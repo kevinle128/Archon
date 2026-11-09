@@ -307,6 +307,12 @@ export interface WorkflowRoutingContext {
    * and forwarded so the executor fallback INSERT is equivalent.
    */
   readonly appliedEnvOverlay?: AppliedEnvOverlay;
+  /**
+   * Run id chosen by the caller for the pre-created run row. When set, a failed
+   * pre-create stops the dispatch (and tells the conversation) instead of letting the
+   * executor create a row with a different or the same conflicting id.
+   */
+  readonly runId?: string;
 }
 
 /**
@@ -455,6 +461,7 @@ export async function dispatchBackgroundWorkflow(
   let preCreatedRun: Awaited<ReturnType<typeof workflowDeps.store.createWorkflowRun>> | undefined;
   try {
     preCreatedRun = await workflowDeps.store.createWorkflowRun({
+      ...(ctx.runId !== undefined ? { id: ctx.runId } : {}),
       workflow_name: workflow.name,
       conversation_id: workerConv.id,
       codebase_id: ctx.codebaseId,
@@ -476,8 +483,21 @@ export async function dispatchBackgroundWorkflow(
     });
   } catch (error) {
     const err = error as Error;
-    getLog().error({ err, workflowName: workflow.name }, 'pre_create_workflow_run_failed');
-    // Non-fatal: executeWorkflow will create its own row as fallback
+    getLog().error(
+      { err, workflowName: workflow.name, requestedRunId: ctx.runId },
+      'pre_create_workflow_run_failed'
+    );
+    // Without a requested id this is non-fatal: executeWorkflow creates its own row as
+    // fallback. With one, the caller is waiting for exactly that id, and a retry with
+    // the same id (for example a duplicate primary key) cannot succeed — stop and say so.
+    if (ctx.runId !== undefined) {
+      unsubscribeBridge?.();
+      await ctx.platform.sendMessage(
+        ctx.conversationId,
+        `❌ Could not start **${workflow.name}** with run id \`${ctx.runId}\`: ${err.message}`
+      );
+      return;
+    }
   }
 
   // 8. Fire-and-forget: run workflow in background

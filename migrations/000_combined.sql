@@ -8,7 +8,7 @@
 --     COMMENT ON COLUMN — goes in the final "Indexes and column comments"
 --     section, below every ADD COLUMN.
 --
--- 24 Application Tables (+ the 4 remote_agent_auth_* Better Auth tables, listed inline below):
+-- 25 Application Tables (+ the 4 remote_agent_auth_* Better Auth tables, listed inline below):
 --   1. remote_agent_codebases
 --   2. remote_agent_codebase_env_vars
 --   3. remote_agent_users
@@ -33,7 +33,8 @@
 --  22. remote_agent_workflow_node_messages
 --  23. remote_agent_pending_interactions
 --  24. remote_agent_workflow_node_execution_evidence
---  25-28. remote_agent_auth_user / session / account / verification (PostgreSQL-only)
+--  25. remote_agent_workflow_run_status_log
+--  26-29. remote_agent_auth_user / session / account / verification (PostgreSQL-only)
 --
 -- Dropped tables (via migrations):
 --   - remote_agent_command_templates (017)
@@ -887,6 +888,32 @@ COMMENT ON TABLE remote_agent_workflow_node_execution_evidence IS
   'Git snapshots bracketing one node execution, read by the server to compute which repository paths that execution changed. Cascade-deletes with the run.';
 
 -- ============================================================================
+-- Table 27: Workflow run status log (durable MCP event log)
+-- ============================================================================
+
+-- Append-only, one row per observed change of a run's externally visible
+-- state (status, open human gate, PR link). `position` is global and strictly
+-- increasing (the MCP events cursor); `seq` counts per run from 1 (the MCP
+-- event id is `<workflow_run_id>:<seq>`). `data` is the event payload.
+-- Written only by the server's status-log writer, which observes runs and
+-- never changes them.
+CREATE TABLE IF NOT EXISTS remote_agent_workflow_run_status_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_run_id UUID NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+  position BIGINT NOT NULL,
+  seq INTEGER NOT NULL CHECK (seq >= 1),
+  status VARCHAR(20) NOT NULL,
+  gate_key VARCHAR(255),
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_workflow_run_status_log_position UNIQUE (position),
+  CONSTRAINT uq_workflow_run_status_log_run_seq UNIQUE (workflow_run_id, seq)
+);
+
+COMMENT ON TABLE remote_agent_workflow_run_status_log IS
+  'Durable log of workflow run status changes served as MCP events; global position is the replay cursor; cascade-deletes with the run.';
+
+-- ============================================================================
 -- Indexes and column comments
 -- ============================================================================
 --
@@ -1029,6 +1056,10 @@ CREATE INDEX IF NOT EXISTS idx_node_execution_evidence_run
   ON remote_agent_workflow_node_execution_evidence(workflow_run_id);
 CREATE INDEX IF NOT EXISTS idx_node_execution_evidence_run_node_epoch
   ON remote_agent_workflow_node_execution_evidence(workflow_run_id, node_id, retry_epoch DESC);
+
+-- Workflow run status log
+CREATE INDEX IF NOT EXISTS idx_workflow_run_status_log_created_at
+  ON remote_agent_workflow_run_status_log(created_at);
 
 -- Workflow provider bindings
 CREATE INDEX IF NOT EXISTS idx_provider_bindings_codebase

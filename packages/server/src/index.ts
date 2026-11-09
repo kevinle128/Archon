@@ -82,6 +82,8 @@ import { WorkflowEventBridge } from './adapters/web/workflow-bridge';
 import { DashboardEventPoller } from './adapters/web/dashboard-event-poller';
 import { PgNotifyListener } from './adapters/web/pg-notify-listener';
 import { WorkflowEventDispatcher } from './workflow-events/dispatcher';
+import { startRunStatusLogWriter } from './mcp/run-status-log';
+import { configuredBaseUrl } from './mcp/route';
 import { registerApiRoutes } from './routes/api';
 import { requestLogPath } from './request-log-path';
 import { registerGithubWebhookRoute } from './routes/webhooks';
@@ -941,6 +943,12 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
   });
   getLog().info({ port: server.port, hostname }, 'server_listening');
 
+  // Durable status log behind the MCP events extension. It only observes runs.
+  // Links in event payloads use ARCHON_PUBLIC_URL, else this server's own port.
+  const statusLogWriter = startRunStatusLogWriter({
+    baseUrl: configuredBaseUrl() ?? `http://localhost:${String(server.port)}`,
+  });
+
   // Initialize Telegram adapter (conditional, skipped in CLI serve mode)
   let telegram: TelegramAdapter | null = null;
   if (!opts.skipPlatformAdapters && process.env.TELEGRAM_BOT_TOKEN) {
@@ -1005,6 +1013,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
           pgNotifyListener?.stop();
           dashboardPoller.stop();
           workflowEventDispatcher.stop();
+          statusLogWriter.stop();
           await webAdapter.stop();
         } catch (error) {
           getLog().error({ err: error }, 'adapter_stop_error');
