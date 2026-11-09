@@ -8,8 +8,9 @@ description: |
         resolves the conflicts in one merge
         commit, runs the fork's bounded local checks, asks a human when it cannot decide,
         opens a pull request to main with archon-create-pr (merge commit, merged by hand),
-        waits for its CI, fixes failed CI at most twice, and returns a JSON result with the
-        PR URL and the CI conclusion.
+        reports the PR URL as soon as the PR is verified, waits for its CI (and stops waiting
+        when a human merges or closes the PR), fixes failed CI at most twice, and returns a
+        JSON result with the PR URL and the CI conclusion.
   NOT for: Starting from chat, merging the pull request, closing the issue, generic merge
            conflicts (use archon-resolve-conflicts), or repositories other than the Paseo fork.
 
@@ -500,8 +501,9 @@ nodes:
       #!/usr/bin/env bash
       # Usage: wait-ci.sh <attempt>. Waits for the CI of the pull request in pr.json
       # on the local HEAD, writes ci.json beside this script and prints it.
-      # Conclusion: success, failure, no_checks or timeout. Always exits 0 once
-      # it has a conclusion.
+      # Conclusion: success, failure, no_checks, timeout, merged or closed. A
+      # merged or closed pull request ends the wait at once: nothing more to fix.
+      # Always exits 0 once it has a conclusion.
       set -euo pipefail
       sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
       attempt=$1
@@ -522,7 +524,14 @@ nodes:
         polls=$((polls + 1))
         # Checks listed before GitHub moved the PR to the pushed HEAD belong to an
         # older commit, so they do not count.
-        pr_head=$(gh pr view "$number" --repo "$repo" --json headRefOid -q .headRefOid 2>/dev/null || true)
+        pr=$(gh pr view "$number" --repo "$repo" --json headRefOid,state 2>/dev/null || true)
+        pr_head=$(jq -r '.headRefOid // empty' <<<"$pr" 2>/dev/null || true)
+        pr_state=$(jq -r '.state // empty' <<<"$pr" 2>/dev/null || true)
+        if [ "$pr_state" = MERGED ] || [ "$pr_state" = CLOSED ]; then
+          conclusion=$(tr '[:upper:]' '[:lower:]' <<<"$pr_state")
+          failed='[]'
+          break
+        fi
         checks='[]'
         if [ "$pr_head" = "$head" ]; then
           # gh exits non-zero for pending or failed checks and prints no JSON when
@@ -765,12 +774,13 @@ nodes:
         `Merge with **Create a merge commit**, not squash.`
       - Never merge the pull request and never enable auto-merge. A human merges it.
 
-  # Deterministic contract check on the PR that archon-create-pr opened, then the
-  # CI wait. Text elements it missed are fixed here; a wrong base, head or merge
-  # commit fails. Prints pr.json plus ci.json.
+  # Deterministic contract check on the PR that archon-create-pr opened. Text
+  # elements it missed are fixed here; a wrong base, head or merge commit fails.
+  # Prints pr.json as soon as the PR is confirmed, so the run's status events
+  # carry pr_url while CI still runs.
   - id: verify-pr
     depends_on: [create-pr]
-    timeout: 6300000
+    timeout: 600000
     bash: |
       set -euo pipefail
       SYNC_DIR="$ARTIFACTS_DIR/sync"
@@ -863,14 +873,24 @@ nodes:
       fi
 
       jq -c '{pr_url: .url, number}' "$SYNC_DIR/pr-view.json" > "$SYNC_DIR/pr.json"
+      cat "$SYNC_DIR/pr.json"
+
+  # Waits for the CI of the verified PR. Prints pr.json plus ci.json.
+  - id: wait-ci
+    depends_on: [verify-pr]
+    timeout: 6300000
+    bash: |
+      set -euo pipefail
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+      bash "$SYNC_DIR/clean-tree.sh" "the start of wait-ci"
       bash "$SYNC_DIR/wait-ci.sh" 0 >/dev/null
       jq -cs '.[0] + .[1]' "$SYNC_DIR/pr.json" "$SYNC_DIR/ci.json"
 
   # until_bash ends the group after a green CI or after the second fix attempt,
   # so the group never reaches max_iterations (reaching it fails the node).
   - id: fix-ci
-    depends_on: [verify-pr]
-    when: "$verify-pr.output.conclusion == 'failure'"
+    depends_on: [wait-ci]
+    when: "$wait-ci.output.conclusion == 'failure'"
     loop_group:
       max_iterations: 3
       until_bash: |
@@ -892,7 +912,7 @@ nodes:
   # Runs after success and after failures (not after a cancel). It never closes
   # the issue: the fork's resume job closes it once a sync pull request merges.
   - id: finalize
-    depends_on: [verify-pr, fix-ci]
+    depends_on: [wait-ci, fix-ci]
     trigger_rule: all_done
     timeout: 300000
     bash: |
@@ -915,11 +935,14 @@ nodes:
         fi
         case "$(jq -r .conclusion <<<"$ci")" in
           success) outcome=pr_ready ;;
+          merged) outcome=merged ;;
+          closed) outcome=pr_closed ;;
           failure) outcome=ci_failed ;;
           *) outcome=ci_unknown ;;
         esac
         notified=true
-        if [ "$outcome" != pr_ready ]; then
+        # A human already merged or closed the PR, so there is nothing to tell them.
+        if [ "$outcome" = ci_failed ] || [ "$outcome" = ci_unknown ]; then
           {
             printf 'The sync pull request %s is open, but its CI is %s after %s fix attempt(s).\n\n' \
               "$pr_url" "$(jq -r .conclusion <<<"$ci")" "$attempts"

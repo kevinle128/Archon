@@ -5,6 +5,7 @@ import {
   buildRunSummary,
   buildStatusEventPayload,
   currentNode,
+  findCi,
   findPrUrl,
   inputRequestKey,
   selectRunOutput,
@@ -190,7 +191,46 @@ describe('selectRunOutput / findPrUrl', () => {
   });
 });
 
+const PR = 'https://github.com/o/r/pull/16';
+const CI_FAIL = { conclusion: 'failure', failed: ['server-tests'], checks_url: `${PR}/checks` };
+/** verify-pr printed the PR, then wait-ci printed the PR plus its CI result. */
+const afterCiWait: RunEventSnapshot[] = [
+  completed('verify-pr', { pr_url: PR, number: 16 }),
+  completed('wait-ci', { pr_url: PR, number: 16, ...CI_FAIL, attempt: 0 }),
+  started('fix-ci'),
+];
+
+describe('findCi', () => {
+  test('reads a top-level CI record and a ci object, newest first', () => {
+    expect(findCi(afterCiWait)).toEqual(CI_FAIL);
+    const ok = { conclusion: 'success', failed: [], checks_url: 'c' };
+    expect(findCi([...afterCiWait, completed('finalize', { pr_url: PR, ci: ok })])).toEqual(ok);
+  });
+
+  test('is undefined before any CI result', () => {
+    expect(findCi([completed('verify-pr', { pr_url: PR, number: 16 })])).toBeUndefined();
+    expect(findCi([completed('read', { conclusion: 'yes' })])).toBeUndefined();
+  });
+});
+
 describe('buildRunSummary', () => {
+  test('a cancelled run still reports the PR and the last CI result', () => {
+    const summary = buildRunSummary(makeRun({ status: 'cancelled' }), afterCiWait, {
+      baseUrl: BASE,
+    });
+    expect(summary).toMatchObject({ status: 'cancelled', pr_url: PR, ci: CI_FAIL });
+  });
+
+  test('reports the PR as soon as verify-pr completes, before any CI result', () => {
+    const summary = buildRunSummary(
+      makeRun(),
+      [completed('verify-pr', { pr_url: PR, number: 16 }), started('wait-ci')],
+      { baseUrl: BASE }
+    );
+    expect(summary).toMatchObject({ status: 'running', current_node: 'wait-ci', pr_url: PR });
+    expect(summary.ci).toBeUndefined();
+  });
+
   test('includes the question, PR link, and web URL', () => {
     const run = paused({});
     const summary = buildRunSummary(run, [completed('publish', { pr_url: 'https://pr/1' })], {
@@ -338,6 +378,25 @@ describe('buildDetailedTask', () => {
     });
   });
 
+  test('failed carries the PR and the last CI result in the error data', () => {
+    const run = makeRun({ status: 'failed', metadata: { error: 'node fix-ci failed' } });
+    const task = buildDetailedTask(run, afterCiWait, { baseUrl: BASE, elicitation: true });
+    expect(task.error?.data).toMatchObject({ pr_url: PR, ci: CI_FAIL });
+  });
+
+  test('cancelled after the PR opened names the PR and the CI result, still with no result', () => {
+    const task = buildDetailedTask(makeRun({ status: 'cancelled' }), afterCiWait, {
+      baseUrl: BASE,
+      elicitation: true,
+    });
+    expect(task.status).toBe('cancelled');
+    expect(task.statusMessage).toBe(
+      `Workflow resolve cancelled. PR: ${PR}. CI: failure. Run: ${BASE}/runs/run-1`
+    );
+    expect(task.result).toBeUndefined();
+    expect(task.error).toBeUndefined();
+  });
+
   test('cancelled has no result or error', () => {
     const task = buildDetailedTask(makeRun({ status: 'cancelled' }), [], {
       baseUrl: BASE,
@@ -380,6 +439,19 @@ describe('buildStatusEventPayload', () => {
     );
     expect(payload.ci).toEqual({ conclusion: 'failure', failed: ['lint'], checks_url: 'u' });
     expect(payload.pr_url).toBe('https://pr/2');
+  });
+
+  test('a running run after its CI wait carries pr_url but no ci, so CI adds no event', () => {
+    const payload = buildStatusEventPayload(makeRun(), afterCiWait, { baseUrl: BASE });
+    expect(payload.pr_url).toBe(PR);
+    expect(payload.ci).toBeUndefined();
+  });
+
+  test('a cancelled or failed terminal event carries pr_url and the last CI result', () => {
+    for (const status of ['cancelled', 'failed']) {
+      const payload = buildStatusEventPayload(makeRun({ status }), afterCiWait, { baseUrl: BASE });
+      expect(payload).toMatchObject({ status, pr_url: PR, ci: CI_FAIL });
+    }
   });
 
   test('a paused run carries the question', () => {

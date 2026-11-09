@@ -76,7 +76,10 @@ unset, results use the request's origin and events use `http://localhost:<port>`
 ### `get_run`
 
 `{ "run_id": "<id>" }` returns
-`{ run_id, workflow, status, task_status, current_node, question?, pr_url?, url, started_at, completed_at, error? }`.
+`{ run_id, workflow, status, task_status, current_node, question?, pr_url?, ci?, url, started_at, completed_at, error? }`.
+`pr_url` is the newest PR link in a completed node's JSON output, and `ci`
+(`{ conclusion, failed, checks_url }`) the newest CI result, in any status: a cancelled or
+failed run still reports the PR it opened and its last CI conclusion.
 
 ### `list_runs`
 
@@ -95,8 +98,8 @@ The task id is the Archon run id. A task is never expired or failed because of i
 | `paused`, answer recorded, resume pending | `working` | `statusMessage: "answer received"` |
 | `paused` at another gate (`workflow:` child, container write-back, Plannotator) | `working` | `statusMessage` names the gate and the run URL; answer it in Archon |
 | `completed` | `completed` | `result` = `{ resultType: "complete", content, structuredContent: { run_id, workflow, outcome?, pr_url?, ci?, url, output } }`. `output` is the parsed output of the workflow's `returns:` node, else of the last completed node. |
-| `failed` | `failed` | `error: { code: -32603, message, data: { run_id, url, output? } }` |
-| `cancelled` | `cancelled` | |
+| `failed` | `failed` | `error: { code: -32603, message, data: { run_id, url, pr_url?, ci?, output? } }` |
+| `cancelled` | `cancelled` | No result. When the run opened a PR or has a CI result, `statusMessage` names them: `Workflow <name> cancelled. PR: <url>. CI: <conclusion>. Run: <url>` |
 
 `tasks/*` requests from a client that did not declare the tasks extension get `-32021`.
 A `taskId` that is not a run id (a UUID, or the 32-hex form SQLite generates) gets
@@ -156,8 +159,9 @@ One event type, `workflow_run.status_changed`, with `poll` and `push` delivery.
 - Arguments (all optional): `run_id` (a run id, else `-32602`), `workflow`. No arguments =
   every run of the install.
 - Payload: `{ run_id, workflow, status, task_status, node?, question?, pr_url?, ci?, url, error? }`.
-  `ci` (`{ conclusion, failed, checks_url }`) is set on the terminal event when the
-  workflow's final output has it.
+  `ci` (`{ conclusion, failed, checks_url }`) is set only on a terminal event (completed,
+  failed or cancelled): the final output's `ci`, else the newest CI result of a completed
+  node. A CI result alone never adds an event while the run is active.
 - One event per change of status or open gate, plus one when a PR link (`pr_url` in a node's
   JSON output) first appears while the run is still running.
 - `eventId` = `<run_id>:<seq>` (seq counts from 1 per run).

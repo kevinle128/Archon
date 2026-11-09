@@ -233,6 +233,50 @@ function ciOf(output: unknown): CiResult | undefined {
   return { conclusion: ci.conclusion, failed: ci.failed, checks_url: ci.checks_url };
 }
 
+/** A CI wait prints its result at the top level: `conclusion` plus `checks_url`. */
+function topLevelCiOf(output: unknown): CiResult | undefined {
+  const record = asRecord(output);
+  if (!record || typeof record.conclusion !== 'string' || !('checks_url' in record)) {
+    return undefined;
+  }
+  return { conclusion: record.conclusion, failed: record.failed, checks_url: record.checks_url };
+}
+
+/**
+ * The newest CI result in a completed node output, as a `ci` object or at the
+ * top level. A run that is cancelled or fails after its CI wait still reports it.
+ */
+export function findCi(events: readonly RunEventSnapshot[]): CiResult | undefined {
+  const completed = completedOutputs(events);
+  for (let i = completed.length - 1; i >= 0; i--) {
+    const output = parseNodeOutput(completed[i]?.data.node_output);
+    const ci = ciOf(output) ?? topLevelCiOf(output);
+    if (ci) return ci;
+  }
+  return undefined;
+}
+
+/**
+ * CI result reported with a terminal status: the result node's `ci` for a
+ * completed run, else the newest CI result of any completed node. Undefined
+ * while the run is active, so CI adds no event of its own.
+ */
+function terminalCi(
+  run: RunSnapshot,
+  events: readonly RunEventSnapshot[],
+  options: MappingOptions
+): CiResult | undefined {
+  switch (run.status) {
+    case 'completed':
+      return ciOf(selectRunOutput(events, options.returnsNodeId)) ?? findCi(events);
+    case 'failed':
+    case 'cancelled':
+      return findCi(events);
+    default:
+      return undefined;
+  }
+}
+
 function runError(run: RunSnapshot): string | undefined {
   return typeof run.metadata.error === 'string' && run.metadata.error.length > 0
     ? run.metadata.error
@@ -248,6 +292,7 @@ export interface RunSummary {
   current_node: string | null;
   question?: string;
   pr_url?: string;
+  ci?: CiResult;
   url: string;
   started_at: string | null;
   completed_at: string | null;
@@ -261,6 +306,7 @@ export function buildRunSummary(
 ): RunSummary {
   const gate = openAnswerableGate(run);
   const prUrl = findPrUrl(events);
+  const ci = findCi(events);
   const error = runError(run);
   return {
     run_id: run.id,
@@ -270,6 +316,7 @@ export function buildRunSummary(
     current_node: currentNode(events),
     ...(gate ? { question: gate.message } : {}),
     ...(prUrl ? { pr_url: prUrl } : {}),
+    ...(ci ? { ci } : {}),
     url: runUrl(options.baseUrl, run.id),
     started_at: run.started_at,
     completed_at: run.completed_at,
@@ -302,8 +349,7 @@ export function buildStatusEventPayload(
   const node = gate?.nodeId ?? currentNode(events);
   const prUrl = findPrUrl(events);
   const error = runError(run);
-  const ci =
-    run.status === 'completed' ? ciOf(selectRunOutput(events, options.returnsNodeId)) : undefined;
+  const ci = terminalCi(run, events, options);
   return {
     run_id: run.id,
     workflow: run.workflow_name,
@@ -468,14 +514,39 @@ export function buildDetailedTask(
   if (status === 'failed') {
     const output = selectRunOutput(events, options.returnsNodeId);
     const message = runError(run) ?? `Workflow ${run.workflow_name} failed.`;
+    const prUrl = findPrUrl(events);
+    const ci = terminalCi(run, events, options);
     return {
       ...base,
       statusMessage: message,
       error: {
         code: -32603,
         message,
-        data: { run_id: run.id, url, ...(output !== undefined ? { output } : {}) },
+        data: {
+          run_id: run.id,
+          url,
+          ...(prUrl ? { pr_url: prUrl } : {}),
+          ...(ci ? { ci } : {}),
+          ...(output !== undefined ? { output } : {}),
+        },
       },
+    };
+  }
+
+  if (status === 'cancelled') {
+    // A cancelled task has no result; the status message still names the PR the
+    // run opened and its last CI conclusion, so the client can report them.
+    const prUrl = findPrUrl(events);
+    const ci = terminalCi(run, events, options);
+    if (!prUrl && !ci) return base;
+    const conclusion = typeof ci?.conclusion === 'string' ? ci.conclusion : undefined;
+    return {
+      ...base,
+      statusMessage:
+        `Workflow ${run.workflow_name} cancelled.` +
+        (prUrl ? ` PR: ${prUrl}.` : '') +
+        (conclusion ? ` CI: ${conclusion}.` : '') +
+        ` Run: ${url}`,
     };
   }
 
