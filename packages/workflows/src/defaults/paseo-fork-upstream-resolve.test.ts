@@ -161,7 +161,13 @@ case "$1 $2" in
   "pr view")
     case "$*" in
       *baseRefName*) cat "$FAKE_PR_VIEW_JSON" ;;
-      *headRefOid*) printf '%s\\n' "$FAKE_PR_HEAD" ;;
+      *headRefOid*)
+        # One state per poll from $FAKE_CHECKS_DIR/states; the last line repeats; OPEN without a file.
+        v=$(( $(cat "$FAKE_CHECKS_DIR/view-count" 2>/dev/null || echo 0) + 1 ))
+        echo "$v" > "$FAKE_CHECKS_DIR/view-count"
+        state=$(sed -n "\${v}p" "$FAKE_CHECKS_DIR/states" 2>/dev/null || true)
+        [ -n "$state" ] || state=$(tail -n 1 "$FAKE_CHECKS_DIR/states" 2>/dev/null || true)
+        printf '{"headRefOid":"%s","state":"%s"}\\n' "$FAKE_PR_HEAD" "\${state:-OPEN}" ;;
       *) echo 77 ;;
     esac ;;
   "pr checks")
@@ -375,6 +381,7 @@ describe('paseo-fork-upstream-resolve structure', () => {
       'publish',
       'create-pr',
       'verify-pr',
+      'wait-ci',
       'fix-ci',
       'finalize',
     ]);
@@ -390,6 +397,7 @@ describe('paseo-fork-upstream-resolve structure', () => {
       publish: 'none_failed_min_one_success',
       'create-pr': 'all_success',
       'verify-pr': 'all_success',
+      'wait-ci': 'all_success',
       'fix-ci': 'all_success',
       finalize: 'all_done',
     });
@@ -403,11 +411,12 @@ describe('paseo-fork-upstream-resolve structure', () => {
       publish: ['check', 'apply-guidance'],
       'create-pr': ['publish'],
       'verify-pr': ['create-pr'],
-      'fix-ci': ['verify-pr'],
-      finalize: ['verify-pr', 'fix-ci'],
+      'wait-ci': ['verify-pr'],
+      'fix-ci': ['wait-ci'],
+      finalize: ['wait-ci', 'fix-ci'],
     });
     expect(nodeById('ask-human').when).toBe("$check.output.needs_human == 'true'");
-    expect(nodeById('fix-ci').when).toBe("$verify-pr.output.conclusion == 'failure'");
+    expect(nodeById('fix-ci').when).toBe("$wait-ci.output.conclusion == 'failure'");
     expect(WORKFLOW.returns).toBe('finalize');
   });
 
@@ -466,13 +475,17 @@ describe('paseo-fork-upstream-resolve structure', () => {
 
   it('gives every slow bash node an explicit timeout', () => {
     const timeouts = Object.fromEntries(
-      ['prepare', 'check', 'publish', 'verify-pr', 'finalize'].map(id => [id, nodeById(id).timeout])
+      ['prepare', 'check', 'publish', 'verify-pr', 'wait-ci', 'finalize'].map(id => [
+        id,
+        nodeById(id).timeout,
+      ])
     );
     expect(timeouts).toEqual({
       prepare: 1_800_000,
       check: 2_700_000,
       publish: 2_700_000,
-      'verify-pr': 6_300_000,
+      'verify-pr': 600_000,
+      'wait-ci': 6_300_000,
       finalize: 300_000,
     });
     expect(loopGroupOf('fix-ci').nodes[1]?.timeout).toBe(6_000_000);
@@ -619,6 +632,7 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
     completed({ resolved, question: resolved ? '' : 'Which side?' }, ['resolved', 'question']);
   const checkOut = (needsHuman: boolean): NodeOutput =>
     completed({ needs_human: needsHuman, question: '', issue_url: 'u', run_url: 'r' });
+  const prOut: NodeOutput = completed({ pr_url: 'p', number: 77 });
   const ciOut = (conclusion: string): NodeOutput =>
     completed({ pr_url: 'p', number: 77, conclusion, failed: [], checks_url: 'c', attempt: 0 });
 
@@ -626,7 +640,8 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
     const d = simulate({
       resolve: resolveOut(true),
       check: checkOut(false),
-      'verify-pr': ciOut('success'),
+      'verify-pr': prOut,
+      'wait-ci': ciOut('success'),
     });
     expect(d.check).toBe('run');
     expect(d['ask-human']).toBe('skip:when');
@@ -634,15 +649,30 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
     expect(d.publish).toBe('run');
     expect(d['create-pr']).toBe('run');
     expect(d['verify-pr']).toBe('run');
+    expect(d['wait-ci']).toBe('run');
     expect(d['fix-ci']).toBe('skip:when');
     expect(d.finalize).toBe('run');
+  });
+
+  it('skips fix-ci (not fails) when a human merged or closed the PR during the CI wait', () => {
+    for (const conclusion of ['merged', 'closed']) {
+      const d = simulate({
+        resolve: resolveOut(true),
+        check: checkOut(false),
+        'verify-pr': prOut,
+        'wait-ci': ciOut(conclusion),
+      });
+      expect(d['fix-ci']).toBe('skip:when');
+      expect(d.finalize).toBe('run');
+    }
   });
 
   it('runs the gate, the guidance pass and publish when a human is needed', () => {
     const d = simulate({
       resolve: resolveOut(false),
       check: checkOut(true),
-      'verify-pr': ciOut('failure'),
+      'verify-pr': prOut,
+      'wait-ci': ciOut('failure'),
     });
     expect(d['ask-human']).toBe('run');
     expect(d['apply-guidance']).toBe('run');
@@ -663,6 +693,7 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
       'publish',
       'create-pr',
       'verify-pr',
+      'wait-ci',
       'fix-ci',
     ]) {
       expect(d[id]).toBe('skip:trigger');
@@ -678,6 +709,18 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
     });
     expect(d['create-pr']).toBe('skip:trigger');
     expect(d['verify-pr']).toBe('skip:trigger');
+    expect(d['wait-ci']).toBe('skip:trigger');
+    expect(d['fix-ci']).toBe('skip:trigger');
+    expect(d.finalize).toBe('run');
+  });
+
+  it('still runs finalize after verify-pr fails', () => {
+    const d = simulate({
+      resolve: resolveOut(true),
+      check: checkOut(false),
+      'verify-pr': { state: 'failed', output: '', error: 'contract' },
+    });
+    expect(d['wait-ci']).toBe('skip:trigger');
     expect(d['fix-ci']).toBe('skip:trigger');
     expect(d.finalize).toBe('run');
   });
@@ -1699,9 +1742,23 @@ describe('verify-pr node (executable)', () => {
     return run(sb, render(bashOf('verify-pr'), sb.artifacts), { cwd: work });
   }
 
-  it('accepts a PR that meets the contract, edits nothing, then waits for its CI', () => {
+  it('accepts a PR that meets the contract, edits nothing, and prints the PR without waiting for CI', () => {
+    // The PR link must reach the run's status events while CI still runs.
     const { sb, work } = setup({});
     const r = verifyPr(sb, work);
+    expect(r.status).toBe(0);
+    const pr = { pr_url: `https://github.com/${FORK_REPO}/pull/77`, number: 77 };
+    expect(JSON.parse(r.stdout)).toEqual(pr);
+    expect(readJson<unknown>(join(sb.sync, 'pr.json'))).toEqual(pr);
+    expect(existsSync(join(sb.sync, 'ci.json'))).toBe(false);
+    expect(calls(sb).some(c => c.startsWith('gh pr checks'))).toBe(false);
+    expect(calls(sb).some(c => c.startsWith('gh pr edit'))).toBe(false);
+  });
+
+  it('wait-ci then waits for the CI and prints the PR plus the CI result', () => {
+    const { sb, work } = setup({});
+    expect(verifyPr(sb, work).status).toBe(0);
+    const r = run(sb, render(bashOf('wait-ci'), sb.artifacts), { cwd: work });
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout)).toEqual({
       pr_url: `https://github.com/${FORK_REPO}/pull/77`,
@@ -1711,12 +1768,7 @@ describe('verify-pr node (executable)', () => {
       checks_url: `https://github.com/${FORK_REPO}/pull/77/checks`,
       attempt: 0,
     });
-    expect(readJson<unknown>(join(sb.sync, 'pr.json'))).toEqual({
-      pr_url: `https://github.com/${FORK_REPO}/pull/77`,
-      number: 77,
-    });
     expect(readJson<{ conclusion: string }>(join(sb.sync, 'ci.json')).conclusion).toBe('success');
-    expect(calls(sb).some(c => c.startsWith('gh pr edit'))).toBe(false);
   });
 
   const mismatches: Array<[string, Record<string, unknown>, string]> = [
@@ -1922,6 +1974,36 @@ describe('CI wait (executable)', () => {
     expect(ci.failed).toEqual([]);
     expect(calls(sb).filter(c => c.startsWith('gh pr checks'))).toHaveLength(10);
     expect(calls(sb).filter(c => c.startsWith('sleep'))).toHaveLength(9);
+  });
+
+  it('ends at once with conclusion merged when a human merged the PR, even with pending checks', () => {
+    const { sb, work } = setup([{ out: checksJson(['build', 'pending']), code: 8 }]);
+    writeFileSync(join(sb.root, 'checks', 'states'), 'MERGED\n');
+    expect(waitCi(sb, work)).toEqual({
+      conclusion: 'merged',
+      failed: [],
+      checks_url: `https://github.com/${FORK_REPO}/pull/77/checks`,
+      attempt: 0,
+    });
+    expect(calls(sb).some(c => c.startsWith('gh pr checks'))).toBe(false);
+    expect(calls(sb).some(c => c.startsWith('sleep'))).toBe(false);
+  });
+
+  it('ends with merged at the first poll after the merge, without waiting for the failed check set', () => {
+    // A failed check during the wait must not lead to fix-ci on a merged PR.
+    const { sb, work } = setup([
+      { out: checksJson(['build', 'pending'], ['tests', 'fail']), code: 8 },
+    ]);
+    writeFileSync(join(sb.root, 'checks', 'states'), 'OPEN\nOPEN\nMERGED\n');
+    const ci = waitCi(sb, work);
+    expect(ci.conclusion).toBe('merged');
+    expect(calls(sb).filter(c => c.startsWith('gh pr checks'))).toHaveLength(2);
+  });
+
+  it('ends with conclusion closed when a human closed the PR without merging', () => {
+    const { sb, work } = setup([{ out: checksJson(['build', 'pending']), code: 8 }]);
+    writeFileSync(join(sb.root, 'checks', 'states'), 'CLOSED\n');
+    expect(waitCi(sb, work).conclusion).toBe('closed');
   });
 
   it('ignores checks until the PR head is the pushed commit', () => {
@@ -2237,6 +2319,26 @@ describe('finalize node (executable)', () => {
     const bodies = readFileSync(`${sb.log}.bodies`, 'utf-8');
     expect(bodies).toContain('after 2 fix attempt(s)');
     expect(bodies).toContain('Failed checks: e2e');
+  });
+
+  it('reports merged, with no comment, when a human merged the PR during the CI wait', () => {
+    const sb = makeSandbox();
+    seedPr(sb, { conclusion: 'merged', failed: [], checks_url: 'https://c', attempt: 0 });
+    const out = runFinalize(sb);
+    expect(out).toMatchObject({
+      outcome: 'merged',
+      pr_url: `https://github.com/${FORK_REPO}/pull/77`,
+      ci: { conclusion: 'merged', failed: [], checks_url: 'https://c' },
+      notified: true,
+    });
+    expect(calls(sb)).toEqual([]);
+  });
+
+  it('reports pr_closed, with no comment, when a human closed the PR', () => {
+    const sb = makeSandbox();
+    seedPr(sb, { conclusion: 'closed', failed: [], checks_url: 'https://c', attempt: 0 });
+    expect(runFinalize(sb).outcome).toBe('pr_closed');
+    expect(calls(sb)).toEqual([]);
   });
 
   it('reports ci_unknown when CI showed no checks', () => {
