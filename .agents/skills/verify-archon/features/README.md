@@ -1,7 +1,7 @@
 # Archon feature map
 
 Read the relevant feature before selecting or driving it.
-Each recipe reaches the application through its public CLI, HTTP API, or browser UI.
+Each recipe reaches the application through its public CLI, HTTP API, MCP endpoint, or browser UI.
 The helper starts isolated resources and retains evidence for the selected recipe.
 
 | Feature | User paths | Recipes |
@@ -9,6 +9,7 @@ The helper starts isolated resources and retains evidence for the selected recip
 | [CLI discovery](install.md) | Version, help, workflow discovery, DAG validation | `install.health` |
 | [Workflow control](workflow-cli.md) | Run, inspect, retry, approve, resume, reject, cancel | `workflow.execution`, `workflow.governance`, `workflow.invalid-input` |
 | [HTTP lifecycle](http-api.md) | Projects, conversations, workflow definitions, Ask answer | `http.lifecycle` |
+| [MCP server](mcp.md) | Discover `/mcp`, list tools, list runs, list events | `mcp.discovery` |
 | [Workflow rooms](run-ui.md) | Run room, tools, Ask, transcripts, queue | `ui.rooms`, `ui.tools`, `ui.ask`, `ui.transcript-display`, `ui.queue-guidance`, `ui.visual` |
 
 Use `bun "$VERIFY_HELPER" prove --scenario ID --repo "$TARGET" --evidence-root "$EVIDENCE"` for one recipe.
