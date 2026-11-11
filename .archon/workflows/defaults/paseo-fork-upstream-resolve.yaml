@@ -766,11 +766,13 @@ nodes:
       git rev-parse --show-toplevel > "$run_dir/worktree"
       bash "$SYNC_DIR/cleanup.sh" sweep
 
-      # The watcher runs detached from the node, so it outlives the end of
-      # prepare and a restart of the server; one watcher per run.
+      # The watcher outlives the end of prepare and a restart of the server; one
+      # watcher per run. Only the watcher process itself is put in the background, with
+      # all three standard streams redirected: the engine waits until the node's stdout
+      # and stderr close, so no background process may keep them open.
       if ! { [ -f "$run_dir/watch.pid" ] && kill -0 "$(cat "$run_dir/watch.pid")" 2>/dev/null; }; then
-        ( cd / && nohup bash "$SYNC_DIR/cleanup.sh" watch < /dev/null >> "$run_dir/watch.log" 2>&1 &
-          echo $! > "$run_dir/watch.pid" )
+        nohup bash "$SYNC_DIR/cleanup.sh" watch < /dev/null >> "$run_dir/watch.log" 2>&1 &
+        echo $! > "$run_dir/watch.pid"
       fi
       bash "$SYNC_DIR/clean-tree.sh" "the end of prepare"
       cat "$SYNC_DIR/sync.json"

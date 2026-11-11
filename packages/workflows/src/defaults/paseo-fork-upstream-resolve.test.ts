@@ -942,6 +942,7 @@ describe('prepare node (executable)', () => {
       state?: string;
       openPrs?: unknown[];
       files?: string[];
+      env?: NodeJS.ProcessEnv;
     }
   ): { status: number | null; stdout: string; stderr: string } {
     const body =
@@ -979,7 +980,10 @@ describe('prepare node (executable)', () => {
     }
     return run(sb, script, {
       cwd,
-      env: repos ? { FAKE_UPSTREAM_DIR: repos.upstream, FAKE_ORIGIN_DIR: repos.origin } : {},
+      env: {
+        ...(repos ? { FAKE_UPSTREAM_DIR: repos.upstream, FAKE_ORIGIN_DIR: repos.origin } : {}),
+        ...options.env,
+      },
     });
   }
 
@@ -1137,6 +1141,32 @@ describe('prepare node (executable)', () => {
     expect(existsSync(join(sb.sync, 'clean-tree.sh'))).toBe(true);
     expect(readFileSync(join(sb.sync, 'issue.md'), 'utf-8')).toContain('## Upstream sync conflict');
   });
+
+  it('ends while its cleanup watcher still runs (no open stdout or stderr is left behind)', () => {
+    const sb = makeSandbox();
+    const repos = makeForkRepos(sb);
+    // A real one-second sleep keeps the watcher alive for about ten seconds.
+    const bin2 = join(sb.root, 'bin2');
+    mkdirSync(bin2);
+    writeExecutable(join(bin2, 'sleep'), '#!/bin/bash\nexec /bin/sleep 1\n');
+    const started = Date.now();
+    const r = runPrepare(sb, repos, {
+      env: { CLEANUP_WATCH_POLLS: '10', PATH: `${bin2}:${sb.env.PATH ?? ''}` },
+    });
+    const elapsed = Date.now() - started;
+    const pidFile = join(sb.artifacts, 'state', 'sync-runs', RUN_ID, 'watch.pid');
+    const pid = Number(readFileSync(pidFile, 'utf-8').trim());
+    let alive = true;
+    try {
+      process.kill(pid, 0);
+    } catch {
+      alive = false;
+    }
+    if (alive) process.kill(pid, 'SIGTERM');
+    expect(r.status).toBe(0);
+    expect(alive).toBe(true);
+    expect(elapsed).toBeLessThan(8000);
+  }, 20_000);
 
   it('starts from origin/main and only notes an older fork_sha in the issue', () => {
     const sb = makeSandbox();
