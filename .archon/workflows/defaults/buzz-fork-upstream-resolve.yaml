@@ -1,0 +1,1398 @@
+name: buzz-fork-upstream-resolve
+description: |
+  Use when: The fork-sync resolver agent starts it through the Archon MCP server to resolve
+            an open "upstream-sync-conflict" issue of the Buzz fork (kevinle128/buzz).
+            The run finds the one open upstream-sync-conflict issue; the run's codebase is the fork.
+  Does: Reads the machine block on line 1 of the issue body, merges the named upstream
+        block/buzz commit on a new sync/upstream-<issue>-<run> branch from main,
+        resolves the conflicts (or, for a clean merge whose checks failed, fixes the
+        failed checks) in one merge commit plus fix commits, runs the fork's bounded
+        Rust, desktop, mobile and migration checks, asks a human when it cannot decide,
+        opens a pull request to main with archon-create-pr (merge commit, merged by hand),
+        reports the PR URL as soon as the PR is verified, waits for its CI (and stops waiting
+        when a human merges or closes the PR), re-runs failed CI jobs once, fixes failed CI
+        at most twice, removes its cargo target and build outputs at the end, and returns a
+        JSON result with the PR URL and the CI conclusion. A test issue (label sync-test,
+        base branch sync-test/<yyyymmdd>-<n>-base) opens a "[test]" pull request into that
+        base and never runs the CI fix.
+  NOT for: Starting from chat, merging the pull request, closing the issue, generic merge
+           conflicts (use archon-resolve-conflicts), or repositories other than the Buzz fork.
+
+nodes:
+  # The issue comes from GitHub, not from the run message: exactly one open
+  # conflict issue must exist. The message is context only.
+  - id: prepare
+    timeout: 1800000
+    bash: |
+      set -euo pipefail
+      # BEGIN sync-request-checks
+      UPSTREAM_URL=https://github.com/block/buzz.git
+      UPSTREAM_REPO=block/buzz
+      UPSTREAM_BRANCH=main
+      # A production sync pull request targets main; a test one targets its
+      # sync-test/<yyyymmdd>-<n>-base branch (fork_ref of the block).
+      PRODUCTION_BASE=main
+      TEST_BASE_PATTERN='^sync-test/[0-9]{8}-[0-9]+-base$'
+      CONFLICT_LABEL=upstream-sync-conflict
+      FORCE_LABEL=sync-force-human-review
+      TEST_LABEL=sync-test
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+
+      # Record why the request was refused, so `finalize` can quote it on the issue.
+      refuse() {
+        printf '%s\n' "$1" > "$SYNC_DIR/refusal.txt"
+        echo "prepare refused: $1" >&2
+        exit 1
+      }
+
+      # The issue body is untrusted input. Line 1 must be the machine block
+      # `<!-- fork-sync-conflict:v1 {JSON} -->` written by the fork's sync job.
+      # Usage: validate_sync_block <body-file> <repo> <labels-json>
+      # Prints the block JSON; refuses with every reason it found.
+      validate_sync_block() {
+        local body_file=$1 repo=$2 labels=$3
+        local prefix='<!-- fork-sync-conflict:v1 ' suffix=' -->'
+        local line1 json reasons
+        line1=$(head -n 1 "$body_file" | tr -d '\r')
+        case "$line1" in
+          "$prefix"*"$suffix") ;;
+          *) refuse "line 1 of the issue body is not a fork-sync-conflict:v1 block" ;;
+        esac
+        json=${line1#"$prefix"}
+        json=${json%"$suffix"}
+        if ! jq -e 'type == "object"' >/dev/null 2>&1 <<<"$json"; then
+          refuse "the fork-sync-conflict:v1 block is not a JSON object"
+        fi
+        reasons=$(jq -r \
+          --arg repo "$repo" \
+          --arg upstream_repo "$UPSTREAM_REPO" \
+          --arg conflict_label "$CONFLICT_LABEL" \
+          --arg test_label "$TEST_LABEL" \
+          --argjson labels "$labels" \
+          --arg production_base "$PRODUCTION_BASE" \
+          --arg test_base "$TEST_BASE_PATTERN" '
+          def sha40: type == "string" and test("^[0-9a-f]{40}$");
+          def strings: type == "array" and all(.[]; type == "string");
+          (.kind // "conflict") as $kind
+          | ($labels | any(.[]; . == $test_label)) as $test_labelled
+          | [
+              (if .schema == 1 then empty else "schema must be 1" end),
+              (if .label == $conflict_label then empty else "label must be \"\($conflict_label)\"" end),
+              (if .upstream_repo == $upstream_repo then empty else "upstream_repo must be \"\($upstream_repo)\"" end),
+              (if (.upstream_sha | sha40) then empty else "upstream_sha must be 40 lowercase hex characters" end),
+              (if (.fork_sha | sha40) then empty else "fork_sha must be 40 lowercase hex characters" end),
+              (if (.merge_base | sha40) then empty else "merge_base must be 40 lowercase hex characters" end),
+              (if .fork_repo == $repo then empty else "fork_repo must be \"\($repo)\", the repository of this checkout" end),
+              # A test block runs only on an issue labelled for tests and only
+              # against a throwaway sync-test base, so a test never touches main;
+              # a production block always targets main.
+              (if .test == false then
+                 (if .fork_ref == $production_base then empty else "fork_ref must be \"\($production_base)\"" end),
+                 (if $test_labelled then "an issue labelled \($test_label) must carry a test block (test: true)" else empty end)
+               elif .test == true then
+                 (if (.fork_ref | type) == "string" and (.fork_ref | test($test_base)) then empty
+                  else "test is true but fork_ref is not a sync-test/<yyyymmdd>-<n>-base branch" end),
+                 (if $test_labelled then empty else "test is true but the issue has no \($test_label) label" end)
+               else "test must be a boolean" end),
+              (if $kind == "conflict" or $kind == "checks_failed" then empty
+               else "kind must be \"conflict\" or \"checks_failed\"" end),
+              (if (.files | strings) then empty else "files must be an array of strings" end),
+              (if $kind == "conflict" and (.files | strings) and (.files | length) == 0
+               then "files must name at least one conflicted file when kind is conflict" else empty end),
+              (if $kind == "checks_failed" and (.files | strings) and (.files | length) > 0
+               then "files must be empty when kind is checks_failed" else empty end),
+              (if has("failed_checks") | not then empty
+               elif (.failed_checks | strings) then empty
+               else "failed_checks must be an array of strings" end),
+              (if $kind == "checks_failed" and ((.failed_checks // []) | length) == 0
+               then "failed_checks must name at least one check when kind is checks_failed" else empty end)
+            ]
+          | join("; ")' <<<"$json")
+        if [ -n "$reasons" ]; then
+          refuse "the fork-sync-conflict:v1 block is invalid: $reasons"
+        fi
+        printf '%s\n' "$json"
+      }
+      # END sync-request-checks
+
+      mkdir -p "$SYNC_DIR"
+      rm -f "$SYNC_DIR/refusal.txt"
+
+      # Resolve the repository from the origin URL, not from gh's default
+      # resolution, which can pick the parent repository of a fork.
+      origin_url=$(git remote get-url origin)
+      repo=$(gh repo view "$origin_url" --json nameWithOwner -q .nameWithOwner)
+
+      open_issues=$(gh issue list --repo "$repo" --label "$CONFLICT_LABEL" --state open \
+        --limit 100 --json number,url)
+      case "$(jq length <<<"$open_issues")" in
+        0)
+          echo "No open $CONFLICT_LABEL issue in $repo; nothing to resolve." >&2
+          exit 1 ;;
+        1) issue=$(jq -r '.[0].number' <<<"$open_issues") ;;
+        *)
+          echo "Several open $CONFLICT_LABEL issues in $repo: $(jq -r 'map("#\(.number)") | join(", ")' <<<"$open_issues"). Exactly one is required." >&2
+          exit 1 ;;
+      esac
+
+      gh issue view "$issue" --repo "$repo" --json number,state,title,labels,url,body \
+        > "$SYNC_DIR/issue-view.json"
+      state=$(jq -r .state "$SYNC_DIR/issue-view.json")
+      labels=$(jq -c '[.labels[].name]' "$SYNC_DIR/issue-view.json")
+      if [ "$state" != OPEN ]; then
+        echo "Issue #$issue in $repo is $state, not OPEN." >&2
+        exit 1
+      fi
+      if ! jq -e --arg l "$CONFLICT_LABEL" 'any(.[]; . == $l)' >/dev/null <<<"$labels"; then
+        echo "Issue #$issue in $repo has no $CONFLICT_LABEL label." >&2
+        exit 1
+      fi
+
+      # From here on the issue is a real conflict issue: every later failure is
+      # reported on it by `finalize`, which needs this file.
+      if [ -n "${ARCHON_PUBLIC_URL:-}" ]; then
+        run_url="${ARCHON_PUBLIC_URL%/}/runs/${WORKFLOW_ID}"
+      else
+        run_url="Archon run ${WORKFLOW_ID}"
+      fi
+      jq -c --arg repo "$repo" --arg run_url "$run_url" \
+        '{repo: $repo, issue: .number, issue_url: .url, run_url: $run_url}' \
+        "$SYNC_DIR/issue-view.json" > "$SYNC_DIR/issue.json"
+      jq -r .body "$SYNC_DIR/issue-view.json" > "$SYNC_DIR/issue.md"
+
+      block=$(validate_sync_block "$SYNC_DIR/issue.md" "$repo" "$labels") || exit 1
+      upstream_sha=$(jq -r .upstream_sha <<<"$block")
+      fork_ref=$(jq -r .fork_ref <<<"$block")
+      block_fork_sha=$(jq -r .fork_sha <<<"$block")
+      block_merge_base=$(jq -r .merge_base <<<"$block")
+      block_files=$(jq -c .files <<<"$block")
+      kind=$(jq -r '.kind // "conflict"' <<<"$block")
+      failed_checks=$(jq -c '.failed_checks // []' <<<"$block")
+      test_run=$(jq -r .test <<<"$block")
+      # The block is valid, so fork_ref is main, or a sync-test base for a test.
+      PR_BASE=$fork_ref
+
+      open_sync_prs=$(gh pr list --repo "$repo" --state open --limit 1000 --json headRefName,url \
+        | jq -r --arg p "sync/upstream-$issue-" \
+          '[.[] | select(.headRefName | startswith($p)) | .url] | join(" ")')
+      if [ -n "$open_sync_prs" ]; then
+        refuse "issue #$issue already has an open sync pull request: $open_sync_prs"
+      fi
+
+      # Every check above uses gh only; nothing was fetched or branched yet.
+      git fetch --no-tags --quiet "$UPSTREAM_URL" "$UPSTREAM_BRANCH" \
+        || refuse "cannot fetch $UPSTREAM_BRANCH from $UPSTREAM_URL"
+      if ! git cat-file -e "$upstream_sha^{commit}" 2>/dev/null; then
+        git fetch --no-tags --quiet "$UPSTREAM_URL" "$upstream_sha" \
+          || refuse "upstream_sha $upstream_sha is not on $UPSTREAM_BRANCH and cannot be fetched from $UPSTREAM_URL"
+      fi
+      git rev-parse --verify --quiet "$upstream_sha^{commit}" >/dev/null \
+        || refuse "upstream_sha $upstream_sha is not a commit"
+
+      git fetch --no-tags --quiet origin "+refs/heads/$PR_BASE:refs/remotes/origin/$PR_BASE" \
+        || refuse "cannot fetch $PR_BASE from origin"
+      # The branch starts from the current base branch; base_sha records that commit.
+      base_sha=$(git rev-parse "refs/remotes/origin/$PR_BASE")
+      if [ "$base_sha" != "$block_fork_sha" ]; then
+        echo "note: origin/$PR_BASE is at $base_sha; the issue recorded $block_fork_sha" >&2
+      fi
+
+      # One branch per attempt, unique by run id. Nothing is ever deleted.
+      branch="sync/upstream-$issue-${WORKFLOW_ID:0:8}"
+      if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+        git merge --abort
+      fi
+      git switch --quiet --no-track -C "$branch" "$base_sha"
+
+      # Trial merge, only to list the conflicted files. The engine commits every
+      # change a node leaves in the worktree, so prepare aborts the merge and ends
+      # clean; `resolve` makes the real merge and its one merge commit. A clean
+      # merge (kind checks_failed) also stops with MERGE_HEAD because of --no-commit.
+      git merge --no-ff --no-commit "$upstream_sha" > "$SYNC_DIR/merge.log" 2>&1 || true
+      if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+        refuse "merging $upstream_sha into $base_sha started no merge: $(tail -n 1 "$SYNC_DIR/merge.log")"
+      fi
+      # NUL-separated and unquoted, so paths with spaces, newlines or non-ASCII
+      # characters arrive in sync.json exactly as git stores them.
+      files=$(git -c core.quotepath=false diff -z --name-only --diff-filter=U \
+        | jq -R -s -c 'split("\u0000") | map(select(length > 0))')
+      git merge --abort
+      merge_base=$(git merge-base "$base_sha" "$upstream_sha")
+      if [ "$merge_base" != "$block_merge_base" ]; then
+        echo "note: the merge base is $merge_base; the issue recorded $block_merge_base" >&2
+      fi
+      if ! jq -en --argjson a "$files" --argjson b "$block_files" '($a | sort) == ($b | sort)' >/dev/null; then
+        echo "note: conflicted files $files differ from the issue's list $block_files" >&2
+      fi
+      if [ "$kind" = conflict ] && [ "$(jq length <<<"$files")" -eq 0 ]; then
+        echo "note: the issue reports a conflict, but the merge into $base_sha is clean now" >&2
+      fi
+      if jq -e --arg l "$FORCE_LABEL" 'any(.[]; . == $l)' >/dev/null <<<"$labels"; then
+        force_human=true
+      else
+        force_human=false
+      fi
+
+      # Bounded local checks for the fork. Shared by the final checks and the
+      # resolve command, so the agent runs exactly the same checks.
+      cat > "$SYNC_DIR/checks.sh" <<'CHECKS_SH'
+      #!/usr/bin/env bash
+      # Usage: checks.sh [check ...]. Without names it runs every check (a full run).
+      # Check names: rust-fmt, migration-numbers, rust-check, rust-clippy,
+      # rust-test:<crate>, desktop-install, desktop-check, desktop-typecheck,
+      # desktop-test, desktop-tauri-check, mobile-check, fork-script-tests.
+      # A full run adds rust-test:<crate> for each workspace crate that holds a
+      # touched file, the desktop checks for a touched file under desktop/, the
+      # Tauri check for desktop/src-tauri/ and mobile-check for mobile/. Touched
+      # files are the conflicted files of sync.json and the files that the commits
+      # after the merge commit changed.
+      # Writes checks.json and checks.log beside this script and prints checks.json.
+      # Exit 0 when the checks ran (pass or fail), 2 for a missing tool or a bad name.
+      # Never runs a whole test suite, PostgreSQL, Playwright or mesh tests: CI on the
+      # pull request runs them.
+      set -euo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      cd "$(git rev-parse --show-toplevel)"
+      log="$sync_dir/checks.log"
+      # A server started with NODE_ENV=production (the PM2 setup does) would make
+      # pnpm skip devDependencies, so a check would fail for a reason the PR does
+      # not have. The fork CI sets no NODE_ENV.
+      unset NODE_ENV
+      # Each run builds into its own cargo target, outside the worktree; the
+      # workflow removes it at the end of the run.
+      CARGO_TARGET_DIR="$(jq -er .run_dir "$sync_dir/sync.json")/cargo-target"
+      export CARGO_TARGET_DIR
+      mkdir -p "$CARGO_TARGET_DIR"
+
+      # Hermit pins the fork's toolchain (rust, node, pnpm, just, flutter).
+      if [ ! -f bin/activate-hermit ]; then
+        echo "checks: bin/activate-hermit is missing" >&2
+        exit 2
+      fi
+      set +u
+      # shellcheck disable=SC1091
+      if ! . ./bin/activate-hermit >/dev/null 2>&1; then
+        set -u
+        echo "checks: the Hermit environment does not activate" >&2
+        exit 2
+      fi
+      set -u
+      for tool in cargo just node pnpm jq git; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+          echo "checks: the required tool '$tool' is missing" >&2
+          exit 2
+        fi
+      done
+
+      fork_script_tests() {
+        local file
+        for file in scripts/fork-sync-conflict-report.test.mjs \
+            scripts/fork-desktop-backup-prune.test.mjs scripts/fork-ci-workflow.test.mjs; do
+          if [ -f "$file" ]; then printf '%s\0' "$file"; fi
+        done
+      }
+
+      # The conflicted files and the files of the commits after the merge commit.
+      touched_files() {
+        local base_sha merge
+        base_sha=$(jq -er .base_sha "$sync_dir/sync.json")
+        jq -j '.files[] | . + "\u0000"' "$sync_dir/sync.json"
+        merge=$(git rev-list --merges --first-parent "$base_sha..HEAD" | tail -n 1)
+        if [ -n "$merge" ]; then git -c core.quotepath=false diff -z --name-only "$merge" HEAD; fi
+      }
+
+      # The package name of a workspace crate under crates/<dir>/, when it has a library.
+      crate_name() {
+        local dir=$1
+        if [ -f "$dir/Cargo.toml" ] && [ -f "$dir/src/lib.rs" ]; then
+          awk '/^\[/ { section = $0 } section == "[package]" && /^name *=/ {
+            gsub(/^name *= *"|".*$/, ""); print; exit }' "$dir/Cargo.toml"
+        fi
+      }
+
+      # Checks names travel NUL-separated, in a cheap-first order.
+      full_checks() {
+        local touched desktop=false tauri=false mobile=false crates="" path dir name
+        touched=$(touched_files | tr '\0' '\n')
+        while IFS= read -r path; do
+          case "$path" in
+            desktop/src-tauri/*) desktop=true; tauri=true ;;
+            desktop/*) desktop=true ;;
+            mobile/*) mobile=true ;;
+            crates/*/*)
+              dir=${path#crates/}
+              dir=crates/${dir%%/*}
+              name=$(crate_name "$dir")
+              if [ -n "$name" ]; then crates="$crates$name"$'\n'; fi ;;
+          esac
+        done <<<"$touched"
+        printf '%s\0' rust-fmt migration-numbers rust-check rust-clippy
+        while IFS= read -r name; do
+          if [ -n "$name" ]; then printf 'rust-test:%s\0' "$name"; fi
+        done < <(printf '%s' "$crates" | LC_ALL=C sort -u)
+        if [ "$desktop" = true ]; then
+          printf '%s\0' desktop-install desktop-check desktop-typecheck desktop-test
+        fi
+        if [ "$tauri" = true ]; then printf '%s\0' desktop-tauri-check; fi
+        if [ "$mobile" = true ]; then printf '%s\0' mobile-check; fi
+        if [ -n "$(fork_script_tests | tr -d '\0')" ]; then printf '%s\0' fork-script-tests; fi
+      }
+
+      valid_check() {
+        case "$1" in
+          rust-fmt|migration-numbers|rust-check|rust-clippy) return 0 ;;
+          desktop-install|desktop-check|desktop-typecheck|desktop-test|desktop-tauri-check) return 0 ;;
+          mobile-check|fork-script-tests) return 0 ;;
+          rust-test:*)
+            [[ "${1#rust-test:}" =~ ^[A-Za-z0-9_][A-Za-z0-9_-]*$ ]] && return 0 ;;
+        esac
+        return 1
+      }
+
+      # No two migration files in one migrations/ folder share a 4-digit version,
+      # and every fork-only migration (absent from upstream) sorts after the newest
+      # upstream migration of its folder. A collision is a question for a human:
+      # the resolver never renames a migration.
+      migration_numbers() {
+        local upstream_sha pattern='(^|/)migrations/[0-9]{4}_[^/]*\.sql$'
+        upstream_sha=$(jq -er .upstream_sha "$sync_dir/sync.json")
+        awk '
+          function ver(p,  b) { b = p; sub(/.*\//, "", b); return substr(b, 1, 4) + 0 }
+          function dir(p,  d) { d = p; if (d ~ /\//) sub(/\/[^\/]*$/, "", d); else d = "."; return d }
+          FNR == NR { if ($0 != "") { up[$0] = 1; d = dir($0); v = ver($0); if (v > max[d]) max[d] = v }; next }
+          $0 != "" {
+            d = dir($0); v = ver($0); k = d SUBSEP v
+            if (k in seen) { printf "%s and %s share the version %04d\n", seen[k], $0, v; bad = 1 }
+            else seen[k] = $0
+            if (!($0 in up) && v <= max[d] + 0) {
+              printf "the fork migration %s does not sort after the newest upstream migration %04d of %s\n", $0, max[d], d
+              bad = 1
+            }
+          }
+          END { exit bad }' \
+          <(git -c core.quotepath=false ls-tree -r --name-only "$upstream_sha" | grep -E "$pattern" || true) \
+          <(git -c core.quotepath=false ls-files | grep -E "$pattern" || true)
+      }
+
+      run_check() {
+        case "$1" in
+          rust-fmt) just fmt-check ;;
+          migration-numbers) migration_numbers ;;
+          # --locked fails on a Cargo.lock that the merge left stale, as CI would.
+          rust-check) cargo check --workspace --all-targets --keep-going --locked ;;
+          rust-clippy) just clippy ;;
+          rust-test:*) cargo test --locked -p "${1#rust-test:}" --lib ;;
+          desktop-install) just desktop-install-ci ;;
+          desktop-check) just desktop-check ;;
+          desktop-typecheck) just desktop-typecheck ;;
+          desktop-test) just desktop-test ;;
+          desktop-tauri-check) just desktop-tauri-check ;;
+          mobile-check)
+            if ! command -v flutter >/dev/null 2>&1; then
+              echo "flutter is missing from the Hermit environment"
+              return 1
+            fi
+            just mobile-install && just mobile-check ;;
+          fork-script-tests)
+            local files=()
+            while IFS= read -r -d '' file; do files+=("$file"); done < <(fork_script_tests)
+            if [ "${#files[@]}" -eq 0 ]; then
+              echo "no fork script test file exists yet; nothing to run"
+              return 0
+            fi
+            node --test "${files[@]}" ;;
+        esac
+      }
+
+      names_file="$sync_dir/check-names"
+      if [ "$#" -eq 0 ]; then
+        full=true
+        full_checks > "$names_file"
+      else
+        full=false
+        printf '%s\0' "$@" > "$names_file"
+      fi
+      while IFS= read -r -d '' name; do
+        if ! valid_check "$name"; then
+          echo "checks: unknown check '$name'" >&2
+          exit 2
+        fi
+      done < "$names_file"
+
+      # The engine commits every Git-visible change (tracked, and untracked but not
+      # ignored) at each node boundary, so the checks must leave the tree as they
+      # found it. Only paths the checks changed are put back; paths that were
+      # already changed or untracked before the checks stay as they were.
+      nul_json() { jq -R -s -c 'split("\u0000") | map(select(length > 0))'; }
+      changed_paths() { { git diff --name-only -z; git diff --cached --name-only -z; } | nul_json; }
+      untracked_paths() { git ls-files --others --exclude-standard -z | nul_json; }
+      changed_before=$(changed_paths)
+      untracked_before=$(untracked_paths)
+      restore_check_changes() {
+        jq -n -j --argjson before "$changed_before" --argjson after "$(changed_paths)" \
+          '($after - $before) | unique | .[] | . + "\u0000"' \
+          | while IFS= read -r -d '' path; do
+              git restore --source=HEAD --staged --worktree -- "$path"
+              echo "checks: restored $path, which a check changed" >&2
+            done
+        jq -n -j --argjson before "$untracked_before" --argjson after "$(untracked_paths)" \
+          '($after - $before) | .[] | . + "\u0000"' \
+          | while IFS= read -r -d '' path; do
+              rm -f -- "$path"
+              echo "checks: removed $path, which a check created" >&2
+            done
+      }
+      trap restore_check_changes EXIT
+
+      : > "$log"
+      results='[]'
+      while IFS= read -r -d '' name; do
+        printf '\n===== %s =====\n' "$name" >> "$log"
+        if run_check "$name" >> "$log" 2>&1 </dev/null; then status=pass; else status=fail; fi
+        echo "check $name: $status" >&2
+        results=$(jq -c --arg n "$name" --arg s "$status" '. + [{name: $n, status: $s}]' <<<"$results")
+      done < "$names_file"
+
+      jq -n --argjson r "$results" --argjson full "$full" \
+        '{passed: ($r | all(.status == "pass")), failed: [$r[] | select(.status != "pass") | .name], ran: $r, full: $full}' \
+        > "$sync_dir/checks.json.tmp"
+      mv "$sync_dir/checks.json.tmp" "$sync_dir/checks.json"
+      cat "$sync_dir/checks.json"
+      CHECKS_SH
+
+      # Node-boundary guard. The engine snapshots the worktree with a commit
+      # ("archon evidence: ..." / "archon checkpoint: ...") at the start and end of
+      # every node when anything Git-visible changed. Bash nodes call this at their
+      # start and end; the start call also catches a change an AI node left,
+      # because the engine has committed it by then.
+      cat > "$SYNC_DIR/clean-tree.sh" <<'CLEAN_TREE_SH'
+      #!/usr/bin/env bash
+      # Usage: clean-tree.sh <stage>. Exit 0 when nothing is left for the engine to
+      # commit; else writes guard-failure.txt beside this script and exits 1.
+      set -euo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      stage=$1
+      cd "$(git rev-parse --show-toplevel)"
+      base_sha=$(jq -er .base_sha "$sync_dir/sync.json")
+      if ! git rev-parse --verify --quiet "$base_sha^{commit}" >/dev/null; then
+        echo "clean-tree guard: base_sha $base_sha is not a commit" >&2
+        exit 2
+      fi
+      problems=""
+      if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+        problems="${problems}a merge is still in progress. "
+      fi
+      status=$(git status --porcelain --untracked-files=all)
+      if [ -n "$status" ]; then
+        problems="${problems}the worktree has changes the engine would commit: $(head -n 10 <<<"$status" | tr '\n' ';'). "
+      fi
+      subjects=$(git log --format=%s "$base_sha..HEAD")
+      snapshots=$(grep -E '^archon (evidence|checkpoint)' <<<"$subjects" || true)
+      if [ -n "$snapshots" ]; then
+        problems="${problems}an earlier node left changes that the engine committed: $(tr '\n' ';' <<<"$snapshots"). "
+      fi
+      if [ -n "$problems" ]; then
+        printf '%s: %s\n' "$stage" "$problems" > "$sync_dir/guard-failure.txt"
+        echo "clean-tree guard failed at $stage: $problems" >&2
+        exit 1
+      fi
+      CLEAN_TREE_SH
+
+      # The branch must hold exactly one merge commit, made by resolve right on
+      # top of base_sha; fix commits come after it. Used by the final checks and verify-pr.
+      cat > "$SYNC_DIR/merge-commit.sh" <<'MERGE_COMMIT_SH'
+      #!/usr/bin/env bash
+      # Usage: merge-commit.sh. Exit 0 when the merge commit is right; exit 10 with
+      # one problem per line when it is not; any other code is an error.
+      set -euo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      cd "$(git rev-parse --show-toplevel)"
+      base_sha=$(jq -er .base_sha "$sync_dir/sync.json")
+      upstream_sha=$(jq -er .upstream_sha "$sync_dir/sync.json")
+      expected="Merge $(jq -er .upstream_repo "$sync_dir/sync.json") ${upstream_sha:0:9} into $(jq -er .fork_ref "$sync_dir/sync.json")"
+      merges=$(git rev-list --merges --first-parent "$base_sha..HEAD")
+      count=$(printf '%s' "$merges" | grep -c . || true)
+      if [ "$count" != 1 ]; then
+        echo "the branch has $count merge commits after $base_sha, not exactly one"
+        exit 10
+      fi
+      status=0
+      if [ "$(git rev-parse "$merges^1")" != "$base_sha" ]; then
+        echo "the merge commit $merges is not the first commit after $base_sha"
+        status=10
+      fi
+      # A missing second parent is a finding, not an error.
+      if [ "$(git rev-parse -q --verify "$merges^2" || true)" != "$upstream_sha" ]; then
+        echo "the second parent of the merge commit $merges is not upstream $upstream_sha"
+        status=10
+      fi
+      if [ "$(git log -1 --format=%s "$merges")" != "$expected" ]; then
+        echo "the merge commit message is not \"$expected\""
+        status=10
+      fi
+      exit "$status"
+      MERGE_COMMIT_SH
+
+      # The checks a branch must pass before its pull request: clean tree, no
+      # conflict markers, notes for every conflicted file, the one merge commit,
+      # and every local check. Used by check and publish.
+      cat > "$SYNC_DIR/final-checks.sh" <<'FINAL_CHECKS_SH'
+      #!/usr/bin/env bash
+      # Usage: final-checks.sh <stage>. Exit 0 when every check passes; exit 10
+      # with verify-problems.txt ("- problem" lines) when not; other codes are errors
+      # (the clean-tree guard, a missing tool).
+      set -euo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      stage=$1
+      cd "$(git rev-parse --show-toplevel)"
+      rm -f "$sync_dir/verify-problems.txt"
+      bash "$sync_dir/clean-tree.sh" "the start of the final checks in $stage"
+      upstream_sha=$(jq -er .upstream_sha "$sync_dir/sync.json")
+      branch=$(jq -er .branch "$sync_dir/sync.json")
+      problems=""
+      problem() { problems="$problems- $1"$'\n'; }
+      if ! git merge-base --is-ancestor "$upstream_sha" HEAD; then problem "HEAD does not contain upstream $upstream_sha"; fi
+      if [ "$(git symbolic-ref --quiet --short HEAD || true)" != "$branch" ]; then problem "HEAD is not on $branch"; fi
+      merge_status=0
+      merge_findings=$(bash "$sync_dir/merge-commit.sh") || merge_status=$?
+      case "$merge_status" in
+        0|10) ;;
+        *) echo "merge-commit.sh failed with exit code $merge_status" >&2; exit 1 ;;
+      esac
+      while IFS= read -r line; do
+        if [ -n "$line" ]; then problem "$line"; fi
+      done <<EOF
+      $merge_findings
+      EOF
+      if [ ! -s "$sync_dir/resolution.md" ]; then problem "resolution.md is missing or empty"; fi
+      # Paths are NUL-separated and passed after -e/--, so a path that starts
+      # with a dash is never read as an option.
+      while IFS= read -r -d '' file; do
+        if [ -f "$file" ] && grep -nE -e '^(<<<<<<<|>>>>>>>)( |$)' -- "$file" >/dev/null; then
+          problem "conflict markers remain in $file"
+        fi
+        if [ -s "$sync_dir/resolution.md" ] && ! grep -qF -e "$file" -- "$sync_dir/resolution.md"; then
+          problem "resolution.md has no paragraph for $file"
+        fi
+      done < <(jq -j '.files[] | . + "\u0000"' "$sync_dir/sync.json")
+      # A clean merge whose checks failed (kind checks_failed) needs one paragraph
+      # per check that the sync job reported as failed.
+      while IFS= read -r -d '' name; do
+        if [ -s "$sync_dir/resolution.md" ] && ! grep -qF -e "$name" -- "$sync_dir/resolution.md"; then
+          problem "resolution.md has no paragraph for the failed check $name"
+        fi
+      done < <(jq -j '.failed_checks[] | . + "\u0000"' "$sync_dir/sync.json")
+      bash "$sync_dir/checks.sh" >/dev/null
+      if ! jq -e .passed "$sync_dir/checks.json" >/dev/null; then
+        problem "local checks fail: $(jq -r '.failed | join(", ")' "$sync_dir/checks.json")"
+      fi
+      bash "$sync_dir/clean-tree.sh" "the end of the final checks in $stage"
+      if [ -n "$problems" ]; then
+        printf '%s' "$problems" > "$sync_dir/verify-problems.txt"
+        printf 'final checks in %s found problems:\n%s' "$stage" "$problems" >&2
+        exit 10
+      fi
+      FINAL_CHECKS_SH
+
+      cat > "$SYNC_DIR/wait-ci.sh" <<'WAIT_CI_SH'
+      #!/usr/bin/env bash
+      # Usage: wait-ci.sh <attempt>. Waits for the CI of the pull request in pr.json
+      # on the local HEAD, writes ci.json beside this script and prints it.
+      # Conclusion: success, failure, no_checks, timeout, merged or closed. A
+      # merged or closed pull request ends the wait at once: nothing more to fix.
+      # Always exits 0 once it has a conclusion.
+      set -euo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      attempt=$1
+      repo=$(jq -r .repo "$sync_dir/sync.json")
+      number=$(jq -r .number "$sync_dir/pr.json")
+      head=$(git rev-parse HEAD)
+      checks_url="https://github.com/$repo/pull/$number/checks"
+      # Poll budget by count, one poll per minute: 10 polls for the first check
+      # to appear, 90 polls in total, which stays inside the 100 min node timeout.
+      poll_seconds=60
+      first_check_polls=10
+      max_polls=90
+
+      polls=0
+      seen=false
+      prev_names=""
+      while :; do
+        polls=$((polls + 1))
+        # Checks listed before GitHub moved the PR to the pushed HEAD belong to an
+        # older commit, so they do not count.
+        pr=$(gh pr view "$number" --repo "$repo" --json headRefOid,state 2>/dev/null || true)
+        pr_head=$(jq -r '.headRefOid // empty' <<<"$pr" 2>/dev/null || true)
+        pr_state=$(jq -r '.state // empty' <<<"$pr" 2>/dev/null || true)
+        if [ "$pr_state" = MERGED ] || [ "$pr_state" = CLOSED ]; then
+          conclusion=$(tr '[:upper:]' '[:lower:]' <<<"$pr_state")
+          failed='[]'
+          break
+        fi
+        checks='[]'
+        if [ "$pr_head" = "$head" ]; then
+          # gh exits non-zero for pending or failed checks and prints no JSON when
+          # no checks exist yet, so only the JSON on stdout counts.
+          out=$(gh pr checks "$number" --repo "$repo" --json name,state,bucket,link 2>/dev/null || true)
+          if jq -e 'type == "array"' >/dev/null 2>&1 <<<"$out"; then checks=$out; fi
+        fi
+        if [ "$(jq length <<<"$checks")" -gt 0 ]; then
+          seen=true
+          if jq -e 'any(.[]; .bucket == "pending")' >/dev/null <<<"$checks"; then
+            prev_names=""
+          else
+            # A second workflow can add its checks after the first one finished,
+            # so a conclusion needs the same complete set of check names on two
+            # polls in a row.
+            names=$(jq -c '[.[].name] | sort' <<<"$checks")
+            if [ "$names" = "$prev_names" ]; then
+              failed=$(jq -c '[.[] | select(.bucket != "pass" and .bucket != "skipping") | .name]' <<<"$checks")
+              if [ "$failed" = '[]' ]; then conclusion=success; else conclusion=failure; fi
+              break
+            fi
+            prev_names=$names
+          fi
+        else
+          prev_names=""
+        fi
+        if [ "$seen" = false ] && [ "$polls" -ge "$first_check_polls" ]; then
+          conclusion=no_checks
+          failed='[]'
+          break
+        fi
+        if [ "$polls" -ge "$max_polls" ]; then
+          conclusion=timeout
+          failed=$(jq -c '[.[] | select(.bucket != "pass" and .bucket != "skipping") | .name]' <<<"$checks")
+          break
+        fi
+        sleep "$poll_seconds"
+      done
+      echo "CI for pull request #$number: $conclusion after $polls polls" >&2
+
+      jq -nc --arg conclusion "$conclusion" --argjson failed "$failed" \
+        --arg checks_url "$checks_url" --argjson attempt "$attempt" \
+        '{conclusion: $conclusion, failed: $failed, checks_url: $checks_url, attempt: $attempt}' \
+        > "$sync_dir/ci.json.tmp"
+      mv "$sync_dir/ci.json.tmp" "$sync_dir/ci.json"
+      cat "$sync_dir/ci.json"
+      WAIT_CI_SH
+
+      # Removes the build outputs of runs, so runs do not fill the disk. Each run
+      # records its worktree in $STATE_DIR/sync-runs/<run id>/worktree. `prepare`
+      # starts `cleanup.sh watch`, a detached process that cleans the run when the
+      # server reports it as finished, also after a cancel or a reject at the
+      # approval gate, when no node of the run runs any more. `finalize` calls
+      # `cleanup.sh run` for its own run at once; `prepare` calls `cleanup.sh sweep`
+      # for earlier runs whose watcher stopped (for example after a reboot).
+      cat > "$SYNC_DIR/cleanup.sh" <<'CLEANUP_SH'
+      #!/usr/bin/env bash
+      # Usage: cleanup.sh run | sweep | watch
+      #   run:   remove the ignored build outputs of this worktree and the cargo
+      #          target of this run; keep the record, so the watcher or a later
+      #          sweep can remove the worktree.
+      #   watch: poll the server for the state of this run (every
+      #          CLEANUP_WATCH_INTERVAL seconds, default 60, at most CLEANUP_WATCH_POLLS
+      #          times, default 10080 = 7 days). When the run completed, was cancelled
+      #          or is gone, remove its build outputs, cargo target, worktree and
+      #          record, then stop. When it failed, remove its build outputs and cargo
+      #          target but keep the worktree and the record (the run can be resumed)
+      #          and continue to poll. A state is acted on only when two polls in a
+      #          row read it. After the last poll the record stays for a sweep.
+      #   sweep: for each other recorded run that the Archon server reports as
+      #          finished, remove its build outputs and cargo target, then its
+      #          worktree when the run completed or was cancelled (a failed run can
+      #          still be retried in place, so its worktree stays), then the record.
+      #          A run that is still active, or whose status cannot be read, keeps
+      #          everything. Archon marks the environment of a removed worktree as
+      #          destroyed on its next scheduled cleanup.
+      # Always exits 0: a cleanup problem never fails a run.
+      set -uo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      mode=${1:-}
+      runs_root=$(jq -r '.runs_root // empty' "$sync_dir/sync.json" 2>/dev/null)
+      own=$(jq -r '.run_dir // empty' "$sync_dir/sync.json" 2>/dev/null)
+      if [ -z "$runs_root" ] || [ -z "$own" ]; then
+        echo "cleanup: sync.json names no run record; nothing to remove" >&2
+        exit 0
+      fi
+      top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+
+      # Only ignored folders with a build-output name are removed: sources,
+      # tracked files and untracked files that are not ignored stay.
+      clean_worktree() {
+        local wt=$1 entry path name
+        [ -n "$wt" ] && [ -d "$wt" ] || return 0
+        git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+        while IFS= read -r -d '' entry; do
+          case "$entry" in */) ;; *) continue ;; esac
+          path=${entry%/}
+          name=${path##*/}
+          case "$name" in
+            node_modules|target|dist|build|out|coverage|.cache|.dart_tool|.turbo|.vite|.next)
+              rm -rf -- "${wt:?}/$path"
+              echo "cleanup: removed $wt/$path" >&2 ;;
+          esac
+        done < <(git -C "$wt" ls-files --others --ignored --exclude-standard --directory -z 2>/dev/null)
+      }
+
+      # Removes a linked worktree of this repository that git reports as clean.
+      # Never the main checkout and never the worktree of the current run.
+      remove_worktree() {
+        local wt=$1 main
+        [ -n "$wt" ] && [ -d "$wt" ] && [ "$wt" != "$top" ] || return 0
+        main=$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')
+        [ "$wt" != "$main" ] || return 0
+        git worktree list --porcelain | grep -qxF -e "worktree $wt" || return 0
+        if git worktree remove -- "$wt" 2>/dev/null; then
+          echo "cleanup: removed the worktree $wt" >&2
+        else
+          echo "cleanup: kept the worktree $wt (git does not report it as clean)" >&2
+        fi
+      }
+
+      # A record is removed only when it is a run folder right under the root.
+      remove_record() {
+        local dir=$1 id=${1##*/}
+        [[ "$id" =~ ^[0-9A-Za-z-]+$ ]] && [ "$dir" = "$runs_root/$id" ] || return 0
+        rm -rf -- "$dir"
+      }
+
+      # Prints the state of a run as the server reports it: its status, `gone`
+      # for an unknown run, or nothing when the server cannot be read.
+      # Usage: run_status <run id> <scratch file>
+      run_status() {
+        local id=$1 tmp=$2 code
+        code=$(curl -sS -m 10 -o "$tmp" -w '%{http_code}' \
+          "http://127.0.0.1:${PORT:-3090}/api/workflows/runs/$id" 2>/dev/null || true)
+        case "$code" in
+          200) jq -r '.run.status // empty' "$tmp" 2>/dev/null || true ;;
+          404) echo gone ;;
+        esac
+      }
+
+      case "$mode" in
+        run)
+          clean_worktree "$top"
+          rm -rf -- "${own:?}/cargo-target" ;;
+        watch)
+          id=${own##*/}
+          wt=$(cat "$own/worktree" 2>/dev/null || true)
+          [[ "$id" =~ ^[0-9A-Za-z-]+$ ]] && [ -n "$wt" ] && [ -d "$wt" ] || exit 0
+          # Work from the main checkout, never from inside the worktree to remove.
+          main=$(git -C "$wt" worktree list --porcelain 2>/dev/null \
+            | awk '/^worktree / { print substr($0, 10); exit }')
+          [ -n "$main" ] && cd "$main" || exit 0
+          top=$main
+          echo "cleanup: watching the run $id (worktree $wt)" >&2
+          polls=${CLEANUP_WATCH_POLLS:-10080}
+          previous="" outputs_removed=false
+          for (( n = 0; n < polls; n++ )); do
+            sleep "${CLEANUP_WATCH_INTERVAL:-60}"
+            # A sweep of a later run already handled this run.
+            [ -d "$own" ] || exit 0
+            status=$(run_status "$id" "$own/status.json")
+            if [ "$status" != "$previous" ]; then previous=$status; continue; fi
+            case "$status" in
+              completed|cancelled|gone)
+                clean_worktree "$wt"
+                rm -rf -- "${own:?}/cargo-target"
+                remove_worktree "$wt"
+                echo "cleanup: the run $id is $status; its build outputs are removed" >&2
+                remove_record "$own"
+                exit 0 ;;
+              failed)
+                if [ "$outputs_removed" = false ]; then
+                  clean_worktree "$wt"
+                  rm -rf -- "${own:?}/cargo-target"
+                  outputs_removed=true
+                  echo "cleanup: the run $id failed; its build outputs are removed, its worktree stays" >&2
+                fi ;;
+              *) outputs_removed=false ;;
+            esac
+          done
+          rm -f "$own/status.json" ;;
+        sweep)
+          [ -d "$runs_root" ] || exit 0
+          for dir in "$runs_root"/*; do
+            [ -d "$dir" ] && [ "$dir" != "$own" ] || continue
+            id=${dir##*/}
+            [[ "$id" =~ ^[0-9A-Za-z-]+$ ]] || continue
+            status=$(run_status "$id" "$sync_dir/cleanup-run.json")
+            wt=$(cat "$dir/worktree" 2>/dev/null || true)
+            case "$status" in
+              completed|cancelled|gone)
+                clean_worktree "$wt"
+                remove_worktree "$wt"
+                remove_record "$dir" ;;
+              failed)
+                clean_worktree "$wt"
+                remove_record "$dir" ;;
+              *) echo "cleanup: kept the run $id (status '${status:-unknown}')" >&2 ;;
+            esac
+          done
+          rm -f "$sync_dir/cleanup-run.json" ;;
+        *) echo "cleanup: unknown mode '$mode'" >&2 ;;
+      esac
+      exit 0
+      CLEANUP_SH
+
+      # The record of this run, outside the worktree: its worktree path and its
+      # own cargo target. cleanup.sh removes the build outputs at the end.
+      runs_root="$STATE_DIR/sync-runs"
+      run_dir="$runs_root/$WORKFLOW_ID"
+
+      jq -n \
+        --arg repo "$repo" \
+        --argjson issue "$issue" \
+        --arg issue_url "$(jq -r .issue_url "$SYNC_DIR/issue.json")" \
+        --arg upstream_repo "$UPSTREAM_REPO" \
+        --arg upstream_sha "$upstream_sha" \
+        --arg fork_ref "$fork_ref" \
+        --arg base_sha "$base_sha" \
+        --arg merge_base "$merge_base" \
+        --arg branch "$branch" \
+        --argjson files "$files" \
+        --argjson force_human "$force_human" \
+        --arg kind "$kind" \
+        --argjson failed_checks "$failed_checks" \
+        --argjson test "$test_run" \
+        --arg runs_root "$runs_root" \
+        --arg run_dir "$run_dir" \
+        '{repo: $repo, issue: $issue, issue_url: $issue_url, upstream_repo: $upstream_repo,
+          upstream_sha: $upstream_sha, fork_ref: $fork_ref, base_sha: $base_sha,
+          merge_base: $merge_base, branch: $branch, files: $files,
+          force_human: $force_human, kind: $kind, failed_checks: $failed_checks,
+          test: $test, runs_root: $runs_root, run_dir: $run_dir}' > "$SYNC_DIR/sync.json"
+      mkdir -p "$run_dir"
+      git rev-parse --show-toplevel > "$run_dir/worktree"
+      bash "$SYNC_DIR/cleanup.sh" sweep
+
+      # The watcher runs detached from the node, so it outlives the end of
+      # prepare and a restart of the server; one watcher per run.
+      if ! { [ -f "$run_dir/watch.pid" ] && kill -0 "$(cat "$run_dir/watch.pid")" 2>/dev/null; }; then
+        ( cd / && nohup bash "$SYNC_DIR/cleanup.sh" watch < /dev/null >> "$run_dir/watch.log" 2>&1 &
+          echo $! > "$run_dir/watch.pid" )
+      fi
+      bash "$SYNC_DIR/clean-tree.sh" "the end of prepare"
+      cat "$SYNC_DIR/sync.json"
+
+  # Merges, resolves, makes the one merge commit, then runs the local checks and
+  # fixes failures (at most 3 rounds), leaving the worktree clean. For a clean
+  # merge whose checks failed (kind checks_failed) it commits the clean merge and
+  # fixes the failed checks in later commits.
+  - id: resolve
+    command: buzz-fork-resolve-upstream-merge
+    model: gpt-6.1-terra
+    effort: medium
+    depends_on: [prepare]
+    output_format:
+      type: object
+      properties:
+        resolved:
+          type: boolean
+        question:
+          type: string
+      required: [resolved, question]
+      additionalProperties: false
+
+  # resolve has completed whenever this node runs. The final checks run here, so
+  # a branch that needs no human goes straight to publish.
+  - id: check
+    depends_on: [resolve]
+    trigger_rule: none_failed_min_one_success
+    timeout: 2700000
+    bash: |
+      set -euo pipefail
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+      bash "$SYNC_DIR/clean-tree.sh" "the start of check (after resolve)"
+      resolved=$resolve.output.resolved
+      question=$resolve.output.question
+      repo=$(jq -r .repo "$SYNC_DIR/sync.json")
+      issue=$(jq -r .issue "$SYNC_DIR/sync.json")
+      issue_url=$(jq -r .issue_url "$SYNC_DIR/sync.json")
+      force_human=$(jq -r .force_human "$SYNC_DIR/sync.json")
+      run_url=$(jq -r .run_url "$SYNC_DIR/issue.json")
+
+      passed=false
+      if [ "$resolved" = true ]; then
+        status=0
+        bash "$SYNC_DIR/final-checks.sh" check || status=$?
+        case "$status" in
+          0) passed=true ;;
+          10) passed=false ;;
+          *) echo "the final checks failed with exit code $status" >&2; exit 1 ;;
+        esac
+      fi
+
+      needs_human=true
+      if [ "$resolved" != true ]; then
+        reason="The resolver could not decide: $question"
+      elif [ "$passed" != true ]; then
+        reason="The branch does not pass the final checks:"$'\n'"$(cat "$SYNC_DIR/verify-problems.txt")"
+      elif [ "$force_human" = true ]; then
+        reason="The issue asks for a human review before the sync pull request opens."
+      else
+        needs_human=false
+        reason=""
+      fi
+
+      if [ "$needs_human" = true ]; then
+        {
+          printf 'Automatic upstream sync resolution needs a human decision.\n\n%s\n\n' "$reason"
+          printf 'Run: %s\n\n' "$run_url"
+          printf 'Approve the run with guidance in the comment, or reject it to stop. '
+          printf 'The sync stays paused until a sync pull request merges.\n'
+        } > "$SYNC_DIR/check-comment.md"
+        gh issue comment "$issue" --repo "$repo" --body-file "$SYNC_DIR/check-comment.md" >/dev/null
+      fi
+
+      jq -n --argjson needs_human "$needs_human" --argjson resolved "$resolved" \
+        --argjson passed "$passed" --argjson force_human "$force_human" --arg question "$reason" \
+        '{needs_human: $needs_human, resolved: $resolved, passed: $passed, force_human: $force_human, question: $question}' \
+        > "$SYNC_DIR/decision.json"
+      bash "$SYNC_DIR/clean-tree.sh" "the end of check"
+      jq -c --arg issue_url "$issue_url" --arg run_url "$run_url" \
+        '{needs_human, question, issue_url: $issue_url, run_url: $run_url}' "$SYNC_DIR/decision.json"
+
+  # No on_reject: a reject cancels the run. The issue keeps the comment from
+  # `check` and stays open.
+  - id: ask-human
+    depends_on: [check]
+    when: "$check.output.needs_human == 'true'"
+    approval:
+      capture_response: true
+      message: |
+        $check.output.question
+
+        Issue: $check.output.issue_url
+        Run: $check.output.run_url
+
+        Approve with guidance in the comment, or reject to stop. The sync stays
+        paused either way until a sync pull request merges.
+
+  - id: apply-guidance
+    command: buzz-fork-resolve-upstream-merge
+    model: gpt-6-luna
+    depends_on: [ask-human]
+    prompt_suffix: |
+      ## Human guidance
+
+      This is the guidance pass. A human answered at the approval gate. Their
+      comment is between the markers (it can be empty):
+
+      <guidance>
+      $ask-human.output
+      </guidance>
+
+      Apply the guidance, then follow the "Guidance pass" section of these instructions.
+    output_format:
+      type: object
+      properties:
+        resolved:
+          type: boolean
+        question:
+          type: string
+      required: [resolved, question]
+      additionalProperties: false
+
+  # archon-create-pr pushes with `git push -u origin HEAD` and falls back to a
+  # pull with rebase when that push fails, which would drop the merge commit.
+  # Pushing here first makes its push a no-op, so it never reaches the fallback.
+  - id: publish
+    depends_on: [check, apply-guidance]
+    trigger_rule: none_failed_min_one_success
+    timeout: 2700000
+    bash: |
+      set -euo pipefail
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+      bash "$SYNC_DIR/clean-tree.sh" "the start of publish"
+      if [ ! -f "$SYNC_DIR/decision.json" ]; then
+        echo "decision.json is missing; check did not finish." >&2
+        exit 1
+      fi
+      # Without a human, check already ran the final checks on this exact tree.
+      if jq -e .needs_human "$SYNC_DIR/decision.json" >/dev/null; then
+        status=0
+        bash "$SYNC_DIR/final-checks.sh" "publish (after apply-guidance)" || status=$?
+        case "$status" in
+          0) ;;
+          10) echo "the branch does not pass the final checks after the guidance pass" >&2; exit 1 ;;
+          *) echo "the final checks failed with exit code $status" >&2; exit 1 ;;
+        esac
+      fi
+      branch=$(jq -r .branch "$SYNC_DIR/sync.json")
+      if [ "$(git symbolic-ref --quiet --short HEAD || true)" != "$branch" ]; then
+        echo "HEAD is not on $branch" >&2
+        exit 1
+      fi
+      if ! git push -u origin HEAD > "$SYNC_DIR/push.log" 2>&1; then
+        cat "$SYNC_DIR/push.log" >&2
+        exit 1
+      fi
+      jq -nc --arg branch "$branch" --arg head "$(git rev-parse HEAD)" \
+        --argjson test "$(jq .test "$SYNC_DIR/sync.json")" \
+        '{pushed: true, branch: $branch, head: $head, test: $test}'
+
+  - id: create-pr
+    command: archon-create-pr
+    model: gpt-6-luna
+    depends_on: [publish]
+    when: "$publish.output.test == 'false'"
+    prompt_suffix: |
+      ## Buzz fork sync pull request
+
+      This pull request merges an upstream block/buzz commit into the fork.
+      Read `$ARTIFACTS_DIR/sync/sync.json` (`issue`, `upstream_sha`) and
+      `$ARTIFACTS_DIR/sync/resolution.md` first. These rules override the steps above:
+
+      - The base is `$BASE_BRANCH` (main).
+      - The branch is already pushed. Do not push, pull, rebase, force-push or amend,
+        and do not commit anything.
+      - Title: `sync: merge upstream block/buzz <yyyy-mm-dd>` with today's date.
+      - Body: include the line `Closes #<issue>` with the issue number from sync.json.
+        Include every paragraph of resolution.md word for word (one paragraph per
+        conflicted file or per fixed check). End with the line
+        `Merge with **Create a merge commit**, not squash.`
+      - Never merge the pull request and never enable auto-merge. A human merges it.
+
+  # A test sync opens its pull request here, into its sync-test base branch:
+  # archon-create-pr always targets the configured base (main), and a test must
+  # never open a pull request into main. Writes the same .pr-number and .pr-url
+  # files as archon-create-pr, so verify-pr checks both paths the same way.
+  - id: create-test-pr
+    depends_on: [publish]
+    when: "$publish.output.test == 'true'"
+    timeout: 300000
+    bash: |
+      set -euo pipefail
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+      bash "$SYNC_DIR/clean-tree.sh" "the start of create-test-pr"
+      repo=$(jq -r .repo "$SYNC_DIR/sync.json")
+      base=$(jq -r .fork_ref "$SYNC_DIR/sync.json")
+      branch=$(jq -r .branch "$SYNC_DIR/sync.json")
+      issue=$(jq -r .issue "$SYNC_DIR/sync.json")
+      {
+        printf 'TEST - do not merge\n\n'
+        printf 'Test run of the Buzz fork upstream sync. This pull request targets the throwaway base `%s` and is closed after its CI.\n\n' "$base"
+        printf 'Closes #%s\n\n' "$issue"
+        cat "$SYNC_DIR/resolution.md"
+        printf '\nMerge with **Create a merge commit**, not squash.\n'
+      } > "$SYNC_DIR/test-pr-body.md"
+      url=$(gh pr create --repo "$repo" --base "$base" --head "$branch" \
+        --title "[test] sync: merge upstream $(jq -r .upstream_repo "$SYNC_DIR/sync.json") $(date +%F)" \
+        --body-file "$SYNC_DIR/test-pr-body.md")
+      number=${url##*/}
+      printf '%s\n' "$number" > "$ARTIFACTS_DIR/.pr-number"
+      printf '%s\n' "$url" > "$ARTIFACTS_DIR/.pr-url"
+      jq -nc --arg pr_url "$url" --arg number "$number" '{pr_url: $pr_url, number: ($number | tonumber)}'
+
+  # Deterministic contract check on the PR that archon-create-pr opened. Text
+  # elements it missed are fixed here; a wrong base, head or merge commit fails.
+  # Prints pr.json as soon as the PR is confirmed, so the run's status events
+  # carry pr_url while CI still runs.
+  - id: verify-pr
+    depends_on: [create-pr, create-test-pr]
+    trigger_rule: none_failed_min_one_success
+    timeout: 600000
+    bash: |
+      set -euo pipefail
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+      bash "$SYNC_DIR/clean-tree.sh" "the start of verify-pr (after create-pr or create-test-pr)"
+      PR_BASE=$(jq -er .fork_ref "$SYNC_DIR/sync.json")
+      MERGE_LINE='Merge with **Create a merge commit**, not squash.'
+      TEST_LINE='TEST - do not merge'
+
+      fail() {
+        printf '%s\n' "$1" > "$SYNC_DIR/pr-problems.txt"
+        echo "verify-pr: $1" >&2
+        exit 1
+      }
+
+      # BEGIN pr-contract
+      # Usage: contract_body <body-file> <sync.json> <resolution.md>
+      # Prints the body with every missing required element added.
+      contract_body() {
+        local body issue
+        body=$(tr -d '\r' < "$1")
+        issue=$(jq -r .issue "$2")
+        if jq -e '.test == true' "$2" >/dev/null && ! grep -qxF -e "$TEST_LINE" <<<"$body"; then
+          body="$TEST_LINE"$'\n\n'"$body"
+        fi
+        if ! grep -qxF -e "Closes #$issue" <<<"$body"; then
+          body="$body"$'\n\n'"Closes #$issue"
+        fi
+        if ! jq -en --arg b "$body" --rawfile r "$3" '
+          ($r | split("\n\n") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $ps
+          | all($ps[]; . as $p | $b | contains($p))' >/dev/null; then
+          body="$body"$'\n\n'"## Resolution"$'\n\n'"$(cat "$3")"
+        fi
+        if ! grep -qxF -e "$MERGE_LINE" <<<"$body"; then
+          body="$body"$'\n\n'"$MERGE_LINE"
+        fi
+        printf '%s\n' "$body"
+      }
+
+      # Usage: contract_title <title> <sync.json>. Prints the title to use.
+      contract_title() {
+        local stem
+        stem="sync: merge upstream $(jq -r .upstream_repo "$2") "
+        if jq -e '.test == true' "$2" >/dev/null; then stem="[test] $stem"; fi
+        case "$1" in
+          "$stem"[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) printf '%s\n' "$1" ;;
+          *) printf '%s%s\n' "$stem" "$(date +%F)" ;;
+        esac
+      }
+      # END pr-contract
+
+      repo=$(jq -r .repo "$SYNC_DIR/sync.json")
+      branch=$(jq -r .branch "$SYNC_DIR/sync.json")
+      if [ ! -s "$ARTIFACTS_DIR/.pr-number" ]; then
+        fail "archon-create-pr wrote no .pr-number, so no pull request was confirmed"
+      fi
+      number=$(tr -d '[:space:]' < "$ARTIFACTS_DIR/.pr-number")
+      case "$number" in
+        ''|*[!0-9]*) fail "archon-create-pr wrote an invalid .pr-number: $number" ;;
+      esac
+      gh pr view "$number" --repo "$repo" \
+        --json number,url,baseRefName,headRefName,headRefOid,title,body,autoMergeRequest,state \
+        > "$SYNC_DIR/pr-view.json"
+
+      problems=$(jq -r --arg base "$PR_BASE" --arg branch "$branch" --arg head "$(git rev-parse HEAD)" '
+        [ (if .baseRefName == $base then empty else "the base is \(.baseRefName), not \($base)" end),
+          (if .headRefName == $branch then empty else "the head branch is \(.headRefName), not \($branch)" end),
+          (if .headRefOid == $head then empty else "the head commit is \(.headRefOid), not the local HEAD \($head)" end),
+          (if .autoMergeRequest == null then empty else "auto-merge is enabled" end),
+          (if .state == "OPEN" then empty else "the state is \(.state), not OPEN" end)
+        ] | join("; ")' "$SYNC_DIR/pr-view.json")
+      merge_status=0
+      merge_findings=$(bash "$SYNC_DIR/merge-commit.sh") || merge_status=$?
+      case "$merge_status" in
+        0) ;;
+        10) problems="${problems:+$problems; }$(tr '\n' ';' <<<"$merge_findings")" ;;
+        *) fail "merge-commit.sh failed with exit code $merge_status" ;;
+      esac
+      if [ -n "$problems" ]; then
+        fail "pull request #$number does not match the sync contract: $problems"
+      fi
+
+      jq -r .body "$SYNC_DIR/pr-view.json" > "$SYNC_DIR/pr-body-live.md"
+      contract_body "$SYNC_DIR/pr-body-live.md" "$SYNC_DIR/sync.json" "$SYNC_DIR/resolution.md" \
+        > "$SYNC_DIR/pr-body.md"
+      title=$(jq -r .title "$SYNC_DIR/pr-view.json")
+      new_title=$(contract_title "$title" "$SYNC_DIR/sync.json")
+      edit_args=()
+      if [ "$new_title" != "$title" ]; then edit_args+=(--title "$new_title"); fi
+      if [ "$(cat "$SYNC_DIR/pr-body.md")" != "$(tr -d '\r' < "$SYNC_DIR/pr-body-live.md")" ]; then
+        edit_args+=(--body-file "$SYNC_DIR/pr-body.md")
+      fi
+      if [ "${#edit_args[@]}" -gt 0 ]; then
+        echo "verify-pr: adding the missing contract elements to pull request #$number" >&2
+        gh pr edit "$number" --repo "$repo" "${edit_args[@]}" >/dev/null
+      fi
+
+      jq -c '{pr_url: .url, number}' "$SYNC_DIR/pr-view.json" > "$SYNC_DIR/pr.json"
+      cat "$SYNC_DIR/pr.json"
+
+  # Waits for the CI of the verified PR. Prints pr.json plus ci.json.
+  - id: wait-ci
+    depends_on: [verify-pr]
+    timeout: 6300000
+    bash: |
+      set -euo pipefail
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+      bash "$SYNC_DIR/clean-tree.sh" "the start of wait-ci"
+      bash "$SYNC_DIR/wait-ci.sh" 0 >/dev/null
+      jq -cs '.[0] + .[1]' "$SYNC_DIR/pr.json" "$SYNC_DIR/ci.json"
+
+  # A failed CI is first re-run once (failed jobs only), because a flaky test can
+  # fail a correct merge. The new wait has its own poll budget and keeps the fix
+  # attempt count (0): the re-run is not a fix. Prints the new ci.json plus `fix`,
+  # which is true only when CI still fails and the run is not a test.
+  - id: rerun-ci
+    depends_on: [wait-ci]
+    when: "$wait-ci.output.conclusion == 'failure'"
+    timeout: 6600000
+    bash: |
+      set -euo pipefail
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+      bash "$SYNC_DIR/clean-tree.sh" "the start of rerun-ci"
+      repo=$(jq -r .repo "$SYNC_DIR/sync.json")
+      number=$(jq -r .number "$SYNC_DIR/pr.json")
+      # The GitHub Actions run ids of the failed checks, from their links
+      # (https://github.com/<repo>/actions/runs/<run-id>/job/<job-id>).
+      run_ids=$(gh pr checks "$number" --repo "$repo" --json bucket,link 2>/dev/null \
+        | jq -r '.[] | select(.bucket == "fail") | (.link // "")
+          | capture("/actions/runs/(?<id>[0-9]+)")? | .id' 2>/dev/null \
+        | sort -u || true)
+      rerun=false
+      for id in $run_ids; do
+        if gh run rerun "$id" --failed --repo "$repo" >/dev/null 2>&1; then
+          rerun=true
+          echo "rerun-ci: re-running the failed jobs of run $id" >&2
+        else
+          echo "rerun-ci: run $id cannot be re-run" >&2
+        fi
+      done
+      if [ "$rerun" = true ]; then
+        # Wait until GitHub shows the re-run as queued or running, so the CI wait
+        # never concludes on the old, failed check set.
+        for _ in $(seq 1 10); do
+          if gh pr checks "$number" --repo "$repo" --json bucket 2>/dev/null \
+              | jq -e 'any(.[]; .bucket == "pending")' >/dev/null 2>&1; then
+            break
+          fi
+          sleep 30
+        done
+        bash "$SYNC_DIR/wait-ci.sh" 0 >/dev/null
+      fi
+      fix=false
+      if jq -e '.conclusion == "failure"' "$SYNC_DIR/ci.json" >/dev/null \
+          && jq -e '.test != true' "$SYNC_DIR/sync.json" >/dev/null; then
+        fix=true
+      fi
+      jq -c --argjson rerun "$rerun" --argjson fix "$fix" '. + {rerun: $rerun, fix: $fix}' \
+        "$SYNC_DIR/ci.json"
+
+  # until_bash ends the group after a green CI, a merged or closed PR, or the
+  # second fix attempt, so the group never reaches max_iterations (reaching it
+  # fails the node). A test run never gets an AI fix.
+  - id: fix-ci
+    depends_on: [rerun-ci]
+    when: "$rerun-ci.output.fix == 'true'"
+    loop_group:
+      max_iterations: 3
+      until_bash: |
+        jq -e '.conclusion != "failure" or .attempt >= 2' "$ARTIFACTS_DIR/sync/ci.json" >/dev/null
+      nodes:
+        # A human can merge or close the PR at any time. Then there is nothing
+        # to fix and nothing may be pushed: record the state and skip the fix.
+        - id: pr-open
+          timeout: 300000
+          bash: |
+            set -euo pipefail
+            SYNC_DIR="$ARTIFACTS_DIR/sync"
+            repo=$(jq -r .repo "$SYNC_DIR/sync.json")
+            number=$(jq -r .number "$SYNC_DIR/pr.json")
+            state=$(gh pr view "$number" --repo "$repo" --json state -q .state)
+            if [ "$state" = OPEN ]; then
+              echo '{"open": true}'
+            else
+              conclusion=$(tr '[:upper:]' '[:lower:]' <<<"$state")
+              jq -c --arg c "$conclusion" '.conclusion = $c | .failed = []' "$SYNC_DIR/ci.json" \
+                > "$SYNC_DIR/ci.json.tmp"
+              mv "$SYNC_DIR/ci.json.tmp" "$SYNC_DIR/ci.json"
+              echo "pull request #$number is $state; no fix is made" >&2
+              echo '{"open": false}'
+            fi
+        - id: fix-ci-attempt
+          depends_on: [pr-open]
+          when: "$pr-open.output.open == 'true'"
+          command: buzz-fork-fix-ci
+          model: gpt-6-luna
+        - id: wait-ci-again
+          depends_on: [fix-ci-attempt]
+          timeout: 6000000
+          bash: |
+            set -euo pipefail
+            SYNC_DIR="$ARTIFACTS_DIR/sync"
+            bash "$SYNC_DIR/clean-tree.sh" "the start of wait-ci-again (after fix-ci-attempt)"
+            attempt=$(( $(jq -r .attempt "$SYNC_DIR/ci.json") + 1 ))
+            bash "$SYNC_DIR/wait-ci.sh" "$attempt"
+
+  # Runs after success and after failures (not after a cancel). It never closes
+  # the issue: the fork's resume job closes it once a sync pull request merges.
+  # It removes this run's cargo target and build outputs whatever the result; the
+  # watcher that prepare started removes the worktree once the run has ended, and
+  # cleans a cancelled run, which never reaches finalize.
+  - id: finalize
+    depends_on: [wait-ci, rerun-ci, fix-ci]
+    trigger_rule: all_done
+    timeout: 600000
+    bash: |
+      set -euo pipefail
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+      cleanup_run() {
+        if [ -f "$SYNC_DIR/cleanup.sh" ]; then bash "$SYNC_DIR/cleanup.sh" run; fi
+      }
+      trap cleanup_run EXIT
+
+      if [ -f "$SYNC_DIR/pr.json" ]; then
+        repo=$(jq -r .repo "$SYNC_DIR/sync.json")
+        issue=$(jq -r .issue "$SYNC_DIR/sync.json")
+        run_url=$(jq -r .run_url "$SYNC_DIR/issue.json")
+        pr_url=$(jq -r .pr_url "$SYNC_DIR/pr.json")
+        number=$(jq -r .number "$SYNC_DIR/pr.json")
+        if [ -f "$SYNC_DIR/ci.json" ]; then
+          ci=$(jq -c '{conclusion, failed, checks_url}' "$SYNC_DIR/ci.json")
+          attempts=$(jq -r .attempt "$SYNC_DIR/ci.json")
+        else
+          ci=$(jq -nc --arg u "https://github.com/$repo/pull/$number/checks" \
+            '{conclusion: "unknown", failed: [], checks_url: $u}')
+          attempts=0
+        fi
+        case "$(jq -r .conclusion <<<"$ci")" in
+          success) outcome=pr_ready ;;
+          merged) outcome=merged ;;
+          closed) outcome=pr_closed ;;
+          failure) outcome=ci_failed ;;
+          *) outcome=ci_unknown ;;
+        esac
+        notified=true
+        # A human already merged or closed the PR, so there is nothing to tell them.
+        if [ "$outcome" = ci_failed ] || [ "$outcome" = ci_unknown ]; then
+          {
+            printf 'The sync pull request %s is open, but its CI is %s after %s fix attempt(s).\n\n' \
+              "$pr_url" "$(jq -r .conclusion <<<"$ci")" "$attempts"
+            printf 'Failed checks: %s\n' "$(jq -r '.failed | if length == 0 then "none reported" else join(", ") end' <<<"$ci")"
+            printf 'Checks: %s\nRun: %s\n\n' "$(jq -r .checks_url <<<"$ci")" "$run_url"
+            printf 'A human decides. The sync stays paused until a sync pull request merges.\n'
+          } > "$SYNC_DIR/finalize-comment.md"
+          if ! gh issue comment "$issue" --repo "$repo" --body-file "$SYNC_DIR/finalize-comment.md" >/dev/null; then
+            echo "could not comment on issue #$issue" >&2
+            notified=false
+          fi
+          if ! gh pr comment "$number" --repo "$repo" --body-file "$SYNC_DIR/finalize-comment.md" >/dev/null; then
+            echo "could not comment on pull request #$number" >&2
+            notified=false
+          fi
+        fi
+        jq -c --arg outcome "$outcome" --arg pr_url "$pr_url" --argjson ci "$ci" --argjson notified "$notified" \
+          '{outcome: $outcome, pr_url: $pr_url, ci: $ci, issue, upstream_sha, files, notified: $notified}' \
+          "$SYNC_DIR/sync.json"
+      elif [ -f "$SYNC_DIR/issue.json" ]; then
+        repo=$(jq -r .repo "$SYNC_DIR/issue.json")
+        issue=$(jq -r .issue "$SYNC_DIR/issue.json")
+        run_url=$(jq -r .run_url "$SYNC_DIR/issue.json")
+        stage="publish, create-pr or verify-pr (pr.json)"
+        if [ ! -f "$SYNC_DIR/sync.json" ]; then stage="prepare (sync.json)"
+        elif [ ! -f "$SYNC_DIR/resolution.md" ]; then stage="resolve (resolution.md)"
+        elif [ ! -f "$SYNC_DIR/decision.json" ]; then stage="check (decision.json)"
+        fi
+        reason=""
+        for file in refusal.txt guard-failure.txt verify-problems.txt pr-problems.txt; do
+          if [ -s "$SYNC_DIR/$file" ]; then reason="${reason:+$reason$'\n'}$(cat "$SYNC_DIR/$file")"; fi
+        done
+        opened_pr=""
+        if [ -s "$ARTIFACTS_DIR/.pr-url" ]; then opened_pr=$(tr -d '[:space:]' < "$ARTIFACTS_DIR/.pr-url"); fi
+        {
+          printf 'Automatic upstream sync resolution failed at %s.\n\n' "$stage"
+          if [ -n "$reason" ]; then printf 'Reason:\n\n%s\n\n' "$reason"; fi
+          if [ -n "$opened_pr" ]; then printf 'Pull request opened before the failure: %s\n\n' "$opened_pr"; fi
+          printf 'Run: %s\n\n' "$run_url"
+          printf 'The sync stays paused until a sync pull request merges.\n'
+        } > "$SYNC_DIR/finalize-comment.md"
+        notified=true
+        if ! gh issue comment "$issue" --repo "$repo" --body-file "$SYNC_DIR/finalize-comment.md" >/dev/null; then
+          echo "could not comment on issue #$issue" >&2
+          notified=false
+        fi
+        jq -nc --argjson issue "$issue" --arg stage "$stage" --arg reason "$reason" --argjson notified "$notified" \
+          '{outcome: "failed", issue: $issue, stage: $stage, reason: $reason, notified: $notified}'
+      else
+        # The request failed before the issue was confirmed as a conflict issue:
+        # the issue is left untouched.
+        echo "no confirmed conflict issue; nothing to report on GitHub" >&2
+        jq -nc '{outcome: "failed", issue: null}'
+      fi
+
+returns: finalize

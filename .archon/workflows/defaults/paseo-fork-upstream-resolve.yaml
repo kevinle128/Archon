@@ -580,6 +580,170 @@ nodes:
       cat "$sync_dir/ci.json"
       WAIT_CI_SH
 
+      # Removes the build outputs of runs, so runs do not fill the disk. Each run
+      # records its worktree in $STATE_DIR/sync-runs/<run id>/worktree. `prepare`
+      # starts `cleanup.sh watch`, a detached process that cleans the run when the
+      # server reports it as finished, also after a cancel or a reject at the
+      # approval gate, when no node of the run runs any more. `finalize` calls
+      # `cleanup.sh run` for its own run at once; `prepare` calls `cleanup.sh sweep`
+      # for earlier runs whose watcher stopped (for example after a reboot).
+      cat > "$SYNC_DIR/cleanup.sh" <<'CLEANUP_SH'
+      #!/usr/bin/env bash
+      # Usage: cleanup.sh run | sweep | watch
+      #   run:   remove the ignored build outputs of this worktree and the cargo
+      #          target of this run; keep the record, so the watcher or a later
+      #          sweep can remove the worktree.
+      #   watch: poll the server for the state of this run (every
+      #          CLEANUP_WATCH_INTERVAL seconds, default 60, at most CLEANUP_WATCH_POLLS
+      #          times, default 10080 = 7 days). When the run completed, was cancelled
+      #          or is gone, remove its build outputs, cargo target, worktree and
+      #          record, then stop. When it failed, remove its build outputs and cargo
+      #          target but keep the worktree and the record (the run can be resumed)
+      #          and continue to poll. A state is acted on only when two polls in a
+      #          row read it. After the last poll the record stays for a sweep.
+      #   sweep: for each other recorded run that the Archon server reports as
+      #          finished, remove its build outputs and cargo target, then its
+      #          worktree when the run completed or was cancelled (a failed run can
+      #          still be retried in place, so its worktree stays), then the record.
+      #          A run that is still active, or whose status cannot be read, keeps
+      #          everything. Archon marks the environment of a removed worktree as
+      #          destroyed on its next scheduled cleanup.
+      # Always exits 0: a cleanup problem never fails a run.
+      set -uo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      mode=${1:-}
+      runs_root=$(jq -r '.runs_root // empty' "$sync_dir/sync.json" 2>/dev/null)
+      own=$(jq -r '.run_dir // empty' "$sync_dir/sync.json" 2>/dev/null)
+      if [ -z "$runs_root" ] || [ -z "$own" ]; then
+        echo "cleanup: sync.json names no run record; nothing to remove" >&2
+        exit 0
+      fi
+      top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+
+      # Only ignored folders with a build-output name are removed: sources,
+      # tracked files and untracked files that are not ignored stay.
+      clean_worktree() {
+        local wt=$1 entry path name
+        [ -n "$wt" ] && [ -d "$wt" ] || return 0
+        git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+        while IFS= read -r -d '' entry; do
+          case "$entry" in */) ;; *) continue ;; esac
+          path=${entry%/}
+          name=${path##*/}
+          case "$name" in
+            node_modules|target|dist|build|out|coverage|.cache|.dart_tool|.turbo|.vite|.next)
+              rm -rf -- "${wt:?}/$path"
+              echo "cleanup: removed $wt/$path" >&2 ;;
+          esac
+        done < <(git -C "$wt" ls-files --others --ignored --exclude-standard --directory -z 2>/dev/null)
+      }
+
+      # Removes a linked worktree of this repository that git reports as clean.
+      # Never the main checkout and never the worktree of the current run.
+      remove_worktree() {
+        local wt=$1 main
+        [ -n "$wt" ] && [ -d "$wt" ] && [ "$wt" != "$top" ] || return 0
+        main=$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')
+        [ "$wt" != "$main" ] || return 0
+        git worktree list --porcelain | grep -qxF -e "worktree $wt" || return 0
+        if git worktree remove -- "$wt" 2>/dev/null; then
+          echo "cleanup: removed the worktree $wt" >&2
+        else
+          echo "cleanup: kept the worktree $wt (git does not report it as clean)" >&2
+        fi
+      }
+
+      # A record is removed only when it is a run folder right under the root.
+      remove_record() {
+        local dir=$1 id=${1##*/}
+        [[ "$id" =~ ^[0-9A-Za-z-]+$ ]] && [ "$dir" = "$runs_root/$id" ] || return 0
+        rm -rf -- "$dir"
+      }
+
+      # Prints the state of a run as the server reports it: its status, `gone`
+      # for an unknown run, or nothing when the server cannot be read.
+      # Usage: run_status <run id> <scratch file>
+      run_status() {
+        local id=$1 tmp=$2 code
+        code=$(curl -sS -m 10 -o "$tmp" -w '%{http_code}' \
+          "http://127.0.0.1:${PORT:-3090}/api/workflows/runs/$id" 2>/dev/null || true)
+        case "$code" in
+          200) jq -r '.run.status // empty' "$tmp" 2>/dev/null || true ;;
+          404) echo gone ;;
+        esac
+      }
+
+      case "$mode" in
+        run)
+          clean_worktree "$top"
+          rm -rf -- "${own:?}/cargo-target" ;;
+        watch)
+          id=${own##*/}
+          wt=$(cat "$own/worktree" 2>/dev/null || true)
+          [[ "$id" =~ ^[0-9A-Za-z-]+$ ]] && [ -n "$wt" ] && [ -d "$wt" ] || exit 0
+          # Work from the main checkout, never from inside the worktree to remove.
+          main=$(git -C "$wt" worktree list --porcelain 2>/dev/null \
+            | awk '/^worktree / { print substr($0, 10); exit }')
+          [ -n "$main" ] && cd "$main" || exit 0
+          top=$main
+          echo "cleanup: watching the run $id (worktree $wt)" >&2
+          polls=${CLEANUP_WATCH_POLLS:-10080}
+          previous="" outputs_removed=false
+          for (( n = 0; n < polls; n++ )); do
+            sleep "${CLEANUP_WATCH_INTERVAL:-60}"
+            # A sweep of a later run already handled this run.
+            [ -d "$own" ] || exit 0
+            status=$(run_status "$id" "$own/status.json")
+            if [ "$status" != "$previous" ]; then previous=$status; continue; fi
+            case "$status" in
+              completed|cancelled|gone)
+                clean_worktree "$wt"
+                rm -rf -- "${own:?}/cargo-target"
+                remove_worktree "$wt"
+                echo "cleanup: the run $id is $status; its build outputs are removed" >&2
+                remove_record "$own"
+                exit 0 ;;
+              failed)
+                if [ "$outputs_removed" = false ]; then
+                  clean_worktree "$wt"
+                  rm -rf -- "${own:?}/cargo-target"
+                  outputs_removed=true
+                  echo "cleanup: the run $id failed; its build outputs are removed, its worktree stays" >&2
+                fi ;;
+              *) outputs_removed=false ;;
+            esac
+          done
+          rm -f "$own/status.json" ;;
+        sweep)
+          [ -d "$runs_root" ] || exit 0
+          for dir in "$runs_root"/*; do
+            [ -d "$dir" ] && [ "$dir" != "$own" ] || continue
+            id=${dir##*/}
+            [[ "$id" =~ ^[0-9A-Za-z-]+$ ]] || continue
+            status=$(run_status "$id" "$sync_dir/cleanup-run.json")
+            wt=$(cat "$dir/worktree" 2>/dev/null || true)
+            case "$status" in
+              completed|cancelled|gone)
+                clean_worktree "$wt"
+                remove_worktree "$wt"
+                remove_record "$dir" ;;
+              failed)
+                clean_worktree "$wt"
+                remove_record "$dir" ;;
+              *) echo "cleanup: kept the run $id (status '${status:-unknown}')" >&2 ;;
+            esac
+          done
+          rm -f "$sync_dir/cleanup-run.json" ;;
+        *) echo "cleanup: unknown mode '$mode'" >&2 ;;
+      esac
+      exit 0
+      CLEANUP_SH
+
+      # The record of this run, outside the worktree: its worktree path.
+      # cleanup.sh removes the build outputs at the end.
+      runs_root="$STATE_DIR/sync-runs"
+      run_dir="$runs_root/$WORKFLOW_ID"
+
       jq -n \
         --arg repo "$repo" \
         --argjson issue "$issue" \
@@ -592,10 +756,22 @@ nodes:
         --arg branch "$branch" \
         --argjson files "$files" \
         --argjson force_human "$force_human" \
+        --arg runs_root "$runs_root" \
+        --arg run_dir "$run_dir" \
         '{repo: $repo, issue: $issue, issue_url: $issue_url, upstream_repo: $upstream_repo,
           upstream_sha: $upstream_sha, fork_ref: $fork_ref, base_sha: $base_sha,
           merge_base: $merge_base, branch: $branch, files: $files,
-          force_human: $force_human}' > "$SYNC_DIR/sync.json"
+          force_human: $force_human, runs_root: $runs_root, run_dir: $run_dir}' > "$SYNC_DIR/sync.json"
+      mkdir -p "$run_dir"
+      git rev-parse --show-toplevel > "$run_dir/worktree"
+      bash "$SYNC_DIR/cleanup.sh" sweep
+
+      # The watcher runs detached from the node, so it outlives the end of
+      # prepare and a restart of the server; one watcher per run.
+      if ! { [ -f "$run_dir/watch.pid" ] && kill -0 "$(cat "$run_dir/watch.pid")" 2>/dev/null; }; then
+        ( cd / && nohup bash "$SYNC_DIR/cleanup.sh" watch < /dev/null >> "$run_dir/watch.log" 2>&1 &
+          echo $! > "$run_dir/watch.pid" )
+      fi
       bash "$SYNC_DIR/clean-tree.sh" "the end of prepare"
       cat "$SYNC_DIR/sync.json"
 
@@ -911,6 +1087,9 @@ nodes:
 
   # Runs after success and after failures (not after a cancel). It never closes
   # the issue: the fork's resume job closes it once a sync pull request merges.
+  # It removes this run's build outputs whatever the result; the watcher that
+  # prepare started removes the worktree once the run has ended, and cleans a
+  # cancelled run, which never reaches finalize.
   - id: finalize
     depends_on: [wait-ci, fix-ci]
     trigger_rule: all_done
@@ -918,6 +1097,10 @@ nodes:
     bash: |
       set -euo pipefail
       SYNC_DIR="$ARTIFACTS_DIR/sync"
+      cleanup_run() {
+        if [ -f "$SYNC_DIR/cleanup.sh" ]; then bash "$SYNC_DIR/cleanup.sh" run; fi
+      }
+      trap cleanup_run EXIT
 
       if [ -f "$SYNC_DIR/pr.json" ]; then
         repo=$(jq -r .repo "$SYNC_DIR/sync.json")
