@@ -777,10 +777,16 @@ nodes:
       bash "$SYNC_DIR/clean-tree.sh" "the end of prepare"
       cat "$SYNC_DIR/sync.json"
 
+  # Agent nodes have an idle_timeout: when the model sends nothing for that long
+  # (a stalled request), the node fails and the engine retries it, instead of
+  # the run waiting without end. The value is above the longest silent step of a
+  # normal run (a full local check run inside the agent); create-pr runs only
+  # short commands.
   # Merges, resolves, makes the one merge commit, then runs the local checks and
   # fixes failures (at most 3 rounds), leaving the worktree clean.
   - id: resolve
     command: paseo-fork-resolve-upstream-merge
+    idle_timeout: 1200000
     model: gpt-6.1-terra
     effort: medium
     depends_on: [prepare]
@@ -871,6 +877,7 @@ nodes:
 
   - id: apply-guidance
     command: paseo-fork-resolve-upstream-merge
+    idle_timeout: 1200000
     model: gpt-6-luna
     depends_on: [ask-human]
     prompt_suffix: |
@@ -933,6 +940,7 @@ nodes:
 
   - id: create-pr
     command: archon-create-pr
+    idle_timeout: 600000
     model: gpt-6-luna
     depends_on: [publish]
     prompt_suffix: |
@@ -1076,6 +1084,7 @@ nodes:
       nodes:
         - id: fix-ci-attempt
           command: paseo-fork-fix-ci
+          idle_timeout: 1200000
           model: gpt-6-luna
         - id: wait-ci-again
           depends_on: [fix-ci-attempt]

@@ -1287,3 +1287,128 @@ describe('finalize (structure)', () => {
     expect(nodeById('finalize').trigger_rule).toBe('all_done');
   });
 });
+
+// ---------------------------------------------------------------------------
+// checks.sh run for real with fake tools: rust-test runner and the hard limit
+// ---------------------------------------------------------------------------
+
+describe('checks.sh (executable)', () => {
+  /**
+   * A repository with the Hermit activation script and a sync.json, plus fake
+   * cargo/just/node/pnpm. `cargo` follows FAKE_CARGO_MODE: `hang` sleeps in
+   * `cargo test` (and writes its pid), `nextest` makes `cargo nextest` available.
+   */
+  function checksRepo(sb: Sandbox): string {
+    const work = cleanRepo(sb);
+    mkdirSync(join(work, 'bin'), { recursive: true });
+    writeExecutable(join(work, 'bin', 'activate-hermit'), '#!/bin/bash\n');
+    git(sb, work, 'add', 'bin/activate-hermit');
+    git(sb, work, 'commit', '-q', '-m', 'hermit');
+    installSyncScripts(sb);
+    writeFileSync(
+      join(sb.sync, 'sync.json'),
+      JSON.stringify({
+        base_sha: git(sb, work, 'rev-parse', 'HEAD'),
+        upstream_sha: git(sb, work, 'rev-parse', 'HEAD'),
+        files: [],
+        run_dir: join(sb.root, 'run'),
+      })
+    );
+    writeExecutable(
+      join(sb.bin, 'cargo'),
+      `#!/bin/bash
+if [ "$1 $2" = "nextest --version" ]; then
+  [ "\${FAKE_CARGO_MODE:-}" = nextest ] && { echo "cargo-nextest 0.9.0"; exit 0; }
+  echo "error: no such command: nextest" >&2; exit 101
+fi
+printf 'cargo %s\\n' "$*" >> "$FAKE_LOG"
+if [ "\${FAKE_CARGO_MODE:-}" = hang ] && [ "$1" = test ]; then
+  echo $$ > "$FAKE_CARGO_PID"
+  exec /bin/sleep 300
+fi
+exit 0
+`
+    );
+    for (const tool of ['just', 'node', 'pnpm']) {
+      writeExecutable(
+        join(sb.bin, tool),
+        `#!/bin/bash\nprintf '%s %s\\n' '${tool}' "$*" >> "$FAKE_LOG"\n` +
+          `case "$*" in *clippy*) echo "clippy failed"; exit 1 ;; esac\nexit 0\n`
+      );
+    }
+    return work;
+  }
+
+  function checks(sb: Sandbox, work: string, names: string[], env: NodeJS.ProcessEnv = {}) {
+    return run(sb, `bash "${join(sb.sync, 'checks.sh')}" "$@"`, { cwd: work, args: names, env });
+  }
+
+  interface ChecksJson {
+    passed: boolean;
+    failed: string[];
+    ran: { name: string; status: string }[];
+  }
+
+  it('stops a hung check at its limit, with every process, and reports it as timed out', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    const pidFile = join(sb.root, 'cargo.pid');
+    const started = Date.now();
+    const r = checks(sb, work, ['rust-test:buzz-relay', 'rust-fmt'], {
+      FAKE_CARGO_MODE: 'hang',
+      FAKE_CARGO_PID: pidFile,
+      CHECK_TIMEOUT_SECONDS: '2',
+    });
+    const elapsed = Date.now() - started;
+    expect(r.status).toBe(0);
+    const result = readJson<ChecksJson>(join(sb.sync, 'checks.json'));
+    expect(result.passed).toBe(false);
+    expect(result.failed).toEqual(['rust-test:buzz-relay']);
+    expect(result.ran).toEqual([
+      { name: 'rust-test:buzz-relay', status: 'timeout' },
+      { name: 'rust-fmt', status: 'pass' },
+    ]);
+    expect(r.stderr).toContain('check rust-test:buzz-relay: timeout');
+    expect(readFileSync(join(sb.sync, 'checks.log'), 'utf-8')).toContain(
+      'checks: rust-test:buzz-relay timed out after 2 s; its processes were stopped'
+    );
+    // The hung process (the fake cargo, now /bin/sleep) is gone, and the run did
+    // not wait for its 300 s.
+    const pid = Number(readFileSync(pidFile, 'utf-8').trim());
+    let alive = true;
+    try {
+      process.kill(pid, 0);
+    } catch {
+      alive = false;
+    }
+    if (alive) process.kill(pid, 'SIGKILL');
+    expect(alive).toBe(false);
+    expect(elapsed).toBeLessThan(15_000);
+  }, 30_000);
+
+  it('runs crate tests on one thread without nextest, and with nextest when it exists', () => {
+    for (const mode of ['', 'nextest']) {
+      const sb = makeSandbox();
+      const work = checksRepo(sb);
+      const r = checks(sb, work, ['rust-test:buzz-relay'], { FAKE_CARGO_MODE: mode });
+      expect(r.status).toBe(0);
+      expect(readJson<ChecksJson>(join(sb.sync, 'checks.json')).passed).toBe(true);
+      expect(calls(sb).filter(c => c.startsWith('cargo '))).toEqual([
+        mode === 'nextest'
+          ? 'cargo nextest run --locked -p buzz-relay --lib'
+          : 'cargo test --locked -p buzz-relay --lib -- --test-threads=1',
+      ]);
+    }
+  });
+
+  it('still reports a passing and a failing check as pass and fail under the limit', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    const r = checks(sb, work, ['rust-fmt', 'rust-clippy']);
+    expect(r.status).toBe(0);
+    expect(readJson<ChecksJson>(join(sb.sync, 'checks.json')).ran).toEqual([
+      { name: 'rust-fmt', status: 'pass' },
+      { name: 'rust-clippy', status: 'fail' },
+    ]);
+  });
+});

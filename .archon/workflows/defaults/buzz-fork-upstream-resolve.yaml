@@ -246,8 +246,11 @@ nodes:
       # Tauri check for desktop/src-tauri/ and mobile-check for mobile/. Touched
       # files are the conflicted files of sync.json and the files that the commits
       # after the merge commit changed.
+      # Each check runs under a hard time limit (CHECK_TIMEOUT_SECONDS when set, else
+      # 1200 s for rust-test:<crate> and 900 s for the others); a check that runs longer
+      # is stopped with all its processes and reported with the status "timeout".
       # Writes checks.json and checks.log beside this script and prints checks.json.
-      # Exit 0 when the checks ran (pass or fail), 2 for a missing tool or a bad name.
+      # Exit 0 when the checks ran (pass, fail or timeout), 2 for a missing tool or a bad name.
       # Never runs a whole test suite, PostgreSQL, Playwright or mesh tests: CI on the
       # pull request runs them.
       set -euo pipefail
@@ -381,7 +384,16 @@ nodes:
           # --locked fails on a Cargo.lock that the merge left stale, as CI would.
           rust-check) cargo check --workspace --all-targets --keep-going --locked ;;
           rust-clippy) just clippy ;;
-          rust-test:*) cargo test --locked -p "${1#rust-test:}" --lib ;;
+          # libtest runs the tests of one binary in threads of one process, and
+          # some upstream tests deadlock there on shared locks; nextest (as in
+          # upstream CI) runs each test in its own process. Without nextest the
+          # tests run on one thread.
+          rust-test:*)
+            if cargo nextest --version >/dev/null 2>&1; then
+              cargo nextest run --locked -p "${1#rust-test:}" --lib
+            else
+              cargo test --locked -p "${1#rust-test:}" --lib -- --test-threads=1
+            fi ;;
           desktop-install) just desktop-install-ci ;;
           desktop-check) just desktop-check ;;
           desktop-typecheck) just desktop-typecheck ;;
@@ -444,11 +456,57 @@ nodes:
       }
       trap restore_check_changes EXIT
 
+      check_limit() {
+        if [ -n "${CHECK_TIMEOUT_SECONDS:-}" ]; then echo "$CHECK_TIMEOUT_SECONDS"; return; fi
+        case "$1" in
+          rust-test:*) echo 1200 ;;
+          *) echo 900 ;;
+        esac
+      }
+
+      # Runs one check in its own process group with a watchdog in another. When the
+      # limit passes, the watchdog stops the whole check group (cargo and the test
+      # binaries it started), so a hung check ends as a failure instead of blocking
+      # the run. Returns 124 for a timeout, else the exit status of the check.
+      run_limited() {
+        local name=$1 limit pid watchdog rc=0 marker="$sync_dir/check-timed-out"
+        limit=$(check_limit "$name")
+        rm -f "$marker"
+        set -m
+        # Like the former `if run_check`, errexit does not apply inside a check.
+        { set +e; run_check "$name"; } &
+        pid=$!
+        (
+          /bin/sleep "$limit"
+          : > "$marker"
+          kill -TERM -- "-$pid" 2>/dev/null
+          /bin/sleep 10
+          kill -KILL -- "-$pid" 2>/dev/null
+        ) &
+        watchdog=$!
+        set +m
+        wait "$pid" || rc=$?
+        kill -TERM -- "-$watchdog" 2>/dev/null || true
+        wait "$watchdog" 2>/dev/null || true
+        if [ -f "$marker" ]; then
+          rm -f "$marker"
+          echo "checks: $name timed out after $limit s; its processes were stopped"
+          return 124
+        fi
+        return "$rc"
+      }
+
       : > "$log"
       results='[]'
       while IFS= read -r -d '' name; do
         printf '\n===== %s =====\n' "$name" >> "$log"
-        if run_check "$name" >> "$log" 2>&1 </dev/null; then status=pass; else status=fail; fi
+        rc=0
+        run_limited "$name" >> "$log" 2>&1 </dev/null || rc=$?
+        case "$rc" in
+          0) status=pass ;;
+          124) status=timeout ;;
+          *) status=fail ;;
+        esac
         echo "check $name: $status" >&2
         results=$(jq -c --arg n "$name" --arg s "$status" '. + [{name: $n, status: $s}]' <<<"$results")
       done < "$names_file"
@@ -584,7 +642,9 @@ nodes:
       done < <(jq -j '.failed_checks[] | . + "\u0000"' "$sync_dir/sync.json")
       bash "$sync_dir/checks.sh" >/dev/null
       if ! jq -e .passed "$sync_dir/checks.json" >/dev/null; then
-        problem "local checks fail: $(jq -r '.failed | join(", ")' "$sync_dir/checks.json")"
+        problem "local checks fail: $(jq -r '[.ran[] | select(.status != "pass")
+          | if .status == "timeout" then "\(.name) (timed out)" else .name end] | join(", ")' \
+          "$sync_dir/checks.json")"
       fi
       bash "$sync_dir/clean-tree.sh" "the end of the final checks in $stage"
       if [ -n "$problems" ]; then
@@ -878,12 +938,18 @@ nodes:
       bash "$SYNC_DIR/clean-tree.sh" "the end of prepare"
       cat "$SYNC_DIR/sync.json"
 
+  # Agent nodes have an idle_timeout: when the model sends nothing for that long
+  # (a stalled request), the node fails and the engine retries it, instead of
+  # the run waiting without end. The value is above the longest silent step of a
+  # normal run (a full local check run inside the agent); create-pr runs only
+  # short commands.
   # Merges, resolves, makes the one merge commit, then runs the local checks and
   # fixes failures (at most 3 rounds), leaving the worktree clean. For a clean
   # merge whose checks failed (kind checks_failed) it commits the clean merge and
   # fixes the failed checks in later commits.
   - id: resolve
     command: buzz-fork-resolve-upstream-merge
+    idle_timeout: 2700000
     model: gpt-6.1-terra
     effort: medium
     depends_on: [prepare]
@@ -974,6 +1040,7 @@ nodes:
 
   - id: apply-guidance
     command: buzz-fork-resolve-upstream-merge
+    idle_timeout: 2700000
     model: gpt-6-luna
     depends_on: [ask-human]
     prompt_suffix: |
@@ -1037,6 +1104,7 @@ nodes:
 
   - id: create-pr
     command: archon-create-pr
+    idle_timeout: 600000
     model: gpt-6-luna
     depends_on: [publish]
     when: "$publish.output.test == 'false'"
@@ -1290,6 +1358,7 @@ nodes:
           depends_on: [pr-open]
           when: "$pr-open.output.open == 'true'"
           command: buzz-fork-fix-ci
+          idle_timeout: 2700000
           model: gpt-6-luna
         - id: wait-ci-again
           depends_on: [fix-ci-attempt]
