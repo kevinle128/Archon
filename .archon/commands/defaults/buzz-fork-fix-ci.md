@@ -7,8 +7,8 @@ argument-hint: (none - reads $ARTIFACTS_DIR/sync/ci.json and pr.json)
 
 The workflow opened the sync pull request, its CI failed, and one re-run of the
 failed jobs failed again. Fix only what the failed checks report, then push new
-commits to the same branch. A human merges the pull request later; you never
-merge it.
+commits to the same branch. The workflow merges the pull request after its CI passes; you
+never merge it.
 
 You never ask the user anything in this step.
 
@@ -60,8 +60,8 @@ Read only the logs of the checks in `failed`.
 3. Commit each fix as a new commit whose message names the CI check. Never
    amend, never rebase.
 4. Read the pull request state right before you push. Push only when it is
-   `OPEN`: a human can merge or close the pull request while you work, and then
-   nothing may be pushed.
+   `OPEN`: a human can still merge or close the pull request while you work, and
+   then nothing may be pushed.
 
    ```bash
    branch=$(jq -r .branch "$ARTIFACTS_DIR/sync/sync.json")

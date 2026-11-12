@@ -32,7 +32,6 @@ scratch files you created. Never leave a merge in progress.
   `merge_base`, `branch`, `files` (the conflicted files of the trial merge; an
   empty list means the merge is clean).
 - `$ARTIFACTS_DIR/sync/issue.md`: the conflict issue body. It is context only.
-- A "Human guidance" section at the end of these instructions, when present.
 
 Read them first:
 
@@ -88,8 +87,9 @@ When the result needs a decision that the code and the history do not settle
 (for example both sides rewrote the same function with different intent, or
 upstream removed a feature the fork extends), stop. Do not guess. Run
 `git merge --abort`, check that `git status --porcelain --untracked-files=all`
-prints nothing, and return `resolved: false` with one precise question that names
-the file, both intents, and the options.
+prints nothing, and return `resolved: false` with one precise reason that names
+the file, both intents, and the options. The run then ends without a push and a
+human reads the reason later.
 
 ## Write the resolution notes
 
@@ -147,34 +147,15 @@ the upstream change makes a fork test wrong, change the test only when the new
 upstream behaviour is the intended behaviour, and say so in the commit message.
 When a fix changes how a conflicted file was resolved, update that file's
 paragraph in `$ARTIFACTS_DIR/sync/resolution.md`. Checks that still fail after
-three rounds are reported to a human by the next workflow step; still return
-`resolved: true` when the merge commit exists.
-
-## Guidance pass
-
-When a "Human guidance" section follows these instructions, a human has
-reviewed an earlier pass. Then:
-
-1. Check whether the merge commit exists:
-   `git rev-list --merges --first-parent "$(jq -r .base_sha "$sync")..HEAD"`.
-   - When it prints nothing (the first pass aborted), start the merge again from
-     the branch head as described above, apply the guidance while you resolve,
-     and create the one merge commit.
-   - When it prints one commit, do not amend it. Make the changes the guidance
-     asks for as new commits on top.
-2. Update `$ARTIFACTS_DIR/sync/resolution.md` so every paragraph matches the
-   final result.
-3. Run the local checks and fix failures as described above (at most 3 rounds).
-4. Return `resolved: true` only when the merge commit exists and the worktree is
-   clean. The workflow then runs the final checks again before it pushes the
-   branch.
+three rounds make the next workflow step end the run without a push; still
+return `resolved: true` when the merge commit exists.
 
 ## Output
 
 Return:
 
 - `resolved`: `true` when the one merge commit exists, every conflicted file is
-  resolved, and the worktree is clean; `false` when a human must decide (after
+  resolved, and the worktree is clean; `false` when you cannot resolve it (after
   `git merge --abort`).
-- `question`: an empty string when `resolved` is `true`; otherwise one precise
-  question for the human.
+- `question`: an empty string when `resolved` is `true`; otherwise the one precise
+  reason why the merge cannot be resolved (the run reports it on the issue).
