@@ -2340,6 +2340,35 @@ describe('merge-pr node (executable)', () => {
     }
   });
 
+  it('fails when the PR is still not merged after the merge call and a few reads', () => {
+    const { sb, repos } = committedMerge();
+    const sync = readJson<Record<string, unknown>>(join(sb.sync, 'sync.json'));
+    writeFileSync(join(sb.sync, 'sync.json'), JSON.stringify({ ...sync, repo: FORK_REPO }));
+    writeFileSync(
+      join(sb.sync, 'pr.json'),
+      JSON.stringify({ pr_url: `https://github.com/${FORK_REPO}/pull/77`, number: 77 })
+    );
+    writeFileSync(join(sb.sync, 'ci.json'), JSON.stringify({ conclusion: 'success', attempt: 0 }));
+    // A merge call that reports success but changes nothing.
+    const bin2 = join(sb.root, 'bin2');
+    mkdirSync(bin2);
+    writeExecutable(
+      join(bin2, 'gh'),
+      '#!/bin/bash\nprintf "gh %s\\n" "$*" >> "$FAKE_LOG"\n' +
+        'case "$1 $2" in "pr view") echo \'{"state":"OPEN","mergeCommit":null}\' ;; esac\nexit 0\n'
+    );
+    const r = run(sb, render(bashOf('merge-pr'), sb.artifacts), {
+      cwd: repos.work,
+      env: { PATH: `${bin2}:${sb.env.PATH ?? ''}` },
+    });
+    expect(r.status).toBe(1);
+    expect(calls(sb).filter(c => c.startsWith('gh pr view'))).toHaveLength(4);
+    expect(calls(sb).filter(c => c.startsWith('sleep'))).toHaveLength(4);
+    expect(readFileSync(join(sb.sync, 'merge-problems.txt'), 'utf-8')).toContain(
+      'is OPEN after gh pr merge'
+    );
+  });
+
   it('fails when GitHub refuses the merge, for example after the branch moved', () => {
     const r = runMerge('success', { FAKE_MERGE_RESULT: 'refuse' });
     expect(r.status).toBe(1);
@@ -2505,7 +2534,7 @@ describe('finalize node (executable)', () => {
     const sb = makeSandbox();
     writeFileSync(join(sb.sync, 'issue.json'), JSON.stringify(ISSUE_ID));
     writeFileSync(join(sb.sync, 'sync.json'), JSON.stringify(SYNC));
-    writeFileSync(join(sb.sync, 'resolution.md'), 'x');
+    // No resolution.md: a resolver that gave up may write none.
     writeFileSync(
       join(sb.sync, 'check-failure.txt'),
       'The branch does not pass the final checks:\n- local checks fail: lint\n'

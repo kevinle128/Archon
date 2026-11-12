@@ -1051,7 +1051,12 @@ nodes:
           > "$SYNC_DIR/merge.log" 2>&1; then
         fail "gh pr merge failed for $pr_url: $(tail -n 3 "$SYNC_DIR/merge.log")"
       fi
-      view=$(gh pr view "$number" --repo "$repo" --json state,mergeCommit)
+      # GitHub can report the new state a few seconds after the merge call.
+      for _ in 1 2 3 4; do
+        view=$(gh pr view "$number" --repo "$repo" --json state,mergeCommit)
+        if [ "$(jq -r .state <<<"$view")" = MERGED ]; then break; fi
+        sleep 5
+      done
       if [ "$(jq -r .state <<<"$view")" != MERGED ]; then
         fail "Pull request $pr_url is $(jq -r .state <<<"$view") after gh pr merge."
       fi
@@ -1140,8 +1145,8 @@ nodes:
         run_url=$(jq -r .run_url "$SYNC_DIR/issue.json")
         stage="publish, create-pr or verify-pr (pr.json)"
         if [ ! -f "$SYNC_DIR/sync.json" ]; then stage="prepare (sync.json)"
-        elif [ ! -f "$SYNC_DIR/resolution.md" ]; then stage="resolve (resolution.md)"
         elif [ -s "$SYNC_DIR/check-failure.txt" ]; then stage="check"
+        elif [ ! -f "$SYNC_DIR/resolution.md" ]; then stage="resolve (resolution.md)"
         fi
         reason=""
         for file in refusal.txt guard-failure.txt check-failure.txt pr-problems.txt; do
