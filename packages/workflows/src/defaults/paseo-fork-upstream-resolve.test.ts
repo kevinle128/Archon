@@ -4,7 +4,7 @@
  * The bash bodies are executed for real: each test renders a node through the same
  * substitution functions the executor uses (`substituteWorkflowVariables` with
  * `shellSafe`, then `substituteNodeOutputRefs` with bash quoting) and runs it with
- * fake `gh`, `git` network commands, `sleep`, `node`, `npm` and `npx` on PATH. No
+ * fake `gh`, `git` network commands, `curl`, `sleep`, `node`, `npm` and `npx` on PATH. No
  * test reaches the network: the fake `git` blocks every fetch or push it does not
  * redirect to a local repository, and the fake `gh` fails on any unexpected call.
  */
@@ -211,6 +211,30 @@ const FAKE_SLEEP = `#!/bin/bash
 printf '%s\\n' "sleep $*" >> "$FAKE_LOG"
 `;
 
+// The cleanup sweep reads run states from the local Archon server. A run id with
+// $FAKE_CURL_DIR/<id>.code answers that HTTP code (and <id>.json as the body);
+// any other request fails like an unreachable server (code 000).
+const FAKE_CURL = `#!/bin/bash
+printf '%s\\n' "curl $*" >> "$FAKE_LOG"
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out=$2; shift 2 ;;
+    -w|-m) shift 2 ;;
+    -*) shift ;;
+    *) url=$1; shift ;;
+  esac
+done
+id=\${url##*/}
+if [ -f "$FAKE_CURL_DIR/$id.code" ]; then
+  if [ -n "$out" ] && [ -f "$FAKE_CURL_DIR/$id.json" ]; then cp "$FAKE_CURL_DIR/$id.json" "$out"; fi
+  cat "$FAKE_CURL_DIR/$id.code"
+  exit 0
+fi
+printf '000'
+exit 7
+`;
+
 function writeExecutable(path: string, content: string): void {
   writeFileSync(path, content);
   chmodSync(path, 0o755);
@@ -225,7 +249,9 @@ function makeSandbox(): Sandbox {
   mkdirSync(bin, { recursive: true });
   mkdirSync(sync, { recursive: true });
   mkdirSync(join(root, 'checks'), { recursive: true });
+  mkdirSync(join(root, 'curl'), { recursive: true });
   writeExecutable(join(bin, 'gh'), FAKE_GH);
+  writeExecutable(join(bin, 'curl'), FAKE_CURL);
   writeExecutable(join(bin, 'git'), FAKE_GIT);
   writeExecutable(join(bin, 'sleep'), FAKE_SLEEP);
   const gitConfig = join(root, 'gitconfig');
@@ -248,6 +274,8 @@ function makeSandbox(): Sandbox {
       ARTIFACTS_DIR: artifacts,
       WORKFLOW_ID: RUN_ID,
       ARCHON_PUBLIC_URL: 'https://archon.example.test/',
+      // prepare starts the detached cleanup watcher; in tests it stops at once.
+      CLEANUP_WATCH_POLLS: '0',
       FAKE_LOG: log,
       FAKE_REPO: FORK_REPO,
       FAKE_ISSUE_JSON: join(root, 'issue.json'),
@@ -255,6 +283,7 @@ function makeSandbox(): Sandbox {
       FAKE_PR_LIST_JSON: join(root, 'pr-list.json'),
       FAKE_PR_VIEW_JSON: join(root, 'pr-view.json'),
       FAKE_CHECKS_DIR: join(root, 'checks'),
+      FAKE_CURL_DIR: join(root, 'curl'),
       GIT_CONFIG_GLOBAL: gitConfig,
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_AUTHOR_NAME: 'Test',
@@ -298,6 +327,7 @@ function installSyncScripts(sb: Sandbox): void {
   writeFileSync(join(sb.sync, 'merge-commit.sh'), heredoc(prepare, 'MERGE_COMMIT_SH'));
   writeFileSync(join(sb.sync, 'final-checks.sh'), heredoc(prepare, 'FINAL_CHECKS_SH'));
   writeFileSync(join(sb.sync, 'wait-ci.sh'), heredoc(prepare, 'WAIT_CI_SH'));
+  writeFileSync(join(sb.sync, 'cleanup.sh'), heredoc(prepare, 'CLEANUP_SH'));
 }
 
 /** Fake node, npm and npx: every check passes unless its command matches `failing`. */
@@ -912,6 +942,7 @@ describe('prepare node (executable)', () => {
       state?: string;
       openPrs?: unknown[];
       files?: string[];
+      env?: NodeJS.ProcessEnv;
     }
   ): { status: number | null; stdout: string; stderr: string } {
     const body =
@@ -949,7 +980,10 @@ describe('prepare node (executable)', () => {
     }
     return run(sb, script, {
       cwd,
-      env: repos ? { FAKE_UPSTREAM_DIR: repos.upstream, FAKE_ORIGIN_DIR: repos.origin } : {},
+      env: {
+        ...(repos ? { FAKE_UPSTREAM_DIR: repos.upstream, FAKE_ORIGIN_DIR: repos.origin } : {}),
+        ...options.env,
+      },
     });
   }
 
@@ -1078,8 +1112,23 @@ describe('prepare node (executable)', () => {
       branch: `sync/upstream-${ISSUE}-abcdef01`,
       files: ['src/grid.ts'],
       force_human: false,
+      runs_root: join(sb.artifacts, 'state', 'sync-runs'),
+      run_dir: join(sb.artifacts, 'state', 'sync-runs', RUN_ID),
     });
     expect(readJson<unknown>(join(sb.sync, 'sync.json'))).toEqual(sync);
+    // The run records its worktree outside the worktree, for the cleanup sweep.
+    expect(
+      readFileSync(join(sb.artifacts, 'state', 'sync-runs', RUN_ID, 'worktree'), 'utf-8').trim()
+    ).toBe(realpathSync(repos.work));
+    // prepare starts one detached cleanup watcher for its run.
+    const watchLog = join(sb.artifacts, 'state', 'sync-runs', RUN_ID, 'watch.log');
+    for (let i = 0; i < 50 && !readFileSync(watchLog, 'utf-8').includes('watching'); i++) {
+      Bun.sleepSync(100);
+    }
+    expect(readFileSync(watchLog, 'utf-8')).toContain(`cleanup: watching the run ${RUN_ID}`);
+    expect(
+      readFileSync(join(sb.artifacts, 'state', 'sync-runs', RUN_ID, 'watch.pid'), 'utf-8').trim()
+    ).toMatch(/^[0-9]+$/);
     expect(git(sb, repos.work, 'symbolic-ref', '--short', 'HEAD')).toBe(
       `sync/upstream-${ISSUE}-abcdef01`
     );
@@ -1092,6 +1141,32 @@ describe('prepare node (executable)', () => {
     expect(existsSync(join(sb.sync, 'clean-tree.sh'))).toBe(true);
     expect(readFileSync(join(sb.sync, 'issue.md'), 'utf-8')).toContain('## Upstream sync conflict');
   });
+
+  it('ends while its cleanup watcher still runs (no open stdout or stderr is left behind)', () => {
+    const sb = makeSandbox();
+    const repos = makeForkRepos(sb);
+    // A real one-second sleep keeps the watcher alive for about ten seconds.
+    const bin2 = join(sb.root, 'bin2');
+    mkdirSync(bin2);
+    writeExecutable(join(bin2, 'sleep'), '#!/bin/bash\nexec /bin/sleep 1\n');
+    const started = Date.now();
+    const r = runPrepare(sb, repos, {
+      env: { CLEANUP_WATCH_POLLS: '10', PATH: `${bin2}:${sb.env.PATH ?? ''}` },
+    });
+    const elapsed = Date.now() - started;
+    const pidFile = join(sb.artifacts, 'state', 'sync-runs', RUN_ID, 'watch.pid');
+    const pid = Number(readFileSync(pidFile, 'utf-8').trim());
+    let alive = true;
+    try {
+      process.kill(pid, 0);
+    } catch {
+      alive = false;
+    }
+    if (alive) process.kill(pid, 'SIGTERM');
+    expect(r.status).toBe(0);
+    expect(alive).toBe(true);
+    expect(elapsed).toBeLessThan(8000);
+  }, 20_000);
 
   it('starts from origin/main and only notes an older fork_sha in the issue', () => {
     const sb = makeSandbox();
@@ -2395,5 +2470,290 @@ describe('finalize node (executable)', () => {
     const sb = makeSandbox();
     expect(runFinalize(sb)).toEqual({ outcome: 'failed', issue: null });
     expect(calls(sb)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cleanup of build outputs at the end of a run and for earlier runs
+// ---------------------------------------------------------------------------
+
+describe('cleanup script (executable)', () => {
+  interface RunTree {
+    source: string;
+    runsRoot: string;
+  }
+
+  /** A source checkout that ignores build-output folders. */
+  function sourceRepo(sb: Sandbox): RunTree {
+    const source = join(sb.root, 'source');
+    mkdirSync(source, { recursive: true });
+    git(sb, source, 'init', '-q', '-b', 'main');
+    writeFileSync(join(source, '.gitignore'), 'node_modules/\ndist/\n*.log\n');
+    writeFileSync(join(source, 'f'), 'x\n');
+    git(sb, source, 'add', '.gitignore', 'f');
+    git(sb, source, 'commit', '-q', '-m', 'c');
+    return { source, runsRoot: join(sb.artifacts, 'state', 'sync-runs') };
+  }
+
+  /** A linked worktree with build outputs, recorded as the run `id`. */
+  function recordedRun(sb: Sandbox, tree: RunTree, id: string): string {
+    const wt = join(sb.root, `wt-${id}`);
+    git(sb, tree.source, 'worktree', 'add', '-q', '-b', `archon/thread-${id}`, wt);
+    mkdirSync(join(wt, 'node_modules', 'pkg'), { recursive: true });
+    writeFileSync(join(wt, 'node_modules', 'pkg', 'index.js'), 'x\n');
+    mkdirSync(join(wt, 'packages', 'app', 'dist'), { recursive: true });
+    writeFileSync(join(wt, 'packages', 'app', 'dist', 'main.js'), 'x\n');
+    const record = join(tree.runsRoot, id);
+    mkdirSync(join(record, 'cargo-target'), { recursive: true });
+    writeFileSync(join(record, 'worktree'), `${realpathSync(wt)}\n`);
+    return realpathSync(wt);
+  }
+
+  function answer(sb: Sandbox, id: string, code: number, status?: string): void {
+    writeFileSync(join(sb.env.FAKE_CURL_DIR as string, `${id}.code`), String(code));
+    if (status) {
+      writeFileSync(
+        join(sb.env.FAKE_CURL_DIR as string, `${id}.json`),
+        JSON.stringify({ run: { id, status } })
+      );
+    }
+  }
+
+  function seedSync(sb: Sandbox, tree: RunTree, ownId: string): void {
+    installSyncScripts(sb);
+    writeFileSync(
+      join(sb.sync, 'sync.json'),
+      JSON.stringify({ runs_root: tree.runsRoot, run_dir: join(tree.runsRoot, ownId) })
+    );
+  }
+
+  function cleanup(sb: Sandbox, mode: string, cwd?: string): ReturnType<typeof run> {
+    return run(sb, `bash "${join(sb.sync, 'cleanup.sh')}" ${mode}`, cwd ? { cwd } : {});
+  }
+
+  it('run mode removes the ignored build outputs and keeps sources and the record', () => {
+    const sb = makeSandbox();
+    const tree = sourceRepo(sb);
+    const wt = recordedRun(sb, tree, 'own');
+    writeFileSync(join(wt, 'notes.txt'), 'untracked, not ignored\n');
+    seedSync(sb, tree, 'own');
+    expect(cleanup(sb, 'run', wt).status).toBe(0);
+    expect(existsSync(join(wt, 'node_modules'))).toBe(false);
+    expect(existsSync(join(wt, 'packages', 'app', 'dist'))).toBe(false);
+    expect(existsSync(join(wt, 'f'))).toBe(true);
+    expect(existsSync(join(wt, 'notes.txt'))).toBe(true);
+    expect(existsSync(join(tree.runsRoot, 'own', 'cargo-target'))).toBe(false);
+    expect(existsSync(join(tree.runsRoot, 'own', 'worktree'))).toBe(true);
+  });
+
+  it('sweep removes the worktree and record of a completed, cancelled or unknown run', () => {
+    const sb = makeSandbox();
+    const tree = sourceRepo(sb);
+    const own = recordedRun(sb, tree, 'own');
+    const done = recordedRun(sb, tree, 'done');
+    const cancelled = recordedRun(sb, tree, 'cancelled');
+    const gone = recordedRun(sb, tree, 'gone');
+    answer(sb, 'done', 200, 'completed');
+    answer(sb, 'cancelled', 200, 'cancelled');
+    answer(sb, 'gone', 404);
+    seedSync(sb, tree, 'own');
+    expect(cleanup(sb, 'sweep', own).status).toBe(0);
+    for (const [id, wt] of [
+      ['done', done],
+      ['cancelled', cancelled],
+      ['gone', gone],
+    ] as const) {
+      expect(existsSync(wt)).toBe(false);
+      expect(existsSync(join(tree.runsRoot, id))).toBe(false);
+    }
+    // The current run is never touched; the branches stay in the repository.
+    expect(existsSync(join(own, 'node_modules'))).toBe(true);
+    expect(existsSync(join(tree.runsRoot, 'own', 'cargo-target'))).toBe(true);
+    expect(git(sb, tree.source, 'branch', '--list', 'archon/thread-done')).toContain(
+      'archon/thread-done'
+    );
+    expect(calls(sb)).toContain(
+      `curl -sS -m 10 -o ${join(sb.sync, 'cleanup-run.json')} -w %{http_code} ` +
+        'http://127.0.0.1:3090/api/workflows/runs/done'
+    );
+    expect(existsSync(join(sb.sync, 'cleanup-run.json'))).toBe(false);
+  });
+
+  it('sweep keeps the worktree of a failed run for a retry and removes only its outputs', () => {
+    const sb = makeSandbox();
+    const tree = sourceRepo(sb);
+    const own = recordedRun(sb, tree, 'own');
+    const failed = recordedRun(sb, tree, 'failed');
+    answer(sb, 'failed', 200, 'failed');
+    seedSync(sb, tree, 'own');
+    expect(cleanup(sb, 'sweep', own).status).toBe(0);
+    expect(existsSync(join(failed, 'f'))).toBe(true);
+    expect(existsSync(join(failed, 'node_modules'))).toBe(false);
+    expect(existsSync(join(tree.runsRoot, 'failed'))).toBe(false);
+  });
+
+  it('sweep keeps every file of an active run and of a run whose state cannot be read', () => {
+    const sb = makeSandbox();
+    const tree = sourceRepo(sb);
+    const own = recordedRun(sb, tree, 'own');
+    const paused = recordedRun(sb, tree, 'paused');
+    const unreadable = recordedRun(sb, tree, 'unreadable');
+    answer(sb, 'paused', 200, 'paused');
+    seedSync(sb, tree, 'own');
+    const r = cleanup(sb, 'sweep', own);
+    expect(r.status).toBe(0);
+    for (const [id, wt] of [
+      ['paused', paused],
+      ['unreadable', unreadable],
+    ] as const) {
+      expect(existsSync(join(wt, 'node_modules'))).toBe(true);
+      expect(existsSync(join(tree.runsRoot, id, 'worktree'))).toBe(true);
+    }
+    expect(r.stderr).toContain("kept the run paused (status 'paused')");
+    expect(r.stderr).toContain("kept the run unreadable (status 'unknown')");
+  });
+
+  it('sweep keeps a worktree that is not clean and never removes the main checkout', () => {
+    const sb = makeSandbox();
+    const tree = sourceRepo(sb);
+    const own = recordedRun(sb, tree, 'own');
+    const dirty = recordedRun(sb, tree, 'dirty');
+    writeFileSync(join(dirty, 'f'), 'changed\n');
+    mkdirSync(join(tree.runsRoot, 'main'), { recursive: true });
+    writeFileSync(join(tree.runsRoot, 'main', 'worktree'), `${realpathSync(tree.source)}\n`);
+    answer(sb, 'dirty', 200, 'completed');
+    answer(sb, 'main', 200, 'completed');
+    seedSync(sb, tree, 'own');
+    expect(cleanup(sb, 'sweep', own).status).toBe(0);
+    expect(readFileSync(join(dirty, 'f'), 'utf-8')).toBe('changed\n');
+    expect(existsSync(join(tree.source, 'f'))).toBe(true);
+  });
+
+  function watch(sb: Sandbox, polls: number): ReturnType<typeof run> {
+    return run(sb, `bash "${join(sb.sync, 'cleanup.sh')}" watch`, {
+      env: { CLEANUP_WATCH_POLLS: String(polls) },
+    });
+  }
+
+  it('watch removes everything of its run once it reads cancelled or completed twice', () => {
+    for (const status of ['cancelled', 'completed']) {
+      const sb = makeSandbox();
+      const tree = sourceRepo(sb);
+      const wt = recordedRun(sb, tree, 'own');
+      answer(sb, 'own', 200, status);
+      seedSync(sb, tree, 'own');
+      const r = watch(sb, 10);
+      expect(r.status).toBe(0);
+      expect(existsSync(wt)).toBe(false);
+      expect(existsSync(join(tree.runsRoot, 'own'))).toBe(false);
+      expect(git(sb, tree.source, 'branch', '--list', 'archon/thread-own')).toContain(
+        'archon/thread-own'
+      );
+      expect(r.stderr).toContain(`the run own is ${status}`);
+      // One poll to read the state, one to confirm it, then it stops.
+      expect(calls(sb).filter(c => c.startsWith('curl'))).toHaveLength(2);
+      expect(calls(sb).filter(c => c.startsWith('sleep'))).toEqual(['sleep 60', 'sleep 60']);
+    }
+  });
+
+  it('watch removes the outputs of a failed run and keeps its worktree and record', () => {
+    const sb = makeSandbox();
+    const tree = sourceRepo(sb);
+    const wt = recordedRun(sb, tree, 'own');
+    answer(sb, 'own', 200, 'failed');
+    seedSync(sb, tree, 'own');
+    const r = watch(sb, 4);
+    expect(r.status).toBe(0);
+    expect(existsSync(join(wt, 'f'))).toBe(true);
+    expect(existsSync(join(wt, 'node_modules'))).toBe(false);
+    expect(existsSync(join(tree.runsRoot, 'own', 'cargo-target'))).toBe(false);
+    expect(existsSync(join(tree.runsRoot, 'own', 'worktree'))).toBe(true);
+    // A failed run can be resumed, so the watcher polls on until its last poll.
+    expect(calls(sb).filter(c => c.startsWith('curl'))).toHaveLength(4);
+  });
+
+  it('watch keeps every file of a paused run and of a run whose state cannot be read', () => {
+    for (const code of [200, 0]) {
+      const sb = makeSandbox();
+      const tree = sourceRepo(sb);
+      const wt = recordedRun(sb, tree, 'own');
+      if (code === 200) answer(sb, 'own', 200, 'paused');
+      seedSync(sb, tree, 'own');
+      expect(watch(sb, 3).status).toBe(0);
+      expect(existsSync(join(wt, 'node_modules'))).toBe(true);
+      expect(existsSync(join(tree.runsRoot, 'own', 'cargo-target'))).toBe(true);
+      expect(existsSync(join(tree.runsRoot, 'own', 'worktree'))).toBe(true);
+    }
+  });
+
+  it('watch stops when a sweep already removed the record of its run', () => {
+    const sb = makeSandbox();
+    const tree = sourceRepo(sb);
+    const wt = recordedRun(sb, tree, 'own');
+    answer(sb, 'own', 200, 'running');
+    seedSync(sb, tree, 'own');
+    // This sleep stands in for a sweep that removes the record between two polls.
+    const bin2 = join(sb.root, 'bin2');
+    mkdirSync(bin2);
+    writeExecutable(
+      join(bin2, 'sleep'),
+      `#!/bin/bash\nprintf 'sleep %s\\n' "$*" >> "$FAKE_LOG"\nrm -rf "${join(tree.runsRoot, 'own')}"\n`
+    );
+    const r = run(sb, `bash "${join(sb.sync, 'cleanup.sh')}" watch`, {
+      env: { CLEANUP_WATCH_POLLS: '100', PATH: `${bin2}:${sb.env.PATH ?? ''}` },
+    });
+    expect(r.status).toBe(0);
+    expect(existsSync(join(wt, 'node_modules'))).toBe(true);
+    expect(calls(sb).filter(c => c.startsWith('curl'))).toEqual([]);
+  });
+
+  it('does nothing and exits 0 without a run record in sync.json', () => {
+    const sb = makeSandbox();
+    installSyncScripts(sb);
+    writeFileSync(join(sb.sync, 'sync.json'), JSON.stringify({ repo: FORK_REPO }));
+    expect(cleanup(sb, 'sweep').status).toBe(0);
+    expect(calls(sb).filter(c => c.startsWith('curl'))).toEqual([]);
+  });
+
+  it('finalize removes the build outputs of its run on success and on failure', () => {
+    for (const withPr of [true, false]) {
+      const sb = makeSandbox();
+      const tree = sourceRepo(sb);
+      const wt = recordedRun(sb, tree, 'own');
+      installSyncScripts(sb);
+      writeFileSync(
+        join(sb.sync, 'issue.json'),
+        JSON.stringify({ repo: FORK_REPO, issue: ISSUE, issue_url: 'u', run_url: 'r' })
+      );
+      writeFileSync(
+        join(sb.sync, 'sync.json'),
+        JSON.stringify({
+          repo: FORK_REPO,
+          issue: ISSUE,
+          upstream_sha: SHA_A,
+          files: [],
+          runs_root: tree.runsRoot,
+          run_dir: join(tree.runsRoot, 'own'),
+        })
+      );
+      if (withPr) {
+        writeFileSync(
+          join(sb.sync, 'pr.json'),
+          JSON.stringify({ pr_url: `https://github.com/${FORK_REPO}/pull/77`, number: 77 })
+        );
+        writeFileSync(
+          join(sb.sync, 'ci.json'),
+          JSON.stringify({ conclusion: 'success', failed: [], checks_url: 'c', attempt: 0 })
+        );
+      }
+      const r = run(sb, render(bashOf('finalize'), sb.artifacts), { cwd: wt });
+      expect(r.status).toBe(0);
+      expect((JSON.parse(r.stdout) as { outcome: string }).outcome).toBe(
+        withPr ? 'pr_ready' : 'failed'
+      );
+      expect(existsSync(join(wt, 'node_modules'))).toBe(false);
+      expect(existsSync(join(tree.runsRoot, 'own', 'cargo-target'))).toBe(false);
+      expect(existsSync(join(tree.runsRoot, 'own', 'worktree'))).toBe(true);
+    }
   });
 });
