@@ -159,9 +159,19 @@ case "$1 $2" in
     for a in "$@"; do if [ "$prev" = --body-file ]; then cat "$a" >> "$FAKE_LOG.bodies"; fi; prev=$a; done
     echo "https://github.com/$FAKE_REPO/pull/77" ;;
   "pr create") echo "https://github.com/$FAKE_REPO/pull/77" ;;
+  "pr merge")
+    # $FAKE_MERGE_RESULT: ok (default) records a merge commit; any other value fails.
+    if [ "\${FAKE_MERGE_RESULT:-ok}" = ok ]; then echo "${'d'.repeat(40)}" > "$FAKE_CHECKS_DIR/merged"; exit 0; fi
+    echo "GraphQL: Head branch was modified" >&2; exit 1 ;;
   "pr view")
     case "$*" in
       *baseRefName*) cat "$FAKE_PR_VIEW_JSON" ;;
+      *mergeCommit*)
+        if [ -f "$FAKE_CHECKS_DIR/merged" ]; then
+          printf '{"state":"MERGED","mergeCommit":{"oid":"%s"}}\n' "$(cat "$FAKE_CHECKS_DIR/merged")"
+        else
+          echo '{"state":"OPEN","mergeCommit":null}'
+        fi ;;
       *headRefOid*)
         # One state per poll from $FAKE_CHECKS_DIR/states; the last line repeats; OPEN without a file.
         v=$(( $(cat "$FAKE_CHECKS_DIR/view-count" 2>/dev/null || echo 0) + 1 ))
@@ -406,8 +416,6 @@ describe('buzz-fork-upstream-resolve structure', () => {
       'prepare',
       'resolve',
       'check',
-      'ask-human',
-      'apply-guidance',
       'publish',
       'create-pr',
       'create-test-pr',
@@ -415,6 +423,7 @@ describe('buzz-fork-upstream-resolve structure', () => {
       'wait-ci',
       'rerun-ci',
       'fix-ci',
+      'merge-pr',
       'finalize',
     ]);
     const rules = Object.fromEntries(
@@ -424,15 +433,14 @@ describe('buzz-fork-upstream-resolve structure', () => {
       prepare: 'all_success',
       resolve: 'all_success',
       check: 'none_failed_min_one_success',
-      'ask-human': 'all_success',
-      'apply-guidance': 'all_success',
-      publish: 'none_failed_min_one_success',
+      publish: 'all_success',
       'create-pr': 'all_success',
       'create-test-pr': 'all_success',
       'verify-pr': 'none_failed_min_one_success',
       'wait-ci': 'all_success',
       'rerun-ci': 'all_success',
       'fix-ci': 'all_success',
+      'merge-pr': 'none_failed_min_one_success',
       finalize: 'all_done',
     });
     const deps = Object.fromEntries(WORKFLOW.nodes.map(n => [n.id, n.depends_on ?? []]));
@@ -440,18 +448,16 @@ describe('buzz-fork-upstream-resolve structure', () => {
       prepare: [],
       resolve: ['prepare'],
       check: ['resolve'],
-      'ask-human': ['check'],
-      'apply-guidance': ['ask-human'],
-      publish: ['check', 'apply-guidance'],
+      publish: ['check'],
       'create-pr': ['publish'],
       'create-test-pr': ['publish'],
       'verify-pr': ['create-pr', 'create-test-pr'],
       'wait-ci': ['verify-pr'],
       'rerun-ci': ['wait-ci'],
       'fix-ci': ['rerun-ci'],
-      finalize: ['wait-ci', 'rerun-ci', 'fix-ci'],
+      'merge-pr': ['wait-ci', 'rerun-ci', 'fix-ci'],
+      finalize: ['wait-ci', 'rerun-ci', 'fix-ci', 'merge-pr'],
     });
-    expect(nodeById('ask-human').when).toBe("$check.output.needs_human == 'true'");
     expect(nodeById('create-pr').when).toBe("$publish.output.test == 'false'");
     expect(nodeById('create-test-pr').when).toBe("$publish.output.test == 'true'");
     expect(nodeById('rerun-ci').when).toBe("$wait-ci.output.conclusion == 'failure'");
@@ -471,38 +477,28 @@ describe('buzz-fork-upstream-resolve structure', () => {
     const aiNodes = [...WORKFLOW.nodes, ...loopGroupOf('fix-ci').nodes].filter(
       n => 'prompt' in n || 'command' in n
     ) as Array<DagNode & { provider?: string }>;
-    expect(aiNodes.map(n => n.id)).toEqual([
-      'resolve',
-      'apply-guidance',
-      'create-pr',
-      'fix-ci-attempt',
-    ]);
+    expect(aiNodes.map(n => n.id)).toEqual(['resolve', 'create-pr', 'fix-ci-attempt']);
     const models = Object.fromEntries(
       aiNodes.map(n => [n.id, { model: n.model, effort: n.effort }])
     );
     // The resolver needs the stronger model; the other AI nodes do bounded work.
     expect(models).toEqual({
       resolve: { model: 'gpt-6.1-terra', effort: 'medium' },
-      'apply-guidance': { model: 'gpt-6-luna', effort: undefined },
       'create-pr': { model: 'gpt-6-luna', effort: undefined },
       'fix-ci-attempt': { model: 'gpt-6-luna', effort: undefined },
     });
     for (const node of aiNodes) expect(node.provider).toBeUndefined();
   });
 
-  it('uses an approval gate without on_reject, so a reject cancels the run', () => {
-    const node = nodeById('ask-human') as DagNode & {
-      approval?: { capture_response?: boolean; on_reject?: unknown };
-    };
-    expect(node.approval?.capture_response).toBe(true);
-    expect(node.approval?.on_reject).toBeUndefined();
-    expect(node.when).toBe("$check.output.needs_human == 'true'");
-    const guidance = nodeById('apply-guidance') as DagNode & {
-      command?: string;
-      prompt_suffix?: string;
-    };
-    expect(guidance.command).toBe('buzz-fork-resolve-upstream-merge');
-    expect(guidance.prompt_suffix).toContain('$ask-human.output');
+  it('never asks a human: no approval gate, no guidance pass, no force-review label', () => {
+    for (const node of WORKFLOW.nodes) {
+      expect('approval' in node).toBe(false);
+    }
+    expect(YAML_TEXT).not.toContain('sync-force-human-review');
+    expect(YAML_TEXT).not.toContain('force_human');
+    for (const name of COMMAND_NAMES) {
+      expect(BUNDLED_COMMANDS[name]).not.toContain('Guidance pass');
+    }
   });
 
   it('fixes CI in a bounded loop group that ends before max_iterations', () => {
@@ -549,9 +545,14 @@ describe('buzz-fork-upstream-resolve structure', () => {
 describe('buzz-fork-upstream-resolve policy', () => {
   const allText = [YAML_TEXT, ...COMMAND_NAMES.map(n => BUNDLED_COMMANDS[n] ?? '')];
 
-  it('never merges a pull request and never uses auto, squash, rebase or force-push', () => {
+  it('merges only in merge-pr, with a merge commit, and never uses auto, squash, rebase or force-push', () => {
+    // Calls only: the reason texts of merge-pr also name the command.
+    const mergeLines = YAML_TEXT.split('\n').filter(l => /^\s*(if ! )?gh pr merge /.test(l));
+    expect(mergeLines).toHaveLength(1);
+    expect(mergeLines[0]).toContain('--merge --match-head-commit "$head"');
+    expect(bashOf('merge-pr')).toContain('gh pr merge');
+    for (const name of COMMAND_NAMES) expect(BUNDLED_COMMANDS[name]).not.toContain('gh pr merge');
     for (const text of allText) {
-      expect(text).not.toContain('gh pr merge');
       expect(text).not.toContain('--auto');
       expect(text).not.toContain('--squash');
       expect(text).not.toContain('--rebase');
@@ -669,8 +670,7 @@ function simulate(produced: Record<string, NodeOutput>): Record<string, Decision
 describe('buzz-fork-upstream-resolve skip semantics', () => {
   const resolveOut = (resolved: boolean): NodeOutput =>
     completed({ resolved, question: resolved ? '' : 'Which side?' }, ['resolved', 'question']);
-  const checkOut = (needsHuman: boolean): NodeOutput =>
-    completed({ needs_human: needsHuman, question: '', issue_url: 'u', run_url: 'r' });
+  const checkOut: NodeOutput = completed({ passed: true });
   const publishOut = (test: boolean): NodeOutput =>
     completed({ test, pr_url: 'p', number: 77 }, ['test']);
   const prOut: NodeOutput = completed({ pr_url: 'p', number: 77 });
@@ -678,19 +678,16 @@ describe('buzz-fork-upstream-resolve skip semantics', () => {
     completed({ pr_url: 'p', number: 77, conclusion, failed: [], checks_url: 'c', attempt: 0 });
   const reruncOut = (fix: boolean): NodeOutput => completed({ rerun: true, fix }, ['fix']);
 
-  it('skips the gate and the guidance pass (not fails) when no human is needed in production', () => {
+  it('goes from a passing check to publish, the PR, CI and the merge with no question', () => {
     const d = simulate({
       resolve: resolveOut(true),
-      check: checkOut(false),
+      check: checkOut,
       publish: publishOut(false),
       'create-pr': prOut,
       'verify-pr': prOut,
       'wait-ci': ciOut('success'),
-      'rerun-ci': completed({}),
     });
     expect(d.check).toBe('run');
-    expect(d['ask-human']).toBe('skip:when');
-    expect(d['apply-guidance']).toBe('skip:trigger');
     expect(d.publish).toBe('run');
     expect(d['create-pr']).toBe('run');
     expect(d['create-test-pr']).toBe('skip:when');
@@ -699,49 +696,59 @@ describe('buzz-fork-upstream-resolve skip semantics', () => {
     expect(d['rerun-ci']).toBe('skip:when');
     // fix-ci depends only on rerun-ci, so a skipped rerun-ci skips it too.
     expect(d['fix-ci']).toBe('skip:trigger');
+    expect(d['merge-pr']).toBe('run');
     expect(d.finalize).toBe('run');
   });
 
-  it('skips fix-ci when rerun-ci output fix is false', () => {
-    const d = simulate({
-      resolve: resolveOut(true),
-      check: checkOut(false),
-      publish: publishOut(false),
-      'create-pr': prOut,
-      'verify-pr': prOut,
-      'wait-ci': ciOut('failure'),
-      'rerun-ci': reruncOut(false),
-    });
-    expect(d['fix-ci']).toBe('skip:when');
-    expect(d.finalize).toBe('run');
-  });
-
-  it('runs fix-ci when rerun-ci output fix is true', () => {
-    const d = simulate({
-      resolve: resolveOut(true),
-      check: checkOut(false),
-      publish: publishOut(false),
-      'create-pr': prOut,
-      'verify-pr': prOut,
-      'wait-ci': ciOut('failure'),
-      'rerun-ci': reruncOut(true),
-    });
-    expect(d['fix-ci']).toBe('run');
-    expect(d.finalize).toBe('run');
+  it('runs merge-pr after the re-run and the fixes, so it decides from the last CI result', () => {
+    for (const fix of [false, true]) {
+      const d = simulate({
+        resolve: resolveOut(true),
+        check: checkOut,
+        publish: publishOut(false),
+        'create-pr': prOut,
+        'verify-pr': prOut,
+        'wait-ci': ciOut('failure'),
+        'rerun-ci': reruncOut(fix),
+      });
+      expect(d['fix-ci']).toBe(fix ? 'run' : 'skip:when');
+      expect(d['merge-pr']).toBe('run');
+      expect(d.finalize).toBe('run');
+    }
   });
 
   it('uses create-test-pr when publish output test is true', () => {
     const d = simulate({
       resolve: resolveOut(true),
-      check: checkOut(false),
+      check: checkOut,
       publish: publishOut(true),
       'create-test-pr': prOut,
       'verify-pr': prOut,
       'wait-ci': ciOut('success'),
-      'rerun-ci': completed({}),
     });
     expect(d['create-pr']).toBe('skip:when');
     expect(d['create-test-pr']).toBe('run');
+    expect(d['merge-pr']).toBe('run');
+    expect(d.finalize).toBe('run');
+  });
+
+  it('pushes nothing and opens no PR when check fails (unresolved or failing checks)', () => {
+    const d = simulate({
+      resolve: resolveOut(false),
+      check: { state: 'failed', output: '', error: 'The resolver could not resolve the merge' },
+    });
+    for (const id of [
+      'publish',
+      'create-pr',
+      'create-test-pr',
+      'verify-pr',
+      'wait-ci',
+      'rerun-ci',
+      'fix-ci',
+      'merge-pr',
+    ]) {
+      expect(d[id]).toBe('skip:trigger');
+    }
     expect(d.finalize).toBe('run');
   });
 
@@ -752,8 +759,6 @@ describe('buzz-fork-upstream-resolve skip semantics', () => {
     for (const id of [
       'resolve',
       'check',
-      'ask-human',
-      'apply-guidance',
       'publish',
       'create-pr',
       'create-test-pr',
@@ -761,45 +766,23 @@ describe('buzz-fork-upstream-resolve skip semantics', () => {
       'wait-ci',
       'rerun-ci',
       'fix-ci',
+      'merge-pr',
     ]) {
       expect(d[id]).toBe('skip:trigger');
     }
     expect(d.finalize).toBe('run');
   });
 
-  it('still runs finalize after publish fails', () => {
+  it('still runs finalize, and merges nothing, after create-pr fails', () => {
     const d = simulate({
       resolve: resolveOut(true),
-      check: checkOut(false),
-      publish: { state: 'failed', output: '', error: 'final checks fail' },
-    });
-    expect(d['create-pr']).toBe('skip:trigger');
-    expect(d['create-test-pr']).toBe('skip:trigger');
-    expect(d['verify-pr']).toBe('skip:trigger');
-    expect(d['wait-ci']).toBe('skip:trigger');
-    expect(d.finalize).toBe('run');
-  });
-
-  it('still runs finalize after verify-pr fails', () => {
-    const d = simulate({
-      resolve: resolveOut(true),
-      check: checkOut(false),
+      check: checkOut,
       publish: publishOut(false),
       'create-pr': { state: 'failed', output: '', error: 'contract' },
     });
     expect(d['verify-pr']).toBe('skip:trigger');
     expect(d['wait-ci']).toBe('skip:trigger');
-    expect(d.finalize).toBe('run');
-  });
-
-  it('skips publish when check fails', () => {
-    const d = simulate({
-      resolve: resolveOut(true),
-      check: { state: 'failed', output: '', error: 'guard' },
-    });
-    expect(d['ask-human']).toBe('skip:trigger');
-    expect(d['apply-guidance']).toBe('skip:trigger');
-    expect(d.publish).toBe('skip:trigger');
+    expect(d['merge-pr']).toBe('skip:trigger');
     expect(d.finalize).toBe('run');
   });
 });
@@ -1161,7 +1144,6 @@ describe('prepare node (executable)', () => {
       files: ['crates/core/src/grid.rs'],
       failed_checks: [],
       test: false,
-      force_human: false,
       runs_root: join(sb.artifacts, 'state', 'sync-runs'),
       run_dir: join(sb.artifacts, 'state', 'sync-runs', RUN_ID),
     });
@@ -1278,9 +1260,9 @@ describe('cleanup.sh sweep (structure)', () => {
 // ---------------------------------------------------------------------------
 
 describe('finalize (structure)', () => {
-  it('depends on wait-ci, rerun-ci and fix-ci, not just wait-ci', () => {
+  it('depends on wait-ci, rerun-ci, fix-ci and merge-pr, not just wait-ci', () => {
     const deps = nodeById('finalize').depends_on ?? [];
-    expect(deps.sort()).toEqual(['fix-ci', 'rerun-ci', 'wait-ci'].sort());
+    expect(deps.sort()).toEqual(['fix-ci', 'merge-pr', 'rerun-ci', 'wait-ci'].sort());
   });
 
   it('runs with trigger_rule all_done to run even when fix-ci skips or fails', () => {
@@ -1410,5 +1392,68 @@ exit 0
       { name: 'rust-fmt', status: 'pass' },
       { name: 'rust-clippy', status: 'fail' },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// merge-pr: merge on green, never on red, never a test pull request
+// ---------------------------------------------------------------------------
+
+describe('merge-pr node (executable)', () => {
+  function runMerge(
+    conclusion: string,
+    test: boolean
+  ): { sb: Sandbox; head: string; status: number | null; stdout: string; stderr: string } {
+    const sb = makeSandbox();
+    const work = cleanRepo(sb);
+    writeFileSync(
+      join(sb.sync, 'sync.json'),
+      JSON.stringify({ repo: FORK_REPO, issue: ISSUE, test })
+    );
+    writeFileSync(
+      join(sb.sync, 'pr.json'),
+      JSON.stringify({ pr_url: `https://github.com/${FORK_REPO}/pull/77`, number: 77 })
+    );
+    writeFileSync(
+      join(sb.sync, 'ci.json'),
+      JSON.stringify({
+        conclusion,
+        failed: conclusion === 'failure' ? ['Security'] : [],
+        attempt: 2,
+      })
+    );
+    const head = git(sb, work, 'rev-parse', 'HEAD');
+    const r = run(sb, render(bashOf('merge-pr'), sb.artifacts), { cwd: work });
+    return { sb, head, ...r };
+  }
+
+  it('merges a green production PR with a merge commit and records it', () => {
+    const r = runMerge('success', false);
+    expect(r.status).toBe(0);
+    expect(calls(r.sb)).toEqual([
+      `gh pr merge 77 --repo ${FORK_REPO} --merge --match-head-commit ${r.head}`,
+      `gh pr view 77 --repo ${FORK_REPO} --json state,mergeCommit`,
+    ]);
+    expect(JSON.parse(r.stdout)).toEqual({
+      merged: true,
+      merged_by: 'archon',
+      merge_commit: 'd'.repeat(40),
+    });
+  });
+
+  it('never merges a red PR, and fails with the reason', () => {
+    const r = runMerge('failure', false);
+    expect(r.status).toBe(1);
+    expect(calls(r.sb)).toEqual([]);
+    expect(readFileSync(join(r.sb.sync, 'merge-problems.txt'), 'utf-8')).toContain(
+      'failed checks: Security. The pull request is not merged.'
+    );
+  });
+
+  it('never merges a test PR, even when its CI passed', () => {
+    const r = runMerge('success', true);
+    expect(r.status).toBe(0);
+    expect(calls(r.sb)).toEqual([]);
+    expect(JSON.parse(r.stdout)).toEqual({ merged: false, test: true });
   });
 });
