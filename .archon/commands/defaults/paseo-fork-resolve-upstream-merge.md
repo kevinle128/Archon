@@ -73,9 +73,16 @@ For every conflicted file:
    `git log --oneline <merge_base>..<upstream_sha> -- <file>` and
    `git log --oneline <merge_base>..<base_sha> -- <file>`, then
    `git show <commit> -- <file>` for the commits that matter.
-3. Write a result that keeps upstream's change and the fork's behaviour.
-   - Never take one side of a file (`git checkout --ours/--theirs`) without a
-     stated reason in your notes.
+3. Write a result that keeps upstream's change and the fork's behaviour, hunk by
+   hunk.
+   - For a file that both sides changed, never take one whole side: not
+     `git checkout --ours/--theirs`, not a copy of `git show :2:<file>` or
+     `:3:<file>`. Merge each hunk.
+   - Keep every fork export, component, hook, type, function and call site that
+     fork code outside the conflicted files still uses. Find the users with
+     `git grep -n -w '<name>' -- packages` before you stage the file. When
+     upstream moved the code around a fork item, port the item instead of
+     dropping it.
    - Keep upstream workflow files (`.github/workflows/*` that came from upstream)
      as upstream wrote them, unless the fork changed the same lines.
    - Keep the fork's pinned-grid behaviour unless upstream removed the code it
@@ -141,14 +148,35 @@ per check. It puts back every file a check itself changed. When checks fail:
    example `fix(sync): typecheck after upstream merge`. Never amend, never
    rebase, never push.
 
-Stop when the checks pass or after the third fix round. Never change a test
-expectation, skip a test, or weaken a lint rule to hide a real regression. When
+Stop when the checks pass or after the third fix round. Never delete or stub
+out a fork feature to make a check pass, never change a test expectation, skip a test, or weaken a lint rule to hide a real regression. When
 the upstream change makes a fork test wrong, change the test only when the new
 upstream behaviour is the intended behaviour, and say so in the commit message.
 When a fix changes how a conflicted file was resolved, update that file's
 paragraph in `$ARTIFACTS_DIR/sync/resolution.md`. Checks that still fail after
 three rounds make the next workflow step end the run without a push; still
 return `resolved: true` when the merge commit exists.
+
+## Fix pass
+
+When a "Fix pass" section follows these instructions, the merge commit already
+exists and the workflow's final checks failed after it. Then:
+
+1. Do not start or abort a merge, and do not amend or rebase. Every change is a
+   new normal commit on the branch.
+2. Read `$ARTIFACTS_DIR/sync/check-failure.txt` and the sections of the failed
+   checks in `$ARTIFACTS_DIR/sync/checks.log`.
+3. Fix the causes with the rules above. Do not delete fork features to make the
+   code compile: when a fork module, type, function, method or field is missing,
+   restore it from `git show "$(jq -r .base_sha "$ARTIFACTS_DIR/sync/sync.json")":<file>`
+   and adapt it to upstream's code.
+4. Run `bash "$ARTIFACTS_DIR/sync/checks.sh" typecheck` after your type fixes.
+5. Run the failed checks again by name with `bash "$ARTIFACTS_DIR/sync/checks.sh" <name> ...`
+   and repeat until they pass or you cannot make progress.
+6. Update the paragraphs of `$ARTIFACTS_DIR/sync/resolution.md` that your fixes
+   change.
+7. Return `resolved: true` when the merge commit exists and the worktree is
+   clean. The workflow runs the final checks again after this pass.
 
 ## Output
 

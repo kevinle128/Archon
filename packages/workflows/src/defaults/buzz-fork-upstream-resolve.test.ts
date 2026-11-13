@@ -327,6 +327,7 @@ function installSyncScripts(sb: Sandbox): void {
   writeFileSync(join(sb.sync, 'final-checks.sh'), heredoc(prepare, 'FINAL_CHECKS_SH'));
   writeFileSync(join(sb.sync, 'wait-ci.sh'), heredoc(prepare, 'WAIT_CI_SH'));
   writeFileSync(join(sb.sync, 'cleanup.sh'), heredoc(prepare, 'CLEANUP_SH'));
+  writeFileSync(join(sb.sync, 'record-checks.sh'), heredoc(prepare, 'RECORD_CHECKS_SH'));
 }
 
 /** Fake Hermit and tools: pass a version check, fail only on explicit names. */
@@ -416,6 +417,7 @@ describe('buzz-fork-upstream-resolve structure', () => {
       'prepare',
       'resolve',
       'check',
+      'fix-checks',
       'publish',
       'create-pr',
       'create-test-pr',
@@ -433,7 +435,8 @@ describe('buzz-fork-upstream-resolve structure', () => {
       prepare: 'all_success',
       resolve: 'all_success',
       check: 'none_failed_min_one_success',
-      publish: 'all_success',
+      'fix-checks': 'all_success',
+      publish: 'none_failed_min_one_success',
       'create-pr': 'all_success',
       'create-test-pr': 'all_success',
       'verify-pr': 'none_failed_min_one_success',
@@ -448,7 +451,8 @@ describe('buzz-fork-upstream-resolve structure', () => {
       prepare: [],
       resolve: ['prepare'],
       check: ['resolve'],
-      publish: ['check'],
+      'fix-checks': ['check'],
+      publish: ['check', 'fix-checks'],
       'create-pr': ['publish'],
       'create-test-pr': ['publish'],
       'verify-pr': ['create-pr', 'create-test-pr'],
@@ -462,6 +466,7 @@ describe('buzz-fork-upstream-resolve structure', () => {
     expect(nodeById('create-test-pr').when).toBe("$publish.output.test == 'true'");
     expect(nodeById('rerun-ci').when).toBe("$wait-ci.output.conclusion == 'failure'");
     expect(nodeById('fix-ci').when).toBe("$rerun-ci.output.fix == 'true'");
+    expect(nodeById('fix-checks').when).toBe("$check.output.passed == 'false'");
     expect(WORKFLOW.returns).toBe('finalize');
   });
 
@@ -474,10 +479,17 @@ describe('buzz-fork-upstream-resolve structure', () => {
   });
 
   it('pins the verified models on the AI nodes and leaves the provider to the install', () => {
-    const aiNodes = [...WORKFLOW.nodes, ...loopGroupOf('fix-ci').nodes].filter(
-      n => 'prompt' in n || 'command' in n
-    ) as Array<DagNode & { provider?: string }>;
-    expect(aiNodes.map(n => n.id)).toEqual(['resolve', 'create-pr', 'fix-ci-attempt']);
+    const aiNodes = [
+      ...WORKFLOW.nodes,
+      ...loopGroupOf('fix-checks').nodes,
+      ...loopGroupOf('fix-ci').nodes,
+    ].filter(n => 'prompt' in n || 'command' in n) as Array<DagNode & { provider?: string }>;
+    expect(aiNodes.map(n => n.id)).toEqual([
+      'resolve',
+      'create-pr',
+      'fix-checks-attempt',
+      'fix-ci-attempt',
+    ]);
     const models = Object.fromEntries(
       aiNodes.map(n => [n.id, { model: n.model, effort: n.effort }])
     );
@@ -485,6 +497,7 @@ describe('buzz-fork-upstream-resolve structure', () => {
     expect(models).toEqual({
       resolve: { model: 'gpt-6.1-terra', effort: 'medium' },
       'create-pr': { model: 'gpt-6-luna', effort: undefined },
+      'fix-checks-attempt': { model: 'gpt-6.1-terra', effort: 'medium' },
       'fix-ci-attempt': { model: 'gpt-6-luna', effort: undefined },
     });
     for (const node of aiNodes) expect(node.provider).toBeUndefined();
@@ -499,6 +512,20 @@ describe('buzz-fork-upstream-resolve structure', () => {
     for (const name of COMMAND_NAMES) {
       expect(BUNDLED_COMMANDS[name]).not.toContain('Guidance pass');
     }
+  });
+
+  it('fixes failing final checks in a bounded loop group of two passes with the merge rules', () => {
+    const group = loopGroupOf('fix-checks');
+    expect(group.max_iterations).toBe(3);
+    expect(group.nodes.map(n => n.id)).toEqual(['fix-checks-attempt', 'recheck']);
+    expect(group.until_bash).toContain('.passed or .attempt >= 2');
+    const attempt = group.nodes[0] as DagNode & { command?: string; prompt_suffix?: string };
+    expect(attempt.command).toBe('buzz-fork-resolve-upstream-merge');
+    expect(attempt.prompt_suffix).toContain('follow the "Fix pass"');
+    const text = BUNDLED_COMMANDS['buzz-fork-resolve-upstream-merge'] ?? '';
+    expect(text).toContain('## Fix pass');
+    expect(text).toContain('Do not delete fork features to make the');
+    expect(text).toContain('never take one whole side');
   });
 
   it('fixes CI in a bounded loop group that ends before max_iterations', () => {
@@ -670,7 +697,7 @@ function simulate(produced: Record<string, NodeOutput>): Record<string, Decision
 describe('buzz-fork-upstream-resolve skip semantics', () => {
   const resolveOut = (resolved: boolean): NodeOutput =>
     completed({ resolved, question: resolved ? '' : 'Which side?' }, ['resolved', 'question']);
-  const checkOut: NodeOutput = completed({ passed: true });
+  const checkOut: NodeOutput = completed({ passed: true }, ['passed']);
   const publishOut = (test: boolean): NodeOutput =>
     completed({ test, pr_url: 'p', number: 77 }, ['test']);
   const prOut: NodeOutput = completed({ pr_url: 'p', number: 77 });
@@ -697,6 +724,20 @@ describe('buzz-fork-upstream-resolve skip semantics', () => {
     // fix-ci depends only on rerun-ci, so a skipped rerun-ci skips it too.
     expect(d['fix-ci']).toBe('skip:trigger');
     expect(d['merge-pr']).toBe('run');
+    expect(d.finalize).toBe('run');
+  });
+
+  it('runs the fix-checks loop when the final checks fail, then publish decides', () => {
+    const d = simulate({
+      resolve: resolveOut(true),
+      check: completed({ passed: false }, ['passed']),
+      publish: publishOut(false),
+      'create-pr': prOut,
+      'verify-pr': prOut,
+      'wait-ci': ciOut('success'),
+    });
+    expect(d['fix-checks']).toBe('run');
+    expect(d.publish).toBe('run');
     expect(d.finalize).toBe('run');
   });
 
@@ -759,6 +800,7 @@ describe('buzz-fork-upstream-resolve skip semantics', () => {
     for (const id of [
       'resolve',
       'check',
+      'fix-checks',
       'publish',
       'create-pr',
       'create-test-pr',

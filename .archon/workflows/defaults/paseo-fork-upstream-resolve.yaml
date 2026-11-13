@@ -577,6 +577,38 @@ nodes:
       cat "$sync_dir/ci.json"
       WAIT_CI_SH
 
+      # Runs the final checks and records the result in check-state.json
+      # ({passed, attempt}). On failure it writes the reason to check-failure.txt
+      # (finalize quotes it on the issue); on a pass it removes that file.
+      # Usage: record-checks.sh <stage> <attempt>. Exit 0 when the checks ran.
+      cat > "$SYNC_DIR/record-checks.sh" <<'RECORD_CHECKS_SH'
+      #!/usr/bin/env bash
+      set -euo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      stage=$1 attempt=$2
+      status=0
+      bash "$sync_dir/final-checks.sh" "$stage" || status=$?
+      case "$status" in
+        0)
+          rm -f "$sync_dir/check-failure.txt"
+          passed=true ;;
+        10)
+          {
+            printf 'The branch does not pass the final checks'
+            if [ "$attempt" -gt 0 ]; then printf ' after %s fix pass(es)' "$attempt"; fi
+            printf ':\n'
+            cat "$sync_dir/verify-problems.txt"
+          } > "$sync_dir/check-failure.txt"
+          passed=false ;;
+        *)
+          echo "the final checks could not run (exit code $status)" > "$sync_dir/check-failure.txt"
+          cat "$sync_dir/check-failure.txt" >&2
+          exit 1 ;;
+      esac
+      jq -n --argjson passed "$passed" --argjson attempt "$attempt" \
+        '{passed: $passed, attempt: $attempt}' > "$sync_dir/check-state.json"
+      RECORD_CHECKS_SH
+
       # Removes the build outputs of runs, so runs do not fill the disk. Each run
       # records its worktree in $STATE_DIR/sync-runs/<run id>/worktree. `prepare`
       # starts `cleanup.sh watch`, a detached process that cleans the run when the
@@ -796,8 +828,9 @@ nodes:
       required: [resolved, question]
       additionalProperties: false
 
-  # resolve has completed whenever this node runs. The final checks run here, so
-  # only a resolved branch that passes them goes on to publish.
+  # resolve has completed whenever this node runs. The final checks run here.
+  # An unresolved merge fails the run at once. Failing final checks go to the
+  # fix-checks loop; check-state.json records the result for publish.
   - id: check
     depends_on: [resolve]
     trigger_rule: none_failed_min_one_success
@@ -810,38 +843,81 @@ nodes:
       question=$resolve.output.question
 
       # Nothing is pushed unless the merge is resolved and the final checks pass.
-      # Otherwise this node fails with the reason, finalize reports it on the
-      # issue, and the sync stays paused until a human looks.
-      reason=""
+      # An unresolved merge fails this node with the reason: finalize reports it
+      # on the issue, and the sync stays paused until a human looks.
       if [ "$resolved" != true ]; then
         reason="The resolver could not resolve the merge: $question"
-      else
-        status=0
-        bash "$SYNC_DIR/final-checks.sh" check || status=$?
-        case "$status" in
-          0) ;;
-          10) reason="The branch does not pass the final checks:"$'\n'"$(cat "$SYNC_DIR/verify-problems.txt")" ;;
-          *) reason="The final checks could not run (exit code $status)." ;;
-        esac
-      fi
-      if [ -n "$reason" ]; then
         printf '%s\n' "$reason" > "$SYNC_DIR/check-failure.txt"
         printf '%s\n' "$reason" >&2
         exit 1
       fi
+      bash "$SYNC_DIR/record-checks.sh" check 0
       bash "$SYNC_DIR/clean-tree.sh" "the end of check"
-      echo '{"passed": true}'
+      jq -c '{passed}' "$SYNC_DIR/check-state.json"
+
+  # Final checks that fail get at most two fix passes. Each pass is the resolve
+  # command with a fix-pass suffix (the same merge rules), then the final checks
+  # run again. until_bash ends the group after a pass or the second attempt, so
+  # the group never reaches max_iterations (reaching it fails the node).
+  - id: fix-checks
+    depends_on: [check]
+    when: "$check.output.passed == 'false'"
+    loop_group:
+      max_iterations: 3
+      until_bash: |
+        jq -e '.passed or .attempt >= 2' "$ARTIFACTS_DIR/sync/check-state.json" >/dev/null
+      nodes:
+        - id: fix-checks-attempt
+          command: paseo-fork-resolve-upstream-merge
+          idle_timeout: 1200000
+          model: gpt-6.1-terra
+          effort: medium
+          prompt_suffix: |
+            ## Fix pass
+
+            This is a fix pass. The merge commit already exists on the branch and
+            the workflow's final checks failed after it. Read
+            `$ARTIFACTS_DIR/sync/check-failure.txt` and the sections of the failed
+            checks in `$ARTIFACTS_DIR/sync/checks.log`, then follow the "Fix pass"
+            section of these instructions.
+          output_format:
+            type: object
+            properties:
+              resolved:
+                type: boolean
+              question:
+                type: string
+            required: [resolved, question]
+            additionalProperties: false
+        - id: recheck
+          depends_on: [fix-checks-attempt]
+          timeout: 2700000
+          bash: |
+            set -euo pipefail
+            SYNC_DIR="$ARTIFACTS_DIR/sync"
+            bash "$SYNC_DIR/clean-tree.sh" "the start of recheck (after fix-checks-attempt)"
+            attempt=$(( $(jq -r .attempt "$SYNC_DIR/check-state.json") + 1 ))
+            bash "$SYNC_DIR/record-checks.sh" recheck "$attempt"
+            bash "$SYNC_DIR/clean-tree.sh" "the end of recheck"
+            jq -c '{passed, attempt}' "$SYNC_DIR/check-state.json"
 
   # archon-create-pr pushes with `git push -u origin HEAD` and falls back to a
   # pull with rebase when that push fails, which would drop the merge commit.
   # Pushing here first makes its push a no-op, so it never reaches the fallback.
   - id: publish
-    depends_on: [check]
+    depends_on: [check, fix-checks]
+    trigger_rule: none_failed_min_one_success
     timeout: 2700000
     bash: |
       set -euo pipefail
       SYNC_DIR="$ARTIFACTS_DIR/sync"
       bash "$SYNC_DIR/clean-tree.sh" "the start of publish"
+      # Push only a branch whose last final checks passed; otherwise end the run
+      # with the reason that check or recheck wrote.
+      if ! jq -e '.passed == true' "$SYNC_DIR/check-state.json" >/dev/null 2>&1; then
+        cat "$SYNC_DIR/check-failure.txt" >&2 2>/dev/null || echo "the final checks did not pass" >&2
+        exit 1
+      fi
       branch=$(jq -r .branch "$SYNC_DIR/sync.json")
       if [ "$(git symbolic-ref --quiet --short HEAD || true)" != "$branch" ]; then
         echo "HEAD is not on $branch" >&2
