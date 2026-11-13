@@ -6,8 +6,8 @@ argument-hint: (none - reads $ARTIFACTS_DIR/sync/ci.json and pr.json)
 # Fix the failed CI checks of the sync pull request
 
 The workflow opened the sync pull request and its CI failed. Fix only what the
-failed checks report, then push new commits to the same branch. A human merges
-the pull request later; you never merge it.
+failed checks report, then push new commits to the same branch. The workflow
+merges the pull request after its CI passes; you never merge it.
 
 You never ask the user anything in this step.
 

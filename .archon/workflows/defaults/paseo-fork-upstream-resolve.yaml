@@ -6,12 +6,15 @@ description: |
   Does: Reads the machine block on line 1 of the issue body, merges the named upstream
         getpaseo/paseo commit on a new sync/upstream-<issue>-<run> branch from main,
         resolves the conflicts in one merge
-        commit, runs the fork's bounded local checks, asks a human when it cannot decide,
-        opens a pull request to main with archon-create-pr (merge commit, merged by hand),
+        commit, runs the fork's bounded local checks, ends failed without a push when it cannot resolve or the checks still fail,
+        opens a pull request to main with archon-create-pr,
         reports the PR URL as soon as the PR is verified, waits for its CI (and stops waiting
         when a human merges or closes the PR), fixes failed CI at most twice, and returns a
         JSON result with the PR URL and the CI conclusion.
-  NOT for: Starting from chat, merging the pull request, closing the issue, generic merge
+        When the CI of the pull request passes, it merges the pull request with a merge
+        commit itself; when the CI still fails after the fixes, it does not merge and ends
+        failed. It never asks a human.
+  NOT for: Starting from chat, closing the issue, generic merge
            conflicts (use archon-resolve-conflicts), or repositories other than the Paseo fork.
 
 nodes:
@@ -28,7 +31,6 @@ nodes:
       # Every sync pull request targets main.
       PR_BASE=main
       CONFLICT_LABEL=upstream-sync-conflict
-      FORCE_LABEL=sync-force-human-review
       SYNC_DIR="$ARTIFACTS_DIR/sync"
 
       # Record why the request was refused, so `finalize` can quote it on the issue.
@@ -188,11 +190,6 @@ nodes:
       fi
       if ! jq -en --argjson a "$files" --argjson b "$block_files" '($a | sort) == ($b | sort)' >/dev/null; then
         echo "note: conflicted files $files differ from the issue's list $block_files" >&2
-      fi
-      if jq -e --arg l "$FORCE_LABEL" 'any(.[]; . == $l)' >/dev/null <<<"$labels"; then
-        force_human=true
-      else
-        force_human=false
       fi
 
       # Bounded local checks for the fork. Shared by the final checks and the
@@ -583,8 +580,8 @@ nodes:
       # Removes the build outputs of runs, so runs do not fill the disk. Each run
       # records its worktree in $STATE_DIR/sync-runs/<run id>/worktree. `prepare`
       # starts `cleanup.sh watch`, a detached process that cleans the run when the
-      # server reports it as finished, also after a cancel or a reject at the
-      # approval gate, when no node of the run runs any more. `finalize` calls
+      # server reports it as finished, also after a cancel, when no node of the
+      # run runs any more. `finalize` calls
       # `cleanup.sh run` for its own run at once; `prepare` calls `cleanup.sh sweep`
       # for earlier runs whose watcher stopped (for example after a reboot).
       cat > "$SYNC_DIR/cleanup.sh" <<'CLEANUP_SH'
@@ -755,13 +752,12 @@ nodes:
         --arg merge_base "$merge_base" \
         --arg branch "$branch" \
         --argjson files "$files" \
-        --argjson force_human "$force_human" \
         --arg runs_root "$runs_root" \
         --arg run_dir "$run_dir" \
         '{repo: $repo, issue: $issue, issue_url: $issue_url, upstream_repo: $upstream_repo,
           upstream_sha: $upstream_sha, fork_ref: $fork_ref, base_sha: $base_sha,
           merge_base: $merge_base, branch: $branch, files: $files,
-          force_human: $force_human, runs_root: $runs_root, run_dir: $run_dir}' > "$SYNC_DIR/sync.json"
+          runs_root: $runs_root, run_dir: $run_dir}' > "$SYNC_DIR/sync.json"
       mkdir -p "$run_dir"
       git rev-parse --show-toplevel > "$run_dir/worktree"
       bash "$SYNC_DIR/cleanup.sh" sweep
@@ -777,10 +773,16 @@ nodes:
       bash "$SYNC_DIR/clean-tree.sh" "the end of prepare"
       cat "$SYNC_DIR/sync.json"
 
+  # Agent nodes have an idle_timeout: when the model sends nothing for that long
+  # (a stalled request), the node fails and the engine retries it, instead of
+  # the run waiting without end. The value is above the longest silent step of a
+  # normal run (a full local check run inside the agent); create-pr runs only
+  # short commands.
   # Merges, resolves, makes the one merge commit, then runs the local checks and
   # fixes failures (at most 3 rounds), leaving the worktree clean.
   - id: resolve
     command: paseo-fork-resolve-upstream-merge
+    idle_timeout: 1200000
     model: gpt-6.1-terra
     effort: medium
     depends_on: [prepare]
@@ -795,7 +797,7 @@ nodes:
       additionalProperties: false
 
   # resolve has completed whenever this node runs. The final checks run here, so
-  # a branch that needs no human goes straight to publish.
+  # only a resolved branch that passes them goes on to publish.
   - id: check
     depends_on: [resolve]
     trigger_rule: none_failed_min_one_success
@@ -806,119 +808,40 @@ nodes:
       bash "$SYNC_DIR/clean-tree.sh" "the start of check (after resolve)"
       resolved=$resolve.output.resolved
       question=$resolve.output.question
-      repo=$(jq -r .repo "$SYNC_DIR/sync.json")
-      issue=$(jq -r .issue "$SYNC_DIR/sync.json")
-      issue_url=$(jq -r .issue_url "$SYNC_DIR/sync.json")
-      force_human=$(jq -r .force_human "$SYNC_DIR/sync.json")
-      run_url=$(jq -r .run_url "$SYNC_DIR/issue.json")
 
-      passed=false
-      if [ "$resolved" = true ]; then
+      # Nothing is pushed unless the merge is resolved and the final checks pass.
+      # Otherwise this node fails with the reason, finalize reports it on the
+      # issue, and the sync stays paused until a human looks.
+      reason=""
+      if [ "$resolved" != true ]; then
+        reason="The resolver could not resolve the merge: $question"
+      else
         status=0
         bash "$SYNC_DIR/final-checks.sh" check || status=$?
         case "$status" in
-          0) passed=true ;;
-          10) passed=false ;;
-          *) echo "the final checks failed with exit code $status" >&2; exit 1 ;;
+          0) ;;
+          10) reason="The branch does not pass the final checks:"$'\n'"$(cat "$SYNC_DIR/verify-problems.txt")" ;;
+          *) reason="The final checks could not run (exit code $status)." ;;
         esac
       fi
-
-      needs_human=true
-      if [ "$resolved" != true ]; then
-        reason="The resolver could not decide: $question"
-      elif [ "$passed" != true ]; then
-        reason="The branch does not pass the final checks:"$'\n'"$(cat "$SYNC_DIR/verify-problems.txt")"
-      elif [ "$force_human" = true ]; then
-        reason="The issue asks for a human review before the sync pull request opens."
-      else
-        needs_human=false
-        reason=""
+      if [ -n "$reason" ]; then
+        printf '%s\n' "$reason" > "$SYNC_DIR/check-failure.txt"
+        printf '%s\n' "$reason" >&2
+        exit 1
       fi
-
-      if [ "$needs_human" = true ]; then
-        {
-          printf 'Automatic upstream sync resolution needs a human decision.\n\n%s\n\n' "$reason"
-          printf 'Run: %s\n\n' "$run_url"
-          printf 'Approve the run with guidance in the comment, or reject it to stop. '
-          printf 'The sync stays paused until a sync pull request merges.\n'
-        } > "$SYNC_DIR/check-comment.md"
-        gh issue comment "$issue" --repo "$repo" --body-file "$SYNC_DIR/check-comment.md" >/dev/null
-      fi
-
-      jq -n --argjson needs_human "$needs_human" --argjson resolved "$resolved" \
-        --argjson passed "$passed" --argjson force_human "$force_human" --arg question "$reason" \
-        '{needs_human: $needs_human, resolved: $resolved, passed: $passed, force_human: $force_human, question: $question}' \
-        > "$SYNC_DIR/decision.json"
       bash "$SYNC_DIR/clean-tree.sh" "the end of check"
-      jq -c --arg issue_url "$issue_url" --arg run_url "$run_url" \
-        '{needs_human, question, issue_url: $issue_url, run_url: $run_url}' "$SYNC_DIR/decision.json"
-
-  # No on_reject: a reject cancels the run. The issue keeps the comment from
-  # `check` and stays open.
-  - id: ask-human
-    depends_on: [check]
-    when: "$check.output.needs_human == 'true'"
-    approval:
-      capture_response: true
-      message: |
-        $check.output.question
-
-        Issue: $check.output.issue_url
-        Run: $check.output.run_url
-
-        Approve with guidance in the comment, or reject to stop. The sync stays
-        paused either way until a sync pull request merges.
-
-  - id: apply-guidance
-    command: paseo-fork-resolve-upstream-merge
-    model: gpt-6-luna
-    depends_on: [ask-human]
-    prompt_suffix: |
-      ## Human guidance
-
-      This is the guidance pass. A human answered at the approval gate. Their
-      comment is between the markers (it can be empty):
-
-      <guidance>
-      $ask-human.output
-      </guidance>
-
-      Apply the guidance, then follow the "Guidance pass" section of these instructions.
-    output_format:
-      type: object
-      properties:
-        resolved:
-          type: boolean
-        question:
-          type: string
-      required: [resolved, question]
-      additionalProperties: false
+      echo '{"passed": true}'
 
   # archon-create-pr pushes with `git push -u origin HEAD` and falls back to a
   # pull with rebase when that push fails, which would drop the merge commit.
   # Pushing here first makes its push a no-op, so it never reaches the fallback.
   - id: publish
-    depends_on: [check, apply-guidance]
-    trigger_rule: none_failed_min_one_success
+    depends_on: [check]
     timeout: 2700000
     bash: |
       set -euo pipefail
       SYNC_DIR="$ARTIFACTS_DIR/sync"
       bash "$SYNC_DIR/clean-tree.sh" "the start of publish"
-      if [ ! -f "$SYNC_DIR/decision.json" ]; then
-        echo "decision.json is missing; check did not finish." >&2
-        exit 1
-      fi
-      # Without a human, check already ran the final checks on this exact tree.
-      if jq -e .needs_human "$SYNC_DIR/decision.json" >/dev/null; then
-        status=0
-        bash "$SYNC_DIR/final-checks.sh" "publish (after apply-guidance)" || status=$?
-        case "$status" in
-          0) ;;
-          10) echo "the branch does not pass the final checks after the guidance pass" >&2; exit 1 ;;
-          *) echo "the final checks failed with exit code $status" >&2; exit 1 ;;
-        esac
-      fi
       branch=$(jq -r .branch "$SYNC_DIR/sync.json")
       if [ "$(git symbolic-ref --quiet --short HEAD || true)" != "$branch" ]; then
         echo "HEAD is not on $branch" >&2
@@ -933,6 +856,7 @@ nodes:
 
   - id: create-pr
     command: archon-create-pr
+    idle_timeout: 600000
     model: gpt-6-luna
     depends_on: [publish]
     prompt_suffix: |
@@ -950,7 +874,8 @@ nodes:
         Include every paragraph of resolution.md word for word (one paragraph per
         conflicted file). End with the line
         `Merge with **Create a merge commit**, not squash.`
-      - Never merge the pull request and never enable auto-merge. A human merges it.
+      - Never merge the pull request and never enable auto-merge. The workflow merges it
+        after its CI passes.
 
   # Deterministic contract check on the PR that archon-create-pr opened. Text
   # elements it missed are fixed here; a wrong base, head or merge commit fails.
@@ -1076,6 +1001,7 @@ nodes:
       nodes:
         - id: fix-ci-attempt
           command: paseo-fork-fix-ci
+          idle_timeout: 1200000
           model: gpt-6-luna
         - id: wait-ci-again
           depends_on: [fix-ci-attempt]
@@ -1087,13 +1013,64 @@ nodes:
             attempt=$(( $(jq -r .attempt "$SYNC_DIR/ci.json") + 1 ))
             bash "$SYNC_DIR/wait-ci.sh" "$attempt"
 
+  # Merges the sync pull request when its CI passed, with a merge commit (the
+  # resume job on the fork needs the upstream commit as an ancestor of main).
+  # The merge uses the run's GitHub token, a user token, so the push to main
+  # starts the fork's push workflows (a GITHUB_TOKEN push would not). A failed
+  # or unknown CI, or a closed pull request, fails this node with the reason:
+  # nothing is merged and the run ends failed.
+  - id: merge-pr
+    depends_on: [wait-ci, fix-ci]
+    trigger_rule: none_failed_min_one_success
+    timeout: 600000
+    bash: |
+      set -euo pipefail
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+      repo=$(jq -r .repo "$SYNC_DIR/sync.json")
+      number=$(jq -r .number "$SYNC_DIR/pr.json")
+      pr_url=$(jq -r .pr_url "$SYNC_DIR/pr.json")
+      conclusion=$(jq -r .conclusion "$SYNC_DIR/ci.json")
+      fail() {
+        printf '%s\n' "$1" > "$SYNC_DIR/merge-problems.txt"
+        printf '%s\n' "$1" >&2
+        exit 1
+      }
+      case "$conclusion" in
+        merged)
+          echo "pull request #$number was already merged" >&2
+          jq -nc '{merged: true, merged_by: "human"}'
+          exit 0 ;;
+        success) ;;
+        closed) fail "Pull request $pr_url was closed without a merge; nothing is merged." ;;
+        *)
+          fail "CI of $pr_url is $conclusion after $(jq -r .attempt "$SYNC_DIR/ci.json") fix attempt(s); failed checks: $(jq -r '.failed | if length == 0 then "none reported" else join(", ") end' "$SYNC_DIR/ci.json"). The pull request is not merged." ;;
+      esac
+      head=$(git rev-parse HEAD)
+      # --match-head-commit refuses the merge when the branch moved after CI.
+      if ! gh pr merge "$number" --repo "$repo" --merge --match-head-commit "$head" \
+          > "$SYNC_DIR/merge.log" 2>&1; then
+        fail "gh pr merge failed for $pr_url: $(tail -n 3 "$SYNC_DIR/merge.log")"
+      fi
+      # GitHub can report the new state a few seconds after the merge call.
+      for _ in 1 2 3 4; do
+        view=$(gh pr view "$number" --repo "$repo" --json state,mergeCommit)
+        if [ "$(jq -r .state <<<"$view")" = MERGED ]; then break; fi
+        sleep 5
+      done
+      if [ "$(jq -r .state <<<"$view")" != MERGED ]; then
+        fail "Pull request $pr_url is $(jq -r .state <<<"$view") after gh pr merge."
+      fi
+      merge_commit=$(jq -r '.mergeCommit.oid // empty' <<<"$view")
+      jq -nc --arg c "$merge_commit" '{merged: true, merged_by: "archon", merge_commit: $c}' \
+        | tee "$SYNC_DIR/merge.json"
+
   # Runs after success and after failures (not after a cancel). It never closes
   # the issue: the fork's resume job closes it once a sync pull request merges.
   # It removes this run's build outputs whatever the result; the watcher that
   # prepare started removes the worktree once the run has ended, and cleans a
   # cancelled run, which never reaches finalize.
   - id: finalize
-    depends_on: [wait-ci, fix-ci]
+    depends_on: [wait-ci, fix-ci, merge-pr]
     trigger_rule: all_done
     timeout: 300000
     bash: |
@@ -1118,22 +1095,33 @@ nodes:
             '{conclusion: "unknown", failed: [], checks_url: $u}')
           attempts=0
         fi
+        merged_by="" merge_commit=""
+        if [ -f "$SYNC_DIR/merge.json" ]; then
+          merged_by=$(jq -r .merged_by "$SYNC_DIR/merge.json")
+          merge_commit=$(jq -r .merge_commit "$SYNC_DIR/merge.json")
+        fi
         case "$(jq -r .conclusion <<<"$ci")" in
-          success) outcome=pr_ready ;;
+          success) if [ "$merged_by" = archon ]; then outcome=merged; else outcome=pr_ready; fi ;;
           merged) outcome=merged ;;
           closed) outcome=pr_closed ;;
           failure) outcome=ci_failed ;;
           *) outcome=ci_unknown ;;
         esac
         notified=true
-        # A human already merged or closed the PR, so there is nothing to tell them.
+        summary="PR: $pr_url"
+        if [ "$merged_by" = archon ]; then
+          summary="PR merged by Archon: $pr_url (merge commit $merge_commit)"
+        elif [ "$outcome" = merged ]; then
+          summary="PR merged: $pr_url"
+        fi
+        # A merged or closed PR needs no comment.
         if [ "$outcome" = ci_failed ] || [ "$outcome" = ci_unknown ]; then
           {
             printf 'The sync pull request %s is open, but its CI is %s after %s fix attempt(s).\n\n' \
               "$pr_url" "$(jq -r .conclusion <<<"$ci")" "$attempts"
             printf 'Failed checks: %s\n' "$(jq -r '.failed | if length == 0 then "none reported" else join(", ") end' <<<"$ci")"
             printf 'Checks: %s\nRun: %s\n\n' "$(jq -r .checks_url <<<"$ci")" "$run_url"
-            printf 'A human decides. The sync stays paused until a sync pull request merges.\n'
+            printf 'Archon did not merge it. The sync stays paused until a sync pull request merges.\n'
           } > "$SYNC_DIR/finalize-comment.md"
           if ! gh issue comment "$issue" --repo "$repo" --body-file "$SYNC_DIR/finalize-comment.md" >/dev/null; then
             echo "could not comment on issue #$issue" >&2
@@ -1145,7 +1133,11 @@ nodes:
           fi
         fi
         jq -c --arg outcome "$outcome" --arg pr_url "$pr_url" --argjson ci "$ci" --argjson notified "$notified" \
-          '{outcome: $outcome, pr_url: $pr_url, ci: $ci, issue, upstream_sha, files, notified: $notified}' \
+          --arg merged_by "$merged_by" --arg merge_commit "$merge_commit" --arg summary "$summary" \
+          '{outcome: $outcome, pr_url: $pr_url, ci: $ci, issue, upstream_sha, files, notified: $notified,
+            summary: $summary}
+           + (if $merged_by == "" then {} else {merged_by: $merged_by} end)
+           + (if $merge_commit == "" then {} else {merge_commit: $merge_commit} end)' \
           "$SYNC_DIR/sync.json"
       elif [ -f "$SYNC_DIR/issue.json" ]; then
         repo=$(jq -r .repo "$SYNC_DIR/issue.json")
@@ -1153,11 +1145,11 @@ nodes:
         run_url=$(jq -r .run_url "$SYNC_DIR/issue.json")
         stage="publish, create-pr or verify-pr (pr.json)"
         if [ ! -f "$SYNC_DIR/sync.json" ]; then stage="prepare (sync.json)"
+        elif [ -s "$SYNC_DIR/check-failure.txt" ]; then stage="check"
         elif [ ! -f "$SYNC_DIR/resolution.md" ]; then stage="resolve (resolution.md)"
-        elif [ ! -f "$SYNC_DIR/decision.json" ]; then stage="check (decision.json)"
         fi
         reason=""
-        for file in refusal.txt guard-failure.txt verify-problems.txt pr-problems.txt; do
+        for file in refusal.txt guard-failure.txt check-failure.txt pr-problems.txt; do
           if [ -s "$SYNC_DIR/$file" ]; then reason="${reason:+$reason$'\n'}$(cat "$SYNC_DIR/$file")"; fi
         done
         opened_pr=""
