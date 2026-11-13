@@ -338,6 +338,7 @@ function installSyncScripts(sb: Sandbox): void {
   writeFileSync(join(sb.sync, 'final-checks.sh'), heredoc(prepare, 'FINAL_CHECKS_SH'));
   writeFileSync(join(sb.sync, 'wait-ci.sh'), heredoc(prepare, 'WAIT_CI_SH'));
   writeFileSync(join(sb.sync, 'cleanup.sh'), heredoc(prepare, 'CLEANUP_SH'));
+  writeFileSync(join(sb.sync, 'record-checks.sh'), heredoc(prepare, 'RECORD_CHECKS_SH'));
 }
 
 /** Fake node, npm and npx: every check passes unless its command matches `failing`. */
@@ -416,6 +417,7 @@ describe('paseo-fork-upstream-resolve structure', () => {
       'prepare',
       'resolve',
       'check',
+      'fix-checks',
       'publish',
       'create-pr',
       'verify-pr',
@@ -431,7 +433,8 @@ describe('paseo-fork-upstream-resolve structure', () => {
       prepare: 'all_success',
       resolve: 'all_success',
       check: 'none_failed_min_one_success',
-      publish: 'all_success',
+      'fix-checks': 'all_success',
+      publish: 'none_failed_min_one_success',
       'create-pr': 'all_success',
       'verify-pr': 'all_success',
       'wait-ci': 'all_success',
@@ -444,7 +447,8 @@ describe('paseo-fork-upstream-resolve structure', () => {
       prepare: [],
       resolve: ['prepare'],
       check: ['resolve'],
-      publish: ['check'],
+      'fix-checks': ['check'],
+      publish: ['check', 'fix-checks'],
       'create-pr': ['publish'],
       'verify-pr': ['create-pr'],
       'wait-ci': ['verify-pr'],
@@ -453,6 +457,7 @@ describe('paseo-fork-upstream-resolve structure', () => {
       finalize: ['wait-ci', 'fix-ci', 'merge-pr'],
     });
     expect(nodeById('fix-ci').when).toBe("$wait-ci.output.conclusion == 'failure'");
+    expect(nodeById('fix-checks').when).toBe("$check.output.passed == 'false'");
     expect(WORKFLOW.returns).toBe('finalize');
   });
 
@@ -465,10 +470,17 @@ describe('paseo-fork-upstream-resolve structure', () => {
   });
 
   it('pins the verified models on the AI nodes and leaves the provider to the install', () => {
-    const aiNodes = [...WORKFLOW.nodes, ...loopGroupOf('fix-ci').nodes].filter(
-      n => 'prompt' in n || 'command' in n
-    ) as Array<DagNode & { provider?: string }>;
-    expect(aiNodes.map(n => n.id)).toEqual(['resolve', 'create-pr', 'fix-ci-attempt']);
+    const aiNodes = [
+      ...WORKFLOW.nodes,
+      ...loopGroupOf('fix-checks').nodes,
+      ...loopGroupOf('fix-ci').nodes,
+    ].filter(n => 'prompt' in n || 'command' in n) as Array<DagNode & { provider?: string }>;
+    expect(aiNodes.map(n => n.id)).toEqual([
+      'resolve',
+      'create-pr',
+      'fix-checks-attempt',
+      'fix-ci-attempt',
+    ]);
     const models = Object.fromEntries(
       aiNodes.map(n => [n.id, { model: n.model, effort: n.effort }])
     );
@@ -476,6 +488,7 @@ describe('paseo-fork-upstream-resolve structure', () => {
     expect(models).toEqual({
       resolve: { model: 'gpt-6.1-terra', effort: 'medium' },
       'create-pr': { model: 'gpt-6-luna', effort: undefined },
+      'fix-checks-attempt': { model: 'gpt-6.1-terra', effort: 'medium' },
       'fix-ci-attempt': { model: 'gpt-6-luna', effort: undefined },
     });
     for (const node of aiNodes) expect(node.provider).toBeUndefined();
@@ -490,6 +503,20 @@ describe('paseo-fork-upstream-resolve structure', () => {
     for (const name of COMMAND_NAMES) {
       expect(BUNDLED_COMMANDS[name]).not.toContain('Guidance pass');
     }
+  });
+
+  it('fixes failing final checks in a bounded loop group of two passes with the merge rules', () => {
+    const group = loopGroupOf('fix-checks');
+    expect(group.max_iterations).toBe(3);
+    expect(group.nodes.map(n => n.id)).toEqual(['fix-checks-attempt', 'recheck']);
+    expect(group.until_bash).toContain('.passed or .attempt >= 2');
+    const attempt = group.nodes[0] as DagNode & { command?: string; prompt_suffix?: string };
+    expect(attempt.command).toBe('paseo-fork-resolve-upstream-merge');
+    expect(attempt.prompt_suffix).toContain('follow the "Fix pass"');
+    const text = BUNDLED_COMMANDS['paseo-fork-resolve-upstream-merge'] ?? '';
+    expect(text).toContain('## Fix pass');
+    expect(text).toContain('Do not delete fork features to make the');
+    expect(text).toContain('never take one whole side');
   });
 
   it('fixes CI in a bounded loop group that ends before max_iterations', () => {
@@ -661,7 +688,7 @@ function simulate(produced: Record<string, NodeOutput>): Record<string, Decision
 describe('paseo-fork-upstream-resolve skip semantics', () => {
   const resolveOut = (resolved: boolean): NodeOutput =>
     completed({ resolved, question: resolved ? '' : 'Which side?' }, ['resolved', 'question']);
-  const checkOut: NodeOutput = completed({ passed: true });
+  const checkOut: NodeOutput = completed({ passed: true }, ['passed']);
   const prOut: NodeOutput = completed({ pr_url: 'p', number: 77 });
   const ciOut = (conclusion: string): NodeOutput =>
     completed({ pr_url: 'p', number: 77, conclusion, failed: [], checks_url: 'c', attempt: 0 });
@@ -681,6 +708,29 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
     expect(d['fix-ci']).toBe('skip:when');
     expect(d['merge-pr']).toBe('run');
     expect(d.finalize).toBe('run');
+  });
+
+  it('runs the fix-checks loop when the final checks fail, then publish decides', () => {
+    const d = simulate({
+      resolve: resolveOut(true),
+      check: completed({ passed: false }, ['passed']),
+      'verify-pr': prOut,
+      'wait-ci': ciOut('success'),
+    });
+    expect(d['fix-checks']).toBe('run');
+    expect(d.publish).toBe('run');
+    expect(d.finalize).toBe('run');
+  });
+
+  it('skips the fix-checks loop when the final checks pass', () => {
+    const d = simulate({
+      resolve: resolveOut(true),
+      check: completed({ passed: true }, ['passed']),
+      'verify-pr': prOut,
+      'wait-ci': ciOut('success'),
+    });
+    expect(d['fix-checks']).toBe('skip:when');
+    expect(d.publish).toBe('run');
   });
 
   it('runs merge-pr after the CI fix loop, which decides from the last CI result', () => {
@@ -727,6 +777,7 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
     for (const id of [
       'resolve',
       'check',
+      'fix-checks',
       'publish',
       'create-pr',
       'verify-pr',
@@ -1505,24 +1556,62 @@ describe('check node (executable)', () => {
     expect(JSON.parse(r.stdout)).toEqual({ passed: true });
     expect(calls(r.sb)).toEqual([]);
     expect(existsSync(join(r.sb.sync, 'check-failure.txt'))).toBe(false);
+    expect(readJson(join(r.sb.sync, 'check-state.json'))).toEqual({ passed: true, attempt: 0 });
     expect(readJson<{ full: boolean }>(join(r.sb.sync, 'checks.json')).full).toBe(true);
   });
 
-  it('fails with the failed checks when the final checks fail', () => {
+  it('hands failing final checks to the fix loop with the reason, and calls nothing on GitHub', () => {
     const r = runCheck({ resolved: true, question: '' }, { failing: 'run lint' });
-    expect(r.status).toBe(1);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ passed: false });
+    expect(readJson(join(r.sb.sync, 'check-state.json'))).toEqual({ passed: false, attempt: 0 });
     const reason = readFileSync(join(r.sb.sync, 'check-failure.txt'), 'utf-8');
     expect(reason).toContain('The branch does not pass the final checks:');
     expect(reason).toContain('- local checks fail: lint');
     expect(calls(r.sb).filter(c => c.startsWith('gh '))).toEqual([]);
   });
 
-  it('fails when the notes miss a conflicted file', () => {
+  it('records a missing notes paragraph as a failed final check', () => {
     const r = runCheck({ resolved: true, question: '' }, { notes: 'nothing useful\n' });
-    expect(r.status).toBe(1);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ passed: false });
     expect(readFileSync(join(r.sb.sync, 'check-failure.txt'), 'utf-8')).toContain(
       'resolution.md has no paragraph for src/grid.ts'
     );
+  });
+
+  it('recheck counts the fix pass and records a pass or a new reason', () => {
+    for (const failing of [undefined, 'run lint']) {
+      const r = runCheck({ resolved: true, question: '' }, { failing: 'run lint' });
+      expect(JSON.parse(r.stdout)).toEqual({ passed: false });
+      installToolchain(r.sb, failing);
+      const recheck = loopGroupOf('fix-checks').nodes[1] as DagNode & { bash: string };
+      const rr = run(r.sb, render(recheck.bash, r.sb.artifacts), {
+        cwd: join(r.sb.root, 'work'),
+      });
+      expect(rr.status).toBe(0);
+      const passed = failing === undefined;
+      expect(JSON.parse(rr.stdout)).toEqual({ passed, attempt: 1 });
+      expect(existsSync(join(r.sb.sync, 'check-failure.txt'))).toBe(!passed);
+      if (!passed) {
+        expect(readFileSync(join(r.sb.sync, 'check-failure.txt'), 'utf-8')).toContain(
+          'The branch does not pass the final checks after 1 fix pass(es):'
+        );
+      }
+    }
+  });
+
+  it('ends the fix loop after a pass or after the second fix pass', () => {
+    const until = loopGroupOf('fix-checks').until_bash;
+    for (const [state, done] of [
+      [{ passed: true, attempt: 1 }, true],
+      [{ passed: false, attempt: 1 }, false],
+      [{ passed: false, attempt: 2 }, true],
+    ] as const) {
+      const sb = makeSandbox();
+      writeFileSync(join(sb.sync, 'check-state.json'), JSON.stringify(state));
+      expect(run(sb, until).status === 0).toBe(done);
+    }
   });
 });
 
@@ -1589,6 +1678,7 @@ function committedMerge(
     join(sb.sync, 'checks.json'),
     JSON.stringify({ passed: true, failed: [], ran: [], full: true })
   );
+  writeFileSync(join(sb.sync, 'check-state.json'), JSON.stringify({ passed: true, attempt: 0 }));
   return { sb, repos };
 }
 
@@ -1708,8 +1798,20 @@ describe('publish node (executable)', () => {
     expect(r.status).toBe(1);
   });
 
-  it('runs only after check passed, so it never runs the final checks itself', () => {
-    expect(nodeById('publish').depends_on).toEqual(['check']);
+  it('pushes nothing when the last final checks did not pass, and quotes their reason', () => {
+    const { sb, repos } = committedMerge();
+    writeFileSync(join(sb.sync, 'check-state.json'), JSON.stringify({ passed: false, attempt: 2 }));
+    writeFileSync(join(sb.sync, 'check-failure.txt'), 'still failing: lint\n');
+    const r = run(sb, render(bashOf('publish'), sb.artifacts), {
+      cwd: repos.work,
+      env: { FAKE_GIT_ALLOW_PUSH: '1' },
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('still failing: lint');
+    expect(calls(sb).some(c => c.startsWith('git push'))).toBe(false);
+  });
+
+  it('never runs the final checks itself', () => {
     expect(bashOf('publish')).not.toContain('final-checks.sh');
   });
 });

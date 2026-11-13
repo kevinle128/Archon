@@ -61,31 +61,39 @@ git status --short
 
 ## Rules for this fork
 
-1. **Every fork change survives.** For each conflicted file, read
-   `git diff <merge_base> <base_sha> -- <file>` (what the fork changed since the
-   merge base). Every change in that diff must still be in your result, adapted
-   to upstream's new code when upstream moved it. Never take the upstream side of
-   a file that the fork changed (`git checkout --theirs`), and never take the
-   fork side of a file that upstream changed (`git checkout --ours`), without a
-   stated reason in your notes.
-2. **Migrations are never renamed.** The fork's migrations sort after upstream's
+1. **Merge hunk by hunk; every fork change survives.** For a file that both
+   sides changed, never take one whole side: not `git checkout --ours/--theirs`,
+   not a copy of `git show :2:<file>` or `:3:<file>`, not "retained the upstream
+   implementation" or "kept the fork version". Merge each hunk. For each
+   conflicted file, read `git diff <merge_base> <base_sha> -- <file>` (what the
+   fork changed since the merge base). Every change in that diff must still be in
+   your result, adapted to upstream's new code when upstream moved it.
+2. **Keep what other fork code uses.** Before you stage a file, list the items
+   the fork side of it defines or changed (`mod` lines, types, traits, functions,
+   methods, fields, enum variants, re-exports) and find their users outside the
+   file: `git grep -n -w '<name>' -- crates desktop mobile`. Every item that fork
+   code outside the conflicted files still uses must still exist in your result,
+   with the same name and meaning, and every call site of fork code inside the
+   file must stay. When upstream renamed or moved the code around a fork item,
+   port the fork item to the new structure instead of dropping it.
+3. **Migrations are never renamed.** The fork's migrations sort after upstream's
    (`migrations/0087_*.sql`, `0088_*.sql` today). When two migration files in one
    `migrations/` folder share a 4-digit version, or a fork migration no longer
    sorts after the newest upstream migration, do not rename, renumber or edit a
    migration: production databases record the version and the checksum. Stop
    (see "When you cannot decide"), and name the files and versions.
-3. **Workflow files.** In `.github/workflows/`, keep upstream's jobs as upstream
+4. **Workflow files.** In `.github/workflows/`, keep upstream's jobs as upstream
    wrote them, and keep every fork-only file and fork-only step.
    `mf-desktop-build.yml` and the fork sync workflows (`fork-*.yml`) are
    fork-only.
-4. **`Cargo.lock` and `pnpm-lock.yaml`.** Start from upstream's lock file and let
+5. **`Cargo.lock` and `pnpm-lock.yaml`.** Start from upstream's lock file and let
    the tools add the fork's dependencies: for `Cargo.lock` run
    `cargo metadata --format-version 1 >/dev/null` after the `Cargo.toml` files are
    resolved; for `pnpm-lock.yaml` run `pnpm install --lockfile-only`. Never edit a
    lock file by hand.
-5. **Tools.** Use the fork's Hermit tools: run `. ./bin/activate-hermit` in each
+6. **Tools.** Use the fork's Hermit tools: run `. ./bin/activate-hermit` in each
    shell before `cargo`, `just`, `pnpm` or `node`. Never install a toolchain.
-6. **No full suite.** Never run `just test`, `just check`, `cargo test` without
+7. **No full suite.** Never run `just test`, `just check`, `cargo test` without
    `-p`, PostgreSQL, Playwright or mesh tests. CI on the pull request runs them.
 
 ## Start the merge
@@ -117,8 +125,9 @@ For every conflicted file:
    `git log --oneline "$merge_base..$base_sha" -- <file>`, then
    `git show <commit> -- <file>` for the commits that matter, and
    `git diff "$merge_base" "$base_sha" -- <file>` for the full fork change.
-3. Write a result that keeps upstream's change and every fork change (rule 1).
-   Remove every conflict marker. `git diff --check` must be clean.
+3. Write a result that keeps upstream's change and every fork change, hunk by
+   hunk (rules 1 and 2). Remove every conflict marker. `git diff --check` must be
+   clean.
 4. `git add -- <file>`.
 
 ## When you cannot decide
@@ -164,9 +173,24 @@ it reports, stage the fix and commit again; never bypass the hook. Do not amend
 earlier commits. Do not rebase. Do not push. Changes after the merge commit are
 normal commits.
 
+## Build the crates you merged
+
+After the merge commit, build each workspace crate that owns a conflicted file,
+with its tests, and fix every error before you go on:
+
+```bash
+. ./bin/activate-hermit
+cargo check --locked -p <crate> --tests   # for each crate under crates/ with a conflicted file
+```
+
+An error that names a fork item (a missing module, type, function, method or
+field) means your result dropped fork code: put the fork item back from
+`git show "$base_sha":<file>` and adapt it, never delete its users. Commit each
+fix as a normal commit (see step 3 below).
+
 ## Run the local checks and fix failures (at most 3 rounds)
 
-After the merge commit, run every local check with the workflow's check script:
+Then run every local check with the workflow's check script:
 
 ```bash
 bash "$ARTIFACTS_DIR/sync/checks.sh"
@@ -185,23 +209,47 @@ touched) and, when the touched files need them, `desktop-install`,
 1. Read the sections of the failed checks. Find the cause and fix the code, not
    the check. A `rust-fmt` failure is fixed with `cargo fmt --all` (after
    `. ./bin/activate-hermit`). A `migration-numbers` failure is never fixed by a
-   rename (rule 2): stop as in "When you cannot decide".
+   rename (rule 3): stop as in "When you cannot decide".
 2. Rerun only the failed checks, by name (for example `rust-check`,
    `rust-test:buzz-relay`): `bash "$ARTIFACTS_DIR/sync/checks.sh" <name> [<name> ...]`.
-   Apart from the lock file commands of rule 4 and `cargo fmt --all`, never run
-   commands the script does not run.
+   Apart from the lock file commands of rule 5, `cargo fmt --all` and
+   `cargo check --locked -p <crate> --tests`, never run commands the script does
+   not run.
 3. Commit the fix as a new normal commit whose message names the check, for
    example `fix(sync): rust-check after upstream merge`. Never amend, never
    rebase, never push.
 
-Stop when the checks pass or after the third fix round. Never change a test
-expectation, skip a test, add `#[allow(...)]`, or weaken a lint rule to hide a
-real regression. When the upstream change makes a fork test wrong, change the
+Stop when the checks pass or after the third fix round. Never delete or stub
+out a fork feature (a module, type, function, call site, migration or test) to
+make a check pass, never change a test expectation, skip a test, add
+`#[allow(...)]`, or weaken a lint rule to hide a real regression. When the upstream change makes a fork test wrong, change the
 test only when the new upstream behaviour is the intended behaviour, and say so
 in the commit message. When a fix changes how a conflicted file was resolved,
 update that file's paragraph in `$ARTIFACTS_DIR/sync/resolution.md`. Checks that
 still fail after three rounds make the next workflow step end the run without a
 push; still return `resolved: true` when the merge commit exists.
+
+## Fix pass
+
+When a "Fix pass" section follows these instructions, the merge commit already
+exists and the workflow's final checks failed after it. Then:
+
+1. Do not start or abort a merge, and do not amend or rebase. Every change is a
+   new normal commit on the branch.
+2. Read `$ARTIFACTS_DIR/sync/check-failure.txt` and the sections of the failed
+   checks in `$ARTIFACTS_DIR/sync/checks.log`.
+3. Fix the causes with the rules above. Do not delete fork features to make the
+   code compile: when a fork module, type, function, method or field is missing,
+   restore it from `git show "$(jq -r .base_sha "$ARTIFACTS_DIR/sync/sync.json")":<file>`
+   and adapt it to upstream's code.
+4. For each crate with a failing build or test, run
+   `cargo check --locked -p <crate> --tests` until it builds.
+5. Run the failed checks again by name with `bash "$ARTIFACTS_DIR/sync/checks.sh" <name> ...`
+   and repeat until they pass or you cannot make progress.
+6. Update the paragraphs of `$ARTIFACTS_DIR/sync/resolution.md` that your fixes
+   change.
+7. Return `resolved: true` when the merge commit exists and the worktree is
+   clean. The workflow runs the final checks again after this pass.
 
 ## Output
 
