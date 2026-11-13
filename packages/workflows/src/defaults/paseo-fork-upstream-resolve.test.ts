@@ -9,7 +9,7 @@
  * redirect to a local repository, and the fake `gh` fails on any unexpected call.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'bun:test';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -46,6 +46,32 @@ const SHA_A = 'a'.repeat(40);
 const SHA_B = 'b'.repeat(40);
 const SHA_C = 'c'.repeat(40);
 const REAL_GIT = spawnSync('bash', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+// A full local check run on the Mac mini, measured cold (no node_modules), and the
+// node limits chosen from it.
+const MEASURED_FULL_RUN_MS = 0;
+const CHECK_NODE_TIMEOUT = 2_700_000;
+const AGENT_IDLE_TIMEOUT = 1_200_000;
+// Tests that run the final checks run a full checks.sh with fake tools: about
+// twenty checks, each with its own watchdog process, about 1 s on a machine at
+// load 25 and well under that when idle. They do no network or database I/O.
+const FULL_CHECK_RUN_BUDGET = 20_000;
+// The step lines of the fork CI that checks.sh reads its `node --test` files from.
+const CI_YML = [
+  'jobs:',
+  '  changes:',
+  '    steps:',
+  '      - name: Validate CI contracts',
+  '        run: node --test scripts/ci-workflow.test.mjs scripts/daemon-launch-contract.test.mjs',
+  '  typecheck:',
+  '    steps:',
+  '      - name: Verify fork desktop manifest checks',
+  '        run: node --test scripts/fork-desktop-manifest.test.mjs',
+  '      - name: Verify built-in plugins from built output',
+  '        run: node --test scripts/builtin-plugins-dist.test.mjs',
+  '      - name: Verify fork sync conflict report',
+  '        run: node --test scripts/fork-sync-conflict-report.test.mjs',
+  '',
+].join('\n');
 
 function loadWorkflow(): WorkflowDefinition {
   const result = parseWorkflow(YAML_TEXT, `${NAME}.yaml`);
@@ -162,8 +188,13 @@ case "$1 $2" in
     # $FAKE_MERGE_RESULT: ok (default) records a merge commit; any other value fails.
     if [ "\${FAKE_MERGE_RESULT:-ok}" = ok ]; then echo "${'d'.repeat(40)}" > "$FAKE_CHECKS_DIR/merged"; exit 0; fi
     echo "GraphQL: Head branch was modified" >&2; exit 1 ;;
+  "run rerun")
+    # $FAKE_RERUN_RESULT: ok (default) accepts the re-run; any other value refuses it.
+    if [ "\${FAKE_RERUN_RESULT:-ok}" = ok ]; then exit 0; fi
+    echo "run cannot be rerun" >&2; exit 1 ;;
   "pr view")
     case "$*" in
+      *"--json state -q .state"*) echo "\${FAKE_PR_STATE:-OPEN}" ;;
       *baseRefName*) cat "$FAKE_PR_VIEW_JSON" ;;
       *mergeCommit*)
         if [ -f "$FAKE_CHECKS_DIR/merged" ]; then
@@ -422,6 +453,7 @@ describe('paseo-fork-upstream-resolve structure', () => {
       'create-pr',
       'verify-pr',
       'wait-ci',
+      'rerun-ci',
       'fix-ci',
       'merge-pr',
       'finalize',
@@ -438,6 +470,7 @@ describe('paseo-fork-upstream-resolve structure', () => {
       'create-pr': 'all_success',
       'verify-pr': 'all_success',
       'wait-ci': 'all_success',
+      'rerun-ci': 'all_success',
       'fix-ci': 'all_success',
       'merge-pr': 'none_failed_min_one_success',
       finalize: 'all_done',
@@ -452,11 +485,13 @@ describe('paseo-fork-upstream-resolve structure', () => {
       'create-pr': ['publish'],
       'verify-pr': ['create-pr'],
       'wait-ci': ['verify-pr'],
-      'fix-ci': ['wait-ci'],
-      'merge-pr': ['wait-ci', 'fix-ci'],
-      finalize: ['wait-ci', 'fix-ci', 'merge-pr'],
+      'rerun-ci': ['wait-ci'],
+      'fix-ci': ['rerun-ci'],
+      'merge-pr': ['wait-ci', 'rerun-ci', 'fix-ci'],
+      finalize: ['wait-ci', 'rerun-ci', 'fix-ci', 'merge-pr'],
     });
-    expect(nodeById('fix-ci').when).toBe("$wait-ci.output.conclusion == 'failure'");
+    expect(nodeById('rerun-ci').when).toBe("$wait-ci.output.conclusion == 'failure'");
+    expect(nodeById('fix-ci').when).toBe("$rerun-ci.output.fix == 'true'");
     expect(nodeById('fix-checks').when).toBe("$check.output.passed == 'false'");
     expect(WORKFLOW.returns).toBe('finalize');
   });
@@ -522,26 +557,44 @@ describe('paseo-fork-upstream-resolve structure', () => {
   it('fixes CI in a bounded loop group that ends before max_iterations', () => {
     const group = loopGroupOf('fix-ci');
     expect(group.max_iterations).toBe(3);
-    expect(group.nodes.map(n => n.id)).toEqual(['fix-ci-attempt', 'wait-ci-again']);
+    expect(group.nodes.map(n => n.id)).toEqual(['pr-open', 'fix-ci-attempt', 'wait-ci-again']);
+    expect(group.nodes[1]?.depends_on).toEqual(['pr-open']);
+    expect(group.nodes[1]?.when).toBe("$pr-open.output.open == 'true'");
     expect(group.until_bash).toContain('.attempt >= 2');
   });
 
   it('gives every slow bash node an explicit timeout', () => {
     const timeouts = Object.fromEntries(
-      ['prepare', 'check', 'publish', 'verify-pr', 'wait-ci', 'finalize'].map(id => [
+      ['prepare', 'check', 'publish', 'verify-pr', 'wait-ci', 'rerun-ci', 'finalize'].map(id => [
         id,
         nodeById(id).timeout,
       ])
     );
     expect(timeouts).toEqual({
       prepare: 1_800_000,
-      check: 2_700_000,
+      check: CHECK_NODE_TIMEOUT,
       publish: 2_700_000,
       'verify-pr': 600_000,
       'wait-ci': 6_300_000,
+      'rerun-ci': 6_600_000,
       finalize: 300_000,
     });
-    expect(loopGroupOf('fix-ci').nodes[1]?.timeout).toBe(6_000_000);
+    expect(loopGroupOf('fix-checks').nodes[1]?.timeout).toBe(CHECK_NODE_TIMEOUT);
+    expect(loopGroupOf('fix-ci').nodes[0]?.timeout).toBe(300_000);
+    expect(loopGroupOf('fix-ci').nodes[2]?.timeout).toBe(6_000_000);
+  });
+
+  it('gives the agent nodes that run a full check run an idle timeout above that run', () => {
+    // The agent is silent while checks.sh runs inside its turn, so the idle
+    // timeout must outlast a whole full run of the checks.
+    const resolve = nodeById('resolve') as DagNode & { idle_timeout?: number };
+    const fixPass = loopGroupOf('fix-checks').nodes[0] as DagNode & { idle_timeout?: number };
+    const fixCi = loopGroupOf('fix-ci').nodes[1] as DagNode & { idle_timeout?: number };
+    expect(resolve.idle_timeout).toBe(AGENT_IDLE_TIMEOUT);
+    expect(fixPass.idle_timeout).toBe(AGENT_IDLE_TIMEOUT);
+    expect(fixCi.idle_timeout).toBe(AGENT_IDLE_TIMEOUT);
+    expect(AGENT_IDLE_TIMEOUT).toBeGreaterThan(MEASURED_FULL_RUN_MS);
+    expect(CHECK_NODE_TIMEOUT).toBeGreaterThan(MEASURED_FULL_RUN_MS);
   });
 
   it('is bundled with its two commands, and the removed fix-checks command is gone', () => {
@@ -600,14 +653,52 @@ describe('paseo-fork-upstream-resolve policy', () => {
     for (const text of allText) expect(text).not.toContain('gh issue close');
   });
 
-  it('never runs the full test suite or Playwright from the workflow', () => {
-    expect(YAML_TEXT).not.toMatch(/npm run test\b|npm test\b|playwright/i);
-    // The commands name the forbidden commands only to forbid them.
-    for (const name of COMMAND_NAMES) {
-      for (const line of (BUNDLED_COMMANDS[name] ?? '').split('\n')) {
-        if (/npm run test\b|npm test\b|playwright/i.test(line)) expect(line).toMatch(/Never/);
-      }
+  it('runs test suites and Playwright only inside the check script, never from a prompt', () => {
+    const suite = /npm run test\b|npm test\b|playwright/i;
+    expect(heredoc(bashOf('prepare'), 'CHECKS_SH')).toMatch(suite);
+    // Outside checks.sh the workflow names them only in its description.
+    const checksBlock =
+      /^ {6}cat > "\$SYNC_DIR\/checks\.sh" <<'CHECKS_SH'\n[\s\S]*?\n {6}CHECKS_SH\n/m;
+    expect(YAML_TEXT).toMatch(checksBlock);
+    const outside = YAML_TEXT.replace(checksBlock, '');
+    for (const line of outside.split('\n')) {
+      if (suite.test(line)) expect(line).toMatch(/^ {8}\S.*Playwright specs/);
     }
+    // The commands name the forbidden commands only to forbid them (on the line
+    // or the line before, where a sentence wraps); the commands also name CI's
+    // Playwright jobs and artifact and the check names that run Playwright.
+    const allowed =
+      /never|playwright-results|Playwright (specs|lists|screenshot)|e2e-app|e2e-website|CI runs the app/i;
+    for (const name of COMMAND_NAMES) {
+      const lines = (BUNDLED_COMMANDS[name] ?? '').split('\n');
+      lines.forEach((line, i) => {
+        if (!/npm run test\b|npm test\b|playwright/i.test(line)) return;
+        expect(`${lines[i - 1] ?? ''}\n${line}`).toMatch(
+          /npm run test\b|npm test\b/.test(line) ? /never/i : allowed
+        );
+      });
+    }
+  });
+
+  it('collects every failing test in each fix pass and never weakens a test', () => {
+    const suffix =
+      (loopGroupOf('fix-checks').nodes[0] as DagNode & { prompt_suffix?: string }).prompt_suffix ??
+      '';
+    expect(suffix).toContain('list every failing test');
+    expect(suffix).toContain('fix all');
+    const resolveText = BUNDLED_COMMANDS['paseo-fork-resolve-upstream-merge'] ?? '';
+    expect(resolveText).toContain('each to its end');
+    expect(resolveText).toContain('Fix all of them in this pass.');
+    const fixCi = BUNDLED_COMMANDS['paseo-fork-fix-ci'] ?? '';
+    expect(fixCi).toContain('read each\nlog to its end');
+    expect(fixCi).toContain('Fix all of them in\nthis pass');
+    expect(fixCi).toContain('## Failures that are only timing');
+    expect(fixCi).toContain('gh run rerun <run-id> --repo "$repo" --failed');
+    expect(fixCi).toContain('playwright-results-<N>');
+    expect(fixCi).toContain('*-actual.png');
+    expect(fixCi).toContain('Never make a Linux baseline\nfrom a local render');
+    expect(fixCi).toContain('Never delete a test, skip a test');
+    expect(fixCi).toContain('raise a timeout, pixel or ratio tolerance');
   });
 
   it('makes one branch per attempt from the issue number and the run id', () => {
@@ -692,6 +783,7 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
   const prOut: NodeOutput = completed({ pr_url: 'p', number: 77 });
   const ciOut = (conclusion: string): NodeOutput =>
     completed({ pr_url: 'p', number: 77, conclusion, failed: [], checks_url: 'c', attempt: 0 });
+  const rerunOut = (fix: boolean): NodeOutput => completed({ rerun: true, fix }, ['fix']);
 
   it('goes from a passing check straight to publish, the PR, CI and the merge', () => {
     const d = simulate({
@@ -705,7 +797,9 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
     expect(d['create-pr']).toBe('run');
     expect(d['verify-pr']).toBe('run');
     expect(d['wait-ci']).toBe('run');
-    expect(d['fix-ci']).toBe('skip:when');
+    expect(d['rerun-ci']).toBe('skip:when');
+    // fix-ci depends only on rerun-ci, so a skipped rerun-ci skips it too.
+    expect(d['fix-ci']).toBe('skip:trigger');
     expect(d['merge-pr']).toBe('run');
     expect(d.finalize).toBe('run');
   });
@@ -733,19 +827,23 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
     expect(d.publish).toBe('run');
   });
 
-  it('runs merge-pr after the CI fix loop, which decides from the last CI result', () => {
-    const d = simulate({
-      resolve: resolveOut(true),
-      check: checkOut,
-      'verify-pr': prOut,
-      'wait-ci': ciOut('failure'),
-    });
-    expect(d['fix-ci']).toBe('run');
-    expect(d['merge-pr']).toBe('run');
-    expect(d.finalize).toBe('run');
+  it('re-runs a failed CI first, fixes only when it still fails, and merge-pr decides last', () => {
+    for (const fix of [false, true]) {
+      const d = simulate({
+        resolve: resolveOut(true),
+        check: checkOut,
+        'verify-pr': prOut,
+        'wait-ci': ciOut('failure'),
+        'rerun-ci': rerunOut(fix),
+      });
+      expect(d['rerun-ci']).toBe('run');
+      expect(d['fix-ci']).toBe(fix ? 'run' : 'skip:when');
+      expect(d['merge-pr']).toBe('run');
+      expect(d.finalize).toBe('run');
+    }
   });
 
-  it('skips fix-ci (not fails) when a human merged or closed the PR during the CI wait', () => {
+  it('skips the re-run and fix-ci (not fails) when a human merged or closed the PR during the CI wait', () => {
     for (const conclusion of ['merged', 'closed']) {
       const d = simulate({
         resolve: resolveOut(true),
@@ -753,10 +851,24 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
         'verify-pr': prOut,
         'wait-ci': ciOut(conclusion),
       });
-      expect(d['fix-ci']).toBe('skip:when');
+      expect(d['rerun-ci']).toBe('skip:when');
+      expect(d['fix-ci']).toBe('skip:trigger');
       expect(d['merge-pr']).toBe('run');
       expect(d.finalize).toBe('run');
     }
+  });
+
+  it('merges nothing and fixes nothing, but still runs finalize, when the re-run fails', () => {
+    const d = simulate({
+      resolve: resolveOut(true),
+      check: checkOut,
+      'verify-pr': prOut,
+      'wait-ci': ciOut('failure'),
+      'rerun-ci': { state: 'failed', output: '', error: 'gh failed' },
+    });
+    expect(d['fix-ci']).toBe('skip:trigger');
+    expect(d['merge-pr']).toBe('skip:trigger');
+    expect(d.finalize).toBe('run');
   });
 
   it('pushes nothing and opens no PR when check fails (unresolved or failing checks)', () => {
@@ -764,7 +876,15 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
       resolve: resolveOut(false),
       check: { state: 'failed', output: '', error: 'The resolver could not resolve the merge' },
     });
-    for (const id of ['publish', 'create-pr', 'verify-pr', 'wait-ci', 'fix-ci', 'merge-pr']) {
+    for (const id of [
+      'publish',
+      'create-pr',
+      'verify-pr',
+      'wait-ci',
+      'rerun-ci',
+      'fix-ci',
+      'merge-pr',
+    ]) {
       expect(d[id]).toBe('skip:trigger');
     }
     expect(d.finalize).toBe('run');
@@ -782,6 +902,7 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
       'create-pr',
       'verify-pr',
       'wait-ci',
+      'rerun-ci',
       'fix-ci',
       'merge-pr',
     ]) {
@@ -796,7 +917,7 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
       check: checkOut,
       publish: { state: 'failed', output: '', error: 'push failed' },
     });
-    for (const id of ['create-pr', 'verify-pr', 'wait-ci', 'fix-ci', 'merge-pr']) {
+    for (const id of ['create-pr', 'verify-pr', 'wait-ci', 'rerun-ci', 'fix-ci', 'merge-pr']) {
       expect(d[id]).toBe('skip:trigger');
     }
     expect(d.finalize).toBe('run');
@@ -809,6 +930,7 @@ describe('paseo-fork-upstream-resolve skip semantics', () => {
       'verify-pr': { state: 'failed', output: '', error: 'contract' },
     });
     expect(d['wait-ci']).toBe('skip:trigger');
+    expect(d['rerun-ci']).toBe('skip:trigger');
     expect(d['fix-ci']).toBe('skip:trigger');
     expect(d['merge-pr']).toBe('skip:trigger');
     expect(d.finalize).toBe('run');
@@ -949,6 +1071,23 @@ interface ForkRepos {
 }
 
 /** A fork (origin), an upstream and a work clone; every file in `files` conflicts. */
+/**
+ * The fork CI file that checks.sh reads its `node --test` files from, and the app
+ * package folder that the app E2E check runs Playwright in.
+ */
+function writeCiYml(repo: string): void {
+  mkdirSync(join(repo, '.github/workflows'), { recursive: true });
+  writeFileSync(join(repo, '.github/workflows/ci.yml'), CI_YML);
+  mkdirSync(join(repo, 'packages/app'), { recursive: true });
+  writeFileSync(join(repo, 'packages/app/playwright.config.ts'), 'export default {};\n');
+}
+
+/** The run record fields of sync.json, under a state folder of the sandbox. */
+function runRecord(sb: Sandbox): { runs_root: string; run_dir: string } {
+  const runsRoot = join(sb.root, 'state', 'sync-runs');
+  return { runs_root: runsRoot, run_dir: join(runsRoot, RUN_ID) };
+}
+
 function makeForkRepos(sb: Sandbox, files: string[] = ['src/grid.ts']): ForkRepos {
   const origin = join(sb.root, 'origin');
   const upstream = join(sb.root, 'upstream');
@@ -964,6 +1103,7 @@ function makeForkRepos(sb: Sandbox, files: string[] = ['src/grid.ts']): ForkRepo
   writeAll(origin, 'base');
   mkdirSync(join(origin, 'src'), { recursive: true });
   writeFileSync(join(origin, 'src/grid.test.ts'), 'test\n');
+  writeCiYml(origin);
   git(sb, origin, 'add', '.');
   git(sb, origin, 'commit', '-q', '-m', 'base');
   const mergeBase = git(sb, origin, 'rev-parse', 'HEAD');
@@ -1268,10 +1408,67 @@ describe('prepare node (executable)', () => {
 describe('local checks script (executable)', () => {
   const CHECKS_SH = heredoc(bashOf('prepare'), 'CHECKS_SH');
 
-  function setup(options: { failing?: string; nodeMajor?: string; messy?: string } = {}): {
+  interface ChecksJson {
+    passed: boolean;
+    failed: string[];
+    warnings: Array<{ name: string; warning: string }>;
+    ran: Array<{ name: string; status: string }>;
+    full: boolean;
+  }
+
+  // Every check of a full run, in the order checks.sh runs them.
+  const FULL_RUN = [
+    'install',
+    'format-check',
+    'lint',
+    'dependency-checks',
+    'build-server',
+    'typecheck',
+    'typecheck-examples',
+    'node-tests',
+    'pack-check',
+    'test-relay',
+    'test-sdk',
+    'test-website',
+    'test-builtin-plugins',
+    'test-server',
+    'test-desktop',
+    'test-app',
+    'test-cli-unit',
+    'test-cli-local',
+    'e2e-app',
+  ];
+
+  const SECRETS = [
+    'OPENAI_API_KEY',
+    'OPENROUTER_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'CLAUDE_CODE_OAUTH_TOKEN',
+    'PASEO_CLI_TEST_SHARD',
+    'PASEO_CLI_TEST_SHARD_TOTAL',
+  ];
+
+  /**
+   * A repository with the fork CI file, the app package folder and a few source
+   * files, plus fake node, npm and npx that record every call, its arguments,
+   * folder and environment. A tool call whose text holds `failing` fails, one
+   * that holds `messy` changes the tree, one that holds `hang` sleeps (and writes
+   * its pid to FAKE_HANG_PID), and one that holds `warn` writes a check warning.
+   * `npx playwright test ... --list` prints the file FAKE_PW_LIST when it is set.
+   */
+  function setup(
+    options: {
+      failing?: string;
+      nodeMajor?: string;
+      messy?: string;
+      hang?: string;
+      warn?: string;
+    } = {}
+  ): {
     sb: Sandbox;
     work: string;
     script: string;
+    mergeBase: string;
   } {
     const sb = makeSandbox();
     const work = join(sb.root, 'work');
@@ -1286,87 +1483,314 @@ describe('local checks script (executable)', () => {
     ]) {
       writeFileSync(join(work, 'src', f), 'x\n');
     }
+    writeCiYml(work);
     git(sb, work, 'add', '.');
     git(sb, work, 'commit', '-q', '-m', 'fixture');
+    const mergeBase = git(sb, work, 'rev-parse', 'HEAD');
     writeFileSync(
       join(sb.sync, 'sync.json'),
-      JSON.stringify({ files: ['src/grid.ts', 'src/panel.tsx', 'src/gone.ts'] })
+      JSON.stringify({
+        files: ['src/grid.ts', 'src/panel.tsx', 'src/gone.ts'],
+        merge_base: mergeBase,
+        ...runRecord(sb),
+      })
     );
     const script = join(sb.sync, 'checks.sh');
     writeFileSync(script, CHECKS_SH);
-    const failing = options.failing ?? '';
-    // Fake toolchain: records every call; the named check fails.
+    const pick = (value: string | undefined): string => value || '__none__';
+    const envNames = ['NODE_ENV', 'CI', 'PLAYWRIGHT_BROWSERS_PATH', ...SECRETS];
     const fake = (tool: string): string => `#!/bin/bash
 printf '%s\\n' "${tool} $*" >> "$FAKE_LOG"
-printf '%s NODE_ENV=%s\\n' "${tool}" "\${NODE_ENV-unset}" >> "$FAKE_LOG.env"
+printf '%s' "${tool}" >> "$FAKE_LOG.env"
+for v in ${envNames.join(' ')}; do printf ' %s=%s' "$v" "\${!v-unset}" >> "$FAKE_LOG.env"; done
+echo >> "$FAKE_LOG.env"
 if [ "$1" != -p ]; then printf '[%s]' "${tool}" "$@" >> "$FAKE_LOG.args"; echo >> "$FAKE_LOG.args"; fi
 printf '%s %s\\n' "${tool}" "$PWD" >> "$FAKE_LOG.cwd"
 if [ "$1" = -p ]; then echo ${options.nodeMajor ?? '22'}; exit 0; fi
 if [ "$1" = --version ]; then echo v${options.nodeMajor ?? '22'}.0.0; exit 0; fi
-case "${tool} $*" in *"${options.messy || '__none__'}"*)
+case "${tool} $*" in *"${pick(options.messy)}"*)
   # A check that rewrites a tracked file, stages and deletes others, and leaves build output.
   echo changed > src/grid.ts
   echo staged > src/panel.tsx && git add src/panel.tsx
   rm -f src/grid.test.ts
   mkdir -p out && echo built > out/build.txt ;;
 esac
-case "${tool} $*" in *"${failing || '__none__'}"*) echo "boom from ${tool}"; exit 1 ;; esac
+case "${tool} $*" in *"${pick(options.hang)}"*) echo $$ > "$FAKE_HANG_PID"; exec /bin/sleep 300 ;; esac
+case "${tool} $*" in *"${pick(options.warn)}"*) echo "only a macOS difference" > "${join(sb.sync, 'check-warning')}" ;; esac
+case "${tool} $*" in *"playwright test"*--list*) if [ -n "\${FAKE_PW_LIST:-}" ]; then cat "$FAKE_PW_LIST"; fi ;; esac
+case "${tool} $*" in *"${pick(options.failing)}"*) echo "boom from ${tool}"; exit 1 ;; esac
 exit 0
 `;
     for (const tool of ['node', 'npm', 'npx']) writeExecutable(join(sb.bin, tool), fake(tool));
-    return { sb, work, script };
+    return { sb, work, script, mergeBase };
   }
 
-  it('runs the bounded check list and the tests beside conflicted files', () => {
+  function toolCalls(sb: Sandbox): string[] {
+    return calls(sb).filter(c => !c.startsWith('node -p'));
+  }
+
+  it('runs every CI test job that works on macOS, in build order, on a full run', () => {
     const { sb, work, script } = setup({ failing: 'run lint' });
     const r = run(sb, `bash "${script}"`, { cwd: work });
     expect(r.status).toBe(0);
-    const result = JSON.parse(r.stdout) as {
-      passed: boolean;
-      failed: string[];
-      ran: Array<{ name: string; status: string }>;
-      full: boolean;
-    };
+    const result = JSON.parse(r.stdout) as ChecksJson;
     expect(result.passed).toBe(false);
     expect(result.failed).toEqual(['lint']);
     expect(result.full).toBe(true);
-    expect(result.ran.map(c => c.name)).toEqual([
-      'install',
-      'build-server',
-      'typecheck',
-      'lint',
-      'format-check',
-      'fork-script-tests',
-      'vitest:src/grid.test.ts',
-      'vitest:src/panel.test.tsx',
-    ]);
+    expect(result.warnings).toEqual([]);
+    // No file under packages/website changed since the merge base.
+    expect(result.ran.map(c => c.name)).toEqual(FULL_RUN);
     expect(readJson<unknown>(join(sb.sync, 'checks.json'))).toEqual(result);
     expect(readFileSync(join(sb.sync, 'checks.log'), 'utf-8')).toContain('boom from npm');
-    const toolCalls = calls(sb).filter(c => !c.startsWith('node -p'));
-    expect(toolCalls).toEqual([
+    expect(toolCalls(sb)).toEqual([
       'node scripts/npm-retry.mjs ci',
+      'npm run format:check',
+      'npm run lint',
+      'npx --yes lockfile-lint --path package-lock.json --type npm --allowed-hosts npm --validate-https --validate-integrity',
+      'npm audit signatures',
       'npm run build:server',
       'npm run typecheck',
-      'npm run lint',
-      'npm run format:check',
-      'node --test scripts/fork-desktop-manifest.test.mjs scripts/fork-sync-conflict-report.test.mjs scripts/fork-release-changelog.test.mjs',
-      'npx vitest run src/grid.test.ts --bail=1',
-      'npx vitest run src/panel.test.tsx --bail=1',
+      'npm run typecheck:examples --workspace=@getpaseo/client',
+      'node --test scripts/ci-workflow.test.mjs scripts/daemon-launch-contract.test.mjs ' +
+        'scripts/fork-desktop-manifest.test.mjs scripts/builtin-plugins-dist.test.mjs ' +
+        'scripts/fork-sync-conflict-report.test.mjs',
+      'npm pack --dry-run --ignore-scripts --workspace=@getpaseo/protocol',
+      'npm pack --dry-run --ignore-scripts --workspace=@getpaseo/client',
+      'npm pack --dry-run --ignore-scripts --workspace=@getpaseo/server',
+      'npm run test --workspace=@getpaseo/relay',
+      'npm run test --workspace=@getpaseo/plugin',
+      'npm run test --workspace=@getpaseo/protocol',
+      'npm run test --workspace=@getpaseo/client',
+      'npm run test --workspace=@getpaseo/highlight',
+      'npx vitest run packages/website/src --bail=1',
+      'npm run test --workspace=@getpaseo/builtin-plugins',
+      'npm run test --workspace=@getpaseo/server',
+      'npm run test --workspace=@getpaseo/desktop',
+      'npx playwright install chromium',
+      'npm run build:app-deps',
+      'npm run test --workspace=@getpaseo/app',
+      'npm run test:unit --workspace=@getpaseo/cli',
+      'npm run test:local --workspace=@getpaseo/cli',
+      'npx playwright install chromium',
+      'npm run build --workspace=@getpaseo/expo-two-way-audio',
+      expect.stringMatching(/^npx playwright test --project=browser --list /),
+      expect.stringMatching(/^npx playwright test --project=browser --update-snapshots=none /),
+    ]);
+    // No per-file test of a touched file runs: the package suites cover them.
+    expect(toolCalls(sb).some(c => c.startsWith('npx vitest run src/'))).toBe(false);
+  }, 30_000);
+
+  it('runs every step of a check even when an earlier step fails, as CI steps do', () => {
+    const { sb, work, script } = setup({ failing: 'workspace=@getpaseo/plugin' });
+    const r = run(sb, `bash "${script}" test-sdk`, { cwd: work });
+    expect((JSON.parse(r.stdout) as ChecksJson).failed).toEqual(['test-sdk']);
+    expect(toolCalls(sb)).toEqual([
+      'npm run test --workspace=@getpaseo/plugin',
+      'npm run test --workspace=@getpaseo/protocol',
+      'npm run test --workspace=@getpaseo/client',
+      'npm run test --workspace=@getpaseo/highlight',
     ]);
   });
 
-  it('runs the checks without NODE_ENV, like the fork CI, even when the server sets production', () => {
-    // A server started with NODE_ENV=production would make npm ci skip devDependencies
-    // (patch-package, the type checker, the linter), so every check would fail.
+  it('adds the website Playwright specs when a file under packages/website changed since the merge base', () => {
     const { sb, work, script } = setup();
-    const r = run(sb, `bash "${script}" install lint`, {
+    mkdirSync(join(work, 'packages/website/src'), { recursive: true });
+    writeFileSync(join(work, 'packages/website/src/page.astro'), 'x\n');
+    git(sb, work, 'add', '.');
+    git(sb, work, 'commit', '-q', '-m', 'website change');
+    const r = run(sb, `bash "${script}"`, { cwd: work });
+    const result = JSON.parse(r.stdout) as ChecksJson;
+    expect(result.ran.map(c => c.name)).toEqual([...FULL_RUN, 'e2e-website']);
+    expect(toolCalls(sb).slice(-2)).toEqual([
+      'npx playwright install chromium webkit',
+      'npm run test:e2e --workspace=@getpaseo/website',
+    ]);
+  }, 30_000);
+
+  it('reads the node --test files from ci.yml, and fails node-tests when ci.yml names none', () => {
+    const { sb, work, script } = setup();
+    let r = run(sb, `bash "${script}" fork-script-tests`, { cwd: work });
+    expect((JSON.parse(r.stdout) as ChecksJson).passed).toBe(true);
+    expect(toolCalls(sb)).toEqual([
+      'node --test scripts/fork-desktop-manifest.test.mjs scripts/fork-sync-conflict-report.test.mjs',
+    ]);
+    writeFileSync(
+      join(work, '.github/workflows/ci.yml'),
+      'jobs:\n  a:\n    steps:\n      - run: npm ci\n'
+    );
+    r = run(sb, `bash "${script}" node-tests`, { cwd: work });
+    expect(r.status).toBe(0);
+    expect((JSON.parse(r.stdout) as ChecksJson).failed).toEqual(['node-tests']);
+    expect(readFileSync(join(sb.sync, 'checks.log'), 'utf-8')).toContain(
+      "found no 'run: node --test' test file for 'all' in .github/workflows/ci.yml"
+    );
+  });
+
+  it('runs the app specs that changed since the merge base, in the browser project, plus the smoke spec', () => {
+    const { sb, work, script, mergeBase } = setup();
+    const list = join(sb.root, 'pw-list.json');
+    writeFileSync(
+      list,
+      JSON.stringify({
+        suites: [
+          { title: 'workspace-lifecycle.spec.ts', file: 'workspace-lifecycle.spec.ts', specs: [] },
+          { title: 'pinned-grid-deck.spec.ts', file: 'pinned-grid-deck.spec.ts', specs: [] },
+          { title: 'pinned-grid-deck.spec.ts', file: 'pinned-grid-deck.spec.ts', specs: [] },
+        ],
+      })
+    );
+    const r = run(sb, `bash "${script}" e2e-app`, { cwd: work, env: { FAKE_PW_LIST: list } });
+    expect((JSON.parse(r.stdout) as ChecksJson).ran).toEqual([{ name: 'e2e-app', status: 'pass' }]);
+    expect(toolCalls(sb)).toEqual([
+      'npx playwright install chromium',
+      'npm run build --workspace=@getpaseo/expo-two-way-audio',
+      `npx playwright test --project=browser --list --reporter=json --pass-with-no-tests --only-changed=${mergeBase}`,
+      'npx playwright test --project=browser --update-snapshots=none ' +
+        'e2e/browser/workspace-lifecycle.spec.ts e2e/browser/pinned-grid-deck.spec.ts',
+    ]);
+    const real = realpathSync(work);
+    const npxDirs = readFileSync(`${sb.log}.cwd`, 'utf-8')
+      .split('\n')
+      .filter(line => line.startsWith('npx '))
+      .map(line => line.slice('npx '.length));
+    expect(npxDirs).toEqual([real, join(real, 'packages/app'), join(real, 'packages/app')]);
+    // Only the spec run gets the CI settings; browsers go to the shared state folder.
+    const envLines = readFileSync(`${sb.log}.env`, 'utf-8').trim().split('\n');
+    const browsers = join(sb.root, 'state', 'ms-playwright');
+    expect(envLines.filter(l => l.startsWith('npx ')).map(l => / CI=(\S+)/.exec(l)?.[1])).toEqual([
+      'unset',
+      'unset',
+      '1',
+    ]);
+    for (const line of envLines.filter(l => !l.startsWith('node '))) {
+      expect(line).toContain(` PLAYWRIGHT_BROWSERS_PATH=${browsers} `);
+    }
+    expect(existsSync(join(work, 'ms-playwright'))).toBe(false);
+  });
+
+  it('runs only the smoke spec when no app spec changed', () => {
+    const { sb, work, script } = setup();
+    run(sb, `bash "${script}" e2e-app`, { cwd: work });
+    expect(toolCalls(sb).at(-1)).toBe(
+      'npx playwright test --project=browser --update-snapshots=none e2e/browser/workspace-lifecycle.spec.ts'
+    );
+  });
+
+  it('removes provider keys and CLI shard settings from every check, and NODE_ENV too', () => {
+    // A server started with NODE_ENV=production would make npm ci skip devDependencies
+    // (patch-package, the type checker, the linter), so every check would fail. The
+    // keys would let a test call a paid provider; CI runs without them.
+    const { sb, work, script } = setup();
+    const env: NodeJS.ProcessEnv = { NODE_ENV: 'production' };
+    for (const name of SECRETS) env[name] = 'secret-value';
+    const r = run(sb, `bash "${script}" install test-server test-cli-local e2e-app`, {
       cwd: work,
-      env: { NODE_ENV: 'production' },
+      env,
     });
     expect(r.status).toBe(0);
-    const envLines = readFileSync(`${sb.env.FAKE_LOG}.env`, 'utf-8').trim().split('\n');
-    expect(envLines.length).toBeGreaterThan(0);
-    for (const line of envLines) expect(line).toEndWith('NODE_ENV=unset');
+    const envLines = readFileSync(`${sb.log}.env`, 'utf-8').trim().split('\n');
+    expect(envLines.length).toBeGreaterThan(4);
+    for (const line of envLines) {
+      expect(line).toContain(' NODE_ENV=unset');
+      for (const name of SECRETS) expect(line).toContain(` ${name}=unset`);
+      expect(line).not.toContain('secret-value');
+    }
+  });
+
+  it('stops a hung check at its limit, with its processes, and reports it as timed out', () => {
+    const { sb, work, script } = setup({ hang: 'run test --workspace=@getpaseo/server' });
+    const pidFile = join(sb.root, 'hang.pid');
+    const started = Date.now();
+    const r = run(sb, `bash "${script}" test-server lint`, {
+      cwd: work,
+      env: { CHECK_TIMEOUT_SECONDS: '2', FAKE_HANG_PID: pidFile },
+    });
+    const elapsed = Date.now() - started;
+    expect(r.status).toBe(0);
+    const result = readJson<ChecksJson>(join(sb.sync, 'checks.json'));
+    expect(result.passed).toBe(false);
+    expect(result.failed).toEqual(['test-server']);
+    expect(result.ran).toEqual([
+      { name: 'test-server', status: 'timeout' },
+      { name: 'lint', status: 'pass' },
+    ]);
+    expect(r.stderr).toContain('check test-server: timeout');
+    expect(readFileSync(join(sb.sync, 'checks.log'), 'utf-8')).toContain(
+      'checks: test-server timed out after 2 s; its processes were stopped'
+    );
+    // The hung process (the fake npm, now /bin/sleep) is gone, and the run did
+    // not wait for its 300 s.
+    const pid = Number(readFileSync(pidFile, 'utf-8').trim());
+    let alive = true;
+    try {
+      process.kill(pid, 0);
+    } catch {
+      alive = false;
+    }
+    if (alive) process.kill(pid, 'SIGKILL');
+    expect(alive).toBe(false);
+    expect(elapsed).toBeLessThan(15_000);
+  }, 30_000);
+
+  it('gives the related app specs about 20 minutes and every other check 15 minutes', () => {
+    expect(CHECKS_SH).toContain('e2e-app) echo 1200 ;;');
+    expect(CHECKS_SH).toContain('*) echo 900 ;;');
+  });
+
+  const HAS_LOCKF =
+    spawnSync('bash', ['-c', 'command -v lockf'], { encoding: 'utf8' }).status === 0;
+
+  it('holds the shared build lock while a check runs, and frees it afterwards', () => {
+    if (!HAS_LOCKF) return; // lockf exists on macOS, where the mini runs the checks
+    const { sb, work, script } = setup();
+    const lock = join(sb.root, 'build.lock');
+    // The fake just reports whether the lock is free while the check runs.
+    writeExecutable(
+      join(sb.bin, 'npm'),
+      `#!/bin/bash\nif lockf -s -t 0 "${lock}" true; then echo free >> "$FAKE_LOG"; else echo held >> "$FAKE_LOG"; fi\nexit 0\n`
+    );
+    run(sb, `bash "${script}" lint`, { cwd: work, env: { FORK_SYNC_BUILD_LOCK: lock } });
+    expect(calls(sb)).toContain('held');
+    expect(spawnSync('lockf', ['-s', '-t', '0', lock, 'true']).status).toBe(0);
+  });
+
+  it('does not run a check while a release build holds the lock', () => {
+    if (!HAS_LOCKF) return;
+    const { sb, work, script } = setup();
+    const lock = join(sb.root, 'build.lock');
+    const holder = spawn('lockf', ['-k', lock, '/bin/sleep', '20'], { stdio: 'ignore' });
+    try {
+      spawnSync('/bin/sleep', ['0.5']);
+      run(sb, `bash "${script}" lint`, {
+        cwd: work,
+        env: { FORK_SYNC_BUILD_LOCK: lock, BUILD_LOCK_WAIT_SECONDS: '1' },
+      });
+      expect(readJson<ChecksJson>(join(sb.sync, 'checks.json')).ran).toEqual([
+        { name: 'lint', status: 'fail' },
+      ]);
+      expect(calls(sb)).not.toContain('npm run lint');
+      expect(readFileSync(join(sb.sync, 'checks.log'), 'utf-8')).toContain('a release build runs');
+    } finally {
+      holder.kill('SIGKILL');
+    }
+  }, 30_000);
+
+  it('records a passing check that wrote a warning as warn, which does not fail the checks', () => {
+    const { sb, work, script } = setup({ warn: 'run lint' });
+    const r = run(sb, `bash "${script}" lint format-check`, { cwd: work });
+    expect(r.status).toBe(0);
+    const result = JSON.parse(r.stdout) as ChecksJson;
+    expect(result).toEqual({
+      passed: true,
+      failed: [],
+      warnings: [{ name: 'lint', warning: 'only a macOS difference' }],
+      ran: [
+        { name: 'lint', status: 'warn' },
+        { name: 'format-check', status: 'pass' },
+      ],
+      full: false,
+    });
+    expect(existsSync(join(sb.sync, 'check-warning'))).toBe(false);
   });
 
   it('restores what the checks changed and keeps changes that were there before', () => {
@@ -1394,37 +1818,35 @@ exit 0
     expect(JSON.parse(r.stdout)).toEqual({
       passed: true,
       failed: [],
+      warnings: [],
       ran: [
         { name: 'lint', status: 'pass' },
         { name: 'vitest:src/grid.test.ts', status: 'pass' },
       ],
       full: false,
     });
+    expect(toolCalls(sb)).toEqual(['npm run lint', 'npx vitest run src/grid.test.ts --bail=1']);
   });
 
-  it('passes conflicted paths with spaces, non-ASCII characters or a leading dash as one safe argument', () => {
+  it('passes a test file path with spaces or non-ASCII characters as one safe argument', () => {
     const { sb, work, script } = setup();
-    for (const f of ['src/naïve grid.ts', 'src/naïve grid.test.ts', '-x/a.ts', '-x/a.test.ts']) {
+    for (const f of ['src/naïve grid.test.ts', 'pkg/-x/a.test.ts', 'pkg/vitest.config.ts']) {
       mkdirSync(dirname(join(work, f)), { recursive: true });
       writeFileSync(join(work, f), 'x\n');
     }
-    writeFileSync(
-      join(sb.sync, 'sync.json'),
-      JSON.stringify({ files: ['src/naïve grid.ts', '-x/a.ts'] })
-    );
-    const r = run(sb, `bash "${script}"`, { cwd: work });
+    const r = run(sb, `bash "${script}" "$@"`, {
+      cwd: work,
+      args: ['vitest:src/naïve grid.test.ts', 'vitest:pkg/-x/a.test.ts'],
+    });
     expect(r.status).toBe(0);
-    const ran = (JSON.parse(r.stdout) as { ran: Array<{ name: string }> }).ran.map(c => c.name);
-    expect(ran.filter(n => n.startsWith('vitest:'))).toEqual([
-      'vitest:./-x/a.test.ts',
-      'vitest:src/naïve grid.test.ts',
-    ]);
     const vitestCalls = readFileSync(`${sb.log}.args`, 'utf-8')
       .split('\n')
       .filter(line => line.startsWith('[npx]'));
+    // A path that starts with a dash inside a package gets ./, so vitest never
+    // reads it as an option.
     expect(vitestCalls).toEqual([
-      '[npx][vitest][run][./-x/a.test.ts][--bail=1]',
       '[npx][vitest][run][src/naïve grid.test.ts][--bail=1]',
+      '[npx][vitest][run][./-x/a.test.ts][--bail=1]',
     ]);
   });
 
@@ -1432,25 +1854,16 @@ exit 0
     // packages/app defines globals such as __DEV__ only in its own vitest config,
     // so a run from the repo root fails before any test starts.
     const { sb, work, script } = setup();
-    for (const f of [
-      'packages/app/vitest.config.ts',
-      'packages/app/src/stores/store.ts',
-      'packages/app/src/stores/store.test.ts',
-    ]) {
+    for (const f of ['packages/app/vitest.config.ts', 'packages/app/src/stores/store.test.ts']) {
       mkdirSync(dirname(join(work, f)), { recursive: true });
       writeFileSync(join(work, f), 'x\n');
     }
-    writeFileSync(
-      join(sb.sync, 'sync.json'),
-      JSON.stringify({ files: ['packages/app/src/stores/store.ts', 'src/grid.ts'] })
+    const r = run(
+      sb,
+      `bash "${script}" vitest:packages/app/src/stores/store.test.ts vitest:src/grid.test.ts`,
+      { cwd: work }
     );
-    const r = run(sb, `bash "${script}"`, { cwd: work });
     expect(r.status).toBe(0);
-    const ran = (JSON.parse(r.stdout) as { ran: Array<{ name: string }> }).ran.map(c => c.name);
-    expect(ran.filter(n => n.startsWith('vitest:'))).toEqual([
-      'vitest:packages/app/src/stores/store.test.ts',
-      'vitest:src/grid.test.ts',
-    ]);
     const vitestCalls = readFileSync(`${sb.log}.args`, 'utf-8')
       .split('\n')
       .filter(line => line.startsWith('[npx]'));
@@ -1481,6 +1894,23 @@ exit 0
       expect(r.status).toBe(2);
       expect(r.stderr).toContain(`unknown check '${name}'`);
     }
+  });
+
+  it('fails as a bad setup when sync.json names no merge base or run record', () => {
+    const { sb, work, script } = setup();
+    const syncPath = join(sb.sync, 'sync.json');
+    const sync = readJson<Record<string, unknown>>(syncPath);
+    for (const drop of ['merge_base', 'run_dir']) {
+      writeFileSync(syncPath, JSON.stringify({ ...sync, [drop]: undefined }));
+      const r = run(sb, `bash "${script}" lint`, { cwd: work });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain('sync.json names no run_dir or merge_base');
+    }
+    writeFileSync(syncPath, JSON.stringify({ ...sync, merge_base: SHA_A }));
+    const r = run(sb, `bash "${script}" lint`, { cwd: work });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain(`the merge base ${SHA_A} is not a commit`);
+    expect(toolCalls(sb)).toEqual([]);
   });
 
   it('fails as a missing tool when Node is not version 22', () => {
@@ -1531,54 +1961,74 @@ describe('check node (executable)', () => {
     return { sb, ...run(sb, script, { cwd: repos.work }) };
   }
 
-  it('fails before asking anyone when the resolver left a change for the engine to commit', () => {
-    const r = runCheck({ resolved: true, question: '' }, { dirty: true });
-    expect(r.status).toBe(1);
-    expect(readFileSync(join(r.sb.sync, 'guard-failure.txt'), 'utf-8')).toContain(
-      'archon evidence: resolve end'
-    );
-    expect(calls(r.sb)).toEqual([]);
-  });
+  it(
+    'fails before asking anyone when the resolver left a change for the engine to commit',
+    () => {
+      const r = runCheck({ resolved: true, question: '' }, { dirty: true });
+      expect(r.status).toBe(1);
+      expect(readFileSync(join(r.sb.sync, 'guard-failure.txt'), 'utf-8')).toContain(
+        'archon evidence: resolve end'
+      );
+      expect(calls(r.sb)).toEqual([]);
+    },
+    FULL_CHECK_RUN_BUDGET
+  );
 
-  it('fails without asking anyone or commenting when the resolver cannot resolve', () => {
-    const r = runCheck({ resolved: false, question: "Keep the fork's `grid` or upstream's?" });
-    expect(r.status).toBe(1);
-    const reason =
-      "The resolver could not resolve the merge: Keep the fork's `grid` or upstream's?";
-    expect(r.stderr).toContain(reason);
-    expect(readFileSync(join(r.sb.sync, 'check-failure.txt'), 'utf-8').trim()).toBe(reason);
-    expect(calls(r.sb)).toEqual([]);
-  });
+  it(
+    'fails without asking anyone or commenting when the resolver cannot resolve',
+    () => {
+      const r = runCheck({ resolved: false, question: "Keep the fork's `grid` or upstream's?" });
+      expect(r.status).toBe(1);
+      const reason =
+        "The resolver could not resolve the merge: Keep the fork's `grid` or upstream's?";
+      expect(r.stderr).toContain(reason);
+      expect(readFileSync(join(r.sb.sync, 'check-failure.txt'), 'utf-8').trim()).toBe(reason);
+      expect(calls(r.sb)).toEqual([]);
+    },
+    FULL_CHECK_RUN_BUDGET
+  );
 
-  it('passes without asking anyone when the branch passes the final checks', () => {
-    const r = runCheck({ resolved: true, question: '' });
-    expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout)).toEqual({ passed: true });
-    expect(calls(r.sb)).toEqual([]);
-    expect(existsSync(join(r.sb.sync, 'check-failure.txt'))).toBe(false);
-    expect(readJson(join(r.sb.sync, 'check-state.json'))).toEqual({ passed: true, attempt: 0 });
-    expect(readJson<{ full: boolean }>(join(r.sb.sync, 'checks.json')).full).toBe(true);
-  });
+  it(
+    'passes without asking anyone when the branch passes the final checks',
+    () => {
+      const r = runCheck({ resolved: true, question: '' });
+      expect(r.status).toBe(0);
+      expect(JSON.parse(r.stdout)).toEqual({ passed: true });
+      expect(calls(r.sb)).toEqual([]);
+      expect(existsSync(join(r.sb.sync, 'check-failure.txt'))).toBe(false);
+      expect(readJson(join(r.sb.sync, 'check-state.json'))).toEqual({ passed: true, attempt: 0 });
+      expect(readJson<{ full: boolean }>(join(r.sb.sync, 'checks.json')).full).toBe(true);
+    },
+    FULL_CHECK_RUN_BUDGET
+  );
 
-  it('hands failing final checks to the fix loop with the reason, and calls nothing on GitHub', () => {
-    const r = runCheck({ resolved: true, question: '' }, { failing: 'run lint' });
-    expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout)).toEqual({ passed: false });
-    expect(readJson(join(r.sb.sync, 'check-state.json'))).toEqual({ passed: false, attempt: 0 });
-    const reason = readFileSync(join(r.sb.sync, 'check-failure.txt'), 'utf-8');
-    expect(reason).toContain('The branch does not pass the final checks:');
-    expect(reason).toContain('- local checks fail: lint');
-    expect(calls(r.sb).filter(c => c.startsWith('gh '))).toEqual([]);
-  });
+  it(
+    'hands failing final checks to the fix loop with the reason, and calls nothing on GitHub',
+    () => {
+      const r = runCheck({ resolved: true, question: '' }, { failing: 'run lint' });
+      expect(r.status).toBe(0);
+      expect(JSON.parse(r.stdout)).toEqual({ passed: false });
+      expect(readJson(join(r.sb.sync, 'check-state.json'))).toEqual({ passed: false, attempt: 0 });
+      const reason = readFileSync(join(r.sb.sync, 'check-failure.txt'), 'utf-8');
+      expect(reason).toContain('The branch does not pass the final checks:');
+      expect(reason).toContain('- local checks fail: lint');
+      expect(calls(r.sb).filter(c => c.startsWith('gh '))).toEqual([]);
+    },
+    FULL_CHECK_RUN_BUDGET
+  );
 
-  it('records a missing notes paragraph as a failed final check', () => {
-    const r = runCheck({ resolved: true, question: '' }, { notes: 'nothing useful\n' });
-    expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout)).toEqual({ passed: false });
-    expect(readFileSync(join(r.sb.sync, 'check-failure.txt'), 'utf-8')).toContain(
-      'resolution.md has no paragraph for src/grid.ts'
-    );
-  });
+  it(
+    'records a missing notes paragraph as a failed final check',
+    () => {
+      const r = runCheck({ resolved: true, question: '' }, { notes: 'nothing useful\n' });
+      expect(r.status).toBe(0);
+      expect(JSON.parse(r.stdout)).toEqual({ passed: false });
+      expect(readFileSync(join(r.sb.sync, 'check-failure.txt'), 'utf-8')).toContain(
+        'resolution.md has no paragraph for src/grid.ts'
+      );
+    },
+    FULL_CHECK_RUN_BUDGET
+  );
 
   it('recheck counts the fix pass and records a pass or a new reason', () => {
     for (const failing of [undefined, 'run lint']) {
@@ -1599,20 +2049,26 @@ describe('check node (executable)', () => {
         );
       }
     }
-  });
+    // Four full check runs of about twenty checks each, every check with its own
+    // watchdog process: about 1 s per run on an idle machine.
+  }, 30_000);
 
-  it('ends the fix loop after a pass or after the second fix pass', () => {
-    const until = loopGroupOf('fix-checks').until_bash;
-    for (const [state, done] of [
-      [{ passed: true, attempt: 1 }, true],
-      [{ passed: false, attempt: 1 }, false],
-      [{ passed: false, attempt: 2 }, true],
-    ] as const) {
-      const sb = makeSandbox();
-      writeFileSync(join(sb.sync, 'check-state.json'), JSON.stringify(state));
-      expect(run(sb, until).status === 0).toBe(done);
-    }
-  });
+  it(
+    'ends the fix loop after a pass or after the second fix pass',
+    () => {
+      const until = loopGroupOf('fix-checks').until_bash;
+      for (const [state, done] of [
+        [{ passed: true, attempt: 1 }, true],
+        [{ passed: false, attempt: 1 }, false],
+        [{ passed: false, attempt: 2 }, true],
+      ] as const) {
+        const sb = makeSandbox();
+        writeFileSync(join(sb.sync, 'check-state.json'), JSON.stringify(state));
+        expect(run(sb, until).status === 0).toBe(done);
+      }
+    },
+    FULL_CHECK_RUN_BUDGET
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -1636,6 +2092,7 @@ function committedMerge(
   };
   git(sb, work, 'init', '-q', '-b', 'main');
   writeAll('base');
+  writeCiYml(work);
   git(sb, work, 'add', '-A');
   git(sb, work, 'commit', '-q', '-m', 'base');
   const mergeBase = git(sb, work, 'rev-parse', 'HEAD');
@@ -1668,8 +2125,10 @@ function committedMerge(
       upstream_sha: repos.upstreamSha,
       fork_ref: 'main',
       base_sha: repos.forkSha,
+      merge_base: mergeBase,
       branch: `sync/upstream-${ISSUE}-abcdef01`,
       files,
+      ...runRecord(sb),
     })
   );
   installSyncScripts(sb);
@@ -1686,91 +2145,129 @@ describe('final checks script (executable)', () => {
   const finalChecks = (sb: Sandbox, cwd: string): { status: number | null; stdout: string } =>
     run(sb, `bash "${join(sb.sync, 'final-checks.sh')}" "the test"`, { cwd });
 
-  it('passes for a committed merge with notes for every conflicted file', () => {
+  it(
+    'passes for a committed merge with notes for every conflicted file',
+    () => {
+      const { sb, repos } = committedMerge();
+      writeFileSync(join(sb.sync, 'resolution.md'), '`src/grid.ts`: keeps both.\n');
+      const r = finalChecks(sb, repos.work);
+      expect(r.status).toBe(0);
+      expect(existsSync(join(sb.sync, 'verify-problems.txt'))).toBe(false);
+      expect(
+        readJson<{ passed: boolean; full: boolean }>(join(sb.sync, 'checks.json'))
+      ).toMatchObject({
+        passed: true,
+        full: true,
+      });
+    },
+    FULL_CHECK_RUN_BUDGET
+  );
+
+  it(
+    'fails and records the problems when notes or markers are wrong',
+    () => {
+      const { sb, repos } = committedMerge();
+      writeFileSync(join(sb.sync, 'resolution.md'), 'nothing about the file\n');
+      writeFileSync(join(repos.work, 'src/grid.ts'), '<<<<<<< ours\nx\n>>>>>>> theirs\n');
+      git(sb, repos.work, 'commit', '-q', '-am', 'bad');
+      const r = finalChecks(sb, repos.work);
+      expect(r.status).toBe(10);
+      const problems = readFileSync(join(sb.sync, 'verify-problems.txt'), 'utf-8');
+      expect(problems).toContain('conflict markers remain in src/grid.ts');
+      expect(problems).toContain('resolution.md has no paragraph for src/grid.ts');
+    },
+    FULL_CHECK_RUN_BUDGET
+  );
+
+  it(
+    'checks conflicted paths that start with a dash or hold spaces as plain file names',
+    () => {
+      const files = ['-dash.ts', 'src/naïve grid.ts'];
+      const { sb, repos } = committedMerge(files);
+      writeFileSync(join(sb.sync, 'resolution.md'), '`src/naïve grid.ts`: keeps both.\n');
+      writeFileSync(join(repos.work, '-dash.ts'), '<<<<<<< ours\nx\n>>>>>>> theirs\n');
+      git(sb, repos.work, 'commit', '-q', '-am', 'bad');
+      const r = finalChecks(sb, repos.work);
+      expect(r.status).toBe(10);
+      const problems = readFileSync(join(sb.sync, 'verify-problems.txt'), 'utf-8');
+      expect(problems).toBe(
+        '- conflict markers remain in -dash.ts\n- resolution.md has no paragraph for -dash.ts\n'
+      );
+    },
+    FULL_CHECK_RUN_BUDGET
+  );
+
+  it('names a timed-out local check in the problems', () => {
     const { sb, repos } = committedMerge();
     writeFileSync(join(sb.sync, 'resolution.md'), '`src/grid.ts`: keeps both.\n');
-    const r = finalChecks(sb, repos.work);
-    expect(r.status).toBe(0);
-    expect(existsSync(join(sb.sync, 'verify-problems.txt'))).toBe(false);
-    expect(
-      readJson<{ passed: boolean; full: boolean }>(join(sb.sync, 'checks.json'))
-    ).toMatchObject({
-      passed: true,
-      full: true,
-    });
-  });
-
-  it('fails and records the problems when notes or markers are wrong', () => {
-    const { sb, repos } = committedMerge();
-    writeFileSync(join(sb.sync, 'resolution.md'), 'nothing about the file\n');
-    writeFileSync(join(repos.work, 'src/grid.ts'), '<<<<<<< ours\nx\n>>>>>>> theirs\n');
-    git(sb, repos.work, 'commit', '-q', '-am', 'bad');
-    const r = finalChecks(sb, repos.work);
-    expect(r.status).toBe(10);
-    const problems = readFileSync(join(sb.sync, 'verify-problems.txt'), 'utf-8');
-    expect(problems).toContain('conflict markers remain in src/grid.ts');
-    expect(problems).toContain('resolution.md has no paragraph for src/grid.ts');
-  });
-
-  it('checks conflicted paths that start with a dash or hold spaces as plain file names', () => {
-    const files = ['-dash.ts', 'src/naïve grid.ts'];
-    const { sb, repos } = committedMerge(files);
-    writeFileSync(join(sb.sync, 'resolution.md'), '`src/naïve grid.ts`: keeps both.\n');
-    writeFileSync(join(repos.work, '-dash.ts'), '<<<<<<< ours\nx\n>>>>>>> theirs\n');
-    git(sb, repos.work, 'commit', '-q', '-am', 'bad');
-    const r = finalChecks(sb, repos.work);
-    expect(r.status).toBe(10);
-    const problems = readFileSync(join(sb.sync, 'verify-problems.txt'), 'utf-8');
-    expect(problems).toBe(
-      '- conflict markers remain in -dash.ts\n- resolution.md has no paragraph for -dash.ts\n'
+    writeExecutable(
+      join(sb.bin, 'npm'),
+      `#!/bin/bash\ncase "$*" in *"run lint"*) exec /bin/sleep 300 ;; esac\nexit 0\n`
     );
-  });
-
-  it('fails when the merge commit does not carry the agreed message', () => {
-    const { sb, repos } = committedMerge(['src/grid.ts'], 'Merge whatever');
-    writeFileSync(join(sb.sync, 'resolution.md'), '`src/grid.ts`: keeps both.\n');
-    const r = finalChecks(sb, repos.work);
+    const r = run(sb, `bash "${join(sb.sync, 'final-checks.sh')}" "the test"`, {
+      cwd: repos.work,
+      // The limit applies to every check of the full run; the fake checks end at once.
+      env: { CHECK_TIMEOUT_SECONDS: '3' },
+    });
     expect(r.status).toBe(10);
     expect(readFileSync(join(sb.sync, 'verify-problems.txt'), 'utf-8')).toContain(
-      `the merge commit message is not "Merge getpaseo/paseo ${repos.upstreamSha.slice(0, 9)} into main"`
+      '- local checks fail: lint (timed out)'
     );
-  });
+  }, 30_000);
 
-  it('fails while the merge is still uncommitted', () => {
-    const sb = makeSandbox();
-    const repos = makeForkRepos(sb);
-    git(sb, repos.work, 'fetch', '-q', repos.upstream, 'main');
-    spawnSync(REAL_GIT, ['merge', '--no-ff', '--no-commit', repos.upstreamSha], {
-      cwd: repos.work,
-      env: sb.env,
-    });
-    git(sb, repos.work, 'fetch', '-q', repos.origin, '+refs/heads/main:refs/remotes/origin/main');
-    writeFileSync(
-      join(sb.sync, 'sync.json'),
-      JSON.stringify({
-        upstream_sha: repos.upstreamSha,
-        fork_ref: 'main',
-        base_sha: repos.forkSha,
-        branch: 'main',
-        files: ['src/grid.ts'],
-      })
-    );
-    writeFileSync(
-      join(sb.sync, 'checks.json'),
-      JSON.stringify({ passed: true, failed: [], ran: [], full: true })
-    );
-    writeFileSync(
-      join(sb.sync, 'decision.json'),
-      JSON.stringify({ needs_human: false, passed: true })
-    );
-    writeFileSync(join(sb.sync, 'resolution.md'), '`src/grid.ts`\n');
-    installSyncScripts(sb);
-    const r = finalChecks(sb, repos.work);
-    expect(r.status).toBe(1);
-    expect(readFileSync(join(sb.sync, 'guard-failure.txt'), 'utf-8')).toContain(
-      'a merge is still in progress'
-    );
-  });
+  it(
+    'fails when the merge commit does not carry the agreed message',
+    () => {
+      const { sb, repos } = committedMerge(['src/grid.ts'], 'Merge whatever');
+      writeFileSync(join(sb.sync, 'resolution.md'), '`src/grid.ts`: keeps both.\n');
+      const r = finalChecks(sb, repos.work);
+      expect(r.status).toBe(10);
+      expect(readFileSync(join(sb.sync, 'verify-problems.txt'), 'utf-8')).toContain(
+        `the merge commit message is not "Merge getpaseo/paseo ${repos.upstreamSha.slice(0, 9)} into main"`
+      );
+    },
+    FULL_CHECK_RUN_BUDGET
+  );
+
+  it(
+    'fails while the merge is still uncommitted',
+    () => {
+      const sb = makeSandbox();
+      const repos = makeForkRepos(sb);
+      git(sb, repos.work, 'fetch', '-q', repos.upstream, 'main');
+      spawnSync(REAL_GIT, ['merge', '--no-ff', '--no-commit', repos.upstreamSha], {
+        cwd: repos.work,
+        env: sb.env,
+      });
+      git(sb, repos.work, 'fetch', '-q', repos.origin, '+refs/heads/main:refs/remotes/origin/main');
+      writeFileSync(
+        join(sb.sync, 'sync.json'),
+        JSON.stringify({
+          upstream_sha: repos.upstreamSha,
+          fork_ref: 'main',
+          base_sha: repos.forkSha,
+          branch: 'main',
+          files: ['src/grid.ts'],
+        })
+      );
+      writeFileSync(
+        join(sb.sync, 'checks.json'),
+        JSON.stringify({ passed: true, failed: [], ran: [], full: true })
+      );
+      writeFileSync(
+        join(sb.sync, 'decision.json'),
+        JSON.stringify({ needs_human: false, passed: true })
+      );
+      writeFileSync(join(sb.sync, 'resolution.md'), '`src/grid.ts`\n');
+      installSyncScripts(sb);
+      const r = finalChecks(sb, repos.work);
+      expect(r.status).toBe(1);
+      expect(readFileSync(join(sb.sync, 'guard-failure.txt'), 'utf-8')).toContain(
+        'a merge is still in progress'
+      );
+    },
+    FULL_CHECK_RUN_BUDGET
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -2138,7 +2635,9 @@ describe('CI wait (executable)', () => {
   it('the loop body waits again and records the next attempt', () => {
     const { sb, work } = setup([{ out: checksJson(['build', 'fail']), code: 1 }]);
     writeFileSync(join(sb.sync, 'ci.json'), JSON.stringify({ conclusion: 'failure', attempt: 0 }));
-    const again = loopGroupOf('fix-ci').nodes[1] as { bash?: string };
+    const again = loopGroupOf('fix-ci').nodes.find(n => n.id === 'wait-ci-again') as {
+      bash?: string;
+    };
     const r = run(sb, render(again.bash ?? '', sb.artifacts), { cwd: work });
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout)).toMatchObject({ conclusion: 'failure', attempt: 1 });
@@ -2148,11 +2647,121 @@ describe('CI wait (executable)', () => {
     const { sb, work } = setup([{ out: checksJson(['build', 'fail']), code: 1 }]);
     writeFileSync(join(sb.sync, 'ci.json'), JSON.stringify({ conclusion: 'failure', attempt: 0 }));
     writeFileSync(join(work, 'f'), 'uncommitted fix\n');
-    const again = loopGroupOf('fix-ci').nodes[1] as { bash?: string };
+    const again = loopGroupOf('fix-ci').nodes.find(n => n.id === 'wait-ci-again') as {
+      bash?: string;
+    };
     const r = run(sb, render(again.bash ?? '', sb.artifacts), { cwd: work });
     expect(r.status).toBe(1);
     expect(readFileSync(join(sb.sync, 'guard-failure.txt'), 'utf-8')).toContain(' M f');
     expect(calls(sb).some(c => c.startsWith('gh pr checks'))).toBe(false);
+  });
+
+  const failedWithLinks = JSON.stringify([
+    {
+      name: 'server',
+      state: 'FAILURE',
+      bucket: 'fail',
+      link: 'https://github.com/r/actions/runs/111/job/1',
+    },
+    {
+      name: 'app',
+      state: 'FAILURE',
+      bucket: 'fail',
+      link: 'https://github.com/r/actions/runs/111/job/2',
+    },
+    {
+      name: 'cli',
+      state: 'FAILURE',
+      bucket: 'fail',
+      link: 'https://github.com/r/actions/runs/222/job/3',
+    },
+    {
+      name: 'lint',
+      state: 'SUCCESS',
+      bucket: 'pass',
+      link: 'https://github.com/r/actions/runs/333/job/4',
+    },
+  ]);
+
+  function rerunCi(sb: Sandbox, work: string): Record<string, unknown> {
+    writeFileSync(
+      join(sb.sync, 'ci.json'),
+      JSON.stringify({ conclusion: 'failure', failed: ['server'], checks_url: 'c', attempt: 0 })
+    );
+    const r = run(sb, render(bashOf('rerun-ci'), sb.artifacts), { cwd: work });
+    expect(r.status).toBe(0);
+    return JSON.parse(r.stdout) as Record<string, unknown>;
+  }
+
+  it('rerun-ci re-runs the failed jobs of each failed run once, waits again, and fixes nothing after a pass', () => {
+    const { sb, work } = setup([
+      { out: failedWithLinks, code: 1 },
+      { out: checksJson(['server', 'pending']), code: 8 },
+      { out: checksJson(['server', 'pass'], ['lint', 'pass']), code: 0 },
+    ]);
+    expect(rerunCi(sb, work)).toEqual({
+      conclusion: 'success',
+      failed: [],
+      checks_url: `https://github.com/${FORK_REPO}/pull/77/checks`,
+      attempt: 0,
+      rerun: true,
+      fix: false,
+    });
+    expect(calls(sb).filter(c => c.startsWith('gh run rerun'))).toEqual([
+      `gh run rerun 111 --failed --repo ${FORK_REPO}`,
+      `gh run rerun 222 --failed --repo ${FORK_REPO}`,
+    ]);
+  });
+
+  it('rerun-ci hands a CI that still fails after the re-run to the fix loop', () => {
+    const { sb, work } = setup([
+      { out: failedWithLinks, code: 1 },
+      { out: checksJson(['server', 'pending']), code: 8 },
+      { out: checksJson(['server', 'fail'], ['lint', 'pass']), code: 1 },
+    ]);
+    expect(rerunCi(sb, work)).toMatchObject({
+      conclusion: 'failure',
+      failed: ['server'],
+      attempt: 0,
+      rerun: true,
+      fix: true,
+    });
+  });
+
+  it('rerun-ci does not wait when no run can be re-run, and fixes the failed CI', () => {
+    const { sb, work } = setup([{ out: failedWithLinks, code: 1 }]);
+    sb.env.FAKE_RERUN_RESULT = 'refused';
+    expect(rerunCi(sb, work)).toEqual({
+      conclusion: 'failure',
+      failed: ['server'],
+      checks_url: 'c',
+      attempt: 0,
+      rerun: false,
+      fix: true,
+    });
+    expect(calls(sb).filter(c => c.startsWith('gh pr checks'))).toHaveLength(1);
+  });
+
+  it('pr-open skips the fix and records the state when a human merged or closed the PR', () => {
+    const prOpen = loopGroupOf('fix-ci').nodes.find(n => n.id === 'pr-open') as { bash?: string };
+    for (const [state, open] of [
+      ['OPEN', true],
+      ['MERGED', false],
+      ['CLOSED', false],
+    ] as const) {
+      const { sb, work } = setup([]);
+      sb.env.FAKE_PR_STATE = state;
+      writeFileSync(
+        join(sb.sync, 'ci.json'),
+        JSON.stringify({ conclusion: 'failure', failed: ['server'], checks_url: 'c', attempt: 0 })
+      );
+      const r = run(sb, render(prOpen.bash ?? '', sb.artifacts), { cwd: work });
+      expect(r.status).toBe(0);
+      expect(JSON.parse(r.stdout)).toEqual({ open });
+      const ci = readJson<{ conclusion: string; failed: string[] }>(join(sb.sync, 'ci.json'));
+      expect(ci.conclusion).toBe(open ? 'failure' : state.toLowerCase());
+      expect(ci.failed).toEqual(open ? ['server'] : []);
+    }
   });
 
   it('fix-ci stops after a non-failure conclusion or after the second attempt', () => {

@@ -6,9 +6,11 @@ description: |
   Does: Reads the machine block on line 1 of the issue body, merges the named upstream
         block/buzz commit on a new sync/upstream-<issue>-<run> branch from main,
         resolves the conflicts (or, for a clean merge whose checks failed, fixes the
-        failed checks) in one merge commit plus fix commits, runs the fork's bounded
-        Rust, desktop, mobile and migration checks, ends failed without a push when it
-        cannot resolve or the checks still fail, opens a pull request to main with
+        failed checks) in one merge commit plus fix commits, runs the fork's local
+        checks (Rust build and lint, upstream CI's unit and PostgreSQL test jobs
+        against a throwaway PostgreSQL and Redis in Docker, the related desktop
+        Playwright smoke specs, desktop, mobile and migration checks), ends failed
+        without a push when it cannot resolve or the checks still fail, opens a pull request to main with
         archon-create-pr,
         reports the PR URL as soon as the PR is verified, waits for its CI (and stops waiting
         when a human merges or closes the PR), re-runs failed CI jobs once, fixes failed CI
@@ -237,20 +239,31 @@ nodes:
       #!/usr/bin/env bash
       # Usage: checks.sh [check ...]. Without names it runs every check (a full run).
       # Check names: rust-fmt, migration-numbers, rust-check, rust-clippy,
-      # rust-test:<crate>, desktop-install, desktop-check, desktop-typecheck,
-      # desktop-test, desktop-tauri-check, mobile-check, fork-script-tests.
-      # A full run adds rust-test:<crate> for each workspace crate that holds a
-      # touched file, the desktop checks for a touched file under desktop/, the
+      # rust-test-unit, rust-test-postgres, rust-test:<crate>, desktop-install,
+      # desktop-check, desktop-typecheck, desktop-test, desktop-tauri-check,
+      # desktop-e2e, mobile-check, fork-script-tests.
+      # rust-test-unit and rust-test-postgres are the Rust test jobs of upstream CI
+      # ("Unit Tests": `just test-unit`; "PostgreSQL Tests": scripts/postgres-test-run.sh,
+      # which finds the PostgreSQL-backed tests of every workspace crate). The
+      # PostgreSQL job runs against a throwaway PostgreSQL and Redis in Docker, one
+      # pair per check, that the script removes when the check ends. rust-test:<crate>
+      # runs the lib tests of one crate, for a quick rerun.
+      # desktop-e2e runs the desktop Playwright smoke specs that changed since the
+      # merge base (Playwright's --only-changed) plus smoke.spec.ts. A spec that
+      # fails only on a pixel diff against a macOS (-darwin) baseline is a warning,
+      # not a failure: CI compares the Linux baseline, which is the authority.
+      # A full run adds the desktop checks for a touched file under desktop/, the
       # Tauri check for desktop/src-tauri/ and mobile-check for mobile/. Touched
       # files are the conflicted files of sync.json and the files that the commits
       # after the merge commit changed.
       # Each check runs under a hard time limit (CHECK_TIMEOUT_SECONDS when set, else
-      # 1200 s for rust-test:<crate> and 900 s for the others); a check that runs longer
-      # is stopped with all its processes and reported with the status "timeout".
+      # the value of check_limit below); a check that runs longer is stopped with all
+      # its processes and reported with the status "timeout".
       # Writes checks.json and checks.log beside this script and prints checks.json.
-      # Exit 0 when the checks ran (pass, fail or timeout), 2 for a missing tool or a bad name.
-      # Never runs a whole test suite, PostgreSQL, Playwright or mesh tests: CI on the
-      # pull request runs them.
+      # Exit 0 when the checks ran (pass, warn, fail or timeout), 2 for a missing tool
+      # or a bad name.
+      # Never runs the mesh tests, the relay-backed integration and E2E jobs or the
+      # Linux snapshot comparison: CI on the pull request runs them.
       set -euo pipefail
       sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
       cd "$(git rev-parse --show-toplevel)"
@@ -261,9 +274,18 @@ nodes:
       unset NODE_ENV
       # Each run builds into its own cargo target, outside the worktree; the
       # workflow removes it at the end of the run.
-      CARGO_TARGET_DIR="$(jq -er .run_dir "$sync_dir/sync.json")/cargo-target"
+      run_dir=$(jq -er .run_dir "$sync_dir/sync.json")
+      CARGO_TARGET_DIR="$run_dir/cargo-target"
       export CARGO_TARGET_DIR
       mkdir -p "$CARGO_TARGET_DIR"
+      # run_dir is $STATE_DIR/sync-runs/<run id>; tools and browser caches that
+      # runs share live in $STATE_DIR.
+      run_id=${run_dir##*/}
+      state_root=$(dirname "$(dirname "$run_dir")")
+      # cleanup.sh removes the containers with this label when the run ends.
+      container_label="archon.sync-run=$run_id"
+      # A check that passes with a warning writes the warning here.
+      warning_marker="$sync_dir/check-warning"
 
       # Hermit pins the fork's toolchain (rust, node, pnpm, just, flutter).
       if [ ! -f bin/activate-hermit ]; then
@@ -302,48 +324,35 @@ nodes:
         if [ -n "$merge" ]; then git -c core.quotepath=false diff -z --name-only "$merge" HEAD; fi
       }
 
-      # The package name of a workspace crate under crates/<dir>/, when it has a library.
-      crate_name() {
-        local dir=$1
-        if [ -f "$dir/Cargo.toml" ] && [ -f "$dir/src/lib.rs" ]; then
-          awk '/^\[/ { section = $0 } section == "[package]" && /^name *=/ {
-            gsub(/^name *= *"|".*$/, ""); print; exit }' "$dir/Cargo.toml"
-        fi
-      }
-
-      # Checks names travel NUL-separated, in a cheap-first order.
+      # Checks names travel NUL-separated, in a cheap-first order. Every full run
+      # runs the Rust test jobs of upstream CI and the related desktop E2E specs:
+      # an upstream merge can break any crate or screen, not only touched ones.
       full_checks() {
-        local touched desktop=false tauri=false mobile=false crates="" path dir name
+        local touched desktop=false tauri=false mobile=false path
         touched=$(touched_files | tr '\0' '\n')
         while IFS= read -r path; do
           case "$path" in
             desktop/src-tauri/*) desktop=true; tauri=true ;;
             desktop/*) desktop=true ;;
             mobile/*) mobile=true ;;
-            crates/*/*)
-              dir=${path#crates/}
-              dir=crates/${dir%%/*}
-              name=$(crate_name "$dir")
-              if [ -n "$name" ]; then crates="$crates$name"$'\n'; fi ;;
           esac
         done <<<"$touched"
         printf '%s\0' rust-fmt migration-numbers rust-check rust-clippy
-        while IFS= read -r name; do
-          if [ -n "$name" ]; then printf 'rust-test:%s\0' "$name"; fi
-        done < <(printf '%s' "$crates" | LC_ALL=C sort -u)
         if [ "$desktop" = true ]; then
           printf '%s\0' desktop-install desktop-check desktop-typecheck desktop-test
         fi
         if [ "$tauri" = true ]; then printf '%s\0' desktop-tauri-check; fi
         if [ "$mobile" = true ]; then printf '%s\0' mobile-check; fi
         if [ -n "$(fork_script_tests | tr -d '\0')" ]; then printf '%s\0' fork-script-tests; fi
+        printf '%s\0' rust-test-unit rust-test-postgres desktop-e2e
       }
 
       valid_check() {
         case "$1" in
           rust-fmt|migration-numbers|rust-check|rust-clippy) return 0 ;;
+          rust-test-unit|rust-test-postgres) return 0 ;;
           desktop-install|desktop-check|desktop-typecheck|desktop-test|desktop-tauri-check) return 0 ;;
-          mobile-check|fork-script-tests) return 0 ;;
+          desktop-e2e|mobile-check|fork-script-tests) return 0 ;;
           rust-test:*)
             [[ "${1#rust-test:}" =~ ^[A-Za-z0-9_][A-Za-z0-9_-]*$ ]] && return 0 ;;
         esac
@@ -375,6 +384,197 @@ nodes:
           <(git -c core.quotepath=false ls-files | grep -E "$pattern" || true)
       }
 
+      # cargo-nextest at the version that the fork's .config/nextest.toml requires
+      # (upstream CI installs that version, and nextest refuses an older one). It
+      # is fetched once into the project's state folder and reused by later runs.
+      ensure_nextest() {
+        local version dir tmp os
+        version=$(sed -n 's/^nextest-version *= *"\([^"]*\)".*/\1/p' .config/nextest.toml 2>/dev/null | head -n 1)
+        if [ -z "$version" ]; then
+          if cargo nextest --version >/dev/null 2>&1; then return 0; fi
+          echo "checks: .config/nextest.toml names no nextest-version and cargo-nextest is missing"
+          return 1
+        fi
+        dir="$state_root/tools/cargo-nextest-$version"
+        if [ ! -x "$dir/cargo-nextest" ]; then
+          case "$(uname -s)" in
+            Darwin) os=mac ;;
+            Linux) os=linux ;;
+            *) echo "checks: no cargo-nextest download for $(uname -s)"; return 1 ;;
+          esac
+          tmp="$dir.tmp.$$"
+          rm -rf "$tmp"
+          mkdir -p "$tmp"
+          if ! curl -fsSL --retry 3 "https://get.nexte.st/$version/$os" | tar -xzf - -C "$tmp" \
+              || [ ! -x "$tmp/cargo-nextest" ]; then
+            rm -rf "$tmp"
+            echo "checks: cannot download cargo-nextest $version"
+            return 1
+          fi
+          # Another run can win the race; its copy is the same version.
+          mv "$tmp" "$dir" 2>/dev/null || rm -rf "$tmp"
+        fi
+        export PATH="$dir:$PATH"
+      }
+
+      # The container image of a service in upstream's "PostgreSQL Tests" job, so
+      # the local run uses the version CI uses. Usage: ci_service_image <name> <default>
+      ci_service_image() {
+        local image
+        image=$(grep -m 1 -E "^[[:space:]]*image:[[:space:]]*$1:" .github/workflows/_ci-relay.yml 2>/dev/null \
+          | sed -E 's/^[[:space:]]*image:[[:space:]]*//; s/[[:space:]]+#.*$//; s/[[:space:]]*$//' || true)
+        if [ -z "$image" ]; then
+          echo "checks: no $1 image in .github/workflows/_ci-relay.yml; using $2" >&2
+          image=$2
+        fi
+        printf '%s\n' "$image"
+      }
+
+      # The PostgreSQL client programs (psql, createdb, dropdb) that upstream's
+      # scripts call through PG_BIN_DIR.
+      pg_bin_dir() {
+        local dir
+        for dir in "${PG_BIN_DIR:-}" "$(dirname "$(command -v psql 2>/dev/null || echo /nonexistent/psql)")" \
+            /opt/homebrew/opt/libpq/bin /usr/local/opt/libpq/bin /usr/bin; do
+          if [ -n "$dir" ] && [ -x "$dir/psql" ] && [ -x "$dir/createdb" ] && [ -x "$dir/dropdb" ]; then
+            printf '%s\n' "$dir"
+            return 0
+          fi
+        done
+        echo "checks: psql, createdb and dropdb are missing (install libpq)"
+        return 1
+      }
+
+      # The host port that Docker published for a container port.
+      host_port() {
+        docker port "$1" "$2/tcp" 2>/dev/null | head -n 1 | sed 's/.*://'
+      }
+
+      # Removes the service containers of this run. The checks loop calls it after
+      # every check, because a check stopped at its time limit cannot remove them
+      # itself; cleanup.sh removes them too when the run ends or is cancelled.
+      remove_run_containers() {
+        local ids
+        command -v docker >/dev/null 2>&1 || return 0
+        ids=$(docker ps -aq --filter "label=$container_label" 2>/dev/null || true)
+        if [ -n "$ids" ]; then
+          # shellcheck disable=SC2086
+          docker rm -f $ids >/dev/null 2>&1 || true
+        fi
+      }
+
+      # Upstream's "PostgreSQL Tests" job on this machine: a throwaway PostgreSQL
+      # and Redis (the job's two services) in Docker on free local ports, tuned like
+      # the job's disposable server, then scripts/postgres-test-run.sh with the
+      # job's environment. The script finds the PostgreSQL-backed tests of every
+      # workspace crate and runs them with --run-ignored ignored-only.
+      rust_test_postgres() {
+        local pg_bin name pg_port redis_port n package packages
+        ensure_nextest || return 1
+        pg_bin=$(pg_bin_dir) || { echo "$pg_bin"; return 1; }
+        if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+          echo "checks: Docker is missing or not running"
+          return 1
+        fi
+        name="archon-sync-${run_id:0:8}-$$"
+        docker run -d --rm --name "$name-postgres" --label "$container_label" \
+          -e POSTGRES_USER=buzz -e POSTGRES_PASSWORD=buzz_dev -e POSTGRES_DB=postgres \
+          -p 127.0.0.1::5432 "$(ci_service_image postgres postgres:16)" >/dev/null || return 1
+        docker run -d --rm --name "$name-redis" --label "$container_label" \
+          -p 127.0.0.1::6379 "$(ci_service_image redis redis:7)" >/dev/null || return 1
+        pg_port=$(host_port "$name-postgres" 5432)
+        redis_port=$(host_port "$name-redis" 6379)
+        if [ -z "$pg_port" ] || [ -z "$redis_port" ]; then
+          echo "checks: Docker published no port for the test services"
+          return 1
+        fi
+        export PG_BIN_DIR="$pg_bin" PGHOST=127.0.0.1 PGPORT="$pg_port" PGUSER=buzz PGPASSWORD=buzz_dev
+        # Some tests start psql by name, as on CI where it is in /usr/bin.
+        export PATH="$pg_bin:$PATH"
+        n=0
+        until "$pg_bin/pg_isready" -q -d postgres 2>/dev/null; do
+          n=$((n + 1))
+          if [ "$n" -ge 60 ]; then echo "checks: the test PostgreSQL did not start"; return 1; fi
+          /bin/sleep 1
+        done
+        n=0
+        until docker exec "$name-redis" redis-cli ping >/dev/null 2>&1; do
+          n=$((n + 1))
+          if [ "$n" -ge 60 ]; then echo "checks: the test Redis did not start"; return 1; fi
+          /bin/sleep 1
+        done
+        # Each test clones a database, which forces checkpoints; durability only
+        # costs time on a throwaway server.
+        "$pg_bin/psql" --dbname postgres --set ON_ERROR_STOP=1 --quiet \
+          -c "ALTER SYSTEM SET fsync = off" -c "ALTER SYSTEM SET full_page_writes = off" \
+          -c "ALTER SYSTEM SET synchronous_commit = off" -c "SELECT pg_reload_conf()" >/dev/null || return 1
+        export REDIS_URL="redis://127.0.0.1:$redis_port"
+        export PGSCHEMA_PLAN_HOST=127.0.0.1 PGSCHEMA_PLAN_PORT="$pg_port"
+        export PGSCHEMA_PLAN_USER=buzz PGSCHEMA_PLAN_PASSWORD=buzz_dev
+        export BUZZ_TEST_POSTGRES_PASSWORD=buzz_dev
+        export BUZZ_POSTGRES_ADMIN_URL="postgres://buzz:buzz_dev@127.0.0.1:$pg_port/postgres"
+        # CI builds these tests with the ci cargo profile (optimized); some of
+        # them assert boot and timeout budgets that a debug build misses. The
+        # package list is the one the script finds without arguments.
+        packages=()
+        while IFS= read -r package; do
+          if [ -n "$package" ]; then packages+=(-p "$package"); fi
+        done < <(scripts/postgres-test-packages.sh)
+        if [ "${#packages[@]}" -eq 0 ]; then
+          echo "checks: no PostgreSQL test packages were discovered"
+          return 1
+        fi
+        # One retry per failed test: on this shared machine a test can miss a
+        # timing budget under load. A test that fails twice fails the check.
+        NEXTEST_RETRIES=1 scripts/postgres-test-run.sh "${packages[@]}" --lib --tests --cargo-profile ci
+      }
+
+      # The desktop Playwright smoke specs that changed since the merge base (the
+      # spec files and the files they import, by Playwright's --only-changed),
+      # plus smoke.spec.ts, against a fresh E2E build. The relay-backed
+      # integration project needs the relay and stays on CI. Browsers live in a
+      # cache in the project's state folder, shared by runs. A failure only on a
+      # pixel diff against a macOS (-darwin) baseline, or on a missing one, is
+      # recorded as a warning: CI compares the Linux baseline, the authority.
+      # Snapshots are never written (--update-snapshots=none).
+      desktop_e2e() {
+        local merge_base list report spec specs=() rc=0
+        merge_base=$(jq -er .merge_base "$sync_dir/sync.json")
+        list="$sync_dir/desktop-e2e-list.json"
+        report="$sync_dir/desktop-e2e-report.json"
+        rm -f "$list" "$report"
+        export PLAYWRIGHT_BROWSERS_PATH="$state_root/ms-playwright"
+        just desktop-install-ci || return 1
+        (cd desktop && pnpm exec playwright install chromium) || return 1
+        pnpm -C desktop build:e2e || return 1
+        (cd desktop && pnpm exec playwright test --project=smoke --list --reporter=json \
+          --pass-with-no-tests --only-changed="$merge_base") > "$list" || return 1
+        while IFS= read -r spec; do
+          if [ -n "$spec" ] && [ "$spec" != smoke.spec.ts ]; then specs+=("tests/e2e/$spec"); fi
+        done < <(jq -r '[.. | objects | select((.file? // "") | endswith(".spec.ts")) | .file] | unique | .[]' "$list")
+        specs=(tests/e2e/smoke.spec.ts ${specs[@]+"${specs[@]}"})
+        echo "desktop-e2e: running ${#specs[@]} spec file(s): ${specs[*]}"
+        (cd desktop && CI=1 PLAYWRIGHT_JSON_OUTPUT_NAME="$report" pnpm exec playwright test \
+          --project=smoke --update-snapshots=none --reporter=list,json "${specs[@]}") || rc=$?
+        if [ "$rc" -eq 0 ]; then return 0; fi
+        # Failed tests whose every error is a screenshot comparison against a
+        # -darwin baseline are a warning; any other failure fails the check.
+        if [ -s "$report" ] && jq -e '
+            def darwin_only: (.message // "") as $m
+              | ($m | test("toHaveScreenshot|toMatchSnapshot|[Ss]napshot")) and ($m | test("-darwin\\.png"));
+            [.. | objects | select(has("tests")) | .tests[] | select(.status == "unexpected")] as $failed
+            | ($failed | length) > 0
+              and all($failed[]; (.results | last | .errors // []) as $e
+                | ($e | length) > 0 and all($e[]; darwin_only))' "$report" >/dev/null 2>&1; then
+          jq -r '[.. | objects | select(has("tests")) | select(any(.tests[]; .status == "unexpected")) | .title]
+            | "only a pixel diff against the macOS (-darwin) baseline: " + join(", ")
+              + "; CI compares the Linux baseline"' "$report" > "$warning_marker"
+          cat "$warning_marker"
+          return 0
+        fi
+        return 1
+      }
+
       run_check() {
         case "$1" in
           rust-fmt) just fmt-check ;;
@@ -382,11 +582,19 @@ nodes:
           # --locked fails on a Cargo.lock that the merge left stale, as CI would.
           rust-check) cargo check --workspace --all-targets --keep-going --locked ;;
           rust-clippy) just clippy ;;
+          # Upstream's "Unit Tests" job. The recipe uses nextest when it is on PATH.
+          # One retry per failed test, as for the PostgreSQL job.
+          rust-test-unit)
+            ensure_nextest || echo "checks: running the unit tests without nextest"
+            NEXTEST_RETRIES=1 just test-unit ;;
+          rust-test-postgres) rust_test_postgres ;;
+          desktop-e2e) desktop_e2e ;;
           # libtest runs the tests of one binary in threads of one process, and
           # some upstream tests deadlock there on shared locks; nextest (as in
           # upstream CI) runs each test in its own process. Without nextest the
           # tests run on one thread.
           rust-test:*)
+            ensure_nextest || echo "checks: running the crate tests without nextest"
             if cargo nextest --version >/dev/null 2>&1; then
               cargo nextest run --locked -p "${1#rust-test:}" --lib
             else
@@ -429,6 +637,40 @@ nodes:
         fi
       done < "$names_file"
 
+      # The mini also runs release desktop builds that need the whole machine.
+      # They and these checks take the same lock (lockf, as the release jobs
+      # do), so the two never run at the same time. Each check holds the lock
+      # only while it runs: a release job gives up after one hour of waiting, and
+      # a full run of the checks takes longer than that. The lock holder exits
+      # when this script ends, also when the script is killed, so a stopped run
+      # never keeps the lock. Without lockf (not macOS) the checks run unlocked.
+      build_lock="${FORK_SYNC_BUILD_LOCK:-$HOME/.mini-desktop-build.lock}"
+      lock_ready="$sync_dir/build-lock.pid"
+      lock_holder=""
+      take_build_lock() {
+        command -v lockf >/dev/null 2>&1 || return 0
+        rm -f "$lock_ready"
+        # shellcheck disable=SC2016 # $$, $1 and $2 expand in the child shell.
+        lockf -k -t "${BUILD_LOCK_WAIT_SECONDS:-3600}" "$build_lock" /bin/sh -c \
+          'echo $$ > "$1"; while kill -0 "$2" 2>/dev/null; do /bin/sleep 2; done' \
+          sh "$lock_ready" "$$" >/dev/null 2>&1 </dev/null &
+        lock_holder=$!
+        until [ -s "$lock_ready" ]; do
+          if ! kill -0 "$lock_holder" 2>/dev/null; then
+            lock_holder=""
+            return 1
+          fi
+          /bin/sleep 0.2
+        done
+      }
+      release_build_lock() {
+        [ -n "$lock_holder" ] || return 0
+        kill "$(cat "$lock_ready" 2>/dev/null)" 2>/dev/null || true
+        wait "$lock_holder" 2>/dev/null || true
+        lock_holder=""
+        rm -f "$lock_ready"
+      }
+
       # The engine commits every Git-visible change (tracked, and untracked but not
       # ignored) at each node boundary, so the checks must leave the tree as they
       # found it. Only paths the checks changed are put back; paths that were
@@ -452,11 +694,18 @@ nodes:
               echo "checks: removed $path, which a check created" >&2
             done
       }
-      trap restore_check_changes EXIT
+      trap 'restore_check_changes; remove_run_containers; release_build_lock' EXIT
 
       check_limit() {
         if [ -n "${CHECK_TIMEOUT_SECONDS:-}" ]; then echo "$CHECK_TIMEOUT_SECONDS"; return; fi
+        # Measured cold on the mini (2026-11-13, one CI job running beside it):
+        # rust-test-unit about 15 min, rust-test-postgres 48 min (33 min to build
+        # its test binaries, 15 min to run 1545 tests). A rerun in the same run
+        # reuses the cargo target and takes a fraction of that.
         case "$1" in
+          rust-test-unit) echo 2400 ;;
+          rust-test-postgres) echo 4800 ;;
+          desktop-e2e) echo 1200 ;;
           rust-test:*) echo 1200 ;;
           *) echo 900 ;;
         esac
@@ -496,21 +745,39 @@ nodes:
 
       : > "$log"
       results='[]'
+      remove_run_containers
       while IFS= read -r -d '' name; do
         printf '\n===== %s =====\n' "$name" >> "$log"
+        rm -f "$warning_marker"
         rc=0
-        run_limited "$name" >> "$log" 2>&1 </dev/null || rc=$?
+        if take_build_lock; then
+          run_limited "$name" >> "$log" 2>&1 </dev/null || rc=$?
+          release_build_lock
+        else
+          echo "checks: the build lock $build_lock stayed taken for ${BUILD_LOCK_WAIT_SECONDS:-3600} s (a release build runs); $name did not run" >> "$log"
+          rc=1
+        fi
+        remove_run_containers
+        warning=""
         case "$rc" in
-          0) status=pass ;;
+          0)
+            status=pass
+            if [ -s "$warning_marker" ]; then status=warn; warning=$(cat "$warning_marker"); fi ;;
           124) status=timeout ;;
           *) status=fail ;;
         esac
+        rm -f "$warning_marker"
         echo "check $name: $status" >&2
-        results=$(jq -c --arg n "$name" --arg s "$status" '. + [{name: $n, status: $s}]' <<<"$results")
+        results=$(jq -c --arg n "$name" --arg s "$status" --arg w "$warning" \
+          '. + [{name: $n, status: $s} + (if $w == "" then {} else {warning: $w} end)]' <<<"$results")
       done < "$names_file"
 
+      # A warning does not fail the checks; it is listed in checks.json.
       jq -n --argjson r "$results" --argjson full "$full" \
-        '{passed: ($r | all(.status == "pass")), failed: [$r[] | select(.status != "pass") | .name], ran: $r, full: $full}' \
+        '{passed: ($r | all(.status == "pass" or .status == "warn")),
+          failed: [$r[] | select(.status != "pass" and .status != "warn") | .name],
+          warnings: [$r[] | select(.status == "warn") | {name, warning}],
+          ran: [$r[] | {name, status}], full: $full}' \
         > "$sync_dir/checks.json.tmp"
       mv "$sync_dir/checks.json.tmp" "$sync_dir/checks.json"
       cat "$sync_dir/checks.json"
@@ -640,7 +907,7 @@ nodes:
       done < <(jq -j '.failed_checks[] | . + "\u0000"' "$sync_dir/sync.json")
       bash "$sync_dir/checks.sh" >/dev/null
       if ! jq -e .passed "$sync_dir/checks.json" >/dev/null; then
-        problem "local checks fail: $(jq -r '[.ran[] | select(.status != "pass")
+        problem "local checks fail: $(jq -r '[.ran[] | select(.status != "pass" and .status != "warn")
           | if .status == "timeout" then "\(.name) (timed out)" else .name end] | join(", ")' \
           "$sync_dir/checks.json")"
       fi
@@ -777,19 +1044,20 @@ nodes:
       cat > "$SYNC_DIR/cleanup.sh" <<'CLEANUP_SH'
       #!/usr/bin/env bash
       # Usage: cleanup.sh run | sweep | watch
-      #   run:   remove the ignored build outputs of this worktree and the cargo
-      #          target of this run; keep the record, so the watcher or a later
-      #          sweep can remove the worktree.
+      #   run:   remove the ignored build outputs of this worktree, the cargo
+      #          target and the Docker containers of this run; keep the record, so
+      #          the watcher or a later sweep can remove the worktree.
       #   watch: poll the server for the state of this run (every
       #          CLEANUP_WATCH_INTERVAL seconds, default 60, at most CLEANUP_WATCH_POLLS
       #          times, default 10080 = 7 days). When the run completed, was cancelled
-      #          or is gone, remove its build outputs, cargo target, worktree and
-      #          record, then stop. When it failed, remove its build outputs and cargo
-      #          target but keep the worktree and the record (the run can be resumed)
-      #          and continue to poll. A state is acted on only when two polls in a
-      #          row read it. After the last poll the record stays for a sweep.
+      #          or is gone, remove its build outputs, cargo target, containers,
+      #          worktree and record, then stop. When it failed, remove its build
+      #          outputs, cargo target and containers but keep the worktree and the
+      #          record (the run can be resumed) and continue to poll. A state is
+      #          acted on only when two polls in a row read it. After the last poll
+      #          the record stays for a sweep.
       #   sweep: for each other recorded run that the Archon server reports as
-      #          finished, remove its build outputs and cargo target, then its
+      #          finished, remove its build outputs, cargo target and containers, then its
       #          worktree when the run completed or was cancelled (a failed run can
       #          still be retried in place, so its worktree stays), then the record.
       #          A run that is still active, or whose status cannot be read, keeps
@@ -840,6 +1108,21 @@ nodes:
         fi
       }
 
+      # Removes the Docker containers that the checks of a run started (label
+      # archon.sync-run=<run id>). A check removes its own containers; this covers
+      # a check or a run that was stopped before it could.
+      remove_containers() {
+        local id=$1 ids
+        [[ "$id" =~ ^[0-9A-Za-z-]+$ ]] || return 0
+        command -v docker >/dev/null 2>&1 || return 0
+        ids=$(docker ps -aq --filter "label=archon.sync-run=$id" 2>/dev/null || true)
+        [ -n "$ids" ] || return 0
+        # shellcheck disable=SC2086
+        if docker rm -f $ids >/dev/null 2>&1; then
+          echo "cleanup: removed the containers of the run $id" >&2
+        fi
+      }
+
       # A record is removed only when it is a run folder right under the root.
       remove_record() {
         local dir=$1 id=${1##*/}
@@ -863,7 +1146,8 @@ nodes:
       case "$mode" in
         run)
           clean_worktree "$top"
-          rm -rf -- "${own:?}/cargo-target" ;;
+          rm -rf -- "${own:?}/cargo-target"
+          remove_containers "${own##*/}" ;;
         watch)
           id=${own##*/}
           wt=$(cat "$own/worktree" 2>/dev/null || true)
@@ -886,6 +1170,7 @@ nodes:
               completed|cancelled|gone)
                 clean_worktree "$wt"
                 rm -rf -- "${own:?}/cargo-target"
+                remove_containers "$id"
                 remove_worktree "$wt"
                 echo "cleanup: the run $id is $status; its build outputs are removed" >&2
                 remove_record "$own"
@@ -894,6 +1179,7 @@ nodes:
                 if [ "$outputs_removed" = false ]; then
                   clean_worktree "$wt"
                   rm -rf -- "${own:?}/cargo-target"
+                  remove_containers "$id"
                   outputs_removed=true
                   echo "cleanup: the run $id failed; its build outputs are removed, its worktree stays" >&2
                 fi ;;
@@ -912,10 +1198,12 @@ nodes:
             case "$status" in
               completed|cancelled|gone)
                 clean_worktree "$wt"
+                remove_containers "$id"
                 remove_worktree "$wt"
                 remove_record "$dir" ;;
               failed)
                 clean_worktree "$wt"
+                remove_containers "$id"
                 remove_record "$dir" ;;
               *) echo "cleanup: kept the run $id (status '${status:-unknown}')" >&2 ;;
             esac
@@ -970,15 +1258,16 @@ nodes:
   # Agent nodes have an idle_timeout: when the model sends nothing for that long
   # (a stalled request), the node fails and the engine retries it, instead of
   # the run waiting without end. The value is above the longest silent step of a
-  # normal run (a full local check run inside the agent); create-pr runs only
-  # short commands.
+  # normal run: the longest single check (the PostgreSQL job, up to 80 min cold)
+  # plus a wait for the mini build lock while a release build runs (up to 1 h).
+  # create-pr runs only short commands.
   # Merges, resolves, makes the one merge commit, then runs the local checks and
   # fixes failures (at most 3 rounds), leaving the worktree clean. For a clean
   # merge whose checks failed (kind checks_failed) it commits the clean merge and
   # fixes the failed checks in later commits.
   - id: resolve
     command: buzz-fork-resolve-upstream-merge
-    idle_timeout: 2700000
+    idle_timeout: 7200000
     model: gpt-6.1-terra
     effort: medium
     depends_on: [prepare]
@@ -995,10 +1284,12 @@ nodes:
   # resolve has completed whenever this node runs. The final checks run here.
   # An unresolved merge fails the run at once. Failing final checks go to the
   # fix-checks loop; check-state.json records the result for publish.
+  # The final checks run every local check: about 1.5 h cold on the mini, plus a
+  # wait of up to 1 h per check while a release build holds the build lock.
   - id: check
     depends_on: [resolve]
     trigger_rule: none_failed_min_one_success
-    timeout: 2700000
+    timeout: 14400000
     bash: |
       set -euo pipefail
       SYNC_DIR="$ARTIFACTS_DIR/sync"
@@ -1033,7 +1324,7 @@ nodes:
       nodes:
         - id: fix-checks-attempt
           command: buzz-fork-resolve-upstream-merge
-          idle_timeout: 2700000
+          idle_timeout: 7200000
           model: gpt-6.1-terra
           effort: medium
           prompt_suffix: |
@@ -1041,9 +1332,10 @@ nodes:
 
             This is a fix pass. The merge commit already exists on the branch and
             the workflow's final checks failed after it. Read
-            `$ARTIFACTS_DIR/sync/check-failure.txt` and the sections of the failed
-            checks in `$ARTIFACTS_DIR/sync/checks.log`, then follow the "Fix pass"
-            section of these instructions.
+            `$ARTIFACTS_DIR/sync/check-failure.txt` and the sections of all failed
+            checks in `$ARTIFACTS_DIR/sync/checks.log`, list every failing test,
+            then follow the "Fix pass" section of these instructions and fix all
+            of them in this pass.
           output_format:
             type: object
             properties:
@@ -1055,7 +1347,7 @@ nodes:
             additionalProperties: false
         - id: recheck
           depends_on: [fix-checks-attempt]
-          timeout: 2700000
+          timeout: 14400000
           bash: |
             set -euo pipefail
             SYNC_DIR="$ARTIFACTS_DIR/sync"
@@ -1352,7 +1644,7 @@ nodes:
           depends_on: [pr-open]
           when: "$pr-open.output.open == 'true'"
           command: buzz-fork-fix-ci
-          idle_timeout: 2700000
+          idle_timeout: 7200000
           model: gpt-6-luna
         - id: wait-ci-again
           depends_on: [fix-ci-attempt]

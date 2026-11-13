@@ -12,7 +12,9 @@ resolve it so that the fork keeps its own behaviour **and** keeps every upstream
 change.
 
 You never ask the user anything in this step. You never push. You never open,
-edit or merge a pull request. You never run the full test suite.
+edit or merge a pull request. You run tests only through the workflow's check
+script: never run `npm run test`, `npm test`, vitest suites or Playwright
+yourself.
 
 ## The worktree must be clean when you finish
 
@@ -133,23 +135,43 @@ After the merge commit, run every local check with the workflow's check script:
 bash "$ARTIFACTS_DIR/sync/checks.sh"
 ```
 
-It prints `checks.json` (`passed`, `failed`, `ran`) and writes the output of
-each check to `$ARTIFACTS_DIR/sync/checks.log`, one `===== <name> =====` section
-per check. It puts back every file a check itself changed. When checks fail:
+It prints `checks.json` (`passed`, `failed`, `warnings`, `ran`) and writes the
+output of each check to `$ARTIFACTS_DIR/sync/checks.log`, one `===== <name> =====`
+section per check. It puts back every file a check itself changed. A check that
+runs longer than its time limit is stopped and has the status `timeout`.
 
-1. Read the sections of the failed checks. Find the cause and fix the code, not
-   the check.
+A full run runs every test job of the fork's CI that also works on macOS:
+`install`, `format-check`, `lint`, `dependency-checks` (lock file lint and npm
+signatures), `build-server`, `typecheck`, `typecheck-examples`, `node-tests`
+(every `node --test` file that `.github/workflows/ci.yml` names), `pack-check`,
+`test-relay`, `test-sdk` (plugin, protocol, client and highlight), `test-website`,
+`test-builtin-plugins`, `test-server`, `test-desktop`, `test-app`, `test-cli-unit`,
+`test-cli-local` (every CLI E2E file), `e2e-app` (the app Playwright specs related
+to the changed files, plus `workspace-lifecycle.spec.ts`) and, when a file under
+`packages/website/` changed since the merge base, `e2e-website`. A full run takes
+a long time: start it once, then rerun only failed checks by name. The checks
+after `build-server` test its output, so after a source change put `build-server`
+first (for example `build-server test-server`). `vitest:<path>` (one test file)
+and `fork-script-tests` are quick reruns. When checks fail:
+
+1. Read the sections of all failed checks, each to its end. A test job can fail
+   many tests (vitest prints every `FAIL` file; Playwright lists every failed
+   spec): list every failing test of every failed check before you change code,
+   and fix them all in the same round. Find the cause and fix the code, not the
+   check.
 2. Rerun only the failed checks, by name (for example `typecheck`, `lint`,
-   `vitest:packages/app/src/foo.test.ts`):
+   `build-server test-server`, `vitest:packages/app/src/foo.test.ts`):
    `bash "$ARTIFACTS_DIR/sync/checks.sh" <name> [<name> ...]`.
    Never run commands the script does not run.
-   Never run `npm run test`, `npm test` or Playwright.
+   Never run `npm run test`, `npm test`, vitest suites or Playwright yourself.
 3. Commit the fix as a new normal commit whose message names the check, for
    example `fix(sync): typecheck after upstream merge`. Never amend, never
    rebase, never push.
 
 Stop when the checks pass or after the third fix round. Never delete or stub
-out a fork feature to make a check pass, never change a test expectation, skip a test, or weaken a lint rule to hide a real regression. When
+out a fork feature to make a check pass, never delete a test, change a test
+expectation, skip a test or mark it skipped, raise a timeout or a tolerance, or
+weaken a lint rule to hide a real regression. When
 the upstream change makes a fork test wrong, change the test only when the new
 upstream behaviour is the intended behaviour, and say so in the commit message.
 When a fix changes how a conflicted file was resolved, update that file's
@@ -164,13 +186,15 @@ exists and the workflow's final checks failed after it. Then:
 
 1. Do not start or abort a merge, and do not amend or rebase. Every change is a
    new normal commit on the branch.
-2. Read `$ARTIFACTS_DIR/sync/check-failure.txt` and the sections of the failed
-   checks in `$ARTIFACTS_DIR/sync/checks.log`.
+2. Read `$ARTIFACTS_DIR/sync/check-failure.txt` and the sections of all failed
+   checks in `$ARTIFACTS_DIR/sync/checks.log`, each to its end, and list every
+   failing test and error before you change code. Fix all of them in this pass.
 3. Fix the causes with the rules above. Do not delete fork features to make the
    code compile: when a fork module, type, function, method or field is missing,
    restore it from `git show "$(jq -r .base_sha "$ARTIFACTS_DIR/sync/sync.json")":<file>`
    and adapt it to upstream's code.
-4. Run `bash "$ARTIFACTS_DIR/sync/checks.sh" typecheck` after your type fixes.
+4. Run `bash "$ARTIFACTS_DIR/sync/checks.sh" build-server typecheck` after your
+   type fixes.
 5. Run the failed checks again by name with `bash "$ARTIFACTS_DIR/sync/checks.sh" <name> ...`
    and repeat until they pass or you cannot make progress.
 6. Update the paragraphs of `$ARTIFACTS_DIR/sync/resolution.md` that your fixes

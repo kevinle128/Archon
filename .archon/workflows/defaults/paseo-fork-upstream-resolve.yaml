@@ -6,11 +6,16 @@ description: |
   Does: Reads the machine block on line 1 of the issue body, merges the named upstream
         getpaseo/paseo commit on a new sync/upstream-<issue>-<run> branch from main,
         resolves the conflicts in one merge
-        commit, runs the fork's bounded local checks, ends failed without a push when it cannot resolve or the checks still fail,
+        commit, runs the fork's local checks (install, format, lint, the dependency
+        checks, the server build, typecheck, every test job of the fork's CI that
+        also works on macOS: the node script tests, the SDK, website, server, plugin,
+        desktop, app and CLI suites, the app Playwright specs related to the changed
+        files and, when the website changed, the website Playwright specs), ends
+        failed without a push when it cannot resolve or the checks still fail,
         opens a pull request to main with archon-create-pr,
         reports the PR URL as soon as the PR is verified, waits for its CI (and stops waiting
-        when a human merges or closes the PR), fixes failed CI at most twice, and returns a
-        JSON result with the PR URL and the CI conclusion.
+        when a human merges or closes the PR), re-runs failed CI jobs once, fixes failed CI
+        at most twice, and returns a JSON result with the PR URL and the CI conclusion.
         When the CI of the pull request passes, it merges the pull request with a merge
         commit itself; when the CI still fails after the fixes, it does not merge and ends
         failed. It never asks a human.
@@ -192,16 +197,39 @@ nodes:
         echo "note: conflicted files $files differ from the issue's list $block_files" >&2
       fi
 
-      # Bounded local checks for the fork. Shared by the final checks and the
-      # resolve command, so the agent runs exactly the same checks.
+      # The fork's local checks. Shared by the final checks and the resolve and
+      # fix commands, so the agent runs exactly the same checks.
       cat > "$SYNC_DIR/checks.sh" <<'CHECKS_SH'
       #!/usr/bin/env bash
       # Usage: checks.sh [check ...]. Without names it runs every check (a full run).
-      # Check names: install, build-server, typecheck, lint, format-check,
-      # fork-script-tests, vitest:<path to a .test.ts or .test.tsx file>.
+      # Check names: install, format-check, lint, dependency-checks, build-server,
+      # typecheck, typecheck-examples, node-tests, pack-check, test-relay, test-sdk,
+      # test-website, test-builtin-plugins, test-server, test-desktop, test-app,
+      # test-cli-unit, test-cli-local, e2e-app, e2e-website, fork-script-tests,
+      # vitest:<path to a .test.ts or .test.tsx file>.
+      # A full run runs every step of the fork's CI (.github/workflows/ci.yml) that
+      # also works on macOS: the quality job (format, lint, lock file and signature
+      # checks, the relay and SDK tests), the typecheck job (the server build,
+      # typecheck, the website tests, the package contents), the server, built-in
+      # plugin, desktop, app and CLI tests (the CLI E2E files without shards), and
+      # every `node --test` file that ci.yml names (node-tests). It leaves out the
+      # steps that work only on a Linux or Windows runner (the desktop E2E under
+      # xvfb and the Windows jobs). e2e-app runs the app Playwright specs of the
+      # browser project that changed since the merge base (Playwright's
+      # --only-changed) plus workspace-lifecycle.spec.ts, not the whole suite that
+      # CI runs in eight shards. e2e-website runs the website Playwright specs; a
+      # full run adds it only when a file under packages/website/ changed since the
+      # merge base.
+      # The checks after build-server read its output (test-app and test-cli-local
+      # build what they need themselves). After a source change, rerun build-server
+      # before them. fork-script-tests (the fork's node tests) and vitest:<path>
+      # (one test file, on the current build) are quick reruns outside a full run.
+      # Each check runs under a hard time limit (CHECK_TIMEOUT_SECONDS when set, else
+      # the value of check_limit below); a check that runs longer is stopped with all
+      # its processes and reported with the status "timeout".
       # Writes checks.json and checks.log beside this script and prints checks.json.
-      # Exit 0 when the checks ran (pass or fail), 2 for a missing tool or a bad name.
-      # Never runs a whole test suite or browser tests: CI on the pull request runs the full suite.
+      # Exit 0 when the checks ran (pass, warn, fail or timeout), 2 for a missing tool,
+      # a bad name or a sync.json without run_dir or merge_base.
       set -euo pipefail
       sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
       cd "$(git rev-parse --show-toplevel)"
@@ -211,6 +239,13 @@ nodes:
       # (the PM2 setup does) would make npm ci skip devDependencies such as
       # patch-package, so every check would fail for a reason the PR does not have.
       unset NODE_ENV
+      # This machine has provider API keys in its environment and logged-in agent
+      # CLIs. The default test suites need no credentials (the live tests are
+      # opt-in), so the keys are removed: no test can make a paid call, and the
+      # results match a CI run without secrets. A stray shard setting would make
+      # the CLI E2E runner run only a part of its files.
+      unset OPENAI_API_KEY OPENROUTER_API_KEY ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN
+      unset PASEO_CLI_TEST_SHARD PASEO_CLI_TEST_SHARD_TOTAL
 
       for tool in node npm npx jq git; do
         if ! command -v "$tool" >/dev/null 2>&1; then
@@ -224,50 +259,149 @@ nodes:
         exit 2
       fi
 
-      # Check names travel NUL-separated: a conflicted path can hold any
-      # character except NUL.
-      fixed_checks() {
-        printf '%s\0' install build-server typecheck lint format-check fork-script-tests
-      }
+      if ! run_dir=$(jq -er .run_dir "$sync_dir/sync.json") \
+          || ! merge_base=$(jq -er .merge_base "$sync_dir/sync.json"); then
+        echo "checks: sync.json names no run_dir or merge_base" >&2
+        exit 2
+      fi
+      if ! git rev-parse --verify --quiet "$merge_base^{commit}" >/dev/null; then
+        echo "checks: the merge base $merge_base is not a commit" >&2
+        exit 2
+      fi
+      # run_dir is $STATE_DIR/sync-runs/<run id>. The Playwright browsers live in
+      # $STATE_DIR, shared by runs, never in the worktree.
+      state_root=$(dirname "$(dirname "$run_dir")")
+      export PLAYWRIGHT_BROWSERS_PATH="$state_root/ms-playwright"
+      # A check that passes with a warning writes the warning here. No check of
+      # this fork writes one today (it has no screenshot baselines); the status
+      # keeps checks.json the same as in the other fork workflows.
+      warning_marker="$sync_dir/check-warning"
+      # The basic app path: open a workspace, then create an agent chat (mock
+      # provider) and a terminal in it.
+      e2e_app_smoke=workspace-lifecycle.spec.ts
 
-      # A path that starts with a dash gets a ./ prefix, so vitest never reads it
-      # as an option.
-      vitest_name() {
-        case "$1" in
-          -*) printf 'vitest:./%s\0' "$1" ;;
-          *) printf 'vitest:%s\0' "$1" ;;
-        esac
-      }
-
-      # Test files beside each conflicted file, or the conflicted file itself when
-      # it is a test. Browser tests need a browser runner and are left to CI.
-      vitest_targets() {
-        jq -j '.files[] | . + "\u0000"' "$sync_dir/sync.json" | while IFS= read -r -d '' file; do
-          case "$file" in
-            *.browser.test.*) continue ;;
-            *.test.ts|*.test.tsx)
-              if [ -f "$file" ]; then vitest_name "$file"; fi
-              continue ;;
-          esac
-          case "$file" in
-            */*) dir=${file%/*} ;;
-            *) dir=. ;;
-          esac
-          base=${file##*/}
-          name=${base%.*}
-          for ext in ts tsx; do
-            if [ -f "$dir/$name.test.$ext" ]; then vitest_name "$dir/$name.test.$ext"; fi
-          done
-        done | LC_ALL=C sort -z -u
+      # Check names travel NUL-separated, in an order that builds before the checks
+      # that read the build. A full run runs every test job, not only the tests of
+      # touched files: an upstream merge can break any package.
+      full_checks() {
+        printf '%s\0' install format-check lint dependency-checks build-server typecheck \
+          typecheck-examples node-tests pack-check test-relay test-sdk test-website \
+          test-builtin-plugins test-server test-desktop test-app test-cli-unit test-cli-local \
+          e2e-app
+        if [ -n "$(git diff --name-only "$merge_base" HEAD -- packages/website)" ]; then
+          printf '%s\0' e2e-website
+        fi
       }
 
       valid_check() {
         case "$1" in
-          install|build-server|typecheck|lint|format-check|fork-script-tests) return 0 ;;
+          install|format-check|lint|dependency-checks|build-server|typecheck) return 0 ;;
+          typecheck-examples|node-tests|pack-check|fork-script-tests) return 0 ;;
+          test-relay|test-sdk|test-website|test-builtin-plugins|test-server) return 0 ;;
+          test-desktop|test-app|test-cli-unit|test-cli-local|e2e-app|e2e-website) return 0 ;;
           vitest:-*|*.browser.test.*) return 1 ;;
           vitest:?*.test.ts|vitest:?*.test.tsx) return 0 ;;
         esac
         return 1
+      }
+
+      # The files of every `node --test` step of the fork's CI, read from ci.yml
+      # when the check runs, so a change of the list on upstream or in the fork is
+      # followed. Every such step is one line: `run: node --test <file> ...`.
+      ci_node_test_files() {
+        sed -n -E 's/^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*node --test[[:space:]]+//p' \
+          .github/workflows/ci.yml 2>/dev/null \
+          | tr -s '[:blank:]' '\n' | grep -E '^[A-Za-z0-9_./-]+\.(mjs|cjs|js|ts)$' | awk '!seen[$0]++' || true
+      }
+
+      # Usage: node_tests all | fork. `fork` runs only the fork's own scripts/fork-*
+      # tests. builtin-plugins-dist.test.mjs reads the output of build-server.
+      node_tests() {
+        local files=() file
+        while IFS= read -r file; do
+          case "$1:$file" in
+            all:*|fork:scripts/fork-*) files+=("$file") ;;
+          esac
+        done < <(ci_node_test_files)
+        if [ "${#files[@]}" -eq 0 ]; then
+          echo "checks: found no 'run: node --test' test file for '$1' in .github/workflows/ci.yml"
+          return 1
+        fi
+        echo "node tests from .github/workflows/ci.yml: ${files[*]}"
+        node --test "${files[@]}"
+      }
+
+      # Runs each command even when an earlier one fails, as CI's separate steps
+      # do, so one run reports every failing package. Usage: each_step <cmd> ...,
+      # every command as one string.
+      each_step() {
+        local step rc=0
+        for step in "$@"; do
+          echo "== $step"
+          eval "$step" || rc=1
+        done
+        return "$rc"
+      }
+
+      # The quality job's lock file lint and npm signature check. Both read the
+      # npm registry.
+      dependency_checks() {
+        each_step \
+          'npx --yes lockfile-lint --path package-lock.json --type npm --allowed-hosts npm --validate-https --validate-integrity' \
+          'npm audit signatures'
+      }
+
+      # The SDK test steps of the quality job.
+      test_sdk() {
+        each_step \
+          'npm run test --workspace=@getpaseo/plugin' \
+          'npm run test --workspace=@getpaseo/protocol' \
+          'npm run test --workspace=@getpaseo/client' \
+          'npm run test --workspace=@getpaseo/highlight'
+      }
+
+      # The typecheck job's check of the public package contents.
+      pack_check() {
+        each_step \
+          'npm pack --dry-run --ignore-scripts --workspace=@getpaseo/protocol' \
+          'npm pack --dry-run --ignore-scripts --workspace=@getpaseo/client' \
+          'npm pack --dry-run --ignore-scripts --workspace=@getpaseo/server'
+      }
+
+      # The CLI test jobs turn off speech, dictation and voice for every step.
+      cli_tests() {
+        PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD=0 PASEO_DICTATION_ENABLED=0 PASEO_VOICE_MODE_ENABLED=0 \
+          npm run "$1" --workspace=@getpaseo/cli
+      }
+
+      # The app Playwright specs of the browser project that changed since the
+      # merge base (the spec files and the files they import, by Playwright's
+      # --only-changed), plus the smoke spec. The real-provider and
+      # relay-deployment projects need credentials or a deployed relay and stay
+      # with CI. CI=1 gives the CI settings of the config (two workers, one retry).
+      # Snapshots are never written (--update-snapshots=none).
+      e2e_app() {
+        local list spec specs=()
+        list="$sync_dir/e2e-app-list.json"
+        rm -f "$list"
+        npx playwright install chromium || return 1
+        npm run build --workspace=@getpaseo/expo-two-way-audio || return 1
+        (cd packages/app && npx playwright test --project=browser --list --reporter=json \
+          --pass-with-no-tests --only-changed="$merge_base") > "$list" || return 1
+        while IFS= read -r spec; do
+          if [ -n "$spec" ] && [ "$spec" != "$e2e_app_smoke" ]; then specs+=("e2e/browser/$spec"); fi
+        done < <(jq -r '[.. | objects | select((.file? // "") | endswith(".spec.ts")) | .file] | unique | .[]' "$list")
+        specs=("e2e/browser/$e2e_app_smoke" ${specs[@]+"${specs[@]}"})
+        echo "e2e-app: running ${#specs[@]} spec file(s): ${specs[*]}"
+        (cd packages/app && CI=1 npx playwright test --project=browser --update-snapshots=none \
+          "${specs[@]}")
+      }
+
+      # The website Playwright specs in chromium and webkit, as the typecheck job
+      # runs them. Their servers use the fixed ports 8187 and 8188.
+      e2e_website() {
+        npx playwright install chromium webkit || return 1
+        npm run test:e2e --workspace=@getpaseo/website
       }
 
       # A package with its own vitest config (packages/app) defines globals and
@@ -300,13 +434,31 @@ nodes:
       run_check() {
         case "$1" in
           install) node scripts/npm-retry.mjs ci ;;
+          format-check) npm run format:check ;;
+          lint) npm run lint ;;
+          dependency-checks) dependency_checks ;;
           build-server) npm run build:server ;;
           typecheck) npm run typecheck ;;
-          lint) npm run lint ;;
-          format-check) npm run format:check ;;
-          fork-script-tests)
-            node --test scripts/fork-desktop-manifest.test.mjs \
-              scripts/fork-sync-conflict-report.test.mjs scripts/fork-release-changelog.test.mjs ;;
+          typecheck-examples) npm run typecheck:examples --workspace=@getpaseo/client ;;
+          node-tests) node_tests all ;;
+          fork-script-tests) node_tests fork ;;
+          pack-check) pack_check ;;
+          test-relay) npm run test --workspace=@getpaseo/relay ;;
+          test-sdk) test_sdk ;;
+          test-website) npx vitest run packages/website/src --bail=1 ;;
+          test-builtin-plugins) npm run test --workspace=@getpaseo/builtin-plugins ;;
+          # Needs refs/remotes/origin/main for the worktree tests; prepare fetched it.
+          test-server) npm run test --workspace=@getpaseo/server ;;
+          test-desktop) npm run test --workspace=@getpaseo/desktop ;;
+          # The app suite runs a vitest browser project in chromium.
+          test-app)
+            npx playwright install chromium && npm run build:app-deps \
+              && npm run test --workspace=@getpaseo/app ;;
+          test-cli-unit) cli_tests test:unit ;;
+          # The runner builds the server stack itself, then runs every E2E file.
+          test-cli-local) cli_tests test:local ;;
+          e2e-app) e2e_app ;;
+          e2e-website) e2e_website ;;
           vitest:*) run_vitest "${1#vitest:}" ;;
         esac
       }
@@ -314,7 +466,7 @@ nodes:
       names_file="$sync_dir/check-names"
       if [ "$#" -eq 0 ]; then
         full=true
-        { fixed_checks; vitest_targets; } > "$names_file"
+        full_checks > "$names_file"
       else
         full=false
         printf '%s\0' "$@" > "$names_file"
@@ -325,6 +477,40 @@ nodes:
           exit 2
         fi
       done < "$names_file"
+
+      # The mini also runs release desktop builds that need the whole machine.
+      # They and these checks take the same lock (lockf, as the release jobs
+      # do), so the two never run at the same time. Each check holds the lock
+      # only while it runs: a release job gives up after one hour of waiting, and
+      # a full run of the checks takes longer than that. The lock holder exits
+      # when this script ends, also when the script is killed, so a stopped run
+      # never keeps the lock. Without lockf (not macOS) the checks run unlocked.
+      build_lock="${FORK_SYNC_BUILD_LOCK:-$HOME/.mini-desktop-build.lock}"
+      lock_ready="$sync_dir/build-lock.pid"
+      lock_holder=""
+      take_build_lock() {
+        command -v lockf >/dev/null 2>&1 || return 0
+        rm -f "$lock_ready"
+        # shellcheck disable=SC2016 # $$, $1 and $2 expand in the child shell.
+        lockf -k -t "${BUILD_LOCK_WAIT_SECONDS:-3600}" "$build_lock" /bin/sh -c \
+          'echo $$ > "$1"; while kill -0 "$2" 2>/dev/null; do /bin/sleep 2; done' \
+          sh "$lock_ready" "$$" >/dev/null 2>&1 </dev/null &
+        lock_holder=$!
+        until [ -s "$lock_ready" ]; do
+          if ! kill -0 "$lock_holder" 2>/dev/null; then
+            lock_holder=""
+            return 1
+          fi
+          /bin/sleep 0.2
+        done
+      }
+      release_build_lock() {
+        [ -n "$lock_holder" ] || return 0
+        kill "$(cat "$lock_ready" 2>/dev/null)" 2>/dev/null || true
+        wait "$lock_holder" 2>/dev/null || true
+        lock_holder=""
+        rm -f "$lock_ready"
+      }
 
       # The engine commits every Git-visible change (tracked, and untracked but not
       # ignored) at each node boundary, so the checks must leave the tree as they
@@ -349,19 +535,81 @@ nodes:
               echo "checks: removed $path, which a check created" >&2
             done
       }
-      trap restore_check_changes EXIT
+      trap 'restore_check_changes; release_build_lock' EXIT
+
+      check_limit() {
+        if [ -n "${CHECK_TIMEOUT_SECONDS:-}" ]; then echo "$CHECK_TIMEOUT_SECONDS"; return; fi
+        case "$1" in
+          e2e-app) echo 1200 ;;
+          *) echo 900 ;;
+        esac
+      }
+
+      # Runs one check in its own process group with a watchdog in another. When the
+      # limit passes, the watchdog stops the whole check group (npm and the test
+      # processes it started), so a hung check ends as a failure instead of blocking
+      # the run. Returns 124 for a timeout, else the exit status of the check.
+      run_limited() {
+        local name=$1 limit pid watchdog rc=0 marker="$sync_dir/check-timed-out"
+        limit=$(check_limit "$name")
+        rm -f "$marker"
+        set -m
+        # Like the former `if run_check`, errexit does not apply inside a check.
+        { set +e; run_check "$name"; } &
+        pid=$!
+        (
+          /bin/sleep "$limit"
+          : > "$marker"
+          kill -TERM -- "-$pid" 2>/dev/null
+          /bin/sleep 10
+          kill -KILL -- "-$pid" 2>/dev/null
+        ) &
+        watchdog=$!
+        set +m
+        wait "$pid" || rc=$?
+        kill -TERM -- "-$watchdog" 2>/dev/null || true
+        wait "$watchdog" 2>/dev/null || true
+        if [ -f "$marker" ]; then
+          rm -f "$marker"
+          echo "checks: $name timed out after $limit s; its processes were stopped"
+          return 124
+        fi
+        return "$rc"
+      }
 
       : > "$log"
       results='[]'
       while IFS= read -r -d '' name; do
         printf '\n===== %s =====\n' "$name" >> "$log"
-        if run_check "$name" >> "$log" 2>&1 </dev/null; then status=pass; else status=fail; fi
+        rm -f "$warning_marker"
+        rc=0
+        if take_build_lock; then
+          run_limited "$name" >> "$log" 2>&1 </dev/null || rc=$?
+          release_build_lock
+        else
+          echo "checks: the build lock $build_lock stayed taken for ${BUILD_LOCK_WAIT_SECONDS:-3600} s (a release build runs); $name did not run" >> "$log"
+          rc=1
+        fi
+        warning=""
+        case "$rc" in
+          0)
+            status=pass
+            if [ -s "$warning_marker" ]; then status=warn; warning=$(cat "$warning_marker"); fi ;;
+          124) status=timeout ;;
+          *) status=fail ;;
+        esac
+        rm -f "$warning_marker"
         echo "check $name: $status" >&2
-        results=$(jq -c --arg n "$name" --arg s "$status" '. + [{name: $n, status: $s}]' <<<"$results")
+        results=$(jq -c --arg n "$name" --arg s "$status" --arg w "$warning" \
+          '. + [{name: $n, status: $s} + (if $w == "" then {} else {warning: $w} end)]' <<<"$results")
       done < "$names_file"
 
+      # A warning does not fail the checks; it is listed in checks.json.
       jq -n --argjson r "$results" --argjson full "$full" \
-        '{passed: ($r | all(.status == "pass")), failed: [$r[] | select(.status != "pass") | .name], ran: $r, full: $full}' \
+        '{passed: ($r | all(.status == "pass" or .status == "warn")),
+          failed: [$r[] | select(.status != "pass" and .status != "warn") | .name],
+          warnings: [$r[] | select(.status == "warn") | {name, warning}],
+          ran: [$r[] | {name, status}], full: $full}' \
         > "$sync_dir/checks.json.tmp"
       mv "$sync_dir/checks.json.tmp" "$sync_dir/checks.json"
       cat "$sync_dir/checks.json"
@@ -484,7 +732,9 @@ nodes:
       done < <(jq -j '.files[] | . + "\u0000"' "$sync_dir/sync.json")
       bash "$sync_dir/checks.sh" >/dev/null
       if ! jq -e .passed "$sync_dir/checks.json" >/dev/null; then
-        problem "local checks fail: $(jq -r '.failed | join(", ")' "$sync_dir/checks.json")"
+        problem "local checks fail: $(jq -r '[.ran[] | select(.status != "pass" and .status != "warn")
+          | if .status == "timeout" then "\(.name) (timed out)" else .name end] | join(", ")' \
+          "$sync_dir/checks.json")"
       fi
       bash "$sync_dir/clean-tree.sh" "the end of the final checks in $stage"
       if [ -n "$problems" ]; then
@@ -619,19 +869,20 @@ nodes:
       cat > "$SYNC_DIR/cleanup.sh" <<'CLEANUP_SH'
       #!/usr/bin/env bash
       # Usage: cleanup.sh run | sweep | watch
-      #   run:   remove the ignored build outputs of this worktree and the cargo
-      #          target of this run; keep the record, so the watcher or a later
-      #          sweep can remove the worktree.
+      #   run:   remove the ignored build outputs of this worktree, the cargo
+      #          target and the Docker containers of this run; keep the record, so
+      #          the watcher or a later sweep can remove the worktree.
       #   watch: poll the server for the state of this run (every
       #          CLEANUP_WATCH_INTERVAL seconds, default 60, at most CLEANUP_WATCH_POLLS
       #          times, default 10080 = 7 days). When the run completed, was cancelled
-      #          or is gone, remove its build outputs, cargo target, worktree and
-      #          record, then stop. When it failed, remove its build outputs and cargo
-      #          target but keep the worktree and the record (the run can be resumed)
-      #          and continue to poll. A state is acted on only when two polls in a
-      #          row read it. After the last poll the record stays for a sweep.
+      #          or is gone, remove its build outputs, cargo target, containers,
+      #          worktree and record, then stop. When it failed, remove its build
+      #          outputs, cargo target and containers but keep the worktree and the
+      #          record (the run can be resumed) and continue to poll. A state is
+      #          acted on only when two polls in a row read it. After the last poll
+      #          the record stays for a sweep.
       #   sweep: for each other recorded run that the Archon server reports as
-      #          finished, remove its build outputs and cargo target, then its
+      #          finished, remove its build outputs, cargo target and containers, then its
       #          worktree when the run completed or was cancelled (a failed run can
       #          still be retried in place, so its worktree stays), then the record.
       #          A run that is still active, or whose status cannot be read, keeps
@@ -682,6 +933,21 @@ nodes:
         fi
       }
 
+      # Removes the Docker containers that the checks of a run started (label
+      # archon.sync-run=<run id>). A check removes its own containers; this covers
+      # a check or a run that was stopped before it could.
+      remove_containers() {
+        local id=$1 ids
+        [[ "$id" =~ ^[0-9A-Za-z-]+$ ]] || return 0
+        command -v docker >/dev/null 2>&1 || return 0
+        ids=$(docker ps -aq --filter "label=archon.sync-run=$id" 2>/dev/null || true)
+        [ -n "$ids" ] || return 0
+        # shellcheck disable=SC2086
+        if docker rm -f $ids >/dev/null 2>&1; then
+          echo "cleanup: removed the containers of the run $id" >&2
+        fi
+      }
+
       # A record is removed only when it is a run folder right under the root.
       remove_record() {
         local dir=$1 id=${1##*/}
@@ -705,7 +971,8 @@ nodes:
       case "$mode" in
         run)
           clean_worktree "$top"
-          rm -rf -- "${own:?}/cargo-target" ;;
+          rm -rf -- "${own:?}/cargo-target"
+          remove_containers "${own##*/}" ;;
         watch)
           id=${own##*/}
           wt=$(cat "$own/worktree" 2>/dev/null || true)
@@ -728,6 +995,7 @@ nodes:
               completed|cancelled|gone)
                 clean_worktree "$wt"
                 rm -rf -- "${own:?}/cargo-target"
+                remove_containers "$id"
                 remove_worktree "$wt"
                 echo "cleanup: the run $id is $status; its build outputs are removed" >&2
                 remove_record "$own"
@@ -736,6 +1004,7 @@ nodes:
                 if [ "$outputs_removed" = false ]; then
                   clean_worktree "$wt"
                   rm -rf -- "${own:?}/cargo-target"
+                  remove_containers "$id"
                   outputs_removed=true
                   echo "cleanup: the run $id failed; its build outputs are removed, its worktree stays" >&2
                 fi ;;
@@ -754,10 +1023,12 @@ nodes:
             case "$status" in
               completed|cancelled|gone)
                 clean_worktree "$wt"
+                remove_containers "$id"
                 remove_worktree "$wt"
                 remove_record "$dir" ;;
               failed)
                 clean_worktree "$wt"
+                remove_containers "$id"
                 remove_record "$dir" ;;
               *) echo "cleanup: kept the run $id (status '${status:-unknown}')" >&2 ;;
             esac
@@ -877,9 +1148,10 @@ nodes:
 
             This is a fix pass. The merge commit already exists on the branch and
             the workflow's final checks failed after it. Read
-            `$ARTIFACTS_DIR/sync/check-failure.txt` and the sections of the failed
-            checks in `$ARTIFACTS_DIR/sync/checks.log`, then follow the "Fix pass"
-            section of these instructions.
+            `$ARTIFACTS_DIR/sync/check-failure.txt` and the sections of all failed
+            checks in `$ARTIFACTS_DIR/sync/checks.log`, list every failing test,
+            then follow the "Fix pass" section of these instructions and fix all
+            of them in this pass.
           output_format:
             type: object
             properties:
@@ -1065,17 +1337,88 @@ nodes:
       bash "$SYNC_DIR/wait-ci.sh" 0 >/dev/null
       jq -cs '.[0] + .[1]' "$SYNC_DIR/pr.json" "$SYNC_DIR/ci.json"
 
-  # until_bash ends the group after a green CI or after the second fix attempt,
-  # so the group never reaches max_iterations (reaching it fails the node).
-  - id: fix-ci
+  # A failed CI is first re-run once (failed jobs only), because a flaky test can
+  # fail a correct merge. The new wait has its own poll budget and keeps the fix
+  # attempt count (0): the re-run is not a fix. Prints the new ci.json plus `fix`,
+  # which is true only when CI still fails.
+  - id: rerun-ci
     depends_on: [wait-ci]
     when: "$wait-ci.output.conclusion == 'failure'"
+    timeout: 6600000
+    bash: |
+      set -euo pipefail
+      SYNC_DIR="$ARTIFACTS_DIR/sync"
+      bash "$SYNC_DIR/clean-tree.sh" "the start of rerun-ci"
+      repo=$(jq -r .repo "$SYNC_DIR/sync.json")
+      number=$(jq -r .number "$SYNC_DIR/pr.json")
+      # The GitHub Actions run ids of the failed checks, from their links
+      # (https://github.com/<repo>/actions/runs/<run-id>/job/<job-id>).
+      run_ids=$(gh pr checks "$number" --repo "$repo" --json bucket,link 2>/dev/null \
+        | jq -r '.[] | select(.bucket == "fail") | (.link // "")
+          | capture("/actions/runs/(?<id>[0-9]+)")? | .id' 2>/dev/null \
+        | sort -u || true)
+      rerun=false
+      for id in $run_ids; do
+        if gh run rerun "$id" --failed --repo "$repo" >/dev/null 2>&1; then
+          rerun=true
+          echo "rerun-ci: re-running the failed jobs of run $id" >&2
+        else
+          echo "rerun-ci: run $id cannot be re-run" >&2
+        fi
+      done
+      if [ "$rerun" = true ]; then
+        # Wait until GitHub shows the re-run as queued or running, so the CI wait
+        # never concludes on the old, failed check set.
+        for _ in $(seq 1 10); do
+          if gh pr checks "$number" --repo "$repo" --json bucket 2>/dev/null \
+              | jq -e 'any(.[]; .bucket == "pending")' >/dev/null 2>&1; then
+            break
+          fi
+          sleep 30
+        done
+        bash "$SYNC_DIR/wait-ci.sh" 0 >/dev/null
+      fi
+      fix=false
+      if jq -e '.conclusion == "failure"' "$SYNC_DIR/ci.json" >/dev/null; then
+        fix=true
+      fi
+      jq -c --argjson rerun "$rerun" --argjson fix "$fix" '. + {rerun: $rerun, fix: $fix}' \
+        "$SYNC_DIR/ci.json"
+
+  # until_bash ends the group after a green CI, a merged or closed PR, or the
+  # second fix attempt, so the group never reaches max_iterations (reaching it
+  # fails the node).
+  - id: fix-ci
+    depends_on: [rerun-ci]
+    when: "$rerun-ci.output.fix == 'true'"
     loop_group:
       max_iterations: 3
       until_bash: |
         jq -e '.conclusion != "failure" or .attempt >= 2' "$ARTIFACTS_DIR/sync/ci.json" >/dev/null
       nodes:
+        # A human can merge or close the PR at any time. Then there is nothing
+        # to fix and nothing may be pushed: record the state and skip the fix.
+        - id: pr-open
+          timeout: 300000
+          bash: |
+            set -euo pipefail
+            SYNC_DIR="$ARTIFACTS_DIR/sync"
+            repo=$(jq -r .repo "$SYNC_DIR/sync.json")
+            number=$(jq -r .number "$SYNC_DIR/pr.json")
+            state=$(gh pr view "$number" --repo "$repo" --json state -q .state)
+            if [ "$state" = OPEN ]; then
+              echo '{"open": true}'
+            else
+              conclusion=$(tr '[:upper:]' '[:lower:]' <<<"$state")
+              jq -c --arg c "$conclusion" '.conclusion = $c | .failed = []' "$SYNC_DIR/ci.json" \
+                > "$SYNC_DIR/ci.json.tmp"
+              mv "$SYNC_DIR/ci.json.tmp" "$SYNC_DIR/ci.json"
+              echo "pull request #$number is $state; no fix is made" >&2
+              echo '{"open": false}'
+            fi
         - id: fix-ci-attempt
+          depends_on: [pr-open]
+          when: "$pr-open.output.open == 'true'"
           command: paseo-fork-fix-ci
           idle_timeout: 1200000
           model: gpt-6-luna
@@ -1096,7 +1439,7 @@ nodes:
   # or unknown CI, or a closed pull request, fails this node with the reason:
   # nothing is merged and the run ends failed.
   - id: merge-pr
-    depends_on: [wait-ci, fix-ci]
+    depends_on: [wait-ci, rerun-ci, fix-ci]
     trigger_rule: none_failed_min_one_success
     timeout: 600000
     bash: |
@@ -1146,7 +1489,7 @@ nodes:
   # prepare started removes the worktree once the run has ended, and cleans a
   # cancelled run, which never reaches finalize.
   - id: finalize
-    depends_on: [wait-ci, fix-ci, merge-pr]
+    depends_on: [wait-ci, rerun-ci, fix-ci, merge-pr]
     trigger_rule: all_done
     timeout: 300000
     bash: |

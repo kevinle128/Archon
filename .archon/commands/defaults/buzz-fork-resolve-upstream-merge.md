@@ -12,7 +12,8 @@ merge so that the fork keeps **every** fork change **and** keeps every upstream
 change, then to make the fork's local checks pass.
 
 You never ask the user anything in this step. You never push. You never open,
-edit or merge a pull request. You never run the full test suite.
+edit or merge a pull request. You run tests only through the workflow's check
+script.
 
 ## The worktree must be clean when you finish
 
@@ -93,8 +94,11 @@ git status --short
    lock file by hand.
 6. **Tools.** Use the fork's Hermit tools: run `. ./bin/activate-hermit` in each
    shell before `cargo`, `just`, `pnpm` or `node`. Never install a toolchain.
-7. **No full suite.** Never run `just test`, `just check`, `cargo test` without
-   `-p`, PostgreSQL, Playwright or mesh tests. CI on the pull request runs them.
+7. **Tests only through the check script.** Never run `just test`, `just check`,
+   `cargo test` without `-p`, or mesh tests, and never start PostgreSQL, Redis or
+   Playwright yourself. The check script runs upstream's unit and PostgreSQL test
+   jobs (it starts and removes a throwaway PostgreSQL and Redis) and the related
+   desktop E2E specs.
 
 ## Start the merge
 
@@ -201,17 +205,27 @@ It activates Hermit itself, builds into this run's own cargo target, prints
 `$ARTIFACTS_DIR/sync/checks.log`, one `===== <name> =====` section per check. It
 puts back every file a check itself changed. The checks are `rust-fmt`,
 `migration-numbers`, `rust-check` (`cargo check --workspace --all-targets
---locked`), `rust-clippy`, `rust-test:<crate>` (the lib tests of each crate you
-touched) and, when the touched files need them, `desktop-install`,
+--locked`), `rust-clippy`, `rust-test-unit` (upstream CI's "Unit Tests": `just
+test-unit`), `rust-test-postgres` (upstream CI's "PostgreSQL Tests": every
+PostgreSQL-backed test of the workspace, against a throwaway PostgreSQL),
+`desktop-e2e` (the desktop Playwright smoke specs related to the changed files,
+plus `smoke.spec.ts`) and, when the touched files need them, `desktop-install`,
 `desktop-check`, `desktop-typecheck`, `desktop-test`, `desktop-tauri-check`,
-`mobile-check` and `fork-script-tests`. When checks fail:
+`mobile-check` and `fork-script-tests`. A full run takes a long time (the Rust
+tests build every test binary); start it once, then rerun only failed checks by
+name. `rust-test:<crate>` (the lib tests of one crate) is a quick rerun. A
+`desktop-e2e` result `warn` means a screenshot differs only from the macOS
+baseline, which CI does not use: it does not fail the checks, and you never
+change a `-darwin.png` file. When checks fail:
 
-1. Read the sections of the failed checks. Find the cause and fix the code, not
-   the check. A `rust-fmt` failure is fixed with `cargo fmt --all` (after
+1. Read the sections of all failed checks, each to its end. A test job can fail
+   many tests (nextest prints a `Summary` with every `FAIL` line): list every
+   failing test of every failed check before you change code, and fix them all
+   in the same round. Find the cause and fix the code, not the check. A `rust-fmt` failure is fixed with `cargo fmt --all` (after
    `. ./bin/activate-hermit`). A `migration-numbers` failure is never fixed by a
    rename (rule 3): stop as in "When you cannot decide".
 2. Rerun only the failed checks, by name (for example `rust-check`,
-   `rust-test:buzz-relay`): `bash "$ARTIFACTS_DIR/sync/checks.sh" <name> [<name> ...]`.
+   `rust-test-postgres`): `bash "$ARTIFACTS_DIR/sync/checks.sh" <name> [<name> ...]`.
    Apart from the lock file commands of rule 5, `cargo fmt --all` and
    `cargo check --locked -p <crate> --tests`, never run commands the script does
    not run.
@@ -221,8 +235,9 @@ touched) and, when the touched files need them, `desktop-install`,
 
 Stop when the checks pass or after the third fix round. Never delete or stub
 out a fork feature (a module, type, function, call site, migration or test) to
-make a check pass, never change a test expectation, skip a test, add
-`#[allow(...)]`, or weaken a lint rule to hide a real regression. When the upstream change makes a fork test wrong, change the
+make a check pass, never change a test expectation, skip a test, mark it
+ignored, raise a timeout or a pixel tolerance, add `#[allow(...)]`, or weaken a
+lint rule to hide a real regression. When the upstream change makes a fork test wrong, change the
 test only when the new upstream behaviour is the intended behaviour, and say so
 in the commit message. When a fix changes how a conflicted file was resolved,
 update that file's paragraph in `$ARTIFACTS_DIR/sync/resolution.md`. Checks that
@@ -236,8 +251,9 @@ exists and the workflow's final checks failed after it. Then:
 
 1. Do not start or abort a merge, and do not amend or rebase. Every change is a
    new normal commit on the branch.
-2. Read `$ARTIFACTS_DIR/sync/check-failure.txt` and the sections of the failed
-   checks in `$ARTIFACTS_DIR/sync/checks.log`.
+2. Read `$ARTIFACTS_DIR/sync/check-failure.txt` and the sections of all failed
+   checks in `$ARTIFACTS_DIR/sync/checks.log`, each to its end, and list every
+   failing test and error before you change code. Fix all of them in this pass.
 3. Fix the causes with the rules above. Do not delete fork features to make the
    code compile: when a fork module, type, function, method or field is missing,
    restore it from `git show "$(jq -r .base_sha "$ARTIFACTS_DIR/sync/sync.json")":<file>`
