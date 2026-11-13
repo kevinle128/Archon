@@ -17,7 +17,7 @@
   "behaviors": [
     {
       "id": "ui.rooms",
-      "description": "The Runs workspace preserves the run list, run column, node room tabs, List/Graph state, deep links, legacy redirects and narrow layout.",
+      "description": "The Runs workspace preserves the run list, run column, node room tabs, List/Graph state, deep links and narrow layout.",
       "priority": 1,
       "impact_paths": [
         "packages/web/src/components/workflows/",

@@ -14,7 +14,7 @@ Open Raw on a tool row, answer a pending Ask, and queue guidance while the agent
 ## Driving it with Playwright
 
 Run the recipes that match the requested behavior.
-`ui.rooms` checks navigation, the two-column run layout, graph selection, the Artifacts panel, deep links, legacy redirects, and mobile Back. It does not drive History, Output, the node-column Raw tab, Changes, Files, Terminal, or Chat. Tool-row Raw disclosure is `ui.tools`.
+`ui.rooms` checks navigation, the two-column run layout, graph selection, the Artifacts panel, deep links, and mobile Back. It does not drive the old `/workflows/runs/:runId?node=` redirect, History, Output, the node-column Raw tab, Changes, Files, Terminal, or Chat. Tool-row Raw disclosure is `ui.tools`.
 `ui.tools` checks Raw disclosure, keyboard access, geometry, and contrast.
 `ui.ask` checks real pending requests, submitted answers, retained decisions, focus, mobile layout, and CLI/web resume behavior.
 `ui.transcript-display` checks one-string report unwrap, multi-field labeled values with a collapsed Raw JSON disclosure, the Legacy scroller at desktop and narrow sizes, and graph interaction.
