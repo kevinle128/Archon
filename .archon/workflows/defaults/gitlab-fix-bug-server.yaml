@@ -852,10 +852,10 @@ nodes:
          verify-gate fails the run if a file changed after the review. A failure caused
          by this change is `result: fail`.
       3. A failure that also exists on the base revision is pre-existing: prove it
-         by running the same command in a temporary checkout of the base commit
-         (`git worktree add --detach <tmp dir> <base_sha>`, then
-         `git worktree remove --force <tmp dir>`) and record it; it does not fail this
-         verification.
+         by running the same command in a temporary checkout of the base commit OUTSIDE
+         this worktree (`tmp=$(mktemp -d)`, `git worktree add --detach "$tmp/base" <base_sha>`,
+         then `git worktree remove --force "$tmp/base"`) and record it; it does not fail
+         this verification. A checkout inside this worktree changes the frozen change.
       4. If no unit test covers the touched code, say so and rely on the build and lint
          results.
       5. Write `$ARTIFACTS_DIR/validation.md` with each command, its result, and
