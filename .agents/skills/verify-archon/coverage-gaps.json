@@ -26,8 +26,7 @@
       "description": "Builder, settings, chat, source control, docs and other UI behavior outside the agreed run journeys",
       "impact_paths": [
         "packages/docs-web/",
-        "packages/web/src/routes/WorkflowBuilderPage.tsx",
-        "packages/web/src/experiments/console/builder/"
+        "packages/web/src/routes/WorkflowBuilderPage.tsx"
       ],
       "reason": "No qualified journey for these semantics; broad run paths must not imply coverage."
     },
@@ -41,6 +40,25 @@
         "e2e/ui/agent-queue-convergence.spec.ts"
       ],
       "reason": "Dedicated product e2e exists, but these later steering states do not yet have qualified verify-archon scenarios. Queue proof must not imply coverage of them."
+    },
+    {
+      "id": "http.run-id",
+      "description": "Caller-chosen runId on POST /api/workflows/{name}/run",
+      "impact_paths": [
+        "packages/server/src/routes/api.ts",
+        "packages/server/src/routes/schemas/workflow.schemas.ts"
+      ],
+      "reason": "Optional field on the orchestrator dispatch route. http.lifecycle starts its Ask run through the web helper and does not send runId. Proving the field starts a conversation dispatch, which this solo recipe does not do."
+    },
+    {
+      "id": "mcp.run-and-stream",
+      "description": "Starting, answering, and streaming a workflow through /mcp",
+      "impact_paths": [
+        "packages/server/src/mcp/run-task.ts",
+        "packages/server/src/mcp/events.ts",
+        ".archon/workflows/defaults/mcp-smoke.yaml"
+      ],
+      "reason": "mcp.discovery proves the endpoint, the tool list, list_runs, events/list, a missing protocol header, and a foreign origin. It does not call run_workflow, tasks/update, or events/stream."
     },
     {
       "id": "workflow.other-semantics",
