@@ -420,20 +420,23 @@ nodes:
           ;;
       esac
       base_sha=$(jq -r .base_sha "$target")
-      commits=$(git rev-list --count "$base_sha..HEAD")
-      if [ "$commits" != "0" ]; then
-        echo "verify-gate: $commits commit(s) were made before the merge request step; only that step may commit." >&2
+      # The engine records each node attempt as an "archon evidence: <node> start|end" commit; those are expected.
+      # Any other commit means an agent node committed on its own, which only the merge request step may do.
+      agent_commits=$(git log --format=%s "$base_sha..HEAD" | grep -cv '^archon evidence: ' || true)
+      if [ "$agent_commits" != "0" ]; then
+        echo "verify-gate: $agent_commits commit(s) were made before the merge request step; only that step may commit." >&2
+        git log --format='  %h %s' "$base_sha..HEAD" | grep -v ' archon evidence: ' >&2 || true
         exit 1
       fi
-      if [ -z "$(git status --porcelain)" ]; then
-        echo "verify-gate: the worktree has no changes; nothing to put in a merge request." >&2
+      if git diff --quiet "$base_sha" -- . && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+        echo "verify-gate: no change against the base; nothing to put in a merge request." >&2
         exit 1
       fi
       for f in investigation.md implementation.md review.md validation.md; do
         [ -s "$ARTIFACTS_DIR/$f" ] || { echo "verify-gate: missing $ARTIFACTS_DIR/$f" >&2; exit 1; }
       done
-      echo "Verification passed; review has no open blocking findings. Changed paths:"
-      git status --short
+      echo "Verification passed; review has no open blocking findings. Changed paths against the base:"
+      git diff --stat "$base_sha"
 
   # ═══════════════════════════════════════════════════════════════
   # STEP 8 — Commit, push, and open the GitLab merge request (ak-ship)

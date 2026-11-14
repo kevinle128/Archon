@@ -91,6 +91,12 @@ section. When they exist, use them as ak-ship says.
 
 ## Commit
 
+0. Fold the engine's evidence commits into the working tree first. The workflow engine records each node attempt
+   as an `archon evidence: <node> start|end` commit, so the fix may already sit in such commits. Take the base from
+   `target.json` (`BASE_SHA=$(jq -r .base_sha "$ARTIFACTS_DIR/gitlab-fix-bug/target.json")`), check that every
+   commit in `$BASE_SHA..HEAD` has a subject starting with `archon evidence: ` (if not, fail and list them), then run
+   `git reset --soft "$BASE_SHA"` followed by `git reset --quiet` so the whole fix is unstaged changes on top of
+   the base. The merge request must contain exactly one commit, the one made below.
 1. Stage only the files that belong to the fix, by name: `git add -- <path> ...`.
    Never `git add -A`, `git add .`, or `git add -u`.
 2. Never stage scratch or run files: anything under `$ARTIFACTS_DIR`,
