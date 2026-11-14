@@ -460,7 +460,10 @@ nodes:
       - `location_match`: `same` (the error comes from the code location the issue names),
         `not_named` (the issue names no location), or `different`.
       - `evidence_line`: ONE line, copied verbatim from `e2e-before.md`, that shows the
-        reported error (a service log line or the API response).
+        reported error (a service log line or the API response). After you write
+        `e2e-before.md`, read the line back from the file (for example with `grep -n`) and
+        copy it character for character. Do not copy it from the test output again or
+        rewrite it: the gate checks the exact text against the file.
       - `data_state`: `none_needed`, `built_via_api`, `imported_fixture`, or `not_reproducible`.
       - `fixture_file`: the fixture path under `e2e/fixtures/`, or an empty string.
       - `data_environment`: the environment the issue reports (for example `blr-dev`), or an
