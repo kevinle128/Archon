@@ -398,7 +398,21 @@ nodes:
          Import the helper from `/e2e/lib/client.mjs` (the path where `run-e2e.sh` mounts
          it). Put `issue <iid>` in the test name so that a name pattern selects only this
          test. The test asserts the CORRECT behavior: it must fail on the base code and
-         pass when the bug is fixed.
+         pass when the bug is fixed. When the issue has a `Suggested fix` agreed in the
+         thread, the correct behavior is exactly that fix (error code, response, state).
+
+         Read the comment at the top of `<harness_dir>/lib/client.mjs` before you write an
+         assertion: it describes the wire format. The wire errCode is one byte, so a game
+         error code above 255 does not arrive in `res.code`. For a game error (ActionError),
+         assert `res.ok === false` and the code at the start of the body (`res.message` is
+         `"<code>"` or `"<code> | <message>"`), not `res.code`.
+
+         Then read the existing tests under `e2e/`. When an existing test asserts the
+         behavior that the agreed fix intentionally changes (for example it expects ok
+         where the fix now returns an error code), update that test to the agreed
+         behavior in this step and record the change in `e2e-before.md`. Do not delete
+         tests, and do not change tests that the fix does not touch. The suite is frozen
+         after this step.
       5. Start the base stack from the harness directory. A cold first build takes about
          20 minutes, so run it in the background with its output in a log file under
          `$ARTIFACTS_DIR/e2e/`, and poll the log until the script exits. Do not run it in
