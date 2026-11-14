@@ -30,9 +30,13 @@ Read these before you act:
 - `$ARTIFACTS_DIR/gitlab-fix-bug/target.json` — `gitlab_url`, `project_path`,
   `project_id`, `iid`, `base`, `base_sha`, `branch`, `title`, `web_url`
 - `$ARTIFACTS_DIR/gitlab-fix-bug/issue.md` — the issue
-- `$ARTIFACTS_DIR/investigation.md`, `$ARTIFACTS_DIR/regression-test.md`,
-  `$ARTIFACTS_DIR/implementation.md`, `$ARTIFACTS_DIR/review.md`,
-  `$ARTIFACTS_DIR/validation.md`
+- `$ARTIFACTS_DIR/e2e-before.md` — the e2e test failing on the base code with the
+  reported error (test file, test name, `E2E RESULT: FAIL` line, service log line,
+  data state)
+- `$ARTIFACTS_DIR/e2e-after.md` — the same test and the whole e2e suite passing on
+  the fix (`E2E RESULT: PASS` lines)
+- `$ARTIFACTS_DIR/investigation.md`, `$ARTIFACTS_DIR/implementation.md`,
+  `$ARTIFACTS_DIR/review.md`, `$ARTIFACTS_DIR/validation.md`
 
 ```bash
 T="$ARTIFACTS_DIR/gitlab-fix-bug/target.json"
@@ -75,7 +79,7 @@ Map the ak-ship steps to this run as follows:
 | 1 Pre-flight | Run it, but without mode detection: the target is `TARGET`. Abort if `BRANCH` equals `TARGET`. Record the ship scope from `git status` and `git diff --stat`. |
 | 2 Link issues | Skip the `gh` issue search and creation. The linked issue is `#$IID` from `target.json`. |
 | 3 Merge target | Run it after Step 10 (git cannot merge into uncommitted changes). See "Sync with the target" below. |
-| 4 Run tests | `validation.md` is same-revision evidence. Rerun the regression test and the touched tests only when Step 5 changed code or the target merge brought new commits. |
+| 4 Run tests | `e2e-after.md` and `validation.md` are same-revision evidence: verify-gate proved that the worktree is the change they tested. Rerun the touched unit tests only when Step 5 changed code or the target merge brought new commits. Do not start the e2e stack. |
 | 5 Review | When `$ARTIFACTS_DIR/review.md` exists (an earlier `ak-code-review` node reviewed this exact change and `validation.md` was produced after it), use it as the review evidence. Otherwise, or when Step 3 merged new commits, delegate a two-pass review of the diff against `origin/$TARGET` to a fresh-context `code-reviewer` subagent when one is available, or do the two passes yourself. Record which review ran. Fix critical findings inside the fix scope and rerun the affected tests. |
 | 6–9, 9b Version, changelog, journal, docs, plan | Skip. A bug-fix merge request does not bump versions or write journals. |
 | 10 Commit | Run it. See "Commit" below. |
@@ -96,7 +100,9 @@ The commit message stays in English (conventional commit).
    GitLab folds every commit of the branch into one when it is merged. The fix may already be inside them; commit only what is still
    uncommitted.
 1. Stage only the files that belong to the fix, by name: `git add -- <path> ...`.
-   Never `git add -A`, `git add .`, or `git add -u`.
+   Never `git add -A`, `git add .`, or `git add -u`. The new e2e test under `e2e/` (and its
+   fixture under `e2e/fixtures/`, when `e2e-before.md` names one) belongs to the fix: stage
+   it with the production change.
 2. Never stage scratch or run files: anything under `$ARTIFACTS_DIR`,
    `.archon/artifacts/`, `.archon/logs/`, `.archon/state/`, `pr-body.md`,
    `mr-body.md`, `*.scratch.md`, `*.tmp.md`, `*-report.md` at the repository root.
@@ -118,7 +124,8 @@ git fetch --quiet origin "+refs/heads/$TARGET:refs/remotes/origin/$TARGET"
 If `origin/$TARGET` has commits that are not in `HEAD`, run
 `git merge --no-edit "origin/$TARGET"`. On a conflict, run `git merge --abort`
 and fail with the list of conflicting files. After a merge, rerun the
-regression test and the touched tests (ak-ship Step 4).
+touched unit tests (ak-ship Step 4), and write in the merge request that the e2e
+evidence was taken before the merge with the target.
 
 ## Push
 
@@ -149,10 +156,18 @@ Check the exit status of `git push` itself (use `set -o pipefail` or
    filled with evidence only:
    - End-to-end work summary: the issue, the root cause, and the fix
      (`investigation.md`, `implementation.md`).
-   - Completion evidence: the regression test before and after the fix, and each
-     verification command with its result (`regression-test.md`,
-     `validation.md`). If no test framework covers the touched code, say so and
-     list the build/lint evidence.
+   - Completion evidence, first an e2e block under the heading `### Bằng chứng e2e`
+     (from `e2e-before.md` and `e2e-after.md`):
+     - the test file and the test name;
+     - before the fix (base code): the test fails, with the reported error — the
+       `E2E RESULT: FAIL` line and the service log line (or API response) that shows the
+       error, verbatim;
+     - after the fix: the test passes, and the whole e2e suite passes — both
+       `E2E RESULT: PASS` lines;
+     - the data state: what the test creates through the API, or which fixture it loads
+       (collection, keys).
+     Then each unit test, build and lint command with its result (`validation.md`). If no
+     unit test covers the touched code, say so and list the build/lint evidence.
    - Linked Issues: the line `Closes #$IID` as live text on its own line — not in
      a code fence, inline code, or an HTML comment.
    - Ship Mode: `Target: $TARGET`.
