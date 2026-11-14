@@ -28,7 +28,8 @@ description: |
         clone from and push to the GitLab host, and Docker with Compose v2.
         Optional: GAME_DB_MCP_DEV_URL/GAME_DB_MCP_DEV_TOKEN and
         GAME_DB_MCP_PROD_URL/GAME_DB_MCP_PROD_TOKEN in the Archon environment give
-        e2e-reproduce read-only access to dev/prod data (game-db-mcp-dev/-prod).
+        e2e-reproduce read-only access to dev/prod data (game-db-mcp-dev/-prod;
+        base=main uses prod, every other base branch uses dev).
   NOT for: client code (Cocos client, web builds; client bugs use a separate flow),
            GitHub issues (use archon-fix-github-issue), new features, refactors,
         merge request reviews, or merging a merge request.
@@ -248,20 +249,28 @@ nodes:
       git archive --format=tar "$base_sha" | tar -x -C "$base_src" \
         || fail "could not export $base_sha to $base_src."
 
-      # e2e-reproduce reads environment data read-only through one game-db-mcp server per
-      # stage: game-db-mcp-dev (GAME_DB_MCP_DEV_URL) and game-db-mcp-prod (GAME_DB_MCP_PROD_URL).
-      # Archon expands the ${GAME_DB_MCP_*_TOKEN} placeholders when it loads the file; no token
-      # value is written here. A node's `mcp:` path is static and relative to the worktree, so
-      # the file sits in the parent directory, which Archon owns. A stage without a URL gets no
-      # server. Every run with the same environment writes the same content.
+      # e2e-reproduce reads environment data read-only through the game-db-mcp server of the
+      # run's stage. The stage follows the base branch: main is prod, every other branch is a
+      # non-prod environment. Only that one server goes into the file. Archon expands the token
+      # placeholder when it loads the file; no token value is written here. A node's `mcp:`
+      # path is static and relative to the worktree, so the file sits in the parent directory,
+      # which Archon owns. When the stage has no URL configured, the file declares no server.
+      if [ "$base" = "main" ]; then
+        data_server=game-db-mcp-prod; url_var=GAME_DB_MCP_PROD_URL; token_var=GAME_DB_MCP_PROD_TOKEN
+      else
+        data_server=game-db-mcp-dev; url_var=GAME_DB_MCP_DEV_URL; token_var=GAME_DB_MCP_DEV_TOKEN
+      fi
+      data_url=${!url_var:-}
       mcp_file="$(dirname "$PWD")/gitlab-fix-bug-server.mcp.json"
-      jq -n --arg dev "${GAME_DB_MCP_DEV_URL:-}" --arg prod "${GAME_DB_MCP_PROD_URL:-}" '
-        def server($url; $token): {type: "http", url: $url, headers: {Authorization: ("Bearer " + $token)}};
-        (if $dev != "" then {"game-db-mcp-dev": server($dev; "${GAME_DB_MCP_DEV_TOKEN}")} else {} end)
-        + (if $prod != "" then {"game-db-mcp-prod": server($prod; "${GAME_DB_MCP_PROD_TOKEN}")} else {} end)' \
-        > "$mcp_file.$$"
+      if [ -n "$data_url" ]; then
+        jq -n --arg name "$data_server" --arg url "$data_url" --arg auth "Bearer \${$token_var}" \
+          '{($name): {type: "http", url: $url, headers: {Authorization: $auth}}}' > "$mcp_file.$$"
+        mcp_note="$data_server ($data_url)"
+      else
+        echo '{}' > "$mcp_file.$$"
+        mcp_note="none ($url_var is not set; data import is not possible)"
+      fi
       mv -f "$mcp_file.$$" "$mcp_file"
-      mcp_note=$(jq -r 'keys | if length == 0 then "none (GAME_DB_MCP_DEV_URL and GAME_DB_MCP_PROD_URL are not set)" else join(", ") end' "$mcp_file")
 
       branch=$(git branch --show-current)
       jq -n \
@@ -279,6 +288,8 @@ nodes:
         --arg src_var "$src_var" \
         --arg base_src "$base_src" \
         --arg run_root "$run_root" \
+        --arg data_server "$data_server" \
+        --arg data_configured "$([ -n "$data_url" ] && echo true || echo false)" \
         --slurpfile issue "$out/issue.json" \
         '{gitlab_url: $gitlab_url, project_path: $project_path,
           project_id: $issue[0].project_id, iid: ($iid | tonumber),
@@ -287,7 +298,8 @@ nodes:
           state: $issue[0].state,
           e2e: {ref: $e2e_ref, master_path: $master_path, master_dir: $master_dir,
                 harness_dir: $harness_dir, project: $e2e_project, src_var: $src_var,
-                base_src: $base_src, run_root: $run_root, suite_dir: "e2e"}}' > "$out/target.json"
+                base_src: $base_src, run_root: $run_root, suite_dir: "e2e",
+                data_server: $data_server, data_server_configured: ($data_configured == "true")}}' > "$out/target.json"
       jq -r '"# " + .title + "\n\n- Issue: " + .web_url + "\n- State: " + .state
              + "\n- Labels: " + ((.labels // []) | join(", "))
              + "\n\n## Description\n\n" + (.description // "(empty)")' \
@@ -311,8 +323,8 @@ nodes:
     depends_on: [setup]
     context: fresh
     skills: [ak-test]
-    # Written by setup next to the worktree: the game-db-mcp-dev / game-db-mcp-prod servers
-    # that the Archon environment configures. Only this node gets them. The file exists only
+    # Written by setup next to the worktree: the one game-db-mcp server of the run's stage
+    # (base=main -> game-db-mcp-prod, else game-db-mcp-dev). Only this node gets it. The file exists only
     # during a run, so `archon validate workflows` reports "MCP config file not found" for
     # this node; that error is expected.
     mcp: ../gitlab-fix-bug-server.mcp.json
@@ -368,12 +380,11 @@ nodes:
            GM API of the stack (new player, items, activity state, and so on), so that it
            is repeatable.
          - Only when the API cannot build the state: copy only the documents the bug needs
-           from the environment where it happened. Read them read-only through the
-           game-db-mcp server of that environment's stage, and through no other server: an
-           environment that ends in `-prod` uses `game-db-mcp-prod` (tools
-           `mcp__game-db-mcp-prod__*`); every other environment (for example `<game>-dev`)
-           uses `game-db-mcp-dev` (tools `mcp__game-db-mcp-dev__*`). List that server's tools
-           first and use only read tools (list environments and sources, find, query). If the
+           from the environment where it happened. Read them read-only through the one
+           game-db-mcp server of this run's stage, named in `e2e.data_server` of
+           `target.json` (the base branch `main` is prod, every other branch is non-prod;
+           tools `mcp__<data_server>__*`). When `e2e.data_server_configured` is false, the
+           server is not available. List that server's tools first and use only read tools (list environments and sources, find, query). If the
            server is not available or answers with an authentication error, stop: return
            `result: error`, `data_state: not_reproducible`, and
            `todo: data source for <environment> not available`. Mask personal data
@@ -440,7 +451,7 @@ nodes:
       - `fixture_file`: the fixture path under `e2e/fixtures/`, or an empty string.
       - `data_environment`: the environment the issue reports (for example `blr-dev`), or an
         empty string when the issue names none.
-      - `data_source`: the game-db-mcp server you read data from, or `none`.
+      - `data_source`: the game-db-mcp server you read data from (`e2e.data_server`), or `none`.
       - `todo`: what is missing when the reproduction is not possible, else an empty string.
     output_format:
       type: object
@@ -540,11 +551,8 @@ nodes:
       if [ "$data_state" = "imported_fixture" ]; then
         case "$fixture" in e2e/fixtures/*) ;; *) stop "imported data must be a fixture under e2e/fixtures/, got: $fixture" ;; esac
         [ -f "$fixture" ] || stop "the fixture $fixture does not exist."
-        # Data comes only from the server of the issue's own stage.
-        case "$data_env" in
-          *-prod) expected_source=game-db-mcp-prod ;;
-          *) expected_source=game-db-mcp-dev ;;
-        esac
+        # Data comes only from the server of the run's stage (base=main is prod, else dev).
+        expected_source=$(jq -r .e2e.data_server "$target")
         [ "$data_source" = "$expected_source" ] \
           || stop "data for environment '$data_env' must come from $expected_source, not $data_source."
       fi
