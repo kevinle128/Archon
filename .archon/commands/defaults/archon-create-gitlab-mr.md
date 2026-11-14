@@ -92,7 +92,8 @@ section. When they exist, use them as ak-ship says.
 ## Commit
 
 0. Leave the engine's `archon evidence: <node> start|end` commits as they are; they are part of the workflow
-   engine. Do not rewrite, squash or drop them. The fix may already be inside them; commit only what is still
+   engine. Do not rewrite, squash or drop them locally; the merge request is created with `squash: true`, so
+   GitLab folds every commit of the branch into one when it is merged. The fix may already be inside them; commit only what is still
    uncommitted.
 1. Stage only the files that belong to the fix, by name: `git add -- <path> ...`.
    Never `git add -A`, `git add .`, or `git add -u`.
@@ -162,7 +163,7 @@ Check the exit status of `git push` itself (use `set -o pipefail` or
    jq -n --arg source "$BRANCH" --arg target "$TARGET" \
      --arg title "fix: $ISSUE_TITLE" --rawfile description "$ARTIFACTS_DIR/gitlab-fix-bug/mr-body.md" \
      '{source_branch: $source, target_branch: $target, title: $title,
-       description: $description, remove_source_branch: true}' \
+       description: $description, remove_source_branch: true, squash: true}' \
      > "$ARTIFACTS_DIR/gitlab-fix-bug/mr-request.json"
    ```
 
@@ -174,8 +175,8 @@ Check the exit status of `git push` itself (use `set -o pipefail` or
 5. Read the merge request back with
    `gitlab GET "/projects/$PROJECT_ID/merge_requests/<mr iid>"` and confirm:
    `state` is `opened`, `source_branch` is `BRANCH`, `target_branch` is `TARGET`,
-   and the live `description` contains `Closes #$IID` outside a code fence. Fix
-   and update if not.
+   `squash` is `true` (GitLab squashes the branch, engine evidence commits included, into one commit when a
+   person merges), and the live `description` contains `Closes #$IID` outside a code fence. Fix and update if not.
 
 6. Save the result:
 
