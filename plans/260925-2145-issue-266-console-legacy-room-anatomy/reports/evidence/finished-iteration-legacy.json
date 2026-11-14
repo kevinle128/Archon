@@ -1,0 +1,38 @@
+{
+  "surface": "legacy",
+  "runId": "b81543feac157cf088e2c9da9a7539b2",
+  "queuedMessage": "finished-iteration-legacy-93c3562922ad",
+  "viewport": {
+    "narrow": {
+      "noPageOverflow": true,
+      "noRoomOverflow": true,
+      "goFullyVisible": true,
+      "goHeight": 32,
+      "disclosureWraps": false,
+      "bandFullWidth": true,
+      "bandHas33vhCap": true,
+      "bandMaxHeight": "297px"
+    },
+    "wide": {
+      "noPageOverflow": true,
+      "noRoomOverflow": true,
+      "goFullyVisible": true,
+      "goHeight": 32,
+      "disclosureWraps": false,
+      "bandFullWidth": true,
+      "bandHas33vhCap": true,
+      "bandMaxHeight": "297px"
+    }
+  },
+  "requestCounts": {
+    "successfulQueueGets": 25,
+    "finishedViewMutations": 0,
+    "totalJourneyMutations": 1
+  },
+  "timings": {
+    "iterationTwoStartedMs": 25393,
+    "finishedDockReadyMs": 27749,
+    "returnedLiveMs": 27959,
+    "completedMs": 53164
+  }
+}
