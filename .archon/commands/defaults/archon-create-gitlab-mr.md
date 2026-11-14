@@ -83,11 +83,11 @@ Map the ak-ship steps to this run as follows:
 | 12 Create PR | Skip the GitHub commands (`gh pr create`, `gh pr edit`, `gh pr view`). Render the body from `references/pr-template.md`, then use the GitLab API below. |
 | 12b, 13, 14 Plan link, review/merge, social | Skip. |
 
-The repository's `writing-language.cjs` and `pr-body-contract.cjs` helpers that
-ak-ship references are usually absent in the target repository. When they are
-absent, write the description in English and record
-`Writing language: en (source: fallback; helper not found)` in the Ship Mode
-section. When they exist, use them as ak-ship says.
+Write the merge request title and description in Vietnamese (plain, complete sentences; keep code, paths,
+commands, identifiers and the `Closes #$IID` line as they are). The team reads merge requests in Vietnamese. Keep
+the ak-ship section structure, with Vietnamese headings: `## Tóm tắt`, `## Bằng chứng hoàn thành`,
+`## Issue liên quan`, `## Chế độ ship`. Record `Writing language: vi (source: workflow rule)` in the last section.
+The commit message stays in English (conventional commit).
 
 ## Commit
 
@@ -161,7 +161,7 @@ Check the exit status of `git push` itself (use `set -o pipefail` or
 
    ```bash
    jq -n --arg source "$BRANCH" --arg target "$TARGET" \
-     --arg title "fix: $ISSUE_TITLE" --rawfile description "$ARTIFACTS_DIR/gitlab-fix-bug/mr-body.md" \
+     --arg title "fix: <tóm tắt bản sửa bằng tiếng Việt>" --rawfile description "$ARTIFACTS_DIR/gitlab-fix-bug/mr-body.md" \
      '{source_branch: $source, target_branch: $target, title: $title,
        description: $description, remove_source_branch: true, squash: true}' \
      > "$ARTIFACTS_DIR/gitlab-fix-bug/mr-request.json"
