@@ -1,4 +1,4 @@
-name: gitlab-fix-bug
+name: gitlab-fix-bug-server
 description: |
   Use when: User wants to FIX a bug that is described in a GitLab issue on the
             self-hosted GitLab ($GITLAB_URL, default https://git.oceanlabs.dev)
@@ -18,7 +18,8 @@ description: |
   Requires: GITLAB_TOKEN (and optionally GITLAB_URL) in the Archon environment,
         the ak-* skills installed for Claude, and a git credential helper that
         can push to the GitLab host.
-  NOT for: GitHub issues (use archon-fix-github-issue), new features, refactors,
+  NOT for: client code (Cocos client, web builds; client bugs use a separate flow),
+           GitHub issues (use archon-fix-github-issue), new features, refactors,
         merge request reviews, or merging a merge request.
 
 # Literal Claude models, not small/medium/large tiers: a tier can resolve to
