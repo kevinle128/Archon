@@ -1,0 +1,1058 @@
+name: gitlab-fix-bug-server
+description: |
+  Use when: User wants to FIX a bug that is described in a GitLab issue on the
+            self-hosted GitLab ($GITLAB_URL, default https://git.oceanlabs.dev)
+            and open a GitLab merge request for the fix.
+  Triggers: "fix gitlab issue", "fix gitlab bug", "gitlab fix bug",
+            "fix group/project#12 base=dev", "open a merge request for this bug".
+  Input: $ARGUMENTS = "<project path>#<iid> base=<branch> [e2e_ref=<branch>]",
+         for example "vtc/blr/blr-game-serv#1 base=dev". The run must be
+         started on the codebase whose origin is that GitLab project.
+  Does: fetch the issue through the GitLab API v4 -> base the run worktree on
+        origin/<base> and check out the game's e2e harness -> write an e2e test that
+        calls the real API and prove it fails on the base code with EXACTLY the
+        reported error (ak-test) -> gate on the reproduction -> prove the root cause
+        (ak-debug) -> implement the smallest fix (ak-fix) -> review the change
+        (ak-code-review) -> rerun the e2e test and the whole e2e suite against the
+        fixed code (ak-test) -> verify with the repository tests/build/lint
+        (ak-test) -> gate on e2e, review and verification -> commit, push the
+        worktree branch, and open (or reuse) a GitLab merge request with
+        "Closes #<iid>" (ak-ship). The e2e stack always comes down at the end.
+        Never merges. No passing e2e test, no merge request.
+  E2E:  the harness is docker/e2e/ of the game master repository
+        (<group>/<group-name>-master, for example vtc/blr/blr-master), checked out
+        at the base branch. Add "e2e_ref=<branch>" to the input to use another
+        master branch, for example "vtc/blr/blr-game-serv#1 base=dev e2e_ref=feat/e2e-compose".
+  Requires: GITLAB_TOKEN (and optionally GITLAB_URL) in the Archon environment,
+        the ak-* skills installed for Claude, a git credential helper that can
+        clone from and push to the GitLab host, and Docker with Compose v2.
+        Optional: GAME_DB_MCP_DEV_URL/GAME_DB_MCP_DEV_TOKEN and
+        GAME_DB_MCP_PROD_URL/GAME_DB_MCP_PROD_TOKEN in the Archon environment give
+        e2e-reproduce read-only access to dev/prod data (game-db-mcp-dev/-prod;
+        base=main uses prod, every other base branch uses dev).
+  NOT for: client code (Cocos client, web builds; client bugs use a separate flow),
+           GitHub issues (use archon-fix-github-issue), new features, refactors,
+        merge request reviews, or merging a merge request.
+
+# Literal Claude models, not small/medium/large tiers: a tier can resolve to
+# another provider, and the ak-* skills each node declares load only on Claude.
+provider: claude
+model: sonnet
+
+# The setup node resets the run branch to origin/<base>. Pin isolation so that
+# reset can only ever touch a run worktree, never the live checkout.
+worktree:
+  enabled: true
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # STEP 1 — Parse the input, base the worktree, fetch the issue
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: setup
+    # The first run of a game clones its master repository and the service repositories
+    # the harness builds (the game config repository can be over 1 GB).
+    timeout: 1800000
+    bash: |
+      set -euo pipefail
+      # Substitutions are injected already shell-quoted by Archon — assign them
+      # unquoted, then quote normally as locals.
+      args=$ARGUMENTS
+
+      fail() { echo "setup: $*" >&2; exit 1; }
+
+      ref=$(printf '%s\n' "$args" | tr -s '[:space:]' '\n' | grep -E '^[A-Za-z0-9][A-Za-z0-9._/-]*#[0-9]+$' | head -1 || true)
+      base=$(printf '%s\n' "$args" | tr -s '[:space:]' '\n' | sed -n 's/^base=//p' | head -1)
+      e2e_ref=$(printf '%s\n' "$args" | tr -s '[:space:]' '\n' | sed -n 's/^e2e_ref=//p' | head -1)
+      usage="expected '<project path>#<iid> base=<branch>', for example 'vtc/blr/blr-game-serv#1 base=dev'"
+      [ -n "$ref" ] || fail "no GitLab issue reference in the input; $usage. Input: $args"
+      [ -n "$base" ] || fail "no base branch in the input; $usage. Input: $args"
+      git check-ref-format --branch "$base" >/dev/null 2>&1 || fail "invalid base branch name: $base"
+      [ -n "$e2e_ref" ] || e2e_ref=$base
+      git check-ref-format --branch "$e2e_ref" >/dev/null 2>&1 || fail "invalid e2e_ref branch name: $e2e_ref"
+
+      project_path=${ref%#*}
+      iid=${ref##*#}
+      project_path=${project_path%/}
+      case "$project_path" in
+        */*) ;;
+        *) fail "project path must be '<group>/<project>', got: $project_path" ;;
+      esac
+
+      [ -n "${GITLAB_TOKEN:-}" ] || fail "GITLAB_TOKEN is not set in the Archon environment."
+      gitlab_url=${GITLAB_URL:-https://git.oceanlabs.dev}
+      gitlab_url=${gitlab_url%/}
+      gitlab_host=$(printf '%s' "$gitlab_url" | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##; s#/.*$##')
+      command -v jq >/dev/null || fail "jq is required."
+      command -v curl >/dev/null || fail "curl is required."
+
+      # The reset below must only ever run in a run worktree with no local work.
+      [ "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" ] \
+        || fail "not running in a linked git worktree; refusing to reset the live checkout."
+      [ -z "$(git status --porcelain)" ] || fail "the run worktree is not clean; refusing to reset it."
+
+      # The origin remote must be the issue's project. Archon can embed a token
+      # in GitLab clone URLs, so compare host and path only and never print it.
+      remote=$(git remote get-url origin)
+      case "$remote" in
+        *://*)
+          rest=${remote#*://}
+          case "${rest%%/*}" in *@*) rest=${rest#*@} ;; esac
+          remote_host=${rest%%/*}
+          remote_path=${rest#*/}
+          ;;
+        *)
+          # scp-like form: [user@]host:group/project.git
+          rest=${remote#*@}
+          remote_host=${rest%%:*}
+          remote_path=${rest#*:}
+          ;;
+      esac
+      remote_host=${remote_host%%:*}
+      remote_path=${remote_path%/}
+      remote_path=${remote_path%.git}
+      unset remote rest
+      lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+      expected_host=${gitlab_host%%:*}
+      if [ "$(lower "$remote_host")" != "$(lower "$expected_host")" ] \
+        || [ "$(lower "$remote_path")" != "$(lower "$project_path")" ]; then
+        fail "the origin remote of this codebase is $remote_host/$remote_path, not $expected_host/$project_path. Start the run on the codebase of $project_path."
+      fi
+
+      git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" \
+        || fail "git fetch of origin/$base failed (does the branch exist?)."
+      git reset --quiet --hard "origin/$base"
+      base_sha=$(git rev-parse HEAD)
+
+      out="$ARTIFACTS_DIR/gitlab-fix-bug"
+      mkdir -p "$out"
+      encoded=$(jq -rn --arg p "$project_path" '$p|@uri')
+      # The token travels on stdin through --config so it never appears in argv.
+      code=$(printf 'header = "PRIVATE-TOKEN: %s"\n' "$GITLAB_TOKEN" \
+        | curl --silent --show-error --config - \
+            --output "$out/issue.json" --write-out '%{http_code}' \
+            "$gitlab_url/api/v4/projects/$encoded/issues/$iid") \
+        || fail "request to $gitlab_url failed."
+      case "$code" in
+        200) ;;
+        401|403) fail "GitLab refused the token (HTTP $code). Check GITLAB_TOKEN scopes (api or read_api)." ;;
+        404) fail "issue $project_path#$iid not found on $gitlab_url (HTTP 404)." ;;
+        *) fail "GitLab returned HTTP $code for issue $project_path#$iid." ;;
+      esac
+      jq -e '.iid and .project_id and (.title | type == "string")' "$out/issue.json" >/dev/null \
+        || fail "the GitLab response for $project_path#$iid is not an issue object."
+
+      # ── e2e harness ────────────────────────────────────────────────────
+      # Every fix must be proven by an e2e test that calls the real API of the running services.
+      # The game owns the harness: docker/e2e/ in its master repository
+      # (<group>/<group-name>-master). Clones are cached per group under the project state
+      # directory; each run gets its own checkouts under runs/<run id>/, which e2e-down removes.
+      export GIT_TERMINAL_PROMPT=0
+      group_path=${project_path%/*}
+      group_name=${group_path##*/}
+      repo_name=${project_path##*/}
+      master_name="$group_name-master"
+      master_path="$group_path/$master_name"
+      [ "$(lower "$repo_name")" != "$(lower "$master_name")" ] \
+        || fail "the issue is in the master repository $master_path; this workflow fixes service code only."
+      # The harness selects each service source with E2E_<SERVICE>_SRC, where <SERVICE> is the
+      # repository name without the "<group-name>-" prefix (blr-game-serv -> E2E_GAME_SERV_SRC).
+      svc=${repo_name#"$group_name"-}
+      src_var="E2E_$(printf '%s' "$svc" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9' '_')_SRC"
+
+      e2e_root="$STATE_DIR/gitlab-fix-bug/e2e"
+      cache="$e2e_root/cache/$(printf '%s' "$group_path" | tr '/' '_')"
+      run_root="$e2e_root/runs/$WORKFLOW_ID"
+      e2e_project="e2e-$(printf '%s' "$WORKFLOW_ID" | tr '[:upper:]' '[:lower:]' | tr -dc 'a-z0-9' | cut -c1-12)"
+      [ "$e2e_project" != "e2e-" ] || fail "cannot derive an e2e compose project name from the run id."
+      # A rerun of this node replaces the checkouts of this run only.
+      rm -rf "$run_root"
+      mkdir -p "$cache" "$run_root"
+
+      # Runs of the same game share the cache: serialize clone, fetch and worktree creation.
+      lock="$cache/.lock"
+      got_lock=
+      for _ in $(seq 1 900); do
+        if mkdir "$lock" 2>/dev/null; then got_lock=1; break; fi
+        sleep 1
+      done
+      [ -n "$got_lock" ] || fail "another run held $lock for 15 minutes. If no run is cloning, remove that directory."
+      trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+
+      # cache_repo <project path> <refspec>: bare clone on first use, then fetch. Prints the
+      # cache directory. Git authenticates through the host credential helper; no token in URLs.
+      cache_repo() {
+        local dir="$cache/${1##*/}.git"
+        if [ ! -d "$dir" ]; then
+          git clone --quiet --bare "$gitlab_url/$1.git" "$dir" >&2 \
+            || fail "git clone of $gitlab_url/$1 failed (does the git credential helper for $gitlab_host work?)."
+        fi
+        git -C "$dir" fetch --quiet origin "$2" >&2 \
+          || fail "git fetch of $2 from $gitlab_url/$1 failed (does the branch exist?)."
+        printf '%s\n' "$dir"
+      }
+
+      master_cache=$(cache_repo "$master_path" "+refs/heads/$e2e_ref:refs/remotes/origin/$e2e_ref")
+      master_dir="$run_root/$master_name"
+      git -C "$master_cache" worktree add --quiet --detach "$master_dir" "origin/$e2e_ref" >&2 \
+        || fail "could not check out $master_path@$e2e_ref."
+      harness_dir="$master_dir/docker/e2e"
+      [ -f "$harness_dir/e2e-up.sh" ] \
+        || fail "this game has no e2e harness ($master_path@$e2e_ref has no docker/e2e/e2e-up.sh); no merge request."
+      for s in run-e2e.sh e2e-down.sh README.md; do
+        [ -f "$harness_dir/$s" ] || fail "the e2e harness in $master_path@$e2e_ref has no $s; no merge request."
+      done
+      grep -q "$src_var" "$harness_dir/e2e-up.sh" \
+        || fail "the e2e harness in $master_path@$e2e_ref has no source variable $src_var for $repo_name; no merge request."
+
+      # The harness builds the other services from directories next to the master checkout.
+      # Check out each master submodule that e2e-up.sh names, at the commit the master pins.
+      # The service under test is left out: its source is passed through $src_var.
+      siblings=""
+      while read -r key sub; do
+        [ -n "$sub" ] && [ "$sub" != "$repo_name" ] || continue
+        pat=$(printf '%s' "$sub" | sed 's/[][\.*^$/]/\\&/g')
+        grep -Eq "(^|[^A-Za-z0-9_.-])$pat([^A-Za-z0-9_.-]|$)" "$harness_dir/e2e-up.sh" || continue
+        name=${key#submodule.}
+        name=${name%.path}
+        url=$(git -C "$master_dir" config -f .gitmodules --get "submodule.$name.url") \
+          || fail "master submodule $sub has no URL in .gitmodules."
+        sha=$(git -C "$master_dir" ls-tree HEAD -- "$sub" | awk '$2 == "commit" {print $3}')
+        [ -n "$sha" ] || fail "$master_path@$e2e_ref does not pin a commit for submodule $sub."
+        # .gitmodules can use ssh URLs; clone over HTTPS from the same GitLab host instead.
+        case "$url" in
+          ../*) uhost=$expected_host; upath="$group_path/${url#../}" ;;
+          *://*) rest=${url#*://}; rest=${rest#*@}; uhost=${rest%%/*}; upath=${rest#*/} ;;
+          *:*) rest=${url#*@}; uhost=${rest%%:*}; upath=${rest#*:} ;;
+          *) fail "unsupported URL for master submodule $sub." ;;
+        esac
+        uhost=${uhost%%:*}
+        upath=${upath%/}
+        upath=${upath%.git}
+        [ "$(lower "$uhost")" = "$(lower "$expected_host")" ] \
+          || fail "master submodule $sub is hosted on $uhost, not $expected_host."
+        sub_cache=$(cache_repo "$upath" '+refs/heads/*:refs/remotes/origin/*')
+        git -C "$sub_cache" cat-file -e "$sha^{commit}" 2>/dev/null \
+          || git -C "$sub_cache" fetch --quiet origin "$sha" >&2 \
+          || fail "commit $sha of $upath (pinned by $master_path@$e2e_ref) is not on the server."
+        git -C "$sub_cache" worktree add --quiet --detach "$run_root/${sub##*/}" "$sha" >&2 \
+          || fail "could not check out $upath@$sha."
+        siblings="$siblings ${sub##*/}@$(printf '%s' "$sha" | cut -c1-10)"
+      done < <(git -C "$master_dir" config -f .gitmodules --get-regexp '^submodule\..*\.path$' || true)
+      rmdir "$lock" 2>/dev/null || true
+      trap - EXIT
+
+      # The base stack builds the service under test from a clean export of the base commit,
+      # never from the run worktree.
+      base_src="$run_root/$repo_name-base"
+      mkdir -p "$base_src"
+      git archive --format=tar "$base_sha" | tar -x -C "$base_src" \
+        || fail "could not export $base_sha to $base_src."
+
+      # e2e-reproduce reads environment data read-only through the game-db-mcp server of the
+      # run's stage. The stage follows the base branch: main is prod, every other branch is a
+      # non-prod environment. Only that one server goes into the file. Archon expands the token
+      # placeholder when it loads the file; no token value is written here. A node's `mcp:`
+      # path is static and relative to the worktree, so the file sits in the parent directory,
+      # which Archon owns. When the stage has no URL configured, the file declares no server.
+      if [ "$base" = "main" ]; then
+        data_server=game-db-mcp-prod; url_var=GAME_DB_MCP_PROD_URL; token_var=GAME_DB_MCP_PROD_TOKEN
+      else
+        data_server=game-db-mcp-dev; url_var=GAME_DB_MCP_DEV_URL; token_var=GAME_DB_MCP_DEV_TOKEN
+      fi
+      data_url=${!url_var:-}
+      mcp_file="$(dirname "$PWD")/gitlab-fix-bug-server.mcp.json"
+      if [ -n "$data_url" ]; then
+        jq -n --arg name "$data_server" --arg url "$data_url" --arg auth "Bearer \${$token_var}" \
+          '{($name): {type: "http", url: $url, headers: {Authorization: $auth}}}' > "$mcp_file.$$"
+        mcp_note="$data_server ($data_url)"
+      else
+        echo '{}' > "$mcp_file.$$"
+        mcp_note="none ($url_var is not set; data import is not possible)"
+      fi
+      mv -f "$mcp_file.$$" "$mcp_file"
+
+      branch=$(git branch --show-current)
+      jq -n \
+        --arg gitlab_url "$gitlab_url" \
+        --arg project_path "$project_path" \
+        --arg iid "$iid" \
+        --arg base "$base" \
+        --arg base_sha "$base_sha" \
+        --arg branch "$branch" \
+        --arg e2e_ref "$e2e_ref" \
+        --arg master_path "$master_path" \
+        --arg master_dir "$master_dir" \
+        --arg harness_dir "$harness_dir" \
+        --arg e2e_project "$e2e_project" \
+        --arg src_var "$src_var" \
+        --arg base_src "$base_src" \
+        --arg run_root "$run_root" \
+        --arg data_server "$data_server" \
+        --arg data_configured "$([ -n "$data_url" ] && echo true || echo false)" \
+        --slurpfile issue "$out/issue.json" \
+        '{gitlab_url: $gitlab_url, project_path: $project_path,
+          project_id: $issue[0].project_id, iid: ($iid | tonumber),
+          base: $base, base_sha: $base_sha, branch: $branch,
+          title: $issue[0].title, web_url: $issue[0].web_url,
+          state: $issue[0].state,
+          e2e: {ref: $e2e_ref, master_path: $master_path, master_dir: $master_dir,
+                harness_dir: $harness_dir, project: $e2e_project, src_var: $src_var,
+                base_src: $base_src, run_root: $run_root, suite_dir: "e2e",
+                data_server: $data_server, data_server_configured: ($data_configured == "true")}}' > "$out/target.json"
+      jq -r '"# " + .title + "\n\n- Issue: " + .web_url + "\n- State: " + .state
+             + "\n- Labels: " + ((.labels // []) | join(", "))
+             + "\n\n## Description\n\n" + (.description // "(empty)")' \
+        "$out/issue.json" > "$out/issue.md"
+
+      state=$(jq -r .state "$out/target.json")
+      [ "$state" = "opened" ] || echo "WARNING: issue $project_path#$iid is $state, not opened."
+      echo "Issue:   $project_path#$iid — $(jq -r .title "$out/target.json")"
+      echo "Base:    origin/$base @ $base_sha"
+      echo "Branch:  $branch"
+      echo "E2E:     $master_path@$e2e_ref -> $harness_dir"
+      echo "         project $e2e_project, $src_var=$base_src (base), siblings:${siblings:- none}"
+      echo "         data source for e2e-reproduce: $mcp_note"
+      echo "Saved:   $out/issue.md, $out/issue.json, $out/target.json"
+
+  # ═══════════════════════════════════════════════════════════════
+  # STEP 2 — Reproduce the reported error with an e2e test (ak-test)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: e2e-reproduce
+    depends_on: [setup]
+    context: fresh
+    skills: [ak-test]
+    # Written by setup next to the worktree: the one game-db-mcp server of the run's stage
+    # (base=main -> game-db-mcp-prod, else game-db-mcp-dev). Only this node gets it. The file exists only
+    # during a run, so `archon validate workflows` reports "MCP config file not found" for
+    # this node; that error is expected.
+    mcp: ../gitlab-fix-bug-server.mcp.json
+    # A cold first build of the stack takes about 20 minutes; polling keeps the node active.
+    idle_timeout: 2700000
+    prompt: |
+      Reproduce the bug in a GitLab issue with an end-to-end test against the real,
+      running services, on the BASE code, before anybody changes production code.
+
+      ## Headless mode — no human is available
+
+      Decide everything yourself from the issue, the code and the harness. Do not ask questions.
+
+      ## Inputs
+
+      - Issue: `$ARTIFACTS_DIR/gitlab-fix-bug/issue.md` (raw API JSON: `issue.json`)
+      - Target: `$ARTIFACTS_DIR/gitlab-fix-bug/target.json`. The `e2e` object holds
+        `harness_dir`, `project` (the compose project name of this run), `src_var` (the
+        variable that selects the source of the service under test), `base_src` (a clean
+        export of the base commit), and `suite_dir` (`e2e`, relative to this worktree).
+      - Setup output:
+
+      $setup.output
+
+      ## Rules
+
+      - The test calls the real API of the running stack in the same way as the client
+        does. No direct database calls, no direct function calls, no mocks.
+      - You may create or change files under `e2e/` in this worktree only. Do not change
+        production code, configuration, or any other file: a later gate fails the run if
+        a file outside `e2e/` changed.
+      - The stack for this step is built from `base_src`, never from this worktree.
+      - Never write to the database of a real environment (dev, test, production).
+      - Do not stage, commit, push, or create a merge request.
+
+      ## Task
+
+      /ak-test Write one e2e test that reproduces the bug in `$ARTIFACTS_DIR/gitlab-fix-bug/issue.md` and prove that it fails on the base code for the reported reason.
+
+      Load the `ak-test` skill and follow its practical principles for scope, layer and
+      execution. Do not run its interactive operation menu.
+
+      1. Read `<harness_dir>/README.md` completely (the automation contract, the source
+         variables, the client helper API), the helper `<harness_dir>/lib/client.mjs`,
+         the repository instructions (`AGENTS.md`, `CLAUDE.md`, `README*`), and the
+         existing suite in `e2e/` when there is one.
+      2. Read the complete issue. Record the reported failure exactly: the Error line
+         (error type and message), the Code line or stack location when the issue names
+         one, the API call or function that fails, and the Data section (role id / RID,
+         server id, other keys) and any log line (for example `RID:<id>`).
+      3. Put the stack into the data state the bug needs:
+         - First choice: the test builds the state itself through the real API or the
+           GM API of the stack (new player, items, activity state, and so on), so that it
+           is repeatable.
+         - Only when the API cannot build the state: copy only the documents the bug needs
+           from the environment where it happened. Read them read-only through the one
+           game-db-mcp server of this run's stage, named in `e2e.data_server` of
+           `target.json` (the base branch `main` is prod, every other branch is non-prod;
+           tools `mcp__<data_server>__*`). When `e2e.data_server_configured` is false, the
+           server is not available. List that server's tools first and use only read tools (list environments and sources, find, query). If the
+           server is not available or answers with an authentication error, stop: return
+           `result: error`, `data_state: not_reproducible`, and
+           `todo: data source for <environment> not available`. Mask personal data
+           that the bug does not need, and commit them as a fixture next to the test
+           (`e2e/fixtures/issue-<iid>.json`) that the test loads through a fixture loader
+           of the harness. If the harness has no documented way to load a fixture, or no
+           read-only source is available, stop: return `result: error` and
+           `data_state: not_reproducible`, and write in `todo` exactly what is missing
+           (which data, which collection, which harness capability).
+      4. Write ONE new test file `e2e/issue-<iid>-<short-slug>.test.mjs` with `node:test`.
+         Import the helper from `/e2e/lib/client.mjs` (the path where `run-e2e.sh` mounts
+         it). Put `issue <iid>` in the test name so that a name pattern selects only this
+         test. The test asserts the CORRECT behavior: it must fail on the base code and
+         pass when the bug is fixed. When the issue has a `Suggested fix` agreed in the
+         thread, the correct behavior is exactly that fix (error code, response, state).
+
+         Read the comment at the top of `<harness_dir>/lib/client.mjs` before you write an
+         assertion: it describes the wire format. The wire errCode is one byte, so a game
+         error code above 255 does not arrive in `res.code`. For a game error (ActionError),
+         assert `res.ok === false` and the code at the start of the body (`res.message` is
+         `"<code>"` or `"<code> | <message>"`), not `res.code`.
+
+         Then read the existing tests under `e2e/`. When an existing test asserts the
+         behavior that the agreed fix intentionally changes (for example it expects ok
+         where the fix now returns an error code), update that test to the agreed
+         behavior in this step and record the change in `e2e-before.md`. Do not delete
+         tests, and do not change tests that the fix does not touch. The suite is frozen
+         after this step.
+      5. Start the base stack from the harness directory. A cold first build takes about
+         20 minutes, so run it in the background with its output in a log file under
+         `$ARTIFACTS_DIR/e2e/`, and poll the log until the script exits. Do not run it in
+         the foreground with a short timeout.
+
+         ```bash
+         cd "<harness_dir>" && env <src_var>="<base_src>" ./e2e-up.sh <project>
+         ```
+
+         Exit 0 means ready. Exit 1 or 2 is an environment failure: record the logs and
+         return `result: error`.
+      6. Run only the new test, with the absolute path of the suite in this worktree:
+
+         ```bash
+         "<harness_dir>/run-e2e.sh" <project> "$PWD/e2e" '<test name pattern>'
+         ```
+
+         It must exit 1. Read the failing assertion, the `E2E RESULT:` line, and the
+         game-serv log lines that `run-e2e.sh` prints on a failure. When they are not
+         enough, read the service logs with the `docker compose` command in the README.
+      7. Compare the failure with the issue. It reproduces the bug only when the error type
+         and message match the issue and, when the issue names a code location, the error
+         comes from that location. A failure for another reason (helper error, timeout,
+         wrong function name, bad test data, a mistake in the test) is a problem in the
+         test: fix the test and run it again, at most three rounds. Never change production
+         code to make the test fail.
+      8. Always finish with the teardown, also after a failure:
+
+         ```bash
+         "<harness_dir>/e2e-down.sh" <project>
+         ```
+
+      9. Write `$ARTIFACTS_DIR/e2e-before.md` with: the test file and test name, the name
+         pattern, each command with its exit code, the complete `E2E RESULT:` line, the
+         failing assertion, the service log line (or API response) that shows the error,
+         copied verbatim, the Error and Code lines of the issue, your comparison, and the
+         data state: what was created through the API or imported (collection, keys,
+         masked fields) so that a reviewer can repeat it.
+
+      Return:
+      - `result`: `fail_as_expected` (fails with the reported error), `fail_other_reason`
+        (still fails for another reason after three rounds), `unexpected_pass` (the test
+        passes on the base code), or `error` (the stack or the data state could not be
+        prepared).
+      - `location_match`: `same` (the error comes from the code location the issue names),
+        `not_named` (the issue names no location), or `different`.
+      - `evidence_line`: ONE line, copied verbatim from `e2e-before.md`, that shows the
+        reported error (a service log line or the API response). After you write
+        `e2e-before.md`, read the line back from the file (for example with `grep -n`) and
+        copy it character for character. Do not copy it from the test output again or
+        rewrite it: the gate checks the exact text against the file.
+      - `data_state`: `none_needed`, `built_via_api`, `imported_fixture`, or `not_reproducible`.
+      - `fixture_file`: the fixture path under `e2e/fixtures/`, or an empty string.
+      - `data_environment`: the environment the issue reports (for example `blr-dev`), or an
+        empty string when the issue names none.
+      - `data_source`: the game-db-mcp server you read data from (`e2e.data_server`), or `none`.
+      - `todo`: what is missing when the reproduction is not possible, else an empty string.
+    output_format:
+      type: object
+      properties:
+        result:
+          type: string
+          enum: ["fail_as_expected", "fail_other_reason", "unexpected_pass", "error"]
+        test_file:
+          type: string
+          description: Path of the new test, relative to the worktree, for example e2e/issue-12-area-info.test.mjs.
+        test_name:
+          type: string
+        test_pattern:
+          type: string
+          description: The --test-name-pattern regular expression that selects only the new test.
+        issue_error:
+          type: string
+          description: The Error and Code lines of the issue.
+        observed_error:
+          type: string
+        location_match:
+          type: string
+          enum: ["same", "not_named", "different"]
+        evidence_line:
+          type: string
+        data_state:
+          type: string
+          enum: ["none_needed", "built_via_api", "imported_fixture", "not_reproducible"]
+        fixture_file:
+          type: string
+        data_environment:
+          type: string
+        data_source:
+          type: string
+          enum: ["none", "game-db-mcp-dev", "game-db-mcp-prod"]
+        todo:
+          type: string
+        summary:
+          type: string
+      required: [result, test_file, test_name, test_pattern, issue_error, observed_error,
+                 location_match, evidence_line, data_state, fixture_file, data_environment,
+                 data_source, todo, summary]
+
+  # ═══════════════════════════════════════════════════════════════
+  # STEP 3 — No fix before the reported error is reproduced exactly
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: reproduce-gate
+    depends_on: [setup, e2e-reproduce]
+    timeout: 300000
+    bash: |
+      set -euo pipefail
+      result=$e2e-reproduce.output.result
+      location=$e2e-reproduce.output.location_match
+      data_state=$e2e-reproduce.output.data_state
+      fixture=$e2e-reproduce.output.fixture_file
+      data_env=$e2e-reproduce.output.data_environment
+      data_source=$e2e-reproduce.output.data_source
+      test_file=$e2e-reproduce.output.test_file
+      evidence=$e2e-reproduce.output.evidence_line
+      todo=$e2e-reproduce.output.todo
+      summary=$e2e-reproduce.output.summary
+      target="$ARTIFACTS_DIR/gitlab-fix-bug/target.json"
+      before="$ARTIFACTS_DIR/e2e-before.md"
+      harness_dir=$(jq -r .e2e.harness_dir "$target")
+      project=$(jq -r .e2e.project "$target")
+      base_sha=$(jq -r .base_sha "$target")
+
+      # The base stack is not needed after this point. Remove it now instead of holding its
+      # memory through the fix and the review; e2e-down repeats this at the end of the run.
+      bash "$harness_dir/e2e-down.sh" "$project" >&2 \
+        || echo "reproduce-gate: WARNING: e2e-down.sh $project failed; e2e-down retries at the end of the run." >&2
+
+      stop() {
+        echo "reproduce-gate: $*" >&2
+        echo "reproduce-gate: no fix and no merge request. Reproduction summary: $summary" >&2
+        [ -z "$todo" ] || echo "reproduce-gate: missing: $todo" >&2
+        exit 1
+      }
+      case "$result" in
+        fail_as_expected) ;;
+        unexpected_pass) stop "the e2e test PASSES on the base code, so the reported error is not reproduced." ;;
+        fail_other_reason) stop "the e2e test fails on the base code, but not with the reported error." ;;
+        *) stop "the reproduction did not complete (result: $result, data state: $data_state)." ;;
+      esac
+      [ "$data_state" != "not_reproducible" ] || stop "the data state that the bug needs cannot be reproduced."
+      [ "$location" != "different" ] || stop "the error comes from another code location than the one the issue names."
+      [ -s "$before" ] || stop "missing $before."
+      [ -n "$evidence" ] || stop "no service log line or API response shows the reported error."
+      grep -qF -- "$evidence" "$before" || stop "e2e-before.md does not contain the evidence line: $evidence"
+      grep -q 'E2E RESULT: FAIL' "$before" || stop "e2e-before.md does not contain the failing 'E2E RESULT: FAIL' line."
+      case "$test_file" in
+        e2e/*.test.mjs) ;;
+        *) stop "the e2e test must be one e2e/*.test.mjs file, got: $test_file" ;;
+      esac
+      [ -f "$test_file" ] || stop "$test_file does not exist in the worktree."
+      if [ "$data_state" = "imported_fixture" ]; then
+        case "$fixture" in e2e/fixtures/*) ;; *) stop "imported data must be a fixture under e2e/fixtures/, got: $fixture" ;; esac
+        [ -f "$fixture" ] || stop "the fixture $fixture does not exist."
+        # Data comes only from the server of the run's stage (base=main is prod, else dev).
+        expected_source=$(jq -r .e2e.data_server "$target")
+        [ "$data_source" = "$expected_source" ] \
+          || stop "data for environment '$data_env' must come from $expected_source, not $data_source."
+      fi
+
+      # Nothing outside e2e/ may change before the cause is proven.
+      outside=$( { git diff --name-only "$base_sha" -- .; git ls-files --others --exclude-standard; } \
+        | grep -v '^e2e/' || true)
+      [ -z "$outside" ] || stop "files outside e2e/ changed before the error was reproduced: $(printf '%s' "$outside" | tr '\n' ' ')"
+
+      # Freeze the e2e suite: the test that failed on the base code must be the test that
+      # passes on the fix. verify-gate compares this list again.
+      find e2e -type f | LC_ALL=C sort | while IFS= read -r f; do
+        printf '%s %s\n' "$(git hash-object -- "$f")" "$f"
+      done > "$ARTIFACTS_DIR/gitlab-fix-bug/e2e-suite.lock"
+
+      echo "Reproduced on the base code: $test_file"
+      echo "Evidence: $evidence"
+      echo "Data state: $data_state"
+
+  # ═══════════════════════════════════════════════════════════════
+  # STEP 4 — Investigate the cause (ak-debug)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: investigate
+    depends_on: [e2e-reproduce, reproduce-gate]
+    context: fresh
+    # Workflow nodes load only the skills they declare.
+    skills: [ak-debug]
+    prompt: |
+      You fix the bug described in a GitLab issue. This step only diagnoses.
+
+      ## Headless mode — no human is available
+
+      Decide everything yourself from the issue and the code. Do not ask questions.
+
+      ## Inputs
+
+      - Issue: `$ARTIFACTS_DIR/gitlab-fix-bug/issue.md` (raw API JSON: `issue.json`)
+      - Target: `$ARTIFACTS_DIR/gitlab-fix-bug/target.json`
+      - E2E reproduction on the base code: `$ARTIFACTS_DIR/e2e-before.md`
+      - The failing e2e test: `$e2e-reproduce.output.test_file` (`$e2e-reproduce.output.test_name`)
+      - Observed error: $e2e-reproduce.output.observed_error
+
+      ## Task
+
+      /ak-debug Find and prove the root cause of the bug in `$ARTIFACTS_DIR/gitlab-fix-bug/issue.md`; the e2e test in `$ARTIFACTS_DIR/e2e-before.md` reproduces it.
+
+      Load the `ak-debug` skill and follow its systematic debugging route up to a
+      proven root cause. Stop before its fix phase: this node does not edit code.
+
+      1. Read the repository instructions (`AGENTS.md`, `CLAUDE.md`, `README*`,
+         contributing docs), the complete issue, and the e2e reproduction.
+      2. The e2e test already reproduces the error through the real API. Start from the
+         failing call and the service log line in `e2e-before.md` and trace the failing
+         path end to end in this worktree. Treat the cause and fix that the issue suggests
+         as claims: confirm each one against the code.
+      3. Prove the root cause with `file:line` evidence. If the issue's stated cause
+         is wrong or incomplete, say so with evidence.
+      4. Find how this repository builds, lints, and runs its unit tests for the touched
+         code (commands, test framework, test location).
+      5. Write `$ARTIFACTS_DIR/investigation.md` with: root cause with `file:line`
+         evidence, the smallest fix, the files to change, and the exact build/lint/unit
+         test commands to run.
+
+      Do not change any file in this step, and never change files under `e2e/`.
+      Do not stage, commit, push, or create a merge request.
+
+  # ═══════════════════════════════════════════════════════════════
+  # STEP 5 — Smallest fix (ak-fix)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: implement
+    depends_on: [investigate]
+    context: fresh
+    model: opus
+    skills: [ak-fix]
+    prompt: |
+      Implement the smallest fix for the bug.
+
+      ## Headless mode — no human is available
+
+      Decide everything yourself. Do not ask questions.
+
+      ## Inputs
+
+      - Issue: `$ARTIFACTS_DIR/gitlab-fix-bug/issue.md`
+      - E2E reproduction on the base code: `$ARTIFACTS_DIR/e2e-before.md`
+      - Investigation: `$ARTIFACTS_DIR/investigation.md`
+
+      ## Task
+
+      /ak-fix --auto --skip-journal Fix the root cause in `$ARTIFACTS_DIR/investigation.md`; the failing e2e test is in `$ARTIFACTS_DIR/e2e-before.md`.
+
+      Load the `ak-fix` skill and follow it in `--auto` mode with the journal
+      skipped. The root cause is already proven in the investigation and the e2e test
+      already fails on the base code: reuse them as the before evidence instead of
+      diagnosing again. Its "commit or publish" step is not authorized here.
+
+      1. Fix the root cause with the smallest change that follows the repository
+         conventions. No unrelated refactors, renames, or formatting churn.
+      2. Do not change, skip, or delete anything under `e2e/`. The e2e test is frozen
+         after it failed on the base code; a later gate fails the run if it changed.
+      3. Build the touched code and run the unit tests that cover it. Do not start the
+         e2e stack: the e2e-verify step runs the e2e test against this change.
+      4. Write `$ARTIFACTS_DIR/implementation.md` with the files changed, why each
+         change fixes the cause, and the build and unit test results.
+
+      Do not stage, commit, push, or create a merge request.
+
+  # ═══════════════════════════════════════════════════════════════
+  # STEP 6 — Review the change (ak-code-review)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: review
+    depends_on: [implement]
+    context: fresh
+    skills: [ak-code-review]
+    prompt: |
+      Review the uncommitted fix in this worktree before it is shipped.
+
+      ## Headless mode — no human is available
+
+      Decide everything yourself. Do not ask questions.
+
+      ## Inputs
+
+      - Issue: `$ARTIFACTS_DIR/gitlab-fix-bug/issue.md`
+      - E2E reproduction on the base code: `$ARTIFACTS_DIR/e2e-before.md`
+      - Investigation: `$ARTIFACTS_DIR/investigation.md`
+      - Implementation: `$ARTIFACTS_DIR/implementation.md`
+
+      ## Task
+
+      /ak-code-review --pending
+
+      Load the `ak-code-review` skill and review the pending changes (`git diff`
+      plus new untracked files) against the issue and the investigation: does the
+      change fix the proven root cause, does the new e2e test assert the behavior the
+      issue reports through the real API, and does the change add a regression, a
+      security problem, or a convention break.
+
+      You are authorized to fix confirmed Critical or Important findings in the production
+      code that are inside the fix scope. Rerun the affected unit tests after each fix. Do
+      not widen the scope and do not fix style nits. Do not change files under `e2e/`: the
+      e2e test is frozen after it failed on the base code. A problem in the e2e test is a
+      blocking finding.
+
+      Write `$ARTIFACTS_DIR/review.md` with each finding (file:line, impact,
+      evidence), what you fixed, and what remains open.
+
+      Do not stage, commit, push, or create a merge request.
+    output_format:
+      type: object
+      properties:
+        blocking_findings:
+          type: number
+          description: Critical or Important findings that are still open after your fixes.
+        summary:
+          type: string
+      required: [blocking_findings, summary]
+
+  # ═══════════════════════════════════════════════════════════════
+  # STEP 7 — Freeze the reviewed change
+  # ═══════════════════════════════════════════════════════════════
+
+  # The e2e and repository checks below must test exactly the reviewed change. This
+  # fingerprint of the change against the base is compared again in verify-gate.
+  - id: change-freeze
+    depends_on: [review]
+    bash: |
+      set -euo pipefail
+      base_sha=$(jq -r .base_sha "$ARTIFACTS_DIR/gitlab-fix-bug/target.json")
+      # Tree hash of the working tree through a scratch index: it depends on file content
+      # only, not on which files the engine's evidence commits have already committed.
+      idx=$(mktemp)
+      rm -f "$idx"
+      GIT_INDEX_FILE=$idx git read-tree --empty
+      GIT_INDEX_FILE=$idx git add -A .
+      GIT_INDEX_FILE=$idx git write-tree > "$ARTIFACTS_DIR/gitlab-fix-bug/change.fingerprint"
+      rm -f "$idx"
+      echo "Reviewed change fingerprint: $(cat "$ARTIFACTS_DIR/gitlab-fix-bug/change.fingerprint")"
+      git diff --stat "$base_sha"
+
+  # ═══════════════════════════════════════════════════════════════
+  # STEP 8 — Prove the fix with the e2e test on the fixed code (ak-test)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: e2e-verify
+    depends_on: [e2e-reproduce, change-freeze]
+    context: fresh
+    skills: [ak-test]
+    idle_timeout: 2700000
+    prompt: |
+      Prove the fix end to end: run the e2e test that failed on the base code, and the
+      whole e2e suite of this repository, against a stack built from this worktree.
+
+      ## Headless mode — no human is available
+
+      Decide everything yourself. Do not ask questions.
+
+      ## Inputs
+
+      - Target: `$ARTIFACTS_DIR/gitlab-fix-bug/target.json` (the `e2e` object: `harness_dir`,
+        `project`, `src_var`, `suite_dir`)
+      - E2E reproduction on the base code: `$ARTIFACTS_DIR/e2e-before.md`
+      - The new e2e test: `$e2e-reproduce.output.test_file`, name pattern
+        `$e2e-reproduce.output.test_pattern`
+      - Implementation: `$ARTIFACTS_DIR/implementation.md`
+      - Review: `$ARTIFACTS_DIR/review.md`
+
+      ## Rules
+
+      - Do not change any file in this worktree. The change was reviewed and frozen;
+        verify-gate fails the run if a file changed. When a test fails, report it.
+      - The stack for this step is built from this worktree (the fixed code).
+      - Do not stage, commit, push, or create a merge request.
+
+      ## Task
+
+      /ak-test Run the e2e test of the issue and the whole e2e suite against the fixed code.
+
+      Load the `ak-test` skill and follow its test execution workflow. Do not run its
+      interactive operation menu.
+
+      1. Read `<harness_dir>/README.md` (the automation contract) and `e2e-before.md`.
+      2. Start the stack with the service under test built from this worktree. The
+         compose project of the base stack was already removed; use the same project
+         name. Run the script in the background with its output in a log file under
+         `$ARTIFACTS_DIR/e2e/` and poll the log until it exits (a build can take minutes):
+
+         ```bash
+         cd "<harness_dir>" && env <src_var>="<absolute path of this worktree>" ./e2e-up.sh <project>
+         ```
+
+         Use the absolute path of this worktree for `<src_var>`. Exit 1 or 2 is a
+         failure: record the logs and return `result: fail`.
+      3. Run the new test alone, then the whole suite:
+
+         ```bash
+         "<harness_dir>/run-e2e.sh" <project> "<worktree>/e2e" '<test name pattern>'
+         "<harness_dir>/run-e2e.sh" <project> "<worktree>/e2e"
+         ```
+
+      4. Always finish with the teardown, also after a failure:
+
+         ```bash
+         "<harness_dir>/e2e-down.sh" <project>
+         ```
+
+      5. Write `$ARTIFACTS_DIR/e2e-after.md` with each command, its exit code, the complete
+         `E2E RESULT:` line of each run, the passing output of the new test, and, for a
+         failure, the failing assertion and the service log lines.
+
+      Return `result: pass` only when the new test passed AND the whole suite passed
+      (both `E2E RESULT: PASS`).
+    output_format:
+      type: object
+      properties:
+        result:
+          type: string
+          enum: ["pass", "fail"]
+        new_test:
+          type: string
+          description: The E2E RESULT line of the run of the new test alone.
+        suite:
+          type: string
+          description: The E2E RESULT line of the run of the whole suite.
+        summary:
+          type: string
+      required: [result, new_test, suite, summary]
+
+  # ═══════════════════════════════════════════════════════════════
+  # STEP 9 — Verify with the repository checks (ak-test)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: verify
+    depends_on: [e2e-verify]
+    context: fresh
+    skills: [ak-test]
+    prompt: |
+      Verify the fix with this repository's own unit tests, build and lint.
+
+      ## Headless mode — no human is available
+
+      Decide everything yourself. Do not ask questions.
+
+      ## Inputs
+
+      - Investigation (commands): `$ARTIFACTS_DIR/investigation.md`
+      - Implementation: `$ARTIFACTS_DIR/implementation.md`
+      - Review: `$ARTIFACTS_DIR/review.md`
+      - E2E result on the fixed code: `$ARTIFACTS_DIR/e2e-after.md`
+
+      ## Task
+
+      /ak-test Run the unit tests that cover the touched code, and the build and lint checks.
+
+      Load the `ak-test` skill and follow its test execution workflow. Do not run
+      its interactive operation menu.
+
+      1. Run the unit test suite that covers the touched code, then the build and
+         lint/type checks the repository defines. The e2e suite already ran in the
+         e2e-verify step; do not start the e2e stack.
+      2. Do not change any file. The change was reviewed and proven by the e2e test;
+         verify-gate fails the run if a file changed after the review. A failure caused
+         by this change is `result: fail`.
+      3. A failure that also exists on the base revision is pre-existing: prove it
+         by running the same command in a temporary checkout of the base commit OUTSIDE
+         this worktree (`tmp=$(mktemp -d)`, `git worktree add --detach "$tmp/base" <base_sha>`,
+         then `git worktree remove --force "$tmp/base"`) and record it; it does not fail
+         this verification. A checkout inside this worktree changes the frozen change.
+      4. If no unit test covers the touched code, say so and rely on the build and lint
+         results.
+      5. Write `$ARTIFACTS_DIR/validation.md` with each command, its result, and
+         any pre-existing failure with its evidence.
+
+      Return `result: pass` only when the touched unit tests (when they exist) and the
+      build pass.
+
+      Do not stage, commit, push, or create a merge request.
+    output_format:
+      type: object
+      properties:
+        result:
+          type: string
+          enum: ["pass", "fail"]
+        summary:
+          type: string
+      required: [result, summary]
+
+  # ═══════════════════════════════════════════════════════════════
+  # STEP 10 — Deterministic gate before anything leaves the worktree
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: verify-gate
+    depends_on: [e2e-reproduce, review, e2e-verify, verify]
+    bash: |
+      set -euo pipefail
+      result=$verify.output.result
+      summary=$verify.output.summary
+      blocking=$review.output.blocking_findings
+      reproduced=$e2e-reproduce.output.result
+      e2e_result=$e2e-verify.output.result
+      e2e_summary=$e2e-verify.output.summary
+      target="$ARTIFACTS_DIR/gitlab-fix-bug/target.json"
+      if [ "$reproduced" != "fail_as_expected" ]; then
+        echo "verify-gate: the e2e test did not reproduce the reported error on the base code; no merge request is opened." >&2
+        exit 1
+      fi
+      if [ "$e2e_result" != "pass" ]; then
+        echo "verify-gate: the e2e test or the e2e suite did not pass on the fixed code; no merge request is opened." >&2
+        echo "$e2e_summary" >&2
+        exit 1
+      fi
+      if [ "$result" != "pass" ]; then
+        echo "verify-gate: verification did not pass; no merge request is opened." >&2
+        echo "$summary" >&2
+        exit 1
+      fi
+      case "$blocking" in
+        0|0.0) ;;
+        *)
+          echo "verify-gate: the review left $blocking blocking finding(s) open; see \$ARTIFACTS_DIR/review.md. No merge request is opened." >&2
+          exit 1
+          ;;
+      esac
+      base_sha=$(jq -r .base_sha "$target")
+      # The engine records each node attempt as an "archon evidence: <node> start|end" commit; those are expected.
+      # Any other commit means an agent node committed on its own, which only the merge request step may do.
+      agent_commits=$(git log --format=%s "$base_sha..HEAD" | grep -cv '^archon evidence: ' || true)
+      if [ "$agent_commits" != "0" ]; then
+        echo "verify-gate: $agent_commits commit(s) were made before the merge request step; only that step may commit." >&2
+        git log --format='  %h %s' "$base_sha..HEAD" | grep -v ' archon evidence: ' >&2 || true
+        exit 1
+      fi
+      if git diff --quiet "$base_sha" -- . && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+        echo "verify-gate: no change against the base; nothing to put in a merge request." >&2
+        exit 1
+      fi
+      for f in e2e-before.md investigation.md implementation.md review.md e2e-after.md validation.md; do
+        [ -s "$ARTIFACTS_DIR/$f" ] || { echo "verify-gate: missing $ARTIFACTS_DIR/$f" >&2; exit 1; }
+      done
+      grep -q 'E2E RESULT: PASS' "$ARTIFACTS_DIR/e2e-after.md" \
+        || { echo "verify-gate: e2e-after.md has no 'E2E RESULT: PASS' line." >&2; exit 1; }
+
+      # The e2e suite must be the one frozen after the test failed on the base code.
+      current_suite=$(find e2e -type f | LC_ALL=C sort | while IFS= read -r f; do
+        printf '%s %s\n' "$(git hash-object -- "$f")" "$f"
+      done)
+      if [ "$current_suite" != "$(cat "$ARTIFACTS_DIR/gitlab-fix-bug/e2e-suite.lock")" ]; then
+        echo "verify-gate: files under e2e/ changed after the test failed on the base code; no merge request is opened." >&2
+        diff <(cat "$ARTIFACTS_DIR/gitlab-fix-bug/e2e-suite.lock") <(printf '%s\n' "$current_suite") >&2 || true
+        exit 1
+      fi
+      # The e2e and repository checks must have tested exactly the reviewed change.
+      # Same content-only tree hash as change-freeze.
+      idx=$(mktemp)
+      rm -f "$idx"
+      GIT_INDEX_FILE=$idx git read-tree --empty
+      GIT_INDEX_FILE=$idx git add -A .
+      current_change=$(GIT_INDEX_FILE=$idx git write-tree)
+      rm -f "$idx"
+      if [ "$current_change" != "$(cat "$ARTIFACTS_DIR/gitlab-fix-bug/change.fingerprint")" ]; then
+        echo "verify-gate: the change differs from the reviewed change that the e2e test proved; no merge request is opened." >&2
+        exit 1
+      fi
+      echo "E2E: reproduced on the base code, passes on the fix ($e2e_summary)."
+      echo "Verification passed; review has no open blocking findings. Changed paths against the base:"
+      git diff --stat "$base_sha"
+
+  # ═══════════════════════════════════════════════════════════════
+  # STEP 11 — Commit, push, and open the GitLab merge request (ak-ship)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: create-merge-request
+    command: archon-create-gitlab-mr
+    depends_on: [verify-gate]
+    context: fresh
+    provider: claude
+    model: sonnet
+    skills: [ak-ship]
+    idle_timeout: 900000
+    output_type: pull-request
+    output_format:
+      type: object
+      properties:
+        pr_url:
+          type: string
+          description: The merge request web_url returned by the GitLab API.
+        mr_iid:
+          type: number
+        source_branch:
+          type: string
+        target_branch:
+          type: string
+        commit_sha:
+          type: string
+        reused:
+          type: boolean
+          description: true when an open merge request for the branch already existed.
+      required: [pr_url, mr_iid, source_branch, target_branch, commit_sha, reused]
+
+  # ═══════════════════════════════════════════════════════════════
+  # ALWAYS — Remove the e2e stack and the checkouts of this run
+  # ═══════════════════════════════════════════════════════════════
+
+  # trigger_rule all_done runs this node when both e2e nodes are terminal: completed,
+  # failed, or skipped because an earlier node failed. Paths come from the run id, not from
+  # target.json, so the node also cleans up after a setup that failed half-way. An
+  # abandoned (cancelled) run does not reach this node: run e2e-down.sh <project> by hand.
+  - id: e2e-down
+    depends_on: [e2e-reproduce, e2e-verify]
+    trigger_rule: all_done
+    timeout: 600000
+    bash: |
+      set -uo pipefail
+      e2e_root="$STATE_DIR/gitlab-fix-bug/e2e"
+      run_root="$e2e_root/runs/$WORKFLOW_ID"
+      project="e2e-$(printf '%s' "$WORKFLOW_ID" | tr '[:upper:]' '[:lower:]' | tr -dc 'a-z0-9' | cut -c1-12)"
+      down_script=""
+      for f in "$run_root"/*/docker/e2e/e2e-down.sh; do
+        [ -f "$f" ] && { down_script=$f; break; }
+      done
+      if [ -n "$down_script" ]; then
+        # With its env file the harness script also removes the images the project built.
+        manual="bash $down_script $project"
+        bash "$down_script" "$project"
+      elif command -v docker >/dev/null 2>&1; then
+        manual="docker compose -p $project down -v --remove-orphans"
+        docker compose -p "$project" down -v --remove-orphans
+      else
+        manual=""
+        true
+      fi
+      rc=$?
+      if [ "$rc" -ne 0 ]; then
+        # Keep the checkouts: the harness needs them to resolve the project's build contexts.
+        echo "e2e-down: removing compose project $project failed (exit $rc). Run: $manual" >&2
+        exit 1
+      fi
+      # Remove this run's checkouts, then drop their worktree records from the shared caches.
+      rm -rf "$run_root"
+      for c in "$e2e_root"/cache/*/*.git; do
+        [ -d "$c" ] && git -C "$c" worktree prune
+      done
+      echo "e2e-down: compose project $project and $run_root removed."
