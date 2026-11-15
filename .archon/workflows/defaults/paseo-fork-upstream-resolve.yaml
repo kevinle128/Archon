@@ -101,8 +101,39 @@ nodes:
       origin_url=$(git remote get-url origin)
       repo=$(gh repo view "$origin_url" --json nameWithOwner -q .nameWithOwner)
 
-      open_issues=$(gh issue list --repo "$repo" --label "$CONFLICT_LABEL" --state open \
-        --limit 100 --json number,url)
+      # GitHub's issue list and search lag behind a write by a few seconds, and the
+      # sync run starts this run right after it opens the issue. A direct read by
+      # number does not lag, so the issue URL in the run message (when it names this
+      # repository) is read first; the list is polled with a bounded wait either
+      # way. The list still decides "exactly one": the named issue joins it.
+      hint=$(printf '%s\n' "${ARGUMENTS:-}" \
+        | grep -oE 'https://github\.com/[^/[:space:]]+/[^/[:space:]]+/issues/[0-9]+' \
+        | awk -v p="https://github.com/$repo/issues/" 'index($0, p) == 1 { print substr($0, length(p) + 1); exit }' \
+        || true)
+      wait_limit=${ISSUE_LOOKUP_WAIT_SECONDS:-60}
+      waited=0
+      delay=2
+      hint_issue=""
+      while :; do
+        if [ -n "$hint" ] && [ -z "$hint_issue" ]; then
+          hint_view=$(gh issue view "$hint" --repo "$repo" --json number,state,labels 2>/dev/null || true)
+          if jq -e --arg l "$CONFLICT_LABEL" '.state == "OPEN" and any(.labels[]; .name == $l)' \
+              >/dev/null 2>&1 <<<"${hint_view:-null}"; then
+            hint_issue=$hint
+          fi
+        fi
+        listed=$(gh issue list --repo "$repo" --label "$CONFLICT_LABEL" --state open \
+          --limit 100 --json number,url) || listed='[]'
+        open_issues=$(jq -c --arg h "$hint_issue" \
+          '. + (if $h == "" then [] else [{number: ($h | tonumber)}] end) | unique_by(.number)' \
+          <<<"$listed")
+        [ "$(jq length <<<"$open_issues")" -gt 0 ] && break
+        [ "$waited" -ge "$wait_limit" ] && break
+        echo "No open $CONFLICT_LABEL issue in $repo yet; retrying in ${delay}s." >&2
+        sleep "$delay"
+        waited=$((waited + delay))
+        [ "$delay" -lt 5 ] && delay=$((delay + 1))
+      done
       case "$(jq length <<<"$open_issues")" in
         0)
           echo "No open $CONFLICT_LABEL issue in $repo; nothing to resolve." >&2

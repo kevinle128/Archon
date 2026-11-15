@@ -2798,6 +2798,51 @@ describe('executeDagWorkflow -- bash nodes', () => {
     expect(errorMsg).toContain('diagnostic from stderr');
   });
 
+  it('non-zero exit whose command text contains "timed out" reports the exit code, not a timeout (bash)', async () => {
+    const mockDeps = createMockDeps();
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('bash-exit-label-run-id', {
+      workflow_name: 'bash-exit-label',
+      conversation_id: 'conv-bash-exit-label',
+      user_message: 'test',
+    });
+
+    // The words sit in the command line, which execFile copies into err.message.
+    const node = {
+      id: 'bash-exit-label-node',
+      bash: '# a check that timed out after 5 s is reported elsewhere\nexit 3',
+    } satisfies BashNode;
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-bash-exit-label',
+      testDir,
+      { name: 'bash-exit-label', nodes: [node] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const eventCalls = (mockDeps.store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls;
+    const failedEvent = eventCalls.find(
+      (call: unknown[]) =>
+        (call[0] as { event_type: string }).event_type === 'node_failed' &&
+        (call[0] as { step_name: string }).step_name === 'bash-exit-label-node'
+    );
+    expect(failedEvent).toBeDefined();
+    const errorMsg = (failedEvent![0] as { data: { error: string } }).data.error;
+    expect(errorMsg).toContain("Bash node 'bash-exit-label-node' failed");
+    expect(errorMsg).toContain('[exit 3]');
+    expect(errorMsg).not.toContain('timed out after');
+  });
+
   it('variable substitution works in bash scripts', async () => {
     const mockDeps = createMockDeps();
     const platform = createMockPlatform();
@@ -16955,6 +17000,52 @@ describe('executeDagWorkflow -- script nodes', () => {
     const failMsg = messages.find((m: string) => m.includes('failed') && m.includes('slow-script'));
     expect(failMsg).toBeDefined();
   }, 10000);
+
+  it('non-zero exit whose command text contains "timed out" reports the exit code, not a timeout (script)', async () => {
+    const mockDeps = createMockDeps();
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('script-exit-label-run-id', {
+      workflow_name: 'script-exit-label',
+      conversation_id: 'conv-script-exit-label',
+      user_message: 'test',
+    });
+
+    // The words sit in the command line, which execFile copies into err.message.
+    const node = {
+      id: 'script-exit-label-node',
+      script: '// a check that timed out after 5 s is reported elsewhere\nprocess.exit(3)',
+      runtime: 'bun',
+    } satisfies ScriptNode;
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-script-exit-label',
+      testDir,
+      { name: 'script-exit-label', nodes: [node] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const eventCalls = (mockDeps.store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls;
+    const failedEvent = eventCalls.find(
+      (call: unknown[]) =>
+        (call[0] as { event_type: string }).event_type === 'node_failed' &&
+        (call[0] as { step_name: string }).step_name === 'script-exit-label-node'
+    );
+    expect(failedEvent).toBeDefined();
+    const errorMsg = (failedEvent![0] as { data: { error: string } }).data.error;
+    expect(errorMsg).toContain("Script node 'script-exit-label-node' failed");
+    expect(errorMsg).toContain('[exit 3]');
+    expect(errorMsg).not.toContain('timed out after');
+  });
 
   it('stderr output is sent to the user', async () => {
     const mockDeps = createMockDeps();
