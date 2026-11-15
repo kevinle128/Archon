@@ -1,0 +1,830 @@
+name: fork-upstream-sync-body
+description: |
+  Building block, included by the per-fork sync workflows (`include: fork-upstream-sync-body`);
+  not for standalone runs. Provides the shared nightly sync of a fork with its upstream:
+  pause check, fetch, merge in a private clone, light local checks, a pull request that waits for
+  green CI and is merged by Archon with a merge commit, then the lock of newly added upstream
+  workflows and the start of the fork's build. A conflict, a failed local check or a red CI
+  opens (or updates) the one `upstream-sync-conflict` issue and ends with `resolve: true` so
+  the including workflow can run the fork's resolver workflow.
+  `$sync.output` of the including workflow is the JSON of the `summary` node.
+  A run message of `dry-run` stops after the merge classification: nothing is pushed, no
+  issue, pull request or build is created.
+
+inputs:
+  upstream_repo:
+    required: true
+    description: upstream repository as owner/name
+  upstream_branch:
+    required: true
+    description: upstream branch to merge
+  fork_repo:
+    required: true
+    description: the fork as owner/name; its main branch receives the merge
+  light_checks:
+    required: true
+    description: checks run on the merged clone, as `[name]` lines each followed by the shell commands of that check
+  tool_setup:
+    default: ":"
+    description: shell snippet run before each check (for example to select a Node version)
+  build_workflow:
+    required: true
+    description: workflow file of the fork that builds and publishes a release (started with workflow_dispatch on main)
+  build_inputs:
+    default: ""
+    description: one `name=value` per line, passed to the build workflow as inputs
+  workflow_allowlist:
+    default: ""
+    description: comma-separated file name globs of the workflows that stay enabled; empty means no workflow is disabled
+  release_tag_glob:
+    required: true
+    description: tag glob of published releases; commits after the newest such tag are unreleased
+
+returns: summary
+
+nodes:
+  # Writes the helper scripts and the parameters once. Every later node sources
+  # common.sh, so the stage logic stays in one place. Each stage runs only when
+  # state.json names it as the next stage; a failure or an early end sets the
+  # next stage to `done`, so the remaining nodes skip themselves.
+  - id: prepare
+    timeout: 300000
+    bash: |
+      set -euo pipefail
+      sync_dir="$ARTIFACTS_DIR/sync"
+      rm -rf "$sync_dir" "$ARTIFACTS_DIR/clone"
+      mkdir -p "$sync_dir"
+
+      check_param() {
+        if ! [[ "$2" =~ $3 ]]; then
+          echo "prepare: input $1 has an unexpected value" >&2
+          exit 1
+        fi
+      }
+      check_param upstream_repo "$INPUTS_UPSTREAM_REPO" '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'
+      check_param fork_repo "$INPUTS_FORK_REPO" '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'
+      check_param upstream_branch "$INPUTS_UPSTREAM_BRANCH" '^[A-Za-z0-9._/-]+$'
+      check_param build_workflow "$INPUTS_BUILD_WORKFLOW" '^[A-Za-z0-9._-]+$'
+      check_param release_tag_glob "$INPUTS_RELEASE_TAG_GLOB" '^[A-Za-z0-9._*-]+$'
+      check_param workflow_allowlist "$INPUTS_WORKFLOW_ALLOWLIST" '^[A-Za-z0-9._*,-]*$'
+      while IFS= read -r line; do
+        if [ -n "$line" ]; then check_param build_inputs "$line" '^[A-Za-z0-9_]+=[A-Za-z0-9._-]+$'; fi
+      done <<<"$INPUTS_BUILD_INPUTS"
+
+      {
+        printf 'UP_REPO=%q\n' "$INPUTS_UPSTREAM_REPO"
+        printf 'UP_BRANCH=%q\n' "$INPUTS_UPSTREAM_BRANCH"
+        printf 'FORK=%q\n' "$INPUTS_FORK_REPO"
+        printf 'BUILD_WORKFLOW=%q\n' "$INPUTS_BUILD_WORKFLOW"
+        printf 'ALLOWLIST=%q\n' "$INPUTS_WORKFLOW_ALLOWLIST"
+        printf 'TAG_GLOB=%q\n' "$INPUTS_RELEASE_TAG_GLOB"
+      } > "$sync_dir/params.sh"
+      printf '%s\n' "$INPUTS_BUILD_INPUTS" > "$sync_dir/build-inputs.txt"
+      printf '%s\n' "$INPUTS_LIGHT_CHECKS" > "$sync_dir/light-checks.list"
+      printf '%s\n' "$INPUTS_TOOL_SETUP" > "$sync_dir/tool-setup.sh"
+
+      cat > "$sync_dir/common.sh" <<'COMMON_SH'
+      #!/usr/bin/env bash
+      # Sourced by every node of the sync. The caller sets `stage` first.
+      set -Eeuo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      work_dir=$(dirname "$sync_dir")
+      clone="$work_dir/clone"
+      state_file="$sync_dir/state.json"
+      # shellcheck disable=SC1091
+      . "$sync_dir/params.sh"
+      FORK_REF=main
+      CONFLICT_LABEL=upstream-sync-conflict
+      FAILED_LABEL=upstream-sync-failed
+
+      state_get() {
+        jq -r --arg k "$1" '.[$k] // empty | if type == "string" then . else tojson end' "$state_file"
+      }
+      state_merge() {
+        local tmp="$state_file.tmp.$$"
+        jq -c --argjson patch "$1" '. + $patch' "$state_file" > "$tmp"
+        mv "$tmp" "$state_file"
+      }
+      state_set() { state_merge "$(jq -nc --arg k "$1" --arg v "$2" '{($k): $v}')"; }
+
+      run_url() {
+        if [ -n "${ARCHON_PUBLIC_URL:-}" ]; then
+          printf '%s/runs/%s' "${ARCHON_PUBLIC_URL%/}" "${WORKFLOW_ID}"
+        else
+          printf 'Archon run %s' "${WORKFLOW_ID}"
+        fi
+      }
+
+      # A failure is recorded for `finish`, which reports it on a non-locking
+      # issue, and ends the stages that follow.
+      record_failure() {
+        printf -- '- %s: %s\n' "$1" "$2" >> "$sync_dir/failures.txt"
+        state_merge '{"next":"done","outcome":"failed"}' || true
+      }
+      fail() {
+        printf '%s: %s\n' "$1" "$2" >&2
+        record_failure "$1" "$2"
+        exit 1
+      }
+      on_error() { record_failure "${stage:-unknown}" "unexpected error at line $1 (exit $2)"; }
+      trap 'on_error "$LINENO" "$?"' ERR
+
+      # Runs the stage only when state.json names it as the next one.
+      gate() {
+        local next
+        next=$(state_get next)
+        if [ "$next" != "$1" ]; then
+          echo "stage $1 skipped: the next stage is '$next'" >&2
+          jq -nc --arg s "$1" --arg n "$next" '{skipped: $s, next: $n}'
+          exit 0
+        fi
+      }
+
+      is_dry_run() { [ "$(state_get dry_run)" = true ]; }
+
+      # Writes issue-body.md and issue-title.txt for the conflict issue.
+      # Usage: write_issue_files <kind> <files-json> <failed-checks-json> <detail-file>
+      # Line 1 is the machine block that the fork's resolver workflow validates.
+      write_issue_files() {
+        local kind=$1 files=$2 failed=$3 detail=$4 block title
+        block=$(jq -cn --arg kind "$kind" --argjson files "$files" --argjson failed "$failed" \
+          --arg up "$UP_REPO" --arg fork "$FORK" --arg ref "$FORK_REF" \
+          --arg upsha "$(state_get upstream_sha)" --arg forksha "$(state_get fork_sha)" \
+          --arg base "$(state_get merge_base)" --arg run "$(run_url)" --arg date "$(date +%Y-%m-%d)" \
+          '{schema: 1, label: "upstream-sync-conflict", test: false, kind: $kind,
+            upstream_repo: $up, upstream_sha: $upsha, fork_repo: $fork, fork_ref: $ref,
+            fork_sha: $forksha, merge_base: $base, files: $files, failed_checks: $failed,
+            run_url: $run, detected: $date}' \
+          | sed 's/</\\u003c/g; s/>/\\u003e/g')
+        case "$kind" in
+          conflict) title="Upstream sync conflict (upstream $(state_get upstream_sha | cut -c1-9))" ;;
+          *) title="Upstream sync checks failed (upstream $(state_get upstream_sha | cut -c1-9))" ;;
+        esac
+        {
+          printf '<!-- fork-sync-conflict:v1 %s -->\n\n' "$block"
+          head -c 55000 "$detail"
+        } > "$sync_dir/issue-body.md"
+        printf '%s\n' "$title" > "$sync_dir/issue-title.txt"
+      }
+      COMMON_SH
+
+      cat > "$sync_dir/lock-workflows.sh" <<'LOCK_WORKFLOWS_SH'
+      #!/usr/bin/env bash
+      # Disables every active workflow of the fork whose file name matches no glob of
+      # the allowlist. A workflow file that upstream added shows up in the workflow
+      # list a few seconds after the push that brought it, so the loop waits until every
+      # workflow file of main is registered. With an empty allowlist nothing is disabled.
+      stage=lock-workflows
+      . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+      if [ -z "$ALLOWLIST" ]; then
+        echo '{"disabled": [], "note": "no allowlist"}'
+        exit 0
+      fi
+      files=$(gh api "repos/$FORK/contents/.github/workflows?ref=$FORK_REF" \
+        --jq '.[] | select(.type == "file") | .path') \
+        || fail lock-workflows "cannot list the workflow files of $FORK_REF"
+      listing=''
+      missing=''
+      for _ in 1 2 3 4 5 6 7 8; do
+        listing=$(gh workflow list --repo "$FORK" --all --limit 200 --json id,name,path,state)
+        missing=''
+        while IFS= read -r path; do
+          if [ -n "$path" ] && ! jq -e --arg p "$path" 'any(.[]; .path == $p)' >/dev/null <<<"$listing"; then
+            missing="$missing $path"
+          fi
+        done <<<"$files"
+        if [ -z "$missing" ]; then break; fi
+        sleep 10
+      done
+      IFS=, read -r -a patterns <<<"$ALLOWLIST"
+      disabled='[]'
+      while IFS=$'\t' read -r id path wf_state; do
+        if [ "$wf_state" != active ]; then continue; fi
+        base=${path##*/}
+        allowed=false
+        for pattern in "${patterns[@]}"; do
+          # shellcheck disable=SC2053 # the pattern is a glob on purpose
+          if [[ "$base" == $pattern ]]; then allowed=true; break; fi
+        done
+        if [ "$allowed" = false ]; then
+          gh workflow disable "$id" --repo "$FORK" >/dev/null \
+            || fail lock-workflows "could not disable the workflow $path"
+          echo "lock-workflows: disabled $path" >&2
+          disabled=$(jq -c --arg p "$path" '. + [$p]' <<<"$disabled")
+        fi
+      done < <(jq -r '.[] | [.id, .path, .state] | @tsv' <<<"$listing")
+      if [ -n "$missing" ]; then
+        fail lock-workflows "workflow files of $FORK_REF are not registered after 80 s:$missing"
+      fi
+      jq -nc --argjson d "$disabled" '{disabled: $d}'
+      LOCK_WORKFLOWS_SH
+
+      cat > "$sync_dir/start-build.sh" <<'START_BUILD_SH'
+      #!/usr/bin/env bash
+      # Starts the fork's build workflow on main and waits until its run exists.
+      stage=start-build
+      . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+      args=()
+      while IFS= read -r line; do
+        if [ -n "$line" ]; then args+=(-f "$line"); fi
+      done < "$sync_dir/build-inputs.txt"
+      since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      gh workflow run "$BUILD_WORKFLOW" --repo "$FORK" --ref "$FORK_REF" ${args[@]+"${args[@]}"} \
+        || fail start-build "gh workflow run $BUILD_WORKFLOW was refused"
+      run_json=''
+      for _ in $(seq 1 12); do
+        run_json=$(gh run list --repo "$FORK" --workflow "$BUILD_WORKFLOW" --event workflow_dispatch \
+          --limit 5 --json databaseId,createdAt,url \
+          | jq -c --arg since "$since" '[.[] | select(.createdAt >= $since)] | sort_by(.createdAt) | last // empty')
+        if [ -n "$run_json" ]; then break; fi
+        sleep 5
+      done
+      if [ -z "$run_json" ]; then
+        fail start-build "$BUILD_WORKFLOW was dispatched, but no run appeared within 60 s"
+      fi
+      state_set build_run_url "$(jq -r .url <<<"$run_json")"
+      echo "$run_json"
+      START_BUILD_SH
+
+      cat > "$sync_dir/ci.sh" <<'CI_SH'
+      #!/usr/bin/env bash
+      # Sourced by the wait-ci stage.
+      # ci_wait <attempt>: waits for the checks of the pull request on the local HEAD
+      # and writes ci.json: conclusion success, failure, no_checks, timeout, merged
+      # or closed. A merged or closed pull request ends the wait at once.
+      ci_wait() {
+        local attempt=$1 number head checks_url poll_seconds=60 first_check_polls=10 max_polls=$2
+        local polls=0 seen=false prev_names='' pr pr_head pr_state checks out names failed conclusion
+        number=$(state_get pr_number)
+        head=$(git -C "$clone" rev-parse HEAD)
+        checks_url="https://github.com/$FORK/pull/$number/checks"
+        while :; do
+          polls=$((polls + 1))
+          # Checks listed before GitHub moved the pull request to the pushed HEAD
+          # belong to an older commit, so they do not count.
+          pr=$(gh pr view "$number" --repo "$FORK" --json headRefOid,state 2>/dev/null || true)
+          pr_head=$(jq -r '.headRefOid // empty' <<<"$pr" 2>/dev/null || true)
+          pr_state=$(jq -r '.state // empty' <<<"$pr" 2>/dev/null || true)
+          if [ "$pr_state" = MERGED ] || [ "$pr_state" = CLOSED ]; then
+            conclusion=$(tr '[:upper:]' '[:lower:]' <<<"$pr_state")
+            failed='[]'
+            break
+          fi
+          checks='[]'
+          if [ "$pr_head" = "$head" ]; then
+            # gh exits non-zero for pending or failed checks and prints no JSON when
+            # no checks exist yet, so only the JSON on stdout counts.
+            out=$(gh pr checks "$number" --repo "$FORK" --json name,state,bucket,link 2>/dev/null || true)
+            if jq -e 'type == "array"' >/dev/null 2>&1 <<<"$out"; then checks=$out; fi
+          fi
+          if [ "$(jq length <<<"$checks")" -gt 0 ]; then
+            seen=true
+            if jq -e 'any(.[]; .bucket == "pending")' >/dev/null <<<"$checks"; then
+              prev_names=''
+            else
+              # A second workflow can add its checks after the first one finished, so
+              # a conclusion needs the same complete set of check names on two polls
+              # in a row.
+              names=$(jq -c '[.[].name] | sort' <<<"$checks")
+              if [ "$names" = "$prev_names" ]; then
+                failed=$(jq -c '[.[] | select(.bucket != "pass" and .bucket != "skipping") | .name]' <<<"$checks")
+                if [ "$failed" = '[]' ]; then conclusion=success; else conclusion=failure; fi
+                break
+              fi
+              prev_names=$names
+            fi
+          else
+            prev_names=''
+          fi
+          if [ "$seen" = false ] && [ "$polls" -ge "$first_check_polls" ]; then
+            conclusion=no_checks
+            failed='[]'
+            break
+          fi
+          if [ "$polls" -ge "$max_polls" ]; then
+            conclusion=timeout
+            failed=$(jq -c '[.[] | select(.bucket != "pass" and .bucket != "skipping") | .name]' <<<"$checks")
+            break
+          fi
+          sleep "$poll_seconds"
+        done
+        echo "CI for pull request #$number: $conclusion after $polls polls" >&2
+        jq -nc --arg conclusion "$conclusion" --argjson failed "$failed" \
+          --arg checks_url "$checks_url" --argjson attempt "$attempt" \
+          '{conclusion: $conclusion, failed: $failed, checks_url: $checks_url, attempt: $attempt}' \
+          > "$sync_dir/ci.json"
+      }
+
+      # ci_rerun_failed: re-runs the failed jobs of the pull request's checks once,
+      # then waits until GitHub shows the re-run, so the next wait never concludes on
+      # the old failed check set. Prints true when a re-run started.
+      ci_rerun_failed() {
+        local number run_ids id rerun=false
+        number=$(state_get pr_number)
+        # The Actions run ids of the failed checks come from their links
+        # (https://github.com/<repo>/actions/runs/<run-id>/job/<job-id>).
+        run_ids=$(gh pr checks "$number" --repo "$FORK" --json bucket,link 2>/dev/null \
+          | jq -r '.[] | select(.bucket == "fail") | (.link // "")
+            | capture("/actions/runs/(?<id>[0-9]+)")? | .id' 2>/dev/null \
+          | sort -u || true)
+        for id in $run_ids; do
+          if gh run rerun "$id" --failed --repo "$FORK" >/dev/null 2>&1; then
+            rerun=true
+            echo "ci: re-running the failed jobs of run $id" >&2
+          else
+            echo "ci: run $id cannot be re-run" >&2
+          fi
+        done
+        if [ "$rerun" = true ]; then
+          for _ in $(seq 1 10); do
+            if gh pr checks "$number" --repo "$FORK" --json bucket 2>/dev/null \
+                | jq -e 'any(.[]; .bucket == "pending")' >/dev/null 2>&1; then
+              break
+            fi
+            sleep 30
+          done
+        fi
+        echo "$rerun"
+      }
+      CI_SH
+
+      cat > "$sync_dir/run-checks.sh" <<'RUN_CHECKS_SH'
+      #!/usr/bin/env bash
+      # Runs the light checks of light-checks.list in the clone, in order, each under a
+      # time limit, and writes light.json ({passed, failed, ran}) and light.log.
+      # The list has `[name]` lines, each followed by the shell commands of that check.
+      # The commands see SYNC_CHANGED_FILES, the files the merge changed. Always exits 0
+      # once the checks ran.
+      set -uo pipefail
+      sync_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+      clone="$(dirname "$sync_dir")/clone"
+      log="$sync_dir/light.log"
+      limit=${CHECK_TIMEOUT_SECONDS:-1800}
+      export SYNC_CHANGED_FILES="$sync_dir/changed-files.txt"
+      cd "$clone"
+
+      # Runs one check in its own process group with a watchdog in another: when the
+      # limit passes, the whole group stops, so a hung check ends as a failure.
+      # Returns 124 for a timeout, else the exit status of the check.
+      run_limited() {
+        local script=$1 pid watchdog rc=0 marker="$sync_dir/check-timed-out"
+        rm -f "$marker"
+        set -m
+        { bash -e -c ". '$sync_dir/tool-setup.sh'"$'\n'"$script"; } &
+        pid=$!
+        (
+          /bin/sleep "$limit"
+          : > "$marker"
+          kill -TERM -- "-$pid" 2>/dev/null
+          /bin/sleep 10
+          kill -KILL -- "-$pid" 2>/dev/null
+        ) &
+        watchdog=$!
+        set +m
+        wait "$pid" || rc=$?
+        kill -TERM -- "-$watchdog" 2>/dev/null || true
+        wait "$watchdog" 2>/dev/null || true
+        if [ -f "$marker" ]; then
+          rm -f "$marker"
+          echo "checks: timed out after $limit s; its processes were stopped"
+          return 124
+        fi
+        return "$rc"
+      }
+
+      : > "$log"
+      results='[]'
+      name=''
+      script=''
+      flush() {
+        local rc=0 status
+        if [ -z "$name" ]; then return 0; fi
+        printf '\n===== %s =====\n' "$name" >> "$log"
+        run_limited "$script" >> "$log" 2>&1 </dev/null || rc=$?
+        case "$rc" in
+          0) status=pass ;;
+          124) status=timeout ;;
+          *) status=fail ;;
+        esac
+        echo "check $name: $status" >&2
+        results=$(jq -c --arg n "$name" --arg s "$status" '. + [{name: $n, status: $s}]' <<<"$results")
+        name=''
+        script=''
+      }
+      while IFS= read -r line; do
+        case "$line" in
+          \[*\])
+            flush
+            name=${line#\[}
+            name=${name%\]}
+            ;;
+          *) if [ -n "$name" ]; then script="$script$line"$'\n'; fi ;;
+        esac
+      done < "$sync_dir/light-checks.list"
+      flush
+
+      # A check must not leave a change in the tree that the pull request would carry.
+      git reset --hard --quiet HEAD
+
+      jq -n --argjson r "$results" \
+        '{passed: ($r | length > 0 and all(.status == "pass")),
+          failed: [$r[] | select(.status != "pass") | .name], ran: $r}' \
+        > "$sync_dir/light.json"
+      cat "$sync_dir/light.json"
+      RUN_CHECKS_SH
+
+      cat > "$sync_dir/report-failure.sh" <<'REPORT_FAILURE_SH'
+      #!/usr/bin/env bash
+      # Opens or updates the one `upstream-sync-failed` issue with the recorded
+      # failures. This label never pauses the sync: only the conflict label does.
+      stage=report-failure
+      . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+      if [ ! -s "$sync_dir/failures.txt" ]; then exit 0; fi
+      gh label create "$FAILED_LABEL" --repo "$FORK" --color FBCA04 \
+        --description "Nightly upstream sync failed for a reason other than a conflict" --force >/dev/null
+      {
+        printf 'The nightly sync of upstream %s into %s failed before it finished.\n\n' "$UP_REPO" "$FORK"
+        cat "$sync_dir/failures.txt"
+        printf '\nRun: %s\n\nThis issue does not pause the sync. Close it once the cause is fixed.\n' "$(run_url)"
+      } > "$sync_dir/failed-body.md"
+      existing=$(gh issue list --repo "$FORK" --label "$FAILED_LABEL" --state open --limit 1 \
+        --json number -q '.[0].number // empty')
+      if [ -n "$existing" ]; then
+        gh issue comment "$existing" --repo "$FORK" --body-file "$sync_dir/failed-body.md" >/dev/null
+        echo "updated failure issue #$existing" >&2
+      else
+        url=$(gh issue create --repo "$FORK" --label "$FAILED_LABEL" \
+          --title "Upstream sync failed ($(date +%Y-%m-%d))" --body-file "$sync_dir/failed-body.md")
+        echo "opened failure issue $url" >&2
+      fi
+      REPORT_FAILURE_SH
+
+      jq -nc --arg dry "$(printf '%s' "${USER_MESSAGE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" \
+        '{next: "lock-check", outcome: "", dry_run: ($dry == "dry-run")}' > "$sync_dir/state.json"
+      : > "$sync_dir/failures.txt"
+      jq -c '{prepared: true, dry_run}' "$sync_dir/state.json"
+
+  # An open conflict issue pauses the sync until a human closes it. The token
+  # must be able to push workflow files; a token without the workflow scope would
+  # fail on the first upstream change that touches .github/workflows.
+  - id: lock-check
+    depends_on: [prepare]
+    trigger_rule: all_done
+    timeout: 300000
+    bash: |
+      stage=lock-check
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      gate lock-check
+      open=$(gh issue list --repo "$FORK" --label "$CONFLICT_LABEL" --state open --limit 100 \
+        --json number,url,labels \
+        | jq -c '[.[] | select(any(.labels[]; .name == "sync-test") | not)][0] // empty')
+      if [ -n "$open" ]; then
+        echo "Sync paused: conflict issue #$(jq -r .number <<<"$open") is open ($(jq -r .url <<<"$open"))." >&2
+        state_merge "$(jq -nc --argjson i "$open" '{next: "done", outcome: "paused", issue: ($i.number | tostring), issue_url: $i.url}')"
+        jq -c '{paused: true, issue: .number}' <<<"$open"
+        exit 0
+      fi
+      scopes=$(gh api -i user 2>/dev/null | tr -d '\r' | sed -n 's/^[Xx]-[Oo]auth-[Ss]copes: //p' | head -n 1 || true)
+      if [ -n "$scopes" ] && ! grep -qw workflow <<<"$scopes"; then
+        fail lock-check "the GitHub token has no workflow scope (scopes: $scopes); a push that changes .github/workflows would be refused"
+      fi
+      state_set next fetch
+      jq -nc --arg s "$scopes" '{paused: false, token_scopes: $s}'
+
+  # Clones the fork and fetches upstream. No upstream commit and no unreleased fork
+  # commit is a no-op. No upstream commit with fork commits after the newest release
+  # tag builds the fork head, without a merge or a pull request (this also retries
+  # a build that failed after an earlier merge).
+  - id: fetch
+    depends_on: [lock-check]
+    trigger_rule: all_done
+    timeout: 1200000
+    bash: |
+      stage=fetch
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      gate fetch
+      rm -rf "$clone"
+      git clone --no-tags --filter=blob:none --quiet --branch "$FORK_REF" "https://github.com/$FORK.git" "$clone" \
+        || fail fetch "cannot clone $FORK"
+      git -C "$clone" remote add upstream "https://github.com/$UP_REPO.git"
+      git -C "$clone" fetch --no-tags --quiet upstream "$UP_BRANCH" \
+        || fail fetch "cannot fetch $UP_BRANCH from $UP_REPO"
+      git -C "$clone" fetch --no-tags --quiet origin "+refs/tags/$TAG_GLOB:refs/tags/$TAG_GLOB" || true
+      if [ -z "$(git -C "$clone" config user.email || true)" ]; then
+        git -C "$clone" config user.email "archon-fork-sync@users.noreply.github.com"
+        git -C "$clone" config user.name "Archon fork sync"
+      fi
+      fork_sha=$(git -C "$clone" rev-parse HEAD)
+      upstream_sha=$(git -C "$clone" rev-parse "refs/remotes/upstream/$UP_BRANCH")
+      behind=$(git -C "$clone" rev-list --count "HEAD..$upstream_sha")
+      last_tag=$(git -C "$clone" tag -l "$TAG_GLOB" --sort=-creatordate | head -n 1)
+      if [ -z "$last_tag" ]; then
+        unreleased=1
+      else
+        unreleased=$(git -C "$clone" rev-list --count "$last_tag..HEAD")
+      fi
+      state_merge "$(jq -nc --arg f "$fork_sha" --arg u "$upstream_sha" --arg b "$behind" \
+        --arg t "$last_tag" --arg r "$unreleased" \
+        '{fork_sha: $f, upstream_sha: $u, behind: $b, last_tag: $t, unreleased: $r}')"
+      if [ "$behind" != 0 ]; then
+        state_set next merge
+      elif [ "$unreleased" != 0 ]; then
+        echo "Upstream is already merged; $unreleased fork commit(s) after ${last_tag:-the start} are unreleased." >&2
+        if is_dry_run; then
+          state_merge '{"next":"done","outcome":"dry_run","would":"build"}'
+        else
+          state_set next lock-workflows
+        fi
+      else
+        echo "No changes: upstream has nothing new and ${last_tag} is the fork head." >&2
+        state_merge '{"next":"done","outcome":"noop"}'
+      fi
+      jq -c '{fork_sha, upstream_sha, behind, last_tag, unreleased, next}' "$state_file"
+
+  # The merge runs on a new branch of the private clone. A conflict is recorded
+  # as the issue report and the merge is aborted, so nothing is left behind.
+  - id: merge
+    depends_on: [fetch]
+    trigger_rule: all_done
+    timeout: 600000
+    bash: |
+      stage=merge
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      gate merge
+      upstream_sha=$(state_get upstream_sha)
+      cd "$clone"
+      branch="sync/upstream-clean-$(date +%Y%m%d)-${WORKFLOW_ID:0:8}"
+      git switch --quiet -c "$branch"
+      merge_base=$(git merge-base HEAD "$upstream_sha")
+      state_merge "$(jq -nc --arg m "$merge_base" --arg b "$branch" '{merge_base: $m, branch: $b}')"
+      count=$(state_get behind)
+      range="${merge_base:0:9}..${upstream_sha:0:9} ($count commits)"
+      message="Merge $UP_REPO ${upstream_sha:0:9} into $FORK_REF"
+      if git merge --no-ff -m "$message" "$upstream_sha" > "$sync_dir/merge.log" 2>&1; then
+        merge_sha=$(git rev-parse HEAD)
+        if is_dry_run; then
+          state_merge "$(jq -nc --arg r "$range" '{next: "done", outcome: "dry_run", would: "merge", range: $r}')"
+          jq -nc --arg r "$range" '{clean: true, range: $r}'
+          exit 0
+        fi
+        # The files the merge changed, as paths that exist, for the related-test check.
+        git -c core.quotepath=false diff --name-only HEAD^1 HEAD \
+          | while IFS= read -r path; do if [ -f "$path" ]; then printf '%s\n' "$path"; fi; done \
+          > "$sync_dir/changed-files.txt"
+        state_merge "$(jq -nc --arg m "$merge_sha" --arg r "$range" '{merge_sha: $m, range: $r, next: "light-checks"}')"
+        jq -nc --arg m "$merge_sha" --arg r "$range" '{clean: true, merge_sha: $m, range: $r}'
+        exit 0
+      fi
+      files=$(git -c core.quotepath=false diff -z --name-only --diff-filter=U \
+        | jq -R -s -c 'split("\u0000") | map(select(length > 0))')
+      git merge --abort
+      if [ "$(jq length <<<"$files")" -eq 0 ]; then
+        fail merge "git merge failed without a conflict: $(tail -n 1 "$sync_dir/merge.log")"
+      fi
+      if is_dry_run; then
+        state_merge "$(jq -nc --arg r "$range" --argjson f "$files" '{next: "done", outcome: "dry_run", would: "conflict", range: $r, files: $f}')"
+        jq -nc --argjson f "$files" --arg r "$range" '{clean: false, range: $r, files: $f}'
+        exit 0
+      fi
+      {
+        printf 'The nightly sync could not merge upstream %s (%s). The merge was aborted and nothing was pushed.\n\n' "$UP_REPO" "$range"
+        printf 'Run: %s\n\nConflicting files:\n\n' "$(run_url)"
+        jq -r '.[:200][] | "- `" + . + "`"' <<<"$files"
+        printf '\nArchon resolves this conflict by itself, opens a pull request and merges it once CI passes. The sync stays paused until a sync pull request merges and this issue is closed.\n'
+      } > "$sync_dir/detail.md"
+      write_issue_files conflict "$files" '[]' "$sync_dir/detail.md"
+      state_merge "$(jq -nc --arg r "$range" --argjson f "$files" '{range: $r, files: $f, issue_kind: "conflict", next: "open-issue"}')"
+      jq -nc --argjson f "$files" --arg r "$range" '{clean: false, range: $r, files: $f}'
+
+  # The light checks hold the build lock that the release builds on this machine
+  # also take (lockf, as those jobs do), so the two never run at the same time.
+  - id: light-checks
+    depends_on: [merge]
+    trigger_rule: all_done
+    timeout: 14400000
+    bash: |
+      stage=light-checks
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      gate light-checks
+      build_lock="${FORK_SYNC_BUILD_LOCK:-$HOME/.mini-desktop-build.lock}"
+      if command -v lockf >/dev/null 2>&1; then
+        lockf -k -t "${BUILD_LOCK_WAIT_SECONDS:-3600}" "$build_lock" bash "$sync_dir/run-checks.sh" >/dev/null \
+          || fail light-checks "the build lock $build_lock stayed taken for ${BUILD_LOCK_WAIT_SECONDS:-3600} s, or the checks could not run"
+      else
+        bash "$sync_dir/run-checks.sh" >/dev/null
+      fi
+      if jq -e .passed "$sync_dir/light.json" >/dev/null; then
+        state_set next open-pr
+        jq -c . "$sync_dir/light.json"
+        exit 0
+      fi
+      failed=$(jq -c .failed "$sync_dir/light.json")
+      {
+        printf 'The merge of upstream %s (%s) is clean, but the local checks failed: %s.\n\n' \
+          "$UP_REPO" "$(state_get range)" "$(jq -r 'join(", ")' <<<"$failed")"
+        printf 'Run: %s\n\nThe merge commit was never pushed.\n\n' "$(run_url)"
+        for name in $(jq -r '.[]' <<<"$failed"); do
+          printf '### `%s`\n\n```\n' "$name"
+          awk -v n="===== $name =====" '$0 == n {on = 1; next} /^===== .* =====$/ {on = 0} on' "$sync_dir/light.log" | tail -n 60
+          printf '```\n\n'
+        done
+      } > "$sync_dir/detail.md"
+      write_issue_files checks_failed '[]' "$failed" "$sync_dir/detail.md"
+      state_merge '{"issue_kind":"checks_failed","next":"open-issue"}'
+      jq -c . "$sync_dir/light.json"
+
+  # Even a clean merge reaches main only through a pull request with green CI.
+  - id: open-pr
+    depends_on: [light-checks]
+    trigger_rule: all_done
+    timeout: 600000
+    bash: |
+      stage=open-pr
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      gate open-pr
+      cd "$clone"
+      branch=$(state_get branch)
+      if [ "$(git rev-parse HEAD)" != "$(state_get merge_sha)" ]; then
+        fail open-pr "the clone moved away from the merge commit $(state_get merge_sha)"
+      fi
+      git push --no-verify --quiet origin "HEAD:refs/heads/$branch" 2> "$sync_dir/push.log" \
+        || fail open-pr "the push of $branch was refused: $(tail -n 3 "$sync_dir/push.log")"
+      {
+        printf 'Automatic merge of upstream `%s` (%s) into `%s`.\n\n' "$UP_REPO" "$(state_get range)" "$FORK_REF"
+        printf 'The merge is clean and the local checks passed: %s.\n\n' \
+          "$(jq -r '[.ran[].name] | join(", ")' "$sync_dir/light.json")"
+        printf 'Archon merges this pull request with a merge commit once all checks pass. Run: %s\n' "$(run_url)"
+      } > "$sync_dir/pr-body.md"
+      pr_url=$(gh pr create --repo "$FORK" --base "$FORK_REF" --head "$branch" \
+        --title "sync: merge upstream $UP_REPO $(date +%Y-%m-%d)" --body-file "$sync_dir/pr-body.md") \
+        || fail open-pr "gh pr create failed for $branch"
+      number=$(gh pr view "$pr_url" --json number -q .number)
+      state_merge "$(jq -nc --arg u "$pr_url" --arg n "$number" '{pr_url: $u, pr_number: $n, next: "wait-ci"}')"
+      jq -nc --arg u "$pr_url" --arg n "$number" '{pr_url: $u, number: $n}'
+
+  # A failed CI is re-run once (failed jobs only), because a flaky test can fail a
+  # correct merge. A CI that stays red closes the pull request and hands the merge
+  # to the resolver as a failed-checks issue.
+  - id: wait-ci
+    depends_on: [open-pr]
+    trigger_rule: all_done
+    timeout: 11400000
+    bash: |
+      stage=wait-ci
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      gate wait-ci
+      . "$sync_dir/ci.sh"
+      ci_wait 0 90
+      if [ "$(jq -r .conclusion "$sync_dir/ci.json")" = failure ]; then
+        if [ "$(ci_rerun_failed)" = true ]; then ci_wait 0 60; fi
+      fi
+      conclusion=$(jq -r .conclusion "$sync_dir/ci.json")
+      number=$(state_get pr_number)
+      pr_url=$(state_get pr_url)
+      case "$conclusion" in
+        success|merged) state_merge "$(jq -nc --arg c "$conclusion" '{ci: $c, next: "merge-pr"}')" ;;
+        failure)
+          failed=$(jq -c .failed "$sync_dir/ci.json")
+          {
+            printf 'The merge of upstream %s (%s) is clean and passed the local checks, but CI of %s stays red after one re-run.\n\n' \
+              "$UP_REPO" "$(state_get range)" "$pr_url"
+            printf 'Failed checks: %s\nChecks: %s\nRun: %s\n' "$(jq -r 'join(", ")' <<<"$failed")" \
+              "$(jq -r .checks_url "$sync_dir/ci.json")" "$(run_url)"
+          } > "$sync_dir/detail.md"
+          # The resolver names its failed check "ci"; the failing jobs are in the body.
+          write_issue_files checks_failed '[]' '["ci"]' "$sync_dir/detail.md"
+          gh pr close "$number" --repo "$FORK" \
+            --comment "CI stays red after one re-run. Archon closes this pull request and starts the resolver on the open sync issue. Run: $(run_url)" >/dev/null \
+            || echo "wait-ci: could not close pull request #$number" >&2
+          state_merge '{"ci":"failure","issue_kind":"checks_failed","next":"open-issue"}'
+          ;;
+        closed) fail wait-ci "pull request $pr_url was closed without a merge" ;;
+        *) fail wait-ci "CI of $pr_url is $conclusion; the pull request stays open for a human" ;;
+      esac
+      jq -c . "$sync_dir/ci.json"
+
+  # Merges with a merge commit, with the run's user token, so the push to main
+  # starts the fork's push workflows (a GITHUB_TOKEN push would not).
+  - id: merge-pr
+    depends_on: [wait-ci]
+    trigger_rule: all_done
+    timeout: 600000
+    bash: |
+      stage=merge-pr
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      gate merge-pr
+      number=$(state_get pr_number)
+      pr_url=$(state_get pr_url)
+      if [ "$(state_get ci)" = merged ]; then
+        echo "pull request #$number was already merged" >&2
+        merge_commit=$(gh pr view "$number" --repo "$FORK" --json mergeCommit -q '.mergeCommit.oid // empty')
+        state_merge "$(jq -nc --arg c "$merge_commit" '{merge_commit: $c, merged_by: "human", next: "lock-workflows"}')"
+        jq -nc --arg c "$merge_commit" '{merged: true, merged_by: "human", merge_commit: $c}'
+        exit 0
+      fi
+      head=$(git -C "$clone" rev-parse HEAD)
+      # --match-head-commit refuses the merge when the branch moved after CI.
+      gh pr merge "$number" --repo "$FORK" --merge --match-head-commit "$head" > "$sync_dir/merge-pr.log" 2>&1 \
+        || fail merge-pr "gh pr merge failed for $pr_url: $(tail -n 3 "$sync_dir/merge-pr.log")"
+      # GitHub can report the new state a few seconds after the merge call.
+      for _ in 1 2 3 4; do
+        view=$(gh pr view "$number" --repo "$FORK" --json state,mergeCommit)
+        if [ "$(jq -r .state <<<"$view")" = MERGED ]; then break; fi
+        sleep 5
+      done
+      if [ "$(jq -r .state <<<"$view")" != MERGED ]; then
+        fail merge-pr "pull request $pr_url is $(jq -r .state <<<"$view") after gh pr merge"
+      fi
+      merge_commit=$(jq -r '.mergeCommit.oid // empty' <<<"$view")
+      state_merge "$(jq -nc --arg c "$merge_commit" '{merge_commit: $c, merged_by: "archon", next: "lock-workflows"}')"
+      jq -nc --arg c "$merge_commit" '{merged: true, merged_by: "archon", merge_commit: $c}'
+
+  # An upstream merge can add workflows that must not run on the fork: they are
+  # disabled before the build starts. The push that merged them already ran them
+  # once if they trigger on push; only a workflow that was not registered before
+  # is exposed to that window.
+  - id: lock-workflows
+    depends_on: [merge-pr]
+    trigger_rule: all_done
+    timeout: 600000
+    bash: |
+      stage=lock-workflows
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      gate lock-workflows
+      bash "$sync_dir/lock-workflows.sh"
+      state_set next start-build
+
+  - id: start-build
+    depends_on: [lock-workflows]
+    trigger_rule: all_done
+    timeout: 600000
+    bash: |
+      stage=start-build
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      gate start-build
+      bash "$sync_dir/start-build.sh"
+      if [ -n "$(state_get merge_commit)" ]; then
+        state_merge '{"next":"done","outcome":"merged"}'
+      else
+        state_merge '{"next":"done","outcome":"built"}'
+      fi
+
+  # Creates or updates the one conflict issue. The resolver workflow of the
+  # fork reads it; while it is open the sync is paused.
+  - id: open-issue
+    depends_on: [start-build]
+    trigger_rule: all_done
+    timeout: 300000
+    bash: |
+      stage=open-issue
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      gate open-issue
+      title=$(cat "$sync_dir/issue-title.txt")
+      gh label create "$CONFLICT_LABEL" --repo "$FORK" --color B60205 \
+        --description "Nightly upstream sync stopped; Archon resolves it" --force >/dev/null
+      existing=$(gh issue list --repo "$FORK" --label "$CONFLICT_LABEL" --state open --limit 100 \
+        --json number,labels \
+        | jq -r '[.[] | select(any(.labels[]; .name == "sync-test") | not)][0].number // empty')
+      if [ -n "$existing" ]; then
+        # The resolver reads the machine block from the body, so the body always
+        # holds the newest report.
+        gh issue edit "$existing" --repo "$FORK" --title "$title" --body-file "$sync_dir/issue-body.md" >/dev/null
+        gh issue comment "$existing" --repo "$FORK" --body "The report in the issue body was replaced by $(run_url)." >/dev/null
+        number=$existing
+        url="https://github.com/$FORK/issues/$existing"
+      else
+        url=$(gh issue create --repo "$FORK" --title "$title" --label "$CONFLICT_LABEL" --body-file "$sync_dir/issue-body.md")
+        number=${url##*/}
+      fi
+      state_merge "$(jq -nc --arg n "$number" --arg u "$url" --arg k "$(state_get issue_kind)" \
+        '{issue: $n, issue_url: $u, outcome: $k, resolve: "true", next: "done"}')"
+      jq -nc --arg n "$number" --arg u "$url" '{issue: $n, issue_url: $u}'
+
+  # A failure that is not a conflict is reported on the non-locking failure issue.
+  - id: finish
+    depends_on: [open-issue]
+    trigger_rule: all_done
+    timeout: 300000
+    bash: |
+      stage=finish
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      if [ "$(state_get outcome)" = failed ] && ! is_dry_run; then
+        bash "$sync_dir/report-failure.sh"
+      fi
+      echo '{"finished": true}'
+
+  # The result of the block: one JSON object for the including workflow. The
+  # clone holds a full install, so it is removed unless the run failed.
+  - id: summary
+    depends_on: [finish]
+    trigger_rule: all_done
+    timeout: 300000
+    bash: |
+      stage=summary
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      if [ "$(state_get outcome)" != failed ]; then rm -rf "$clone"; fi
+      jq -c '{outcome: (.outcome // ""), resolve: (.resolve // "false"), issue: (.issue // ""),
+              issue_url: (.issue_url // ""), upstream_sha: (.upstream_sha // ""),
+              pr_url: (.pr_url // ""), merge_commit: (.merge_commit // ""),
+              build_run_url: (.build_run_url // ""), would: (.would // ""),
+              files: (.files // []), range: (.range // "")}' "$state_file"
