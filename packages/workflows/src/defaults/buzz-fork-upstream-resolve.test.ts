@@ -10,7 +10,7 @@
  * fails on any unexpected call.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'bun:test';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -231,6 +231,46 @@ const FAKE_SLEEP = `#!/bin/bash
 printf '%s\\n' "sleep $*" >> "$FAKE_LOG"
 `;
 
+// Docker with a state file of "<id> <name> <label> <image>" lines, so tests can
+// see which containers exist while a check runs and that they are gone after it.
+const FAKE_DOCKER = `#!/bin/bash
+printf '%s\\n' "docker $*" >> "$FAKE_LOG"
+state="$FAKE_DOCKER_STATE"
+touch "$state"
+case "$1" in
+  info) exit 0 ;;
+  run)
+    name="" label="" prev=""
+    for a in "$@"; do
+      case "$prev" in --name) name=$a ;; --label) label=$a ;; esac
+      prev=$a
+    done
+    image=\${@: -1}
+    printf '%s %s %s %s\\n' "id-$name" "$name" "$label" "$image" >> "$state"
+    echo "id-$name" ;;
+  port)
+    case "$3" in
+      5432/tcp) echo "127.0.0.1:55432" ;;
+      6379/tcp) echo "127.0.0.1:56379" ;;
+    esac ;;
+  exec) exit 0 ;;
+  ps)
+    filter="" prev=""
+    for a in "$@"; do
+      if [ "$prev" = --filter ]; then filter=\${a#label=}; fi
+      prev=$a
+    done
+    awk -v l="$filter" '$3 == l { print $1 }' "$state" ;;
+  rm)
+    shift
+    if [ "$1" = -f ]; then shift; fi
+    for id in "$@"; do
+      awk -v i="$id" '$1 != i' "$state" > "$state.tmp" && mv "$state.tmp" "$state"
+    done ;;
+  *) echo "fake docker: unexpected call: $*" >&2; exit 99 ;;
+esac
+`;
+
 function writeExecutable(path: string, content: string): void {
   writeFileSync(path, content);
   chmodSync(path, 0o755);
@@ -249,6 +289,7 @@ function makeSandbox(): Sandbox {
   writeExecutable(join(bin, 'git'), FAKE_GIT);
   writeExecutable(join(bin, 'curl'), FAKE_CURL);
   writeExecutable(join(bin, 'sleep'), FAKE_SLEEP);
+  writeExecutable(join(bin, 'docker'), FAKE_DOCKER);
   // Link to the real jq if available, otherwise the tests will fail with a clear error
   const realJq = spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' }).stdout.trim();
   if (realJq) {
@@ -283,6 +324,7 @@ function makeSandbox(): Sandbox {
       FAKE_PR_LIST_JSON: join(root, 'pr-list.json'),
       FAKE_PR_VIEW_JSON: join(root, 'pr-view.json'),
       FAKE_CHECKS_DIR: join(root, 'checks'),
+      FAKE_DOCKER_STATE: join(root, 'docker-containers'),
       GIT_CONFIG_GLOBAL: gitConfig,
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_AUTHOR_NAME: 'Test',
@@ -544,13 +586,22 @@ describe('buzz-fork-upstream-resolve structure', () => {
     );
     expect(timeouts).toEqual({
       prepare: 1_800_000,
-      check: 2_700_000,
+      check: 14_400_000,
       publish: 2_700_000,
       'verify-pr': 600_000,
       'wait-ci': 6_300_000,
       finalize: 600_000,
     });
     expect(loopGroupOf('fix-ci').nodes[2]?.timeout).toBe(6_000_000);
+    // The final checks after a fix pass run every local check as well.
+    expect(loopGroupOf('fix-checks').nodes[1]?.timeout).toBe(14_400_000);
+  });
+
+  it('lets the agent nodes stay silent for one long check plus a build lock wait', () => {
+    const idle = (n: DagNode): number | undefined => (n as { idle_timeout?: number }).idle_timeout;
+    expect(idle(nodeById('resolve'))).toBe(7_200_000);
+    expect(idle(loopGroupOf('fix-checks').nodes[0] as DagNode)).toBe(7_200_000);
+    expect(idle(loopGroupOf('fix-ci').nodes[1] as DagNode)).toBe(7_200_000);
   });
 
   it('is bundled with its two commands, and both are byte-identical to disk', () => {
@@ -608,13 +659,21 @@ describe('buzz-fork-upstream-resolve policy', () => {
     for (const text of allText) expect(text).not.toContain('gh issue close');
   });
 
-  it('never runs the full test suite or Playwright from the workflow', () => {
-    // Buzz runs bounded rust-test:<crate> with -p and --lib flags for individual crates,
-    // never the full suite or playwright. Comments may mention Playwright as forbidden.
-    const allText = [YAML_TEXT, ...COMMAND_NAMES.map(n => BUNDLED_COMMANDS[n] ?? '')];
-    for (const text of allText) {
-      // Check for unbounded playwright execution, not mentions in comments
-      expect(text).not.toMatch(/^\s*(?!#|[^\s]*#)(.*\bplaywright\b.*exec|run.*playwright)/im);
+  it('runs Playwright only in the desktop-e2e check, on the smoke project, never writing snapshots', () => {
+    const checksSh = heredoc(bashOf('prepare'), 'CHECKS_SH');
+    // Both Playwright runs (the list and the test run) select the smoke project.
+    const runs = checksSh.split('pnpm exec playwright test').slice(1);
+    expect(runs).toHaveLength(2);
+    for (const rest of runs)
+      expect(rest.trimStart().replace(/^\\\n\s*/, '')).toMatch(/^--project=smoke /);
+    expect(checksSh).toContain('--update-snapshots=none');
+    // Nothing outside checks.sh starts Playwright, and the commands never tell the
+    // agent to start it.
+    const yamlRuns = YAML_TEXT.split('\n').filter(l => /playwright (test|install)/.test(l));
+    expect(yamlRuns).toHaveLength(3);
+    for (const line of yamlRuns) expect(checksSh).toContain(line.trim());
+    for (const name of COMMAND_NAMES) {
+      expect(BUNDLED_COMMANDS[name] ?? '').not.toMatch(/playwright (test|install)/);
     }
   });
 
@@ -1435,6 +1494,319 @@ exit 0
       { name: 'rust-clippy', status: 'fail' },
     ]);
   });
+
+  /**
+   * The repository files the PostgreSQL job reads: upstream's CI service images
+   * and a fake scripts/postgres-test-run.sh that records its environment and the
+   * containers that exist while it runs. FAKE_PG_MODE=hang makes it hang.
+   */
+  function postgresRepo(sb: Sandbox): { work: string; pgBin: string; envOut: string } {
+    const work = checksRepo(sb);
+    mkdirSync(join(work, '.github', 'workflows'), { recursive: true });
+    writeFileSync(
+      join(work, '.github', 'workflows', '_ci-relay.yml'),
+      'jobs:\n  postgres-tests:\n    services:\n      postgres:\n        image: postgres:17\n' +
+        '      redis:\n        image: redis:8 # pinned\n'
+    );
+    mkdirSync(join(work, 'scripts'), { recursive: true });
+    const envOut = join(sb.root, 'pg-env.txt');
+    writeExecutable(
+      join(work, 'scripts', 'postgres-test-run.sh'),
+      `#!/bin/bash
+env | grep -E '^(BUZZ_POSTGRES_ADMIN_URL|REDIS_URL|PG_BIN_DIR|PGHOST|PGPORT|PGUSER|PGPASSWORD|PGSCHEMA_PLAN_[A-Z]+)=' | LC_ALL=C sort > "${envOut}"
+cp "$FAKE_DOCKER_STATE" "${envOut}.containers"
+command -v psql > "${envOut}.psql"
+if [ "\${FAKE_PG_MODE:-}" = hang ]; then echo $$ > "$FAKE_CARGO_PID"; exec /bin/sleep 300; fi
+echo "$*" > "${envOut}.args"
+echo "\${NEXTEST_RETRIES:-}" > "${envOut}.retries"
+exit "\${FAKE_PG_RC:-0}"
+`
+    );
+    writeExecutable(
+      join(work, 'scripts', 'postgres-test-packages.sh'),
+      '#!/bin/bash\nprintf "buzz-db\\nbuzz-relay\\n"\n'
+    );
+    git(sb, work, 'add', '.github', 'scripts');
+    git(sb, work, 'commit', '-q', '-m', 'ci');
+    const pgBin = join(sb.root, 'pgbin');
+    mkdirSync(pgBin, { recursive: true });
+    for (const tool of ['psql', 'createdb', 'dropdb', 'pg_isready']) {
+      writeExecutable(
+        join(pgBin, tool),
+        `#!/bin/bash\nprintf '%s %s\\n' '${tool}' "$*" >> "$FAKE_LOG"\nexit 0\n`
+      );
+    }
+    return { work, pgBin, envOut };
+  }
+
+  it('runs the PostgreSQL job against throwaway labelled containers and removes them', () => {
+    const sb = makeSandbox();
+    const { work, pgBin, envOut } = postgresRepo(sb);
+    const r = checks(sb, work, ['rust-test-postgres'], {
+      FAKE_CARGO_MODE: 'nextest',
+      PG_BIN_DIR: pgBin,
+    });
+    expect(r.status).toBe(0);
+    expect(readJson<ChecksJson>(join(sb.sync, 'checks.json')).ran).toEqual([
+      { name: 'rust-test-postgres', status: 'pass' },
+    ]);
+    // The job's environment, with the ports Docker published.
+    expect(readFileSync(envOut, 'utf-8').trim().split('\n')).toEqual([
+      'BUZZ_POSTGRES_ADMIN_URL=postgres://buzz:buzz_dev@127.0.0.1:55432/postgres',
+      'PGHOST=127.0.0.1',
+      'PGPASSWORD=buzz_dev',
+      'PGPORT=55432',
+      'PGSCHEMA_PLAN_HOST=127.0.0.1',
+      'PGSCHEMA_PLAN_PASSWORD=buzz_dev',
+      'PGSCHEMA_PLAN_PORT=55432',
+      'PGSCHEMA_PLAN_USER=buzz',
+      'PGUSER=buzz',
+      `PG_BIN_DIR=${pgBin}`,
+      'REDIS_URL=redis://127.0.0.1:56379',
+    ]);
+    // The packages the script finds, built with CI's cargo profile, one retry.
+    expect(readFileSync(`${envOut}.args`, 'utf-8').trim()).toBe(
+      '-p buzz-db -p buzz-relay --lib --tests --cargo-profile ci'
+    );
+    expect(readFileSync(`${envOut}.retries`, 'utf-8').trim()).toBe('1');
+    // Tests that start psql by name find the same client.
+    expect(readFileSync(`${envOut}.psql`, 'utf-8').trim()).toBe(join(pgBin, 'psql'));
+    // Two containers of this run, on the images upstream CI uses, while the job ran.
+    const during = readFileSync(`${envOut}.containers`, 'utf-8').trim().split('\n');
+    expect(during).toHaveLength(2);
+    for (const line of during) expect(line).toContain(' archon.sync-run=run ');
+    expect(during.map(l => l.split(' ')[3]).sort()).toEqual(['postgres:17', 'redis:8']);
+    expect(calls(sb).filter(c => c.startsWith('docker run'))).toEqual([
+      expect.stringContaining('-p 127.0.0.1::5432 postgres:17'),
+      expect.stringContaining('-p 127.0.0.1::6379 redis:8'),
+    ]);
+    // The disposable server is tuned like CI's, and nothing is left behind.
+    expect(calls(sb).some(c => c.startsWith('psql') && c.includes('fsync = off'))).toBe(true);
+    expect(readFileSync(join(sb.root, 'docker-containers'), 'utf-8')).toBe('');
+  });
+
+  it('removes the containers of a PostgreSQL job that hit its time limit', () => {
+    const sb = makeSandbox();
+    const { work, pgBin } = postgresRepo(sb);
+    const pidFile = join(sb.root, 'cargo.pid');
+    const r = checks(sb, work, ['rust-test-postgres'], {
+      FAKE_CARGO_MODE: 'nextest',
+      FAKE_PG_MODE: 'hang',
+      FAKE_CARGO_PID: pidFile,
+      PG_BIN_DIR: pgBin,
+      CHECK_TIMEOUT_SECONDS: '2',
+    });
+    expect(r.status).toBe(0);
+    expect(readJson<ChecksJson>(join(sb.sync, 'checks.json')).ran).toEqual([
+      { name: 'rust-test-postgres', status: 'timeout' },
+    ]);
+    expect(readFileSync(join(sb.root, 'docker-containers'), 'utf-8')).toBe('');
+    const pid = Number(readFileSync(pidFile, 'utf-8').trim());
+    let alive = true;
+    try {
+      process.kill(pid, 0);
+    } catch {
+      alive = false;
+    }
+    if (alive) process.kill(pid, 'SIGKILL');
+    expect(alive).toBe(false);
+  }, 30_000);
+
+  it('fails the PostgreSQL job without nextest, because its database wrapper needs nextest', () => {
+    const sb = makeSandbox();
+    const { work, pgBin, envOut } = postgresRepo(sb);
+    checks(sb, work, ['rust-test-postgres'], { PG_BIN_DIR: pgBin });
+    expect(readJson<ChecksJson>(join(sb.sync, 'checks.json')).ran).toEqual([
+      { name: 'rust-test-postgres', status: 'fail' },
+    ]);
+    expect(existsSync(envOut)).toBe(false);
+    expect(calls(sb).some(c => c.startsWith('docker run'))).toBe(false);
+  });
+
+  const HAS_LOCKF =
+    spawnSync('bash', ['-c', 'command -v lockf'], { encoding: 'utf8' }).status === 0;
+
+  it('holds the shared build lock while a check runs, and frees it afterwards', () => {
+    if (!HAS_LOCKF) return; // lockf exists on macOS, where the mini runs the checks
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    const lock = join(sb.root, 'build.lock');
+    // The fake just reports whether the lock is free while the check runs.
+    writeExecutable(
+      join(sb.bin, 'just'),
+      `#!/bin/bash\nif lockf -s -t 0 "${lock}" true; then echo free >> "$FAKE_LOG"; else echo held >> "$FAKE_LOG"; fi\nexit 0\n`
+    );
+    checks(sb, work, ['rust-fmt'], { FORK_SYNC_BUILD_LOCK: lock });
+    expect(calls(sb)).toContain('held');
+    expect(spawnSync('lockf', ['-s', '-t', '0', lock, 'true']).status).toBe(0);
+  });
+
+  it('does not run a check while a release build holds the lock', () => {
+    if (!HAS_LOCKF) return;
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    const lock = join(sb.root, 'build.lock');
+    const holder = spawn('lockf', ['-k', lock, '/bin/sleep', '20'], { stdio: 'ignore' });
+    try {
+      spawnSync('/bin/sleep', ['0.5']);
+      checks(sb, work, ['rust-fmt'], { FORK_SYNC_BUILD_LOCK: lock, BUILD_LOCK_WAIT_SECONDS: '1' });
+      expect(readJson<ChecksJson>(join(sb.sync, 'checks.json')).ran).toEqual([
+        { name: 'rust-fmt', status: 'fail' },
+      ]);
+      expect(calls(sb)).not.toContain('just fmt-check');
+      expect(readFileSync(join(sb.sync, 'checks.log'), 'utf-8')).toContain('a release build runs');
+    } finally {
+      holder.kill('SIGKILL');
+    }
+  }, 30_000);
+
+  it('runs the unit test job with the Justfile recipe', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    checks(sb, work, ['rust-test-unit'], { FAKE_CARGO_MODE: 'nextest' });
+    expect(readJson<ChecksJson>(join(sb.sync, 'checks.json')).passed).toBe(true);
+    expect(calls(sb)).toContain('just test-unit');
+  });
+
+  it('runs every Rust test job and the related desktop specs in a full run', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    const r = run(
+      sb,
+      `bash "${join(sb.sync, 'checks.sh')}" >/dev/null; cat "${join(sb.sync, 'check-names')}" | tr '\\0' ' '`,
+      {
+        cwd: work,
+        env: { CHECK_TIMEOUT_SECONDS: '1' },
+      }
+    );
+    expect(r.stdout.trim().split(' ')).toEqual([
+      'rust-fmt',
+      'migration-numbers',
+      'rust-check',
+      'rust-clippy',
+      'rust-test-unit',
+      'rust-test-postgres',
+      'desktop-e2e',
+    ]);
+  }, 30_000);
+
+  /** A desktop/ folder and a fake pnpm that answers Playwright's list and run. */
+  function e2eRepo(
+    sb: Sandbox,
+    report: unknown,
+    exitCode: number
+  ): { work: string; mergeBase: string } {
+    const work = checksRepo(sb);
+    mkdirSync(join(work, 'desktop'), { recursive: true });
+    const mergeBase = git(sb, work, 'rev-parse', 'HEAD');
+    const syncPath = join(sb.sync, 'sync.json');
+    writeFileSync(
+      syncPath,
+      JSON.stringify({ ...readJson<Record<string, unknown>>(syncPath), merge_base: mergeBase })
+    );
+    const list = {
+      suites: [
+        { title: 'smoke.spec.ts', file: 'smoke.spec.ts', specs: [] },
+        {
+          title: 'workflow-local-controls.spec.ts',
+          file: 'workflow-local-controls.spec.ts',
+          specs: [],
+        },
+      ],
+    };
+    writeFileSync(join(sb.root, 'pw-list.json'), JSON.stringify(list));
+    writeFileSync(join(sb.root, 'pw-report.json'), JSON.stringify(report));
+    writeExecutable(
+      join(sb.bin, 'pnpm'),
+      `#!/bin/bash
+printf 'pnpm %s [CI=%s]\\n' "$*" "\${CI:-}" >> "$FAKE_LOG"
+case "$*" in
+  *"playwright test"*--list*) cat "${join(sb.root, 'pw-list.json')}" ;;
+  *"playwright test"*) cp "${join(sb.root, 'pw-report.json')}" "$PLAYWRIGHT_JSON_OUTPUT_NAME"; exit ${exitCode} ;;
+esac
+exit 0
+`
+    );
+    return { work, mergeBase };
+  }
+
+  function failedReport(message: string): unknown {
+    return {
+      suites: [
+        {
+          title: 'workflow-local-controls.spec.ts',
+          file: 'workflow-local-controls.spec.ts',
+          specs: [
+            {
+              title: 'template variable autocomplete',
+              tests: [
+                { status: 'unexpected', results: [{ status: 'failed', errors: [{ message }] }] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  const DARWIN_DIFF =
+    'Error: expect(page).toHaveScreenshot(expected) failed\n\n  22 pixels (ratio 0.01 of all image pixels) are different.\n\n' +
+    '  Expected: /w/desktop/tests/e2e/workflow-local-controls.spec.ts-snapshots/autocomplete-smoke-darwin.png';
+
+  it('runs the changed desktop smoke specs plus smoke.spec.ts, never writing snapshots', () => {
+    const sb = makeSandbox();
+    const { work, mergeBase } = e2eRepo(sb, { suites: [] }, 0);
+    checks(sb, work, ['desktop-e2e']);
+    expect(readJson<ChecksJson>(join(sb.sync, 'checks.json')).ran).toEqual([
+      { name: 'desktop-e2e', status: 'pass' },
+    ]);
+    const pnpm = calls(sb).filter(c => c.startsWith('pnpm '));
+    expect(pnpm).toContain('pnpm exec playwright install chromium [CI=]');
+    expect(pnpm).toContain('pnpm -C desktop build:e2e [CI=]');
+    expect(pnpm).toContain(
+      `pnpm exec playwright test --project=smoke --list --reporter=json --pass-with-no-tests --only-changed=${mergeBase} [CI=]`
+    );
+    expect(pnpm).toContain(
+      'pnpm exec playwright test --project=smoke --update-snapshots=none --reporter=list,json ' +
+        'tests/e2e/smoke.spec.ts tests/e2e/workflow-local-controls.spec.ts [CI=1]'
+    );
+    expect(calls(sb)).toContain('just desktop-install-ci');
+  });
+
+  it('records a pixel diff against only the macOS baseline as a warning, not a failure', () => {
+    const sb = makeSandbox();
+    const { work } = e2eRepo(sb, failedReport(DARWIN_DIFF), 1);
+    checks(sb, work, ['desktop-e2e', 'rust-fmt']);
+    const result = readJson<ChecksJson & { warnings: { name: string; warning: string }[] }>(
+      join(sb.sync, 'checks.json')
+    );
+    expect(result.passed).toBe(true);
+    expect(result.failed).toEqual([]);
+    expect(result.ran).toEqual([
+      { name: 'desktop-e2e', status: 'warn' },
+      { name: 'rust-fmt', status: 'pass' },
+    ]);
+    expect(result.warnings).toEqual([
+      {
+        name: 'desktop-e2e',
+        warning: expect.stringContaining('template variable autocomplete'),
+      },
+    ]);
+  });
+
+  it('fails the desktop specs on a Linux baseline diff or any other error', () => {
+    for (const message of [
+      DARWIN_DIFF.replace('-darwin.png', '-linux.png'),
+      'Error: expect(locator).toBeVisible() failed',
+    ]) {
+      const sb = makeSandbox();
+      const { work } = e2eRepo(sb, failedReport(message), 1);
+      checks(sb, work, ['desktop-e2e']);
+      expect(readJson<ChecksJson>(join(sb.sync, 'checks.json')).ran).toEqual([
+        { name: 'desktop-e2e', status: 'fail' },
+      ]);
+    }
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------

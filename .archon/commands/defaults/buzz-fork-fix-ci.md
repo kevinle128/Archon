@@ -6,8 +6,8 @@ argument-hint: (none - reads $ARTIFACTS_DIR/sync/ci.json and pr.json)
 # Fix the failed CI checks of the sync pull request
 
 The workflow opened the sync pull request, its CI failed, and one re-run of the
-failed jobs failed again. Fix only what the failed checks report, then push new
-commits to the same branch. The workflow merges the pull request after its CI passes; you
+failed jobs failed again. Fix every failure that the failed checks report, in this
+one pass, then push new commits to the same branch. The workflow merges the pull request after its CI passes; you
 never merge it.
 
 You never ask the user anything in this step.
@@ -36,7 +36,12 @@ check, read its failed steps:
 gh run view <run-id> --repo "$repo" --log-failed
 ```
 
-Read only the logs of the checks in `failed`.
+Read the logs of every check in `failed`, not only the first one, and read each
+log to its end, not only to the first error. A job can fail many tests (nextest
+prints a `Summary` with every `FAIL` line; Playwright lists every failed spec).
+Before you change code, write down the full list of failing tests and errors of
+all failed jobs. Fix all of them in this pass: the workflow allows only two fix
+passes, and a fix that leaves one known failure costs a whole CI round.
 
 ## Fix
 
@@ -44,19 +49,23 @@ Read only the logs of the checks in `failed`.
    must survive (issue kevinle128/buzz#41): never fix a build by taking upstream's
    version of a fork file.
 2. Run the matching local checks through the workflow's check script (it
-   activates Hermit and uses this run's own cargo target), for example
-   `rust-fmt`, `rust-check`, `rust-clippy`, `rust-test:<crate>`,
-   `migration-numbers`, `desktop-typecheck`, `desktop-test` or `mobile-check`:
+   activates Hermit, uses this run's own cargo target, and starts and removes
+   the throwaway PostgreSQL and Redis itself), for example `rust-fmt`,
+   `rust-check`, `rust-clippy`, `rust-test:<crate>`, `rust-test-unit` (CI "Unit
+   Tests"), `rust-test-postgres` (CI "PostgreSQL Tests"), `migration-numbers`,
+   `desktop-typecheck`, `desktop-test`, `desktop-e2e` (the related desktop smoke
+   specs) or `mobile-check`:
 
    ```bash
    bash "$ARTIFACTS_DIR/sync/checks.sh" <name> [<name> ...]
    ```
 
-   Never run `just test`, `just check`, `cargo test` without `-p`, PostgreSQL,
-   Playwright or mesh tests locally; CI runs them. When a failure has no local
-   check (for example a PostgreSQL or end-to-end job), fix it from the log alone.
-   A migration version clash is never fixed by a rename: make no change and say
-   so in your final message.
+   Run every check that matches a failed CI job, and run it again after your
+   fixes until it passes. Never start PostgreSQL, Redis or Playwright yourself
+   and never run `just test`, `just check` or mesh tests; use the check script.
+   When a failure has no local check (for example a relay-backed integration or
+   mesh job), fix it from the log alone. A migration version clash is never
+   fixed by a rename: make no change and say so in your final message.
 3. Commit each fix as a new commit whose message names the CI check. Never
    amend, never rebase.
 4. Read the pull request state right before you push. Push only when it is
@@ -72,9 +81,44 @@ Read only the logs of the checks in `failed`.
    Without force. When the state is not `OPEN`, do not push and say so in your
    final message.
 
+## Linux snapshot baselines
+
+A desktop Playwright screenshot test compares against a Linux baseline
+(`desktop/tests/e2e/**/*-snapshots/*-linux.png`) on CI. When such a test fails
+on a pixel diff after the merge, the new baseline must come from CI's own
+render: download the failing shard's `desktop-smoke-e2e-artifacts-<N>` artifact
+of the failed run and take its `*-actual.png` for that test:
+
+```bash
+gh run download <run-id> --repo "$repo" --name desktop-smoke-e2e-artifacts-<N> --dir "$ARTIFACTS_DIR/sync/ci-artifacts"
+```
+
+Copy that file over the `-linux.png` baseline, and only after you checked in its
+diff image that the change is the one the merge intended. Never make a Linux
+baseline from a local render on this machine (it is macOS), never change a
+`-darwin.png` baseline, and delete the downloaded folder when you are done.
+
+## Failures that are only timing
+
+When every failure of a job is timing (a test or step that timed out, or a test
+that passes on a re-run and fails on load, with no error from the merged code),
+do not change code for it. Re-run that job once and wait until GitHub shows it
+again as pending, so the workflow waits for the new result:
+
+```bash
+gh run rerun <run-id> --repo "$repo" --failed
+for _ in $(seq 1 10); do
+  gh pr checks "$number" --repo "$repo" --json bucket | jq -e 'any(.[]; .bucket == "pending")' >/dev/null && break
+  sleep 30
+done
+```
+
+Do this at most once per job, and fix the other failed jobs in the same pass.
+
 ## Rules
 
-- Never change a test expectation, skip a test, add `#[allow(...)]`, or disable a
+- Never delete a test, skip a test, mark it ignored, change a test expectation,
+  raise a timeout, pixel or ratio tolerance, add `#[allow(...)]`, or disable a
   check to hide a real regression.
 - Never force-push, never delete a branch, never merge or close the pull request,
   and never close the issue.
