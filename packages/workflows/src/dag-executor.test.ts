@@ -16999,6 +16999,17 @@ describe('executeDagWorkflow -- script nodes', () => {
     // Workflow fails because the only node failed (timeout)
     const failMsg = messages.find((m: string) => m.includes('failed') && m.includes('slow-script'));
     expect(failMsg).toBeDefined();
+
+    // The kill flag (err.killed) is the only timeout signal, so pin that it is set.
+    const eventCalls = (mockDeps.store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls;
+    const failedEvent = eventCalls.find(
+      (call: unknown[]) =>
+        (call[0] as { event_type: string }).event_type === 'node_failed' &&
+        (call[0] as { step_name: string }).step_name === 'slow-script'
+    );
+    expect(failedEvent).toBeDefined();
+    const errorMsg = (failedEvent![0] as { data: { error: string } }).data.error;
+    expect(errorMsg).toContain("Script node 'slow-script' timed out after 500ms");
   }, 10000);
 
   it('non-zero exit whose command text contains "timed out" reports the exit code, not a timeout (script)', async () => {
@@ -17013,7 +17024,8 @@ describe('executeDagWorkflow -- script nodes', () => {
     // The words sit in the command line, which execFile copies into err.message.
     const node = {
       id: 'script-exit-label-node',
-      script: '// a check that timed out after 5 s is reported elsewhere\nprocess.exit(3)',
+      // Block comment on one line: Windows execFile can cut the argument at \n.
+      script: '/* a check that timed out after 5 s is reported elsewhere */ process.exit(3)',
       runtime: 'bun',
     } satisfies ScriptNode;
 

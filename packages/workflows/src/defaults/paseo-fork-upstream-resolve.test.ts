@@ -1319,15 +1319,27 @@ echo '[{"number":${ISSUE},"url":"u/${ISSUE}"}]' > "$FAKE_ISSUE_LIST_JSON"
     });
 
     it('ignores a named issue that is closed or has no conflict label', () => {
-      const sb = makeSandbox();
-      const r = runPrepare(sb, null, {
+      const sbClosed = makeSandbox();
+      const rClosed = runPrepare(sbClosed, null, {
         openIssues: [],
         state: 'CLOSED',
         env: { ARGUMENTS: issueUrl(FORK_REPO, ISSUE), ISSUE_LOOKUP_WAIT_SECONDS: '0' },
       });
-      expect(r.status).toBe(1);
-      expect(r.stderr).toContain('No open upstream-sync-conflict issue');
-      expect(calls(sb).filter(c => c.startsWith('gh issue view')).length).toBeGreaterThan(0);
+      expect(rClosed.status).toBe(1);
+      expect(rClosed.stderr).toContain('No open upstream-sync-conflict issue');
+      expect(calls(sbClosed).filter(c => c.startsWith('gh issue view')).length).toBeGreaterThan(0);
+
+      const sbUnlabeled = makeSandbox();
+      const rUnlabeled = runPrepare(sbUnlabeled, null, {
+        openIssues: [],
+        labels: ['bug'],
+        env: { ARGUMENTS: issueUrl(FORK_REPO, ISSUE), ISSUE_LOOKUP_WAIT_SECONDS: '0' },
+      });
+      expect(rUnlabeled.status).toBe(1);
+      expect(rUnlabeled.stderr).toContain('No open upstream-sync-conflict issue');
+      expect(
+        calls(sbUnlabeled).filter(c => c.startsWith('gh issue view')).length
+      ).toBeGreaterThan(0);
     });
 
     it('ignores an issue URL of another repository in the run message', () => {
