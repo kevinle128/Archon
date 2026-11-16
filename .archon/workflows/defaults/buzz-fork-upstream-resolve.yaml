@@ -138,6 +138,8 @@ nodes:
         | awk -v p="https://github.com/$repo/issues/" 'index($0, p) == 1 { print substr($0, length(p) + 1); exit }' \
         || true)
       wait_limit=${ISSUE_LOOKUP_WAIT_SECONDS:-60}
+      case "$wait_limit" in ''|*[!0-9]*) wait_limit=60 ;; esac
+      list_error=""
       waited=0
       delay=2
       hint_issue=""
@@ -149,12 +151,22 @@ nodes:
             hint_issue=$hint
           fi
         fi
-        listed=$(gh issue list --repo "$repo" --label "$CONFLICT_LABEL" --state open \
-          --limit 100 --json number,url) || listed='[]'
+        # An empty list may only mean that GitHub's list lags behind the new issue,
+        # so only that case is retried. A gh error is not retried: it is kept and
+        # printed with the zero-issue message.
+        if listed=$(gh issue list --repo "$repo" --label "$CONFLICT_LABEL" --state open \
+            --limit 100 --json number,url 2>"$SYNC_DIR/issue-list-error.txt"); then
+          list_error=""
+        else
+          list_error=$(head -c 500 "$SYNC_DIR/issue-list-error.txt" | tr '\n' ' ')
+          [ -n "$list_error" ] || list_error="gh issue list failed without a message"
+          listed='[]'
+        fi
         open_issues=$(jq -c --arg h "$hint_issue" \
           '. + (if $h == "" then [] else [{number: ($h | tonumber)}] end) | unique_by(.number)' \
           <<<"$listed")
         [ "$(jq length <<<"$open_issues")" -gt 0 ] && break
+        [ -n "$list_error" ] && break
         [ "$waited" -ge "$wait_limit" ] && break
         echo "No open $CONFLICT_LABEL issue in $repo yet; retrying in ${delay}s." >&2
         sleep "$delay"
@@ -164,6 +176,7 @@ nodes:
       case "$(jq length <<<"$open_issues")" in
         0)
           echo "No open $CONFLICT_LABEL issue in $repo; nothing to resolve." >&2
+          if [ -n "$list_error" ]; then echo "The issue list lookup failed: $list_error" >&2; fi
           exit 1 ;;
         1) issue=$(jq -r '.[0].number' <<<"$open_issues") ;;
         *)
