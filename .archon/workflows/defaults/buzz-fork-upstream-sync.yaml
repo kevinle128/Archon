@@ -31,6 +31,10 @@ nodes:
       # CI does not; unset it so a check sees the CI environment.
       tool_setup: |
         unset NODE_ENV
+        # A fixed target keeps the build cache between nights; the resolver builds in its
+        # own per-run target, so the two never share one.
+        export CARGO_TARGET_DIR="${FORK_SYNC_CARGO_TARGET:-$HOME/.local/share/fork-sync/buzz-sync-cargo-target}"
+        mkdir -p "$CARGO_TARGET_DIR"
         if [ ! -f bin/activate-hermit ]; then
           echo "tool setup: bin/activate-hermit is missing" >&2
           exit 2
@@ -70,6 +74,9 @@ nodes:
       issue=$(state_get issue)
       merge_commit=$(jq -r '.merge_commit // ""' <<<"$result")
       pr_url=$(jq -r '.pr_url // ""' <<<"$result")
+      if [ -z "$merge_commit" ] && [ -n "$pr_url" ]; then
+        merge_commit=$(gh pr view "$pr_url" --json mergeCommit -q '.mergeCommit.oid // empty' || true)
+      fi
       gh issue close "$issue" --repo "$FORK" \
         --comment "Resolved by $pr_url (merge commit ${merge_commit:-unknown}). Archon starts the build. Run: $(run_url)" >/dev/null \
         || fail after-resolve "could not close issue #$issue"

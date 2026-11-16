@@ -71,6 +71,9 @@ nodes:
       issue=$(state_get issue)
       merge_commit=$(jq -r '.merge_commit // ""' <<<"$result")
       pr_url=$(jq -r '.pr_url // ""' <<<"$result")
+      if [ -z "$merge_commit" ] && [ -n "$pr_url" ]; then
+        merge_commit=$(gh pr view "$pr_url" --json mergeCommit -q '.mergeCommit.oid // empty' || true)
+      fi
       gh issue close "$issue" --repo "$FORK" \
         --comment "Resolved by $pr_url (merge commit ${merge_commit:-unknown}). Archon starts the build. Run: $(run_url)" >/dev/null \
         || fail after-resolve "could not close issue #$issue"

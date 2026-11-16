@@ -240,7 +240,12 @@ nodes:
         # already merged. The private clone is not used: it is gone after a finished run
         # and never holds a merge commit that GitHub made.
         sha=$(state_get merge_commit)
-        if [ -z "$sha" ]; then sha=$(state_get fork_sha); fi
+        if [ -z "$sha" ]; then
+          # Only a run that merged nothing may release the fork head; after a merge an
+          # empty merge commit would tag the commit before it.
+          if [ "$(state_get behind)" != 0 ]; then fail start-build "merge commit unknown"; fi
+          sha=$(state_get fork_sha)
+        fi
         if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
           fail start-build "no commit to release is recorded in the run state"
         fi
@@ -248,12 +253,13 @@ nodes:
         rm -rf "$tag_clone"
         git clone --no-tags --filter=blob:none --quiet --branch "$FORK_REF" "https://github.com/$FORK.git" "$tag_clone" \
           || fail start-build "cannot clone $FORK for the release tag"
-        git -C "$tag_clone" cat-file -e "$sha^{commit}" 2>/dev/null \
-          || fail start-build "commit $sha is not in $FORK_REF of $FORK"
+        git -C "$tag_clone" merge-base --is-ancestor "$sha" HEAD 2>/dev/null \
+          || fail start-build "commit $sha is not on $FORK_REF of $FORK"
         # The script reads GH_REPO and creates the tag through the API. It needs a
         # checkout that has the commit and an origin remote, which the clone gives it.
-        since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-        (cd "$tag_clone" && GH_REPO="$FORK" bash scripts/fork-desktop-release-tag.sh "$sha") > "$sync_dir/tag-script.log" 2>&1 \
+        # FORK_RELEASE_DISPATCH is unset so the script dispatches nothing itself: the tag
+        # push of this user token starts the build.
+        (cd "$tag_clone" && env -u FORK_RELEASE_DISPATCH GH_REPO="$FORK" bash scripts/fork-desktop-release-tag.sh "$sha") > "$sync_dir/tag-script.log" 2>&1 \
           || { tail -n 5 "$sync_dir/tag-script.log" >&2; fail start-build "scripts/fork-desktop-release-tag.sh failed for ${sha:0:9}: $(tail -n 1 "$sync_dir/tag-script.log")"; }
         rm -rf "$tag_clone"
         cat "$sync_dir/tag-script.log" >&2
@@ -268,7 +274,7 @@ nodes:
         for _ in $(seq 1 12); do
           run_json=$(gh run list --repo "$FORK" --workflow "$BUILD_WORKFLOW" --branch "$tag" \
             --limit 5 --json databaseId,createdAt,url \
-            | jq -c --arg since "$since" '[.[] | select(.createdAt >= $since)] | sort_by(.createdAt) | last // empty')
+            | jq -c 'sort_by(.createdAt) | last // empty')
           if [ -n "$run_json" ]; then break; fi
           sleep 5
         done
@@ -564,7 +570,11 @@ nodes:
       git -C "$clone" remote add upstream "https://github.com/$UP_REPO.git"
       git -C "$clone" fetch --no-tags --quiet upstream "$UP_BRANCH" \
         || fail fetch "cannot fetch $UP_BRANCH from $UP_REPO"
-      git -C "$clone" fetch --no-tags --quiet origin "+refs/tags/$TAG_GLOB:refs/tags/$TAG_GLOB" || true
+      # A refspec takes one `*` only, so the fetch uses the part before the first `*`
+      # and `git tag -l` below applies the whole glob.
+      tag_prefix=${TAG_GLOB%%\**}
+      git -C "$clone" fetch --no-tags --quiet origin "+refs/tags/${tag_prefix}*:refs/tags/${tag_prefix}*" \
+        || fail fetch "cannot fetch the release tags $TAG_GLOB from $FORK"
       if [ -z "$(git -C "$clone" config user.email || true)" ]; then
         git -C "$clone" config user.email "archon-fork-sync@users.noreply.github.com"
         git -C "$clone" config user.name "Archon fork sync"
