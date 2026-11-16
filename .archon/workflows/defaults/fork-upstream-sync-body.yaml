@@ -4,7 +4,8 @@ description: |
   not for standalone runs. Provides the shared nightly sync of a fork with its upstream:
   pause check, fetch, merge in a private clone, light local checks, a pull request that waits for
   green CI and is merged by Archon with a merge commit, then the lock of newly added upstream
-  workflows and the start of the fork's build. A conflict, a failed local check or a red CI
+  workflows and the start of the fork's build (a workflow_dispatch or the fork's release-tag
+  script, see `build_mode`). A conflict, a failed local check or a red CI
   opens (or updates) the one `upstream-sync-conflict` issue and ends with `resolve: true` so
   the including workflow can run the fork's resolver workflow.
   `$sync.output` of the including workflow is the JSON of the `summary` node.
@@ -32,7 +33,14 @@ inputs:
     description: workflow file of the fork that builds and publishes a release (started with workflow_dispatch on main)
   build_inputs:
     default: ""
-    description: one `name=value` per line, passed to the build workflow as inputs
+    description: one `name=value` per line, passed to the build workflow as inputs (used by build_mode dispatch only)
+  build_mode:
+    default: dispatch
+    description: |
+      how the build starts. `dispatch` starts build_workflow with workflow_dispatch on main.
+      `tag-script` runs scripts/fork-desktop-release-tag.sh of the fork on the merged commit,
+      for a fork whose build starts from a release tag; the tag is created with the run's
+      user token, so the tag push starts the build and the script dispatches nothing itself.
   workflow_allowlist:
     default: ""
     description: comma-separated file name globs of the workflows that stay enabled; empty means no workflow is disabled
@@ -65,6 +73,7 @@ nodes:
       check_param fork_repo "$INPUTS_FORK_REPO" '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'
       check_param upstream_branch "$INPUTS_UPSTREAM_BRANCH" '^[A-Za-z0-9._/-]+$'
       check_param build_workflow "$INPUTS_BUILD_WORKFLOW" '^[A-Za-z0-9._-]+$'
+      check_param build_mode "$INPUTS_BUILD_MODE" '^(dispatch|tag-script)$'
       check_param release_tag_glob "$INPUTS_RELEASE_TAG_GLOB" '^[A-Za-z0-9._*-]+$'
       check_param workflow_allowlist "$INPUTS_WORKFLOW_ALLOWLIST" '^[A-Za-z0-9._*,-]*$'
       while IFS= read -r line; do
@@ -76,6 +85,7 @@ nodes:
         printf 'UP_BRANCH=%q\n' "$INPUTS_UPSTREAM_BRANCH"
         printf 'FORK=%q\n' "$INPUTS_FORK_REPO"
         printf 'BUILD_WORKFLOW=%q\n' "$INPUTS_BUILD_WORKFLOW"
+        printf 'BUILD_MODE=%q\n' "$INPUTS_BUILD_MODE"
         printf 'ALLOWLIST=%q\n' "$INPUTS_WORKFLOW_ALLOWLIST"
         printf 'TAG_GLOB=%q\n' "$INPUTS_RELEASE_TAG_GLOB"
       } > "$sync_dir/params.sh"
@@ -221,9 +231,54 @@ nodes:
 
       cat > "$sync_dir/start-build.sh" <<'START_BUILD_SH'
       #!/usr/bin/env bash
-      # Starts the fork's build workflow on main and waits until its run exists.
+      # Starts the fork's build and waits until its run exists. dispatch: runs the build
+      # workflow on main. tag-script: tags the merged commit with the fork's own script.
       stage=start-build
       . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+      if [ "$BUILD_MODE" = tag-script ]; then
+        # The commit to release is the merge commit, or the fork head when upstream was
+        # already merged. The private clone is not used: it is gone after a finished run
+        # and never holds a merge commit that GitHub made.
+        sha=$(state_get merge_commit)
+        if [ -z "$sha" ]; then sha=$(state_get fork_sha); fi
+        if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+          fail start-build "no commit to release is recorded in the run state"
+        fi
+        tag_clone="$work_dir/tag-clone"
+        rm -rf "$tag_clone"
+        git clone --no-tags --filter=blob:none --quiet --branch "$FORK_REF" "https://github.com/$FORK.git" "$tag_clone" \
+          || fail start-build "cannot clone $FORK for the release tag"
+        git -C "$tag_clone" cat-file -e "$sha^{commit}" 2>/dev/null \
+          || fail start-build "commit $sha is not in $FORK_REF of $FORK"
+        # The script reads GH_REPO and creates the tag through the API. It needs a
+        # checkout that has the commit and an origin remote, which the clone gives it.
+        since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        (cd "$tag_clone" && GH_REPO="$FORK" bash scripts/fork-desktop-release-tag.sh "$sha") > "$sync_dir/tag-script.log" 2>&1 \
+          || { tail -n 5 "$sync_dir/tag-script.log" >&2; fail start-build "scripts/fork-desktop-release-tag.sh failed for ${sha:0:9}: $(tail -n 1 "$sync_dir/tag-script.log")"; }
+        rm -rf "$tag_clone"
+        cat "$sync_dir/tag-script.log" >&2
+        tag=$(sed -n 's/^Created tag \([^ ]*\) at .*/\1/p' "$sync_dir/tag-script.log" | head -n 1)
+        # No new tag means the commit was already released; there is no run to wait for.
+        if [ -z "$tag" ]; then
+          jq -nc --arg s "$sha" '{tag: "", note: "already released", sha: $s}'
+          exit 0
+        fi
+        state_set build_tag "$tag"
+        run_json=''
+        for _ in $(seq 1 12); do
+          run_json=$(gh run list --repo "$FORK" --workflow "$BUILD_WORKFLOW" --branch "$tag" \
+            --limit 5 --json databaseId,createdAt,url \
+            | jq -c --arg since "$since" '[.[] | select(.createdAt >= $since)] | sort_by(.createdAt) | last // empty')
+          if [ -n "$run_json" ]; then break; fi
+          sleep 5
+        done
+        if [ -z "$run_json" ]; then
+          fail start-build "tag $tag was created, but no run of $BUILD_WORKFLOW appeared within 60 s"
+        fi
+        state_set build_run_url "$(jq -r .url <<<"$run_json")"
+        echo "$run_json"
+        exit 0
+      fi
       args=()
       while IFS= read -r line; do
         if [ -n "$line" ]; then args+=(-f "$line"); fi
