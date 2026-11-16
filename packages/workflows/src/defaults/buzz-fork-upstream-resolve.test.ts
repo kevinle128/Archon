@@ -146,7 +146,12 @@ const FAKE_GH = `#!/bin/bash
 printf '%s\\n' "gh $*" >> "$FAKE_LOG"
 case "$1 $2" in
   "repo view") printf '%s\\n' "$FAKE_REPO" ;;
-  "issue list") cat "$FAKE_ISSUE_LIST_JSON" ;;
+  "issue list")
+    if [ "\${FAKE_ISSUE_LIST_CODE:-0}" != 0 ]; then
+      echo "gh: HTTP 502 from the issue list" >&2
+      exit "$FAKE_ISSUE_LIST_CODE"
+    fi
+    cat "$FAKE_ISSUE_LIST_JSON" ;;
   "issue view") cat "$FAKE_ISSUE_JSON" ;;
   "pr list") cat "$FAKE_PR_LIST_JSON" ;;
   "issue comment")
@@ -1241,6 +1246,30 @@ describe('prepare node (executable)', () => {
       expect(calls(sb).some(c => c.startsWith('gh issue view'))).toBe(false);
     });
 
+    it('does not retry a gh error and prints it with the zero-issue message', () => {
+      const sb = makeSandbox();
+      const r = runPrepare(sb, null, { openIssues: [], env: { FAKE_ISSUE_LIST_CODE: '1' } });
+      expect(r.status).toBe(1);
+      expect(listCalls(sb)).toBe(1);
+      expect(sleepsOf(sb)).toEqual([]);
+      expect(r.stderr).toContain('No open upstream-sync-conflict issue');
+      expect(r.stderr).toContain('The issue list lookup failed: gh: HTTP 502 from the issue list');
+    });
+
+    it('uses 60 seconds when ISSUE_LOOKUP_WAIT_SECONDS is not a whole number', () => {
+      for (const value of ['abc', '-5', '1.5']) {
+        const sb = makeSandbox();
+        const r = runPrepare(sb, null, {
+          openIssues: [],
+          env: { ISSUE_LOOKUP_WAIT_SECONDS: value },
+        });
+        expect(r.status).toBe(1);
+        const total = sleepsOf(sb).reduce((x, y) => x + y, 0);
+        expect(total).toBeGreaterThanOrEqual(60);
+        expect(total).toBeLessThan(70);
+      }
+    });
+
     it('picks the issue up once the list shows it', () => {
       const sb = makeSandbox();
       // The first sleep is the moment the list catches up with the new issue.
@@ -1304,9 +1333,9 @@ echo '[{"number":${ISSUE},"url":"u/${ISSUE}"}]' > "$FAKE_ISSUE_LIST_JSON"
       });
       expect(rUnlabeled.status).toBe(1);
       expect(rUnlabeled.stderr).toContain('No open upstream-sync-conflict issue');
-      expect(
-        calls(sbUnlabeled).filter(c => c.startsWith('gh issue view')).length
-      ).toBeGreaterThan(0);
+      expect(calls(sbUnlabeled).filter(c => c.startsWith('gh issue view')).length).toBeGreaterThan(
+        0
+      );
     });
 
     it('ignores an issue URL of another repository in the run message', () => {
