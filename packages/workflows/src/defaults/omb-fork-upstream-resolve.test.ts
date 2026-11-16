@@ -135,9 +135,12 @@ exit 0
 `;
 
 // pnpm stands in for vitest. A full run (`pnpm exec vitest run`, no file) prints
-// $FAKE_SCENARIO/full.out and exits with full.code. A run of one file exits with the
-// next code of $FAKE_SCENARIO/<where>/<path with / as _>, where <where> is "branch"
-// or "base" (the base worktree); the last code repeats and a missing file means 0.
+// $FAKE_SCENARIO/full.out and exits with full.code. A run of one file (with the JSON
+// reporter) uses the next line of $FAKE_SCENARIO/<where>/<path with / as _>, where
+// <where> is "branch" or "base" (the base worktree); the last line repeats and a
+// missing file means a pass. A line is an exit code, then optionally the failed test
+// names separated by ";" (SUITE for a suite error, OTHER for an exit code caused by another file). A file "<key>.other" makes the
+// report name another file, the way vitest's substring filter can.
 const FAKE_PNPM = `#!/bin/bash
 printf '%s\\n' "pnpm $* (in $PWD)" >> "$FAKE_LOG"
 if [ "$1 $2 $3" = "exec vitest run" ]; then
@@ -145,15 +148,30 @@ if [ "$1 $2 $3" = "exec vitest run" ]; then
     cat "$FAKE_SCENARIO/full.out"
     exit "$(cat "$FAKE_SCENARIO/full.code")"
   fi
-  if [ "$#" -eq 4 ]; then
+  if [ "$#" -eq 7 ]; then
     where=branch
     case "$PWD" in *base-worktree*) where=base ;; esac
     key="$FAKE_SCENARIO/$where/$(printf '%s' "$4" | tr / _)"
     n=$(( $(cat "$key.count" 2>/dev/null || echo 0) + 1 ))
     echo "$n" > "$key.count"
-    [ -f "$key" ] || exit 0
-    code=$(sed -n "\${n}p" "$key")
-    [ -n "$code" ] || code=$(tail -n 1 "$key")
+    line="0"
+    if [ -f "$key" ]; then
+      line=$(sed -n "\${n}p" "$key")
+      [ -n "$line" ] || line=$(tail -n 1 "$key")
+    fi
+    code=\${line%% *}
+    names=case
+    case "$line" in *" "*) names=\${line#* } ;; esac
+    report="\${7#--outputFile.json=}"
+    name="$PWD/$4"
+    [ -f "$key.other" ] && name="$PWD/$4x"
+    jq -n --arg n "$name" --arg code "$code" --arg names "$names" '
+      {testResults: [{name: $n,
+        status: (if $code == "0" or $names == "OTHER" then "passed" else "failed" end),
+        assertionResults:
+          (if $code == "0" or $names == "OTHER" then [{status: "passed", fullName: "ok"}]
+           elif $names == "SUITE" then []
+           else [($names | split(";"))[] | {status: "failed", fullName: .}] end)}]}' > "$report"
     exit "$code"
   fi
 fi
@@ -384,8 +402,8 @@ describe('checks.sh vitest sorting (executable)', () => {
     sb: Sandbox,
     options: {
       failed: string[];
-      branch?: Record<string, number[]>;
-      base?: Record<string, number[]>;
+      branch?: Record<string, (number | string)[]>;
+      base?: Record<string, (number | string)[]>;
     }
   ): void {
     const lines = options.failed.map(f => ` FAIL  ${f} > suite > case\nAssertionError`);
@@ -486,7 +504,7 @@ describe('checks.sh vitest sorting (executable)', () => {
     const baseSha = readJson<{ base_sha: string }>(join(sb.sync, 'sync.json')).base_sha;
     expect(json.warnings[0].warning.split('\n')).toEqual([
       `flaky under load (failed in the full run, passed alone on the branch): ${FILES[0]}`,
-      `pre-existing (fail alone on the branch and also on the base ${baseSha.slice(0, 9)}): ${FILES[1]}`,
+      `pre-existing (every failed test also fails alone on the base ${baseSha.slice(0, 9)}): ${FILES[1]}`,
     ]);
     expect(aloneCalls(sb, FILES[1], 'branch')).toBe(2);
     expect(aloneCalls(sb, FILES[1], 'base')).toBe(1);
@@ -529,7 +547,7 @@ describe('checks.sh vitest sorting (executable)', () => {
     scenario(sb, { failed: [] });
     writeFileSync(
       join(sb.scenario, 'full.out'),
-      ` \u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m  |unit| ${FILES[0]} > suite > case\n`
+      ` \u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m  |unit| ${FILES[0]} > suite > case\n Test Files  1 failed | 2 passed (3)\n`
     );
     writeFileSync(join(sb.scenario, 'full.code'), '1');
     const { json } = vitest(sb, work);
@@ -555,8 +573,109 @@ describe('checks.sh vitest sorting (executable)', () => {
     const { json } = vitest(sb, work, { VITEST_RERUN_MAX_FILES: '2' });
     expect(json.passed).toBe(false);
     expect(json.failed).toEqual(['test-vitest']);
-    expect(calls(sb).some(c => /^pnpm exec vitest run \S+\.test\.\w+ \(in /.test(c))).toBe(false);
+    expect(calls(sb).some(c => /^pnpm exec vitest run \S+\.test\.\w+ --reporter/.test(c))).toBe(
+      false
+    );
     expect(realFailures(sb).trim().split('\n')).toEqual(FILES);
+    expect(problemOf(sb)).toContain('more than 2 test files failed');
+  });
+
+  const problemOf = (sb: Sandbox): string =>
+    readFileSync(join(sb.sync, 'vitest-suite-problem.txt'), 'utf-8');
+
+  function fullOutput(sb: Sandbox, text: string): void {
+    writeFileSync(join(sb.scenario, 'full.out'), text);
+    writeFileSync(join(sb.scenario, 'full.code'), '1');
+  }
+
+  it('fails without a rerun when vitest reports an unhandled error next to a file that passes alone', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    fullOutput(
+      sb,
+      ` FAIL  ${FILES[0]} > suite > case\n Test Files  1 failed | 2 passed (3)\n      Errors  1 error\n`
+    );
+    const { json } = vitest(sb, work);
+    expect(json.passed).toBe(false);
+    expect(aloneCalls(sb, FILES[0], 'branch')).toBe(0);
+    expect(problemOf(sb)).toContain('unhandled errors');
+    expect(realFailures(sb)).toBe(`${FILES[0]}\n`);
+  });
+
+  it('fails without a rerun on an "Unhandled Error" heading', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    fullOutput(
+      sb,
+      `⎯⎯⎯ Unhandled Errors ⎯⎯⎯\n FAIL  ${FILES[0]} > suite > case\n Test Files  1 failed | 2 passed (3)\n`
+    );
+    expect(vitest(sb, work).json.passed).toBe(false);
+    expect(problemOf(sb)).toContain('unhandled errors');
+  });
+
+  it('fails without a rerun when the summary counts more failed files than the output names', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    fullOutput(sb, ` FAIL  ${FILES[0]} > suite > case\n Test Files  2 failed | 1 passed (3)\n`);
+    const { json } = vitest(sb, work);
+    expect(json.passed).toBe(false);
+    expect(aloneCalls(sb, FILES[0], 'branch')).toBe(0);
+    expect(problemOf(sb)).toContain('counts 2 failed test files and the output names 1');
+  });
+
+  it('is pre-existing only when every failed test on the branch also fails on the base', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    scenario(sb, {
+      failed: [FILES[0], FILES[1], FILES[2]],
+      branch: {
+        [FILES[0]]: ['1 first;second'],
+        [FILES[1]]: ['1 first'],
+        [FILES[2]]: ['1 SUITE'],
+      },
+      base: {
+        [FILES[0]]: ['1 first'],
+        [FILES[1]]: ['1 first;second'],
+        [FILES[2]]: ['1 SUITE'],
+      },
+    });
+    const { json } = vitest(sb, work);
+    expect(json.passed).toBe(false);
+    expect(realFailures(sb)).toBe(`${FILES[0]}\n`);
+    const log = readFileSync(join(sb.sync, 'checks.log'), 'utf-8');
+    expect(log).toContain(`${FILES[0]} > second`);
+    expect(log).toContain(`also fails alone on the base`);
+  });
+
+  it('does not count a rerun that ran another file than the one asked for', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    scenario(sb, { failed: [FILES[0]] });
+    writeFileSync(join(sb.scenario, 'branch', `${FILES[0].replace(/\//g, '_')}.other`), '');
+    const { json } = vitest(sb, work);
+    expect(json.passed).toBe(false);
+    expect(realFailures(sb)).toBe(`${FILES[0]}\n`);
+  });
+
+  it('lets the report decide when another file matched by the filter made the exit code fail', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    scenario(sb, { failed: [FILES[0]], branch: { [FILES[0]]: ['1 OTHER'] } });
+    const { json } = vitest(sb, work);
+    expect(json.passed).toBe(true);
+    expect(json.warnings[0].warning).toContain('flaky under load');
+  });
+
+  it('prunes the record of a base worktree that an earlier run left behind', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    const stale = join(sb.sync, 'base-worktree');
+    git(sb, work, 'worktree', 'add', '--detach', stale, 'HEAD');
+    rmSync(stale, { recursive: true, force: true });
+    scenario(sb, { failed: [FILES[0]], branch: { [FILES[0]]: [1] }, base: { [FILES[0]]: [1] } });
+    const { json } = vitest(sb, work);
+    expect(json.passed).toBe(true);
+    expect(json.warnings[0].warning).toContain('pre-existing');
   });
 
   it('counts a failed file as a failure when the extra time budget is used up', () => {
@@ -626,7 +745,10 @@ describe('final-checks.sh warnings (executable)', () => {
       })
     );
     writeFileSync(join(sb.sync, 'resolution.md'), 'The merge was clean.\n');
-    writeFileSync(join(sb.scenario, 'full.out'), ` FAIL  ${FILE} > suite > case\n`);
+    writeFileSync(
+      join(sb.scenario, 'full.out'),
+      ` FAIL  ${FILE} > suite > case\n Test Files  1 failed | 2 passed (3)\n`
+    );
     writeFileSync(join(sb.scenario, 'full.code'), '1');
     return work;
   }
@@ -657,6 +779,20 @@ describe('final-checks.sh warnings (executable)', () => {
     writeFileSync(join(sb.scenario, 'full.code'), '0');
     expect(finalChecks(sb, work).status).toBe(0);
     expect(notesOf(sb)).not.toContain('Local check warnings');
+  });
+
+  it('tells the fix pass when the suite failed without a file list', () => {
+    const sb = makeSandbox();
+    const work = mergedRepo(sb);
+    writeFileSync(
+      join(sb.scenario, 'full.out'),
+      ` FAIL  ${FILE} > suite > case\n Test Files  1 failed | 2 passed (3)\n      Errors  1 error\n`
+    );
+    expect(finalChecks(sb, work).status).toBe(10);
+    const problems = readFileSync(join(sb.sync, 'verify-problems.txt'), 'utf-8');
+    expect(problems).toContain('the vitest suite failed without a usable file list');
+    expect(problems).toContain('unhandled errors');
+    expect(problems).toContain('checks.log');
   });
 
   it('reports only the real failures as problems', () => {

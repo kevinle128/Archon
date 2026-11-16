@@ -294,10 +294,19 @@ nodes:
       # times out some end-to-end tests under load, and the set changes from run to
       # run. Each failed test file is rerun alone (up to 2 tries); a file that passes
       # alone is "flaky under load". A file that still fails alone is run alone on the
-      # base commit of the sync; if it fails there too it is "pre-existing". Both
-      # kinds are warnings. Only a file that fails alone on the branch and passes on
-      # the base is a failure. More than VITEST_RERUN_MAX_FILES failed files, or an
-      # exhausted VITEST_RERUN_BUDGET_SECONDS, count as failures without a rerun.
+      # base commit of the sync; it is "pre-existing" only when every test that fails
+      # alone on the branch (per test, a suite error counts as one test) also fails
+      # alone on the base. Both kinds are warnings. Every other failed file is a failure.
+      # Without a usable file list nothing is sorted and the failure stands: more than
+      # VITEST_RERUN_MAX_FILES failed files, fewer FAIL lines than the summary's failed
+      # files, unhandled errors, no summary. An exhausted VITEST_RERUN_BUDGET_SECONDS
+      # makes the rest count as failures. The reason of a list-less failure goes to
+      # vitest-suite-problem.txt, and final-checks puts it into the problems.
+      # Limits: the base worktree gets an install but no build, so a test that needs
+      # build output fails there with ids of its own (it is a failure, not a warning,
+      # unless the branch fails with the same ids). Test file paths with spaces are
+      # not read from the output. A run killed with SIGKILL leaves the base worktree
+      # and its git record; the next run removes and prunes them.
       # Each check runs under a hard time limit (CHECK_TIMEOUT_SECONDS when set, else
       # the value of check_limit below); a check that runs longer is stopped with all
       # its processes and reported with the status "timeout".
@@ -376,13 +385,26 @@ nodes:
       vitest_rerun_budget=${VITEST_RERUN_BUDGET_SECONDS:-2400}
       case "$vitest_rerun_budget" in ''|*[!0-9]*) vitest_rerun_budget=2400 ;; esac
       base_worktree="$sync_dir/base-worktree"
+      vitest_ids_dir="$sync_dir/vitest-ids"
+      unreadable_mark='[unreadable run'
+
+      # The text of a vitest output file without color codes.
+      plain_text() {
+        sed $'s/\x1b\\[[0-9;]*m//g' "$1"
+      }
 
       # The test files that failed in a vitest run, one per line, read from the
       # run's output (lines like " FAIL  path/to/a.test.ts > suite > test").
       failed_vitest_files() {
-        sed $'s/\x1b\\[[0-9;]*m//g' "$1" \
+        plain_text "$1" \
           | sed -nE 's/^[[:space:]]*FAIL[[:space:]]+(\|[^|]*\|[[:space:]]+)?([^[:space:]|]+\.test\.(ts|tsx|mjs))([[:space:]].*)?$/\2/p' \
           | sort -u
+      }
+
+      # The number of failed test files in the summary line "Test Files  N failed | ...".
+      vitest_summary_failed_files() {
+        plain_text "$1" \
+          | sed -nE 's/^[[:space:]]*Test Files[[:space:]]+([0-9]+)[[:space:]]+failed.*$/\1/p' | tail -n 1
       }
 
       join_files() {
@@ -391,21 +413,60 @@ nodes:
         printf '%s' "$out"
       }
 
-      # Runs one test file alone, one worker, the way the full run runs it.
+      # Runs one test file alone, one worker, the way the full run runs it, with a
+      # JSON report. vitest reads the file argument as a substring filter, so
+      # a.test.ts would also run a.test.tsx; the report must name exactly one file that
+      # ends with the path, else the run does not count. Usage: vitest_alone <dir>
+      # <file> <ids file>. Exit 0: that file ran and passed. Else exit 1, and the ids of
+      # its failed tests ("<file> > <test name>", "<file> [suite error]") are appended
+      # to <ids file>; a run that cannot be read adds one id with the unreadable mark.
       vitest_alone() {
-        ( cd "$1" && OMB_VITEST_E2E=host OMB_VITEST_WORKERS=1 pnpm exec vitest run "$2" )
+        local dir=$1 file=$2 ids=$3 report rc=0 ran found file_status
+        report=$(mktemp "$sync_dir/vitest-report.XXXXXX")
+        ( cd "$dir" && OMB_VITEST_E2E=host OMB_VITEST_WORKERS=1 pnpm exec vitest run "$file" \
+            --reporter=default --reporter=json --outputFile.json="$report" ) || rc=$?
+        ran=$(jq -r --arg f "/$file" '[.testResults[]? | select(.name | endswith($f))] | length' \
+          "$report" 2>/dev/null || true)
+        if [ "${ran:-0}" != 1 ]; then
+          printf '%s\n' "$file $unreadable_mark: the report names ${ran:-0} files that end with the path, exit code $rc]" >> "$ids"
+          rm -f "$report"
+          return 1
+        fi
+        found=$(jq -r --arg f "/$file" --arg file "$file" '
+          .testResults[] | select(.name | endswith($f))
+          | ([.assertionResults[]? | select(.status == "failed") | $file + " > " + .fullName]) as $a
+          | if ($a | length) > 0 then $a[]
+            elif .status == "failed" then $file + " [suite error]"
+            else empty end' "$report" 2>/dev/null || true)
+        file_status=$(jq -r --arg f "/$file" '.testResults[] | select(.name | endswith($f)) | .status' \
+          "$report" 2>/dev/null || true)
+        rm -f "$report"
+        # The exit code also covers other files the substring filter matched; the
+        # report decides for the one file.
+        if [ "$rc" -eq 0 ] || { [ -z "$found" ] && [ "$file_status" = passed ]; }; then return 0; fi
+        if [ -z "$found" ]; then
+          found="$file $unreadable_mark: exit code $rc without a failed test in the report]"
+        fi
+        printf '%s\n' "$found" >> "$ids"
+        return 1
       }
 
       remove_base_worktree() {
-        [ -e "$base_worktree" ] || return 0
-        git worktree remove --force "$base_worktree" >/dev/null 2>&1 || rm -rf "$base_worktree"
+        if [ -e "$base_worktree" ]; then
+          git worktree remove --force "$base_worktree" >/dev/null 2>&1 || rm -rf "$base_worktree"
+        fi
         git worktree prune >/dev/null 2>&1 || true
       }
 
       # A detached worktree of the base commit, with its own install, so a test
-      # file can run alone on the code the branch started from.
+      # file can run alone on the code the branch started from. It is not built: a
+      # test that needs build output fails there for that reason, with a suite error
+      # or other test ids, and the per-test comparison does not call it pre-existing
+      # unless the branch fails with the same ids. Pruning first drops the record of a
+      # worktree that an earlier run left behind (for example after a SIGKILL).
       prepare_base_worktree() {
         remove_base_worktree
+        git worktree prune >/dev/null 2>&1 || true
         git worktree add --detach "$base_worktree" "$1" || return 1
         ( cd "$base_worktree" && pnpm install --frozen-lockfile && prepare_electron )
       }
@@ -414,9 +475,13 @@ nodes:
       # Exit 0: no failure, or only warnings. Else the exit status of vitest, or 1.
       run_vitest_suite() {
         local out="$sync_dir/vitest-suite.log" real_file="$sync_dir/vitest-real-failures.txt"
-        local rc file try passed started base_sha="" base_ready=false
+        local problem_file="$sync_dir/vitest-suite-problem.txt"
+        local rc file try passed started base_sha="" base_ready=false parsed expected reason="" new_ids
+        local branch_ids base_ids
         local files=() flaky=() alone_failed=() preexisting=() real=()
-        rm -f "$real_file"
+        rm -f "$real_file" "$problem_file"
+        rm -rf "$vitest_ids_dir"
+        mkdir -p "$vitest_ids_dir/branch" "$vitest_ids_dir/base"
         prepare_electron || return 1
         OMB_VITEST_E2E=host OMB_VITEST_WORKERS=1 pnpm exec vitest run 2>&1 | tee "$out"
         rc=${PIPESTATUS[0]}
@@ -425,12 +490,25 @@ nodes:
         while IFS= read -r file; do
           if [ -f "$file" ] && valid_check "vitest:$file"; then files+=("$file"); else real+=("$file"); fi
         done < <(failed_vitest_files "$out")
-        if [ "${#files[@]}" -eq 0 ] && [ "${#real[@]}" -eq 0 ]; then
-          echo "vitest: failed with exit code $rc and no failed test file is named in its output; no rerun"
-          return "$rc"
+        parsed=$(( ${#files[@]} + ${#real[@]} ))
+        expected=$(vitest_summary_failed_files "$out")
+
+        # A failure without a file list cannot be sorted: an unhandled error has no
+        # FAIL line, so the named files alone would hide it.
+        if [ -z "$expected" ]; then
+          reason="the output has no Test Files summary with failed files (a crash or a stopped run)"
+        elif [ "$parsed" -lt "$expected" ]; then
+          reason="the summary counts $expected failed test files and the output names $parsed"
+        elif plain_text "$out" | grep -qE '^[[:space:]]*Errors[[:space:]]+[1-9]|Unhandled Error'; then
+          reason="vitest reported errors that belong to no test file (unhandled errors)"
+        elif [ "$parsed" -eq 0 ]; then
+          reason="no failed test file is named in the output"
+        elif [ "$parsed" -gt "$vitest_rerun_max_files" ]; then
+          reason="more than $vitest_rerun_max_files test files failed"
         fi
-        if [ $(( ${#files[@]} + ${#real[@]} )) -gt "$vitest_rerun_max_files" ]; then
-          echo "vitest: more than $vitest_rerun_max_files test files failed; no rerun, they all count as failures"
+        if [ -n "$reason" ]; then
+          echo "vitest: $reason; no rerun, the failure counts as it is"
+          printf '%s (exit code %s)\n' "$reason" "$rc" > "$problem_file"
           { [ "${#files[@]}" -eq 0 ] || printf '%s\n' "${files[@]}"; [ "${#real[@]}" -eq 0 ] || printf '%s\n' "${real[@]}"; } > "$real_file"
           return "$rc"
         fi
@@ -438,10 +516,12 @@ nodes:
         started=$(date +%s)
         for file in ${files[@]+"${files[@]}"}; do
           passed=false
+          branch_ids="$vitest_ids_dir/branch/$(printf '%s' "$file" | tr / _)"
+          : > "$branch_ids"
           for try in 1 2; do
             if [ $(( $(date +%s) - started )) -ge "$vitest_rerun_budget" ]; then break; fi
             echo "vitest: rerun of $file alone on the branch, try $try"
-            if vitest_alone "$PWD" "$file"; then passed=true; break; fi
+            if vitest_alone "$PWD" "$file" "$branch_ids"; then passed=true; break; fi
           done
           if $passed; then flaky+=("$file"); else alone_failed+=("$file"); fi
         done
@@ -458,10 +538,28 @@ nodes:
             echo "vitest: the base worktree of $base_sha could not be prepared; the failed files are not compared with the base"
           fi
           for file in "${alone_failed[@]}"; do
-            if $base_ready && [ -f "$base_worktree/$file" ] \
+            branch_ids="$vitest_ids_dir/branch/$(printf '%s' "$file" | tr / _)"
+            base_ids="$vitest_ids_dir/base/$(printf '%s' "$file" | tr / _)"
+            : > "$base_ids"
+            if $base_ready && [ -f "$base_worktree/$file" ] && [ -s "$branch_ids" ] \
+                && ! grep -qF "$unreadable_mark" "$branch_ids" \
                 && [ $(( $(date +%s) - started )) -lt "$vitest_rerun_budget" ]; then
               echo "vitest: run of $file alone on the base $base_sha"
-              if vitest_alone "$base_worktree" "$file"; then real+=("$file"); else preexisting+=("$file"); fi
+              if vitest_alone "$base_worktree" "$file" "$base_ids"; then
+                real+=("$file")
+              elif grep -qF "$unreadable_mark" "$base_ids"; then
+                real+=("$file")
+              else
+                # Pre-existing only when every test that fails on the branch fails on the base too.
+                new_ids=$(comm -23 <(sort -u "$branch_ids") <(sort -u "$base_ids"))
+                if [ -z "$new_ids" ]; then
+                  preexisting+=("$file")
+                else
+                  echo "vitest: tests of $file that fail on the branch and not on the base:"
+                  printf '%s\n' "$new_ids"
+                  real+=("$file")
+                fi
+              fi
             else
               real+=("$file")
             fi
@@ -475,14 +573,14 @@ nodes:
             "$(join_files "${flaky[@]}")" >> "$warning_marker"
         fi
         if [ "${#preexisting[@]}" -gt 0 ]; then
-          printf 'pre-existing (fail alone on the branch and also on the base %s): %s\n' \
+          printf 'pre-existing (every failed test also fails alone on the base %s): %s\n' \
             "${base_sha:0:9}" "$(join_files "${preexisting[@]}")" >> "$warning_marker"
         fi
         echo "vitest: failed test files sorted; the warnings are:"
         cat "$warning_marker"
         if [ "${#real[@]}" -gt 0 ]; then
           printf '%s\n' "${real[@]}" > "$real_file"
-          echo "vitest: real failures (fail alone on the branch, pass alone on the base, or could not be compared):"
+          echo "vitest: real failures (fail alone on the branch with a test the base does not fail, or could not be compared):"
           cat "$real_file"
           return 1
         fi
@@ -815,6 +913,9 @@ nodes:
           "$sync_dir/checks.json")"
         if [ -s "$sync_dir/vitest-real-failures.txt" ]; then
           problem "vitest test files that count as failures: $(tr '\n' ' ' < "$sync_dir/vitest-real-failures.txt")"
+        fi
+        if [ -s "$sync_dir/vitest-suite-problem.txt" ]; then
+          problem "the vitest suite failed without a usable file list ($(tr '\n' ' ' < "$sync_dir/vitest-suite-problem.txt")); read the test-vitest section of $sync_dir/checks.log"
         fi
       fi
       # Warnings of the checks go into the resolution notes, so the pull request
