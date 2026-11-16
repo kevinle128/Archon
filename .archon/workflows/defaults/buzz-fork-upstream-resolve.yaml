@@ -593,9 +593,21 @@ nodes:
         pnpm -C desktop build:e2e || return 1
         (cd desktop && pnpm exec playwright test --project=smoke --list --reporter=json \
           --pass-with-no-tests --only-changed="$merge_base") > "$list" || return 1
+        # The file suites at the top of the JSON report carry the spec path
+        # relative to the test directory; deeper entries can hold absolute paths.
         while IFS= read -r spec; do
           if [ -n "$spec" ] && [ "$spec" != smoke.spec.ts ]; then specs+=("tests/e2e/$spec"); fi
-        done < <(jq -r '[.. | objects | select((.file? // "") | endswith(".spec.ts")) | .file] | unique | .[]' "$list")
+        done < <(jq -r '[.suites[]? | .file? // empty | select(endswith(".spec.ts"))] | unique | .[]' "$list")
+        # A large upstream merge changes shared code, so --only-changed can select
+        # nearly every spec and the run would hit the per-check time limit. Above
+        # this count only smoke.spec.ts runs here; the pull request's CI runs the
+        # full suite and is the authority.
+        local max_changed_specs=20
+        if [ "${#specs[@]}" -gt "$max_changed_specs" ]; then
+          echo "desktop-e2e: ${#specs[@]} changed specs are left to the pull request's CI" > "$warning_marker"
+          cat "$warning_marker"
+          specs=()
+        fi
         specs=(tests/e2e/smoke.spec.ts ${specs[@]+"${specs[@]}"})
         echo "desktop-e2e: running ${#specs[@]} spec file(s): ${specs[*]}"
         (cd desktop && CI=1 PLAYWRIGHT_JSON_OUTPUT_NAME="$report" pnpm exec playwright test \
@@ -612,7 +624,7 @@ nodes:
                 | ($e | length) > 0 and all($e[]; darwin_only))' "$report" >/dev/null 2>&1; then
           jq -r '[.. | objects | select(has("tests")) | select(any(.tests[]; .status == "unexpected")) | .title]
             | "only a pixel diff against the macOS (-darwin) baseline: " + join(", ")
-              + "; CI compares the Linux baseline"' "$report" > "$warning_marker"
+              + "; CI compares the Linux baseline"' "$report" >> "$warning_marker"
           cat "$warning_marker"
           return 0
         fi
