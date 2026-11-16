@@ -139,7 +139,7 @@ exit 0
 // reporter) uses the next line of $FAKE_SCENARIO/<where>/<path with / as _>, where
 // <where> is "branch" or "base" (the base worktree); the last line repeats and a
 // missing file means a pass. A line is an exit code, then optionally the failed test
-// names separated by ";" (SUITE for a suite error, OTHER for an exit code caused by another file that the filter matched, UNHANDLED for an unhandled error with a clean report). A file "<key>.other" makes the
+// names separated by ";" (SUITE for a suite error, OTHER for an exit code caused by another file that the filter matched, UNHANDLED for an unhandled error with a clean report that also names a passed second file, SILENT for a failed exit code with a clean report of the one file). A file "<key>.other" makes the
 // report name another file, the way vitest's substring filter can.
 const FAKE_PNPM = `#!/bin/bash
 printf '%s\\n' "pnpm $* (in $PWD)" >> "$FAKE_LOG"
@@ -167,7 +167,7 @@ if [ "$1 $2 $3" = "exec vitest run" ]; then
     [ -f "$key.other" ] && name="$PWD/$4x"
     [ "$names" = UNHANDLED ] && printf ' Test Files  1 passed (1)\\n      Errors  1 error\\n'
     jq -n --arg n "$name" --arg code "$code" --arg names "$names" '
-      ($code == "0" or $names == "OTHER" or $names == "UNHANDLED") as $ok
+      ($code == "0" or $names == "OTHER" or $names == "UNHANDLED" or $names == "SILENT") as $ok
       | {testResults: ([{name: $n,
         status: (if $ok then "passed" else "failed" end),
         assertionResults:
@@ -175,7 +175,9 @@ if [ "$1 $2 $3" = "exec vitest run" ]; then
            elif $names == "SUITE" then []
            else [($names | split(";"))[] | {status: "failed", fullName: .}] end)}]
         + (if $names == "OTHER" then [{name: ($n + "x"), status: "failed",
-            assertionResults: [{status: "failed", fullName: "other"}]}] else [] end))}' > "$report"
+            assertionResults: [{status: "failed", fullName: "other"}]}] else [] end)
+        + (if $names == "UNHANDLED" then [{name: ($n + "x"), status: "passed",
+            assertionResults: [{status: "passed", fullName: "other"}]}] else [] end))}' > "$report"
     exit "$code"
   fi
 fi
@@ -677,6 +679,16 @@ describe('checks.sh vitest sorting (executable)', () => {
     const sb = makeSandbox();
     const work = checksRepo(sb);
     scenario(sb, { failed: [FILES[0]], branch: { [FILES[0]]: ['1 UNHANDLED'] } });
+    const { json } = vitest(sb, work);
+    expect(json.passed).toBe(false);
+    expect(realFailures(sb)).toBe(`${FILES[0]}\n`);
+    expect(aloneCalls(sb, FILES[0], 'base')).toBe(0);
+  });
+
+  it('does not count a failed exit code as a pass when the report names only the one clean file', () => {
+    const sb = makeSandbox();
+    const work = checksRepo(sb);
+    scenario(sb, { failed: [FILES[0]], branch: { [FILES[0]]: ['1 SILENT'] } });
     const { json } = vitest(sb, work);
     expect(json.passed).toBe(false);
     expect(realFailures(sb)).toBe(`${FILES[0]}\n`);
