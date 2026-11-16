@@ -4782,7 +4782,9 @@ async function executeBashNode(
     return { state: 'completed', output };
   } catch (error) {
     const err = error as Error & { killed?: boolean; code?: number | string; stderr?: string };
-    const isTimeout = err.killed === true || (err.message ?? '').includes('timed out');
+    // Only the kill flag proves a timeout: err.message is `Command failed: <command>`, so a
+    // script body that merely contains the words "timed out" must not read as one.
+    const isTimeout = err.killed === true;
     const label = `Bash node '${node.id}'`;
     // Always run the formatter so logs get sanitized fields regardless of which
     // user-facing branch we end up in — the timeout message also contains the
@@ -5185,7 +5187,9 @@ async function executeScriptNode(
     return { state: 'completed', output };
   } catch (error) {
     const err = error as Error & { killed?: boolean; code?: number | string; stderr?: string };
-    const isTimeout = err.killed === true || (err.message ?? '').includes('timed out');
+    // Only the kill flag proves a timeout: err.message is `Command failed: <command>`, so a
+    // script body that merely contains the words "timed out" must not read as one.
+    const isTimeout = err.killed === true;
     const label = `Script node '${node.id}'`;
     // Always run the formatter so logs get sanitized fields regardless of which
     // user-facing branch we end up in — the timeout message also contains the
