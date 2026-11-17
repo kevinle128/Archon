@@ -345,7 +345,7 @@ nodes:
             # workflow) can still change the result. A pending status from an outside
             # service, such as ocr-review, has no workflow and can stay pending for
             # hours, so it is waited for only while nothing has failed.
-            if jq -e 'any(.[]; .bucket == "pending" and (.workflow // "") != "")' >/dev/null <<<"$checks"; then
+            if jq -e 'any(.[]; .bucket == "pending" and ((.workflow // "") != "" or ((.link // "") | test("/actions/runs/"))))' >/dev/null <<<"$checks"; then
               prev_names=''
             else
               # A second workflow can add its checks after the first one finished, so
@@ -409,8 +409,9 @@ nodes:
         done
         if [ "$rerun" = true ]; then
           for _ in $(seq 1 10); do
-            if gh pr checks "$number" --repo "$FORK" --json bucket,workflow 2>/dev/null \
-                | jq -e 'any(.[]; .bucket == "pending" and (.workflow // "") != "")' >/dev/null 2>&1; then
+            # gh exits 8 while checks are pending, so only its output is read.
+            now=$(gh pr checks "$number" --repo "$FORK" --json bucket,workflow,link 2>/dev/null || true)
+            if jq -e 'any(.[]; .bucket == "pending" and ((.workflow // "") != "" or ((.link // "") | test("/actions/runs/"))))' >/dev/null 2>&1 <<<"$now"; then
               break
             fi
             sleep 30

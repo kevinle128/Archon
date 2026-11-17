@@ -106,7 +106,7 @@ again as pending, so the workflow waits for the new result:
 ```bash
 gh run rerun <run-id> --repo "$repo" --failed
 for _ in $(seq 1 10); do
-  gh pr checks "$number" --repo "$repo" --json bucket | jq -e 'any(.[]; .bucket == "pending")' >/dev/null && break
+  gh pr checks "$number" --repo "$repo" --json bucket,workflow,link | jq -e 'any(.[]; .bucket == "pending" and ((.workflow // "") != "" or ((.link // "") | test("/actions/runs/"))))' >/dev/null && break
   sleep 30
 done
 ```
