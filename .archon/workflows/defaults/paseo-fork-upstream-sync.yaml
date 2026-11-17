@@ -1,0 +1,85 @@
+name: paseo-fork-upstream-sync
+description: |
+  Use when: The nightly launchd job (scripts/fork-sync-trigger.sh paseo) starts it through the Archon
+            REST API for the codebase kevinle128/paseo. A run message of `dry-run` stops after
+            the merge classification and changes nothing.
+  Does: Syncs the Paseo fork with getpaseo/paseo main (fork-upstream-sync-body): ends as a no-op
+        when upstream has nothing new and the fork has no unreleased commit; a clean merge goes
+        through a pull request, waits for all CI checks and is merged by Archon with a merge
+        commit; a conflict, a failed local check or a red CI opens the one upstream-sync-conflict
+        issue and runs paseo-fork-upstream-resolve as a child run. When the pull request is
+        merged, the workflows that upstream added are disabled (only CI, desktop-packages, nix
+        and fork-* stay on) and fork-desktop-build.yml starts on main, which builds the merged
+        commit and publishes it. An open upstream-sync-conflict issue pauses the sync until a
+        human closes it.
+  NOT for: Other repositories, or starting a build without a merge.
+
+nodes:
+  - id: sync
+    include: fork-upstream-sync-body
+    with:
+      upstream_repo: getpaseo/paseo
+      upstream_branch: main
+      fork_repo: kevinle128/paseo
+      build_workflow: fork-desktop-build.yml
+      build_mode: dispatch
+      release_tag_glob: mf-desktop-v*
+      workflow_allowlist: ci.yml,desktop-packages.yml,nix.yml,fork-*.yml
+      # The fork needs Node 22 (it pins nodejs 22.20.0). The run's own environment has
+      # provider keys, and PM2 sets NODE_ENV=production, which would make npm ci skip
+      # devDependencies such as patch-package; the fork CI sets neither.
+      tool_setup: |
+        unset NODE_ENV OPENAI_API_KEY OPENROUTER_API_KEY ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN
+        export ONNXRUNTIME_NODE_INSTALL=skip CI=true
+        node_major=$(node -p 'process.versions.node.split(".")[0]')
+        if [ "$node_major" != 22 ]; then
+          echo "tool setup: Node 22 is required, found $(node --version)" >&2
+          exit 2
+        fi
+      # The same steps as the clean path of the fork's own GitHub sync workflow. The tests
+      # are the gate of the pull request's CI.
+      light_checks: |
+        [install]
+        node scripts/npm-retry.mjs ci
+        [build-server]
+        npm run build:server
+        [typecheck]
+        npm run typecheck
+        [lint]
+        npm run lint
+
+  # The body ends with resolve=true when it opened or updated the conflict issue.
+  # A failed child run fails this node, the next node is skipped, and the issue
+  # stays open: that is the pause lock.
+  - id: resolve
+    depends_on: [sync]
+    when: "$sync.output.resolve == 'true'"
+    workflow: paseo-fork-upstream-resolve
+    input: "Resolve the open upstream-sync-conflict issue $sync.output.issue_url"
+
+  # The resolver merged its pull request: close the issue, lock new upstream
+  # workflows and start the build. The build start is the only part of the sync
+  # that the pull request merge itself does not do.
+  - id: after-resolve
+    depends_on: [resolve]
+    when: "$resolve.output.outcome == 'merged'"
+    timeout: 900000
+    bash: |
+      stage=after-resolve
+      . "$ARTIFACTS_DIR/sync/common.sh"
+      result=$resolve.output
+      issue=$(state_get issue)
+      merge_commit=$(jq -r '.merge_commit // ""' <<<"$result")
+      pr_url=$(jq -r '.pr_url // ""' <<<"$result")
+      if [ -z "$merge_commit" ] && [ -n "$pr_url" ]; then
+        merge_commit=$(gh pr view "$pr_url" --json mergeCommit -q '.mergeCommit.oid // empty' || true)
+      fi
+      gh issue close "$issue" --repo "$FORK" \
+        --comment "Resolved by $pr_url (merge commit ${merge_commit:-unknown}). Archon starts the build. Run: $(run_url)" >/dev/null \
+        || fail after-resolve "could not close issue #$issue"
+      state_merge "$(jq -nc --arg c "$merge_commit" '{merge_commit: $c}')"
+      if ! bash "$sync_dir/lock-workflows.sh" || ! bash "$sync_dir/start-build.sh"; then
+        bash "$sync_dir/report-failure.sh" || true
+        exit 1
+      fi
+      echo '{"issue_closed": true, "build_started": true}'

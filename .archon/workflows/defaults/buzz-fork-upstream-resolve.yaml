@@ -128,11 +128,55 @@ nodes:
       origin_url=$(git remote get-url origin)
       repo=$(gh repo view "$origin_url" --json nameWithOwner -q .nameWithOwner)
 
-      open_issues=$(gh issue list --repo "$repo" --label "$CONFLICT_LABEL" --state open \
-        --limit 100 --json number,url)
+      # GitHub's issue list and search lag behind a write by a few seconds, and the
+      # sync run starts this run right after it opens the issue. A direct read by
+      # number does not lag, so the issue URL in the run message (when it names this
+      # repository) is read first; the list is polled with a bounded wait either
+      # way. The list still decides "exactly one": the named issue joins it.
+      hint=$(printf '%s\n' "${ARGUMENTS:-}" \
+        | grep -oE 'https://github\.com/[^/[:space:]]+/[^/[:space:]]+/issues/[0-9]+' \
+        | awk -v p="https://github.com/$repo/issues/" 'index($0, p) == 1 { print substr($0, length(p) + 1); exit }' \
+        || true)
+      wait_limit=${ISSUE_LOOKUP_WAIT_SECONDS:-60}
+      case "$wait_limit" in ''|*[!0-9]*) wait_limit=60 ;; esac
+      list_error=""
+      waited=0
+      delay=2
+      hint_issue=""
+      while :; do
+        if [ -n "$hint" ] && [ -z "$hint_issue" ]; then
+          hint_view=$(gh issue view "$hint" --repo "$repo" --json number,state,labels 2>/dev/null || true)
+          if jq -e --arg l "$CONFLICT_LABEL" '.state == "OPEN" and any(.labels[]; .name == $l)' \
+              >/dev/null 2>&1 <<<"${hint_view:-null}"; then
+            hint_issue=$hint
+          fi
+        fi
+        # An empty list may only mean that GitHub's list lags behind the new issue,
+        # so only that case is retried. A gh error is not retried: it is kept and
+        # printed with the zero-issue message.
+        if listed=$(gh issue list --repo "$repo" --label "$CONFLICT_LABEL" --state open \
+            --limit 100 --json number,url 2>"$SYNC_DIR/issue-list-error.txt"); then
+          list_error=""
+        else
+          list_error=$(head -c 500 "$SYNC_DIR/issue-list-error.txt" | tr '\n' ' ')
+          [ -n "$list_error" ] || list_error="gh issue list failed without a message"
+          listed='[]'
+        fi
+        open_issues=$(jq -c --arg h "$hint_issue" \
+          '. + (if $h == "" then [] else [{number: ($h | tonumber)}] end) | unique_by(.number)' \
+          <<<"$listed")
+        [ "$(jq length <<<"$open_issues")" -gt 0 ] && break
+        [ -n "$list_error" ] && break
+        [ "$waited" -ge "$wait_limit" ] && break
+        echo "No open $CONFLICT_LABEL issue in $repo yet; retrying in ${delay}s." >&2
+        sleep "$delay"
+        waited=$((waited + delay))
+        [ "$delay" -lt 5 ] && delay=$((delay + 1))
+      done
       case "$(jq length <<<"$open_issues")" in
         0)
           echo "No open $CONFLICT_LABEL issue in $repo; nothing to resolve." >&2
+          if [ -n "$list_error" ]; then echo "The issue list lookup failed: $list_error" >&2; fi
           exit 1 ;;
         1) issue=$(jq -r '.[0].number' <<<"$open_issues") ;;
         *)
@@ -549,9 +593,21 @@ nodes:
         pnpm -C desktop build:e2e || return 1
         (cd desktop && pnpm exec playwright test --project=smoke --list --reporter=json \
           --pass-with-no-tests --only-changed="$merge_base") > "$list" || return 1
+        # The file suites at the top of the JSON report carry the spec path
+        # relative to the test directory; deeper entries can hold absolute paths.
         while IFS= read -r spec; do
           if [ -n "$spec" ] && [ "$spec" != smoke.spec.ts ]; then specs+=("tests/e2e/$spec"); fi
-        done < <(jq -r '[.. | objects | select((.file? // "") | endswith(".spec.ts")) | .file] | unique | .[]' "$list")
+        done < <(jq -r '[.suites[]? | .file? // empty | select(endswith(".spec.ts"))] | unique | .[]' "$list")
+        # A large upstream merge changes shared code, so --only-changed can select
+        # nearly every spec and the run would hit the per-check time limit. Above
+        # this count only smoke.spec.ts runs here; the pull request's CI runs the
+        # full suite and is the authority.
+        local max_changed_specs=20
+        if [ "${#specs[@]}" -gt "$max_changed_specs" ]; then
+          echo "desktop-e2e: ${#specs[@]} changed specs are left to the pull request's CI" > "$warning_marker"
+          cat "$warning_marker"
+          specs=()
+        fi
         specs=(tests/e2e/smoke.spec.ts ${specs[@]+"${specs[@]}"})
         echo "desktop-e2e: running ${#specs[@]} spec file(s): ${specs[*]}"
         (cd desktop && CI=1 PLAYWRIGHT_JSON_OUTPUT_NAME="$report" pnpm exec playwright test \
@@ -568,7 +624,7 @@ nodes:
                 | ($e | length) > 0 and all($e[]; darwin_only))' "$report" >/dev/null 2>&1; then
           jq -r '[.. | objects | select(has("tests")) | select(any(.tests[]; .status == "unexpected")) | .title]
             | "only a pixel diff against the macOS (-darwin) baseline: " + join(", ")
-              + "; CI compares the Linux baseline"' "$report" > "$warning_marker"
+              + "; CI compares the Linux baseline"' "$report" >> "$warning_marker"
           cat "$warning_marker"
           return 0
         fi

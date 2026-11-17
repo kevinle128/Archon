@@ -171,7 +171,12 @@ const FAKE_GH = `#!/bin/bash
 printf '%s\\n' "gh $*" >> "$FAKE_LOG"
 case "$1 $2" in
   "repo view") printf '%s\\n' "$FAKE_REPO" ;;
-  "issue list") cat "$FAKE_ISSUE_LIST_JSON" ;;
+  "issue list")
+    if [ "\${FAKE_ISSUE_LIST_CODE:-0}" != 0 ]; then
+      echo "gh: HTTP 502 from the issue list" >&2
+      exit "$FAKE_ISSUE_LIST_CODE"
+    fi
+    cat "$FAKE_ISSUE_LIST_JSON" ;;
   "issue view") cat "$FAKE_ISSUE_JSON" ;;
   "pr list") cat "$FAKE_PR_LIST_JSON" ;;
   "issue comment")
@@ -1248,6 +1253,134 @@ describe('prepare node (executable)', () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('has no upstream-sync-conflict label');
     expect(existsSync(join(sb.sync, 'issue.json'))).toBe(false);
+  });
+
+  describe('issue lookup', () => {
+    const sleepsOf = (sb: Sandbox): number[] =>
+      calls(sb)
+        .filter(c => c.startsWith('sleep '))
+        .map(c => Number(c.slice('sleep '.length)));
+    const listCalls = (sb: Sandbox): number =>
+      calls(sb).filter(c => c.startsWith('gh issue list')).length;
+    const issueUrl = (repo: string, n: number): string => `https://github.com/${repo}/issues/${n}`;
+
+    it('waits a bounded time for a list that has not caught up, then refuses', () => {
+      const sb = makeSandbox();
+      const r = runPrepare(sb, null, { openIssues: [] });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('No open upstream-sync-conflict issue');
+      const sleeps = sleepsOf(sb);
+      expect(sleeps.slice(0, 4)).toEqual([2, 3, 4, 5]);
+      expect(Math.max(...sleeps)).toBe(5);
+      const total = sleeps.reduce((a, b) => a + b, 0);
+      expect(total).toBeGreaterThanOrEqual(60);
+      expect(total).toBeLessThan(70);
+      expect(listCalls(sb)).toBe(sleeps.length + 1);
+      expect(calls(sb).some(c => c.startsWith('gh issue view'))).toBe(false);
+    });
+
+    it('does not retry a gh error and prints it with the zero-issue message', () => {
+      const sb = makeSandbox();
+      const r = runPrepare(sb, null, { openIssues: [], env: { FAKE_ISSUE_LIST_CODE: '1' } });
+      expect(r.status).toBe(1);
+      expect(listCalls(sb)).toBe(1);
+      expect(sleepsOf(sb)).toEqual([]);
+      expect(r.stderr).toContain('No open upstream-sync-conflict issue');
+      expect(r.stderr).toContain('The issue list lookup failed: gh: HTTP 502 from the issue list');
+    });
+
+    it('uses 60 seconds when ISSUE_LOOKUP_WAIT_SECONDS is not a whole number', () => {
+      for (const value of ['abc', '-5', '1.5']) {
+        const sb = makeSandbox();
+        const r = runPrepare(sb, null, {
+          openIssues: [],
+          env: { ISSUE_LOOKUP_WAIT_SECONDS: value },
+        });
+        expect(r.status).toBe(1);
+        const total = sleepsOf(sb).reduce((x, y) => x + y, 0);
+        expect(total).toBeGreaterThanOrEqual(60);
+        expect(total).toBeLessThan(70);
+      }
+    });
+
+    it('picks the issue up once the list shows it', () => {
+      const sb = makeSandbox();
+      // The first sleep is the moment the list catches up with the new issue.
+      writeExecutable(
+        join(sb.bin, 'sleep'),
+        `#!/bin/bash
+printf '%s\n' "sleep $*" >> "$FAKE_LOG"
+echo '[{"number":${ISSUE},"url":"u/${ISSUE}"}]' > "$FAKE_ISSUE_LIST_JSON"
+`
+      );
+      const r = runPrepare(sb, null, { openIssues: [] });
+      expect(r.status).toBe(1);
+      expect(r.stderr).not.toContain('nothing to resolve');
+      expect(sleepsOf(sb)).toEqual([2]);
+      expect(calls(sb).some(c => c.startsWith(`gh issue view ${ISSUE} `))).toBe(true);
+    });
+
+    it('reads the issue named in the run message by number without waiting for the list', () => {
+      const sb = makeSandbox();
+      const r = runPrepare(sb, null, {
+        openIssues: [],
+        env: {
+          ARGUMENTS: `Resolve the open upstream-sync-conflict issue ${issueUrl(FORK_REPO, ISSUE)}`,
+        },
+      });
+      expect(r.status).toBe(1);
+      expect(r.stderr).not.toContain('No open upstream-sync-conflict issue');
+      expect(sleepsOf(sb)).toEqual([]);
+      expect(listCalls(sb)).toBe(1);
+      expect(calls(sb).filter(c => c.startsWith(`gh issue view ${ISSUE} `)).length).toBe(2);
+    });
+
+    it('still refuses when another conflict issue is open next to the named one', () => {
+      const sb = makeSandbox();
+      const r = runPrepare(sb, null, {
+        openIssues: [41],
+        env: { ARGUMENTS: issueUrl(FORK_REPO, ISSUE) },
+      });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(
+        `Several open upstream-sync-conflict issues in ${FORK_REPO}: #41, #${ISSUE}. Exactly one is required.`
+      );
+    });
+
+    it('ignores a named issue that is closed or has no conflict label', () => {
+      const sbClosed = makeSandbox();
+      const rClosed = runPrepare(sbClosed, null, {
+        openIssues: [],
+        state: 'CLOSED',
+        env: { ARGUMENTS: issueUrl(FORK_REPO, ISSUE), ISSUE_LOOKUP_WAIT_SECONDS: '0' },
+      });
+      expect(rClosed.status).toBe(1);
+      expect(rClosed.stderr).toContain('No open upstream-sync-conflict issue');
+      expect(calls(sbClosed).filter(c => c.startsWith('gh issue view')).length).toBeGreaterThan(0);
+
+      const sbUnlabeled = makeSandbox();
+      const rUnlabeled = runPrepare(sbUnlabeled, null, {
+        openIssues: [],
+        labels: ['bug'],
+        env: { ARGUMENTS: issueUrl(FORK_REPO, ISSUE), ISSUE_LOOKUP_WAIT_SECONDS: '0' },
+      });
+      expect(rUnlabeled.status).toBe(1);
+      expect(rUnlabeled.stderr).toContain('No open upstream-sync-conflict issue');
+      expect(calls(sbUnlabeled).filter(c => c.startsWith('gh issue view')).length).toBeGreaterThan(
+        0
+      );
+    });
+
+    it('ignores an issue URL of another repository in the run message', () => {
+      const sb = makeSandbox();
+      const r = runPrepare(sb, null, {
+        openIssues: [],
+        env: { ARGUMENTS: issueUrl('someone/else', 7), ISSUE_LOOKUP_WAIT_SECONDS: '0' },
+      });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('No open upstream-sync-conflict issue');
+      expect(calls(sb).some(c => c.startsWith('gh issue view'))).toBe(false);
+    });
   });
 
   it('finds the one open conflict issue on GitHub, not in the run message', () => {
