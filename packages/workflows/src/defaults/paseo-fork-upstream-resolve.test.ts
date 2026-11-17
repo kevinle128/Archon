@@ -2714,6 +2714,26 @@ describe('CI wait (executable)', () => {
     expect(waitCi(sb, work).conclusion).toBe('success');
   });
 
+  it('concludes failure when a workflow check fails while an outside status stays pending', () => {
+    const { sb, work } = setup([
+      { out: checksJson(['build', 'pass'], ['e2e', 'fail'], ['ocr-review', 'pending']), code: 8 },
+    ]);
+    const ci = waitCi(sb, work);
+    expect(ci.conclusion).toBe('failure');
+    expect(ci.failed).toEqual(['e2e']);
+    expect(calls(sb).filter(c => c.startsWith('gh pr checks'))).toHaveLength(2);
+  });
+
+  it('keeps waiting while only an outside status is pending and no check has failed', () => {
+    const { sb, work } = setup([
+      { out: checksJson(['build', 'pass'], ['ocr-review', 'pending']), code: 8 },
+      { out: checksJson(['build', 'pass'], ['ocr-review', 'pending']), code: 8 },
+      { out: checksJson(['build', 'pass'], ['ocr-review', 'pass']), code: 0 },
+    ]);
+    expect(waitCi(sb, work).conclusion).toBe('success');
+    expect(calls(sb).filter(c => c.startsWith('gh pr checks'))).toHaveLength(3);
+  });
+
   it('waits while checks are pending, parsing stdout whatever gh exits with', () => {
     const { sb, work } = setup([
       { out: checksJson(['build', 'pending']), code: 8 },
@@ -2863,6 +2883,22 @@ describe('CI wait (executable)', () => {
       rerun: true,
       fix: true,
     });
+  });
+
+  it('rerun-ci ignores a pending outside status when waiting for the re-run to start', () => {
+    const { sb, work } = setup([
+      { out: failedWithLinks, code: 1 },
+      { out: checksJson(['server', 'fail'], ['ocr-review', 'pending']), code: 8 },
+      { out: checksJson(['server', 'pending'], ['ocr-review', 'pending']), code: 8 },
+      { out: checksJson(['server', 'fail'], ['ocr-review', 'pending']), code: 8 },
+    ]);
+    expect(rerunCi(sb, work)).toMatchObject({
+      conclusion: 'failure',
+      failed: ['server'],
+      rerun: true,
+      fix: true,
+    });
+    expect(calls(sb).filter(c => c === 'sleep 30')).toEqual(['sleep 30']);
   });
 
   it('rerun-ci does not wait when no run can be re-run, and fixes the failed CI', () => {
