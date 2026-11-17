@@ -316,9 +316,9 @@ nodes:
       # $STATE_DIR, shared by runs, never in the worktree.
       state_root=$(dirname "$(dirname "$run_dir")")
       export PLAYWRIGHT_BROWSERS_PATH="$state_root/ms-playwright"
-      # A check that passes with a warning writes the warning here. No check of
-      # this fork writes one today (it has no screenshot baselines); the status
-      # keeps checks.json the same as in the other fork workflows.
+      # A check that passes with a warning writes the warning here (e2e-app does,
+      # when it leaves a large set of changed specs to the pull request's CI); the
+      # status keeps checks.json the same as in the other fork workflows.
       warning_marker="$sync_dir/check-warning"
       # The basic app path: open a workspace, then create an agent chat (mock
       # provider) and a terminal in it.
@@ -432,9 +432,21 @@ nodes:
         npm run build --workspace=@getpaseo/expo-two-way-audio || return 1
         (cd packages/app && npx playwright test --project=browser --list --reporter=json \
           --pass-with-no-tests --only-changed="$merge_base") > "$list" || return 1
+        # The file suites at the top of the JSON report carry the spec path
+        # relative to the test directory; deeper entries can hold absolute paths.
         while IFS= read -r spec; do
           if [ -n "$spec" ] && [ "$spec" != "$e2e_app_smoke" ]; then specs+=("e2e/browser/$spec"); fi
-        done < <(jq -r '[.. | objects | select((.file? // "") | endswith(".spec.ts")) | .file] | unique | .[]' "$list")
+        done < <(jq -r '[.suites[]? | .file? // empty | select(endswith(".spec.ts"))] | unique | .[]' "$list")
+        # A large upstream merge changes shared code, so --only-changed can select
+        # nearly every spec and the run would take far longer than the per-check
+        # time limit. Above this count only the smoke spec runs here; the pull
+        # request's CI runs the full suite and is the authority.
+        local max_changed_specs=20
+        if [ "${#specs[@]}" -gt "$max_changed_specs" ]; then
+          echo "e2e-app: ${#specs[@]} changed specs are left to the pull request's CI" > "$warning_marker"
+          cat "$warning_marker"
+          specs=()
+        fi
         specs=("e2e/browser/$e2e_app_smoke" ${specs[@]+"${specs[@]}"})
         echo "e2e-app: running ${#specs[@]} spec file(s): ${specs[*]}"
         (cd packages/app && CI=1 npx playwright test --project=browser --update-snapshots=none \
@@ -827,12 +839,17 @@ nodes:
         if [ "$pr_head" = "$head" ]; then
           # gh exits non-zero for pending or failed checks and prints no JSON when
           # no checks exist yet, so only the JSON on stdout counts.
-          out=$(gh pr checks "$number" --repo "$repo" --json name,state,bucket,link 2>/dev/null || true)
+          out=$(gh pr checks "$number" --repo "$repo" --json name,state,bucket,link,workflow 2>/dev/null || true)
           if jq -e 'type == "array"' >/dev/null 2>&1 <<<"$out"; then checks=$out; fi
         fi
         if [ "$(jq length <<<"$checks")" -gt 0 ]; then
           seen=true
-          if jq -e 'any(.[]; .bucket == "pending")' >/dev/null <<<"$checks"; then
+          # A check that fails as soon as it starts is not held back by another check
+          # that never ends. Only a pending GitHub Actions job (one with a workflow) can
+          # still change the result. A pending status from an outside service, such as
+          # ocr-review, has no workflow and can stay pending for hours, so it is waited
+          # for only while nothing has failed.
+          if jq -e 'any(.[]; .bucket == "pending" and (.workflow // "") != "")' >/dev/null <<<"$checks"; then
             prev_names=""
           else
             # A second workflow can add its checks after the first one finished,
@@ -840,9 +857,15 @@ nodes:
             # polls in a row.
             names=$(jq -c '[.[].name] | sort' <<<"$checks")
             if [ "$names" = "$prev_names" ]; then
-              failed=$(jq -c '[.[] | select(.bucket != "pass" and .bucket != "skipping") | .name]' <<<"$checks")
-              if [ "$failed" = '[]' ]; then conclusion=success; else conclusion=failure; fi
-              break
+              failed=$(jq -c '[.[] | select(.bucket != "pass" and .bucket != "skipping" and .bucket != "pending") | .name]' <<<"$checks")
+              if [ "$failed" != '[]' ]; then
+                conclusion=failure
+                break
+              fi
+              if ! jq -e 'any(.[]; .bucket == "pending")' >/dev/null <<<"$checks"; then
+                conclusion=success
+                break
+              fi
             fi
             prev_names=$names
           fi
@@ -1123,13 +1146,15 @@ nodes:
   # Agent nodes have an idle_timeout: when the model sends nothing for that long
   # (a stalled request), the node fails and the engine retries it, instead of
   # the run waiting without end. The value is above the longest silent step of a
-  # normal run (a full local check run inside the agent); create-pr runs only
-  # short commands.
+  # normal run: a full local check run inside the agent is one command that prints
+  # nothing until it ends (about 20 min for the checks before e2e-app, then e2e-app
+  # of up to 20 min) plus a wait for the mini build lock while a release build
+  # runs. create-pr runs only short commands.
   # Merges, resolves, makes the one merge commit, then runs the local checks and
   # fixes failures (at most 3 rounds), leaving the worktree clean.
   - id: resolve
     command: paseo-fork-resolve-upstream-merge
-    idle_timeout: 1200000
+    idle_timeout: 7200000
     model: gpt-6.1-terra
     effort: medium
     depends_on: [prepare]
@@ -1184,7 +1209,7 @@ nodes:
       nodes:
         - id: fix-checks-attempt
           command: paseo-fork-resolve-upstream-merge
-          idle_timeout: 1200000
+          idle_timeout: 7200000
           model: gpt-6.1-terra
           effort: medium
           prompt_suffix: |
@@ -1414,8 +1439,8 @@ nodes:
         # Wait until GitHub shows the re-run as queued or running, so the CI wait
         # never concludes on the old, failed check set.
         for _ in $(seq 1 10); do
-          if gh pr checks "$number" --repo "$repo" --json bucket 2>/dev/null \
-              | jq -e 'any(.[]; .bucket == "pending")' >/dev/null 2>&1; then
+          if gh pr checks "$number" --repo "$repo" --json bucket,workflow 2>/dev/null \
+              | jq -e 'any(.[]; .bucket == "pending" and (.workflow // "") != "")' >/dev/null 2>&1; then
             break
           fi
           sleep 30
@@ -1464,7 +1489,7 @@ nodes:
           depends_on: [pr-open]
           when: "$pr-open.output.open == 'true'"
           command: paseo-fork-fix-ci
-          idle_timeout: 1200000
+          idle_timeout: 7200000
           model: gpt-6-luna
         - id: wait-ci-again
           depends_on: [fix-ci-attempt]

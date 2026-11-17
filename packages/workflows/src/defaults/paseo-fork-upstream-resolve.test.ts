@@ -47,10 +47,12 @@ const SHA_B = 'b'.repeat(40);
 const SHA_C = 'c'.repeat(40);
 const REAL_GIT = spawnSync('bash', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
 // A full local check run on the Mac mini, measured cold (no node_modules), and the
-// node limits chosen from it.
-const MEASURED_FULL_RUN_MS = 0;
+// node limits chosen from it. A real run of the resolve node was still silent in
+// checks.sh after 20 minutes (the checks before e2e-app took 18 minutes), so the
+// idle timeout must be above that.
+const MEASURED_FULL_RUN_MS = 1_201_000;
 const CHECK_NODE_TIMEOUT = 2_700_000;
-const AGENT_IDLE_TIMEOUT = 1_200_000;
+const AGENT_IDLE_TIMEOUT = 7_200_000;
 // Tests that run the final checks run a full checks.sh with fake tools: about
 // twenty checks, each with its own watchdog process, about 1 s on a machine at
 // load 25 and well under that when idle. They do no network or database I/O.
@@ -2647,6 +2649,8 @@ describe('CI wait (executable)', () => {
         state: bucket.toUpperCase(),
         bucket,
         link: `https://x/${name}`,
+        // gh lists an outside commit status, such as ocr-review, without a workflow.
+        workflow: name === 'ocr-review' ? '' : 'CI',
       }))
     );
 
