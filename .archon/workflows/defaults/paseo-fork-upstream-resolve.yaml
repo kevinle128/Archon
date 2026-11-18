@@ -293,15 +293,29 @@ nodes:
       # PORT is Archon's own listen port (the PM2 setup sets it). A test that expects
       # no PORT in the environment (worktree-bootstrap.posix) would fail on it.
       unset PORT
-      # The PM2 PATH has neither the user-level bin directory nor a standalone Node.
-      # The tests resolve the `claude` CLI from PATH (installed in ~/.local/bin).
-      # Several tests copy process.execPath and run the copy; a Homebrew node cannot
-      # run from another directory (it loads libnode through an rpath next to it), so
-      # a standalone Node 22 is preferred when the machine has one, as CI uses.
+      # The PM2 PATH has none of the agent CLIs and no standalone Node. The CI jobs
+      # that run the provider tests install claude-code and opencode-ai with
+      # `npm install -g` and nothing else of the user's machine is on their PATH, so
+      # PATH is built from three parts instead of adding the whole of ~/.local/bin
+      # (or the ~/.opencode/bin that a login shell adds) and exposing the tools of
+      # this machine: a per-run bin directory that holds only `claude` and
+      # `opencode` (filled after the tool checks below), a standalone Node 22, and
+      # the PATH of the process. Several tests copy process.execPath and run the
+      # copy; a Homebrew node cannot run from another directory (it loads libnode
+      # through an rpath next to it), so a standalone Node 22 is preferred when the
+      # machine has one, as CI uses. The per-run bin directory comes first, so the
+      # opencode of the machine (older than the CI one, and it rejects the plugin
+      # settings the tests give it) never wins over the CI release.
       node22_bin="${FORK_SYNC_NODE22_BIN:-$HOME/.local/share/fork-sync/node-22/bin}"
+      agent_cli_dir="${FORK_SYNC_AGENT_CLI_DIR:-$HOME/.local/share/fork-sync/agent-clis}"
+      agent_bin="$sync_dir/agent-bin"
       if [ -x "$node22_bin/node" ]; then PATH="$node22_bin:$PATH"; fi
-      if [ -d "$HOME/.local/bin" ]; then PATH="$HOME/.local/bin:$PATH"; fi
+      PATH="$agent_bin:$PATH"
       export PATH
+      # A CI run has no OPENCODE_* or CODEX_* setting, and the provider tests build
+      # their own. A value from this machine would change what the CLIs load.
+      while IFS= read -r setting; do unset "$setting"; done \
+        < <(compgen -e | grep -E '^(OPENCODE|CODEX)_' || true)
       # macOS keeps TMPDIR under the /var symlink while tests compare it with real
       # paths (/private/var). Resolve it once so both forms agree; keep the trailing
       # slash that macOS gives TMPDIR.
@@ -321,6 +335,22 @@ nodes:
         echo "checks: Node 22 is required (the fork pins nodejs 22.20.0), found $(node --version)" >&2
         exit 2
       fi
+
+      # Fill the per-run bin directory. opencode is the latest opencode-ai release,
+      # as CI installs it on every run, in a prefix that is kept between runs; an
+      # offline install keeps the copy that is already there. claude is the logged-in
+      # native install of this machine. codex stays the one of the machine: the CI
+      # pin (0.105.0) does not run on this macOS.
+      rm -rf "$agent_bin"
+      mkdir -p "$agent_bin" "$agent_cli_dir"
+      if ! npm install --prefix "$agent_cli_dir" --no-audit --no-fund --loglevel=error \
+          opencode-ai@latest >&2; then
+        echo "checks: opencode-ai was not installed; the copy in $agent_cli_dir is used when there is one" >&2
+      fi
+      if [ -x "$agent_cli_dir/node_modules/.bin/opencode" ]; then
+        ln -s "$agent_cli_dir/node_modules/.bin/opencode" "$agent_bin/opencode"
+      fi
+      if [ -x "$HOME/.local/bin/claude" ]; then ln -s "$HOME/.local/bin/claude" "$agent_bin/claude"; fi
 
       if ! run_dir=$(jq -er .run_dir "$sync_dir/sync.json") \
           || ! merge_base=$(jq -er .merge_base "$sync_dir/sync.json"); then

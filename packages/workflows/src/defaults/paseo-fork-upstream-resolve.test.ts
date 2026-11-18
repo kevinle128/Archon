@@ -1635,6 +1635,8 @@ describe('local checks script (executable)', () => {
     const pick = (value: string | undefined): string => value || '__none__';
     const envNames = ['NODE_ENV', 'CI', 'PLAYWRIGHT_BROWSERS_PATH', ...SECRETS];
     const fake = (tool: string): string => `#!/bin/bash
+# The opencode-ai install that fills the agent CLI directory is setup, not a check.
+if [ "$1" = install ] && [ "$2" = --prefix ]; then exit 0; fi
 printf '%s\\n' "${tool} $*" >> "$FAKE_LOG"
 printf '%s' "${tool}" >> "$FAKE_LOG.env"
 for v in ${envNames.join(' ')}; do printf ' %s=%s' "$v" "\${!v-unset}" >> "$FAKE_LOG.env"; done
@@ -1830,6 +1832,52 @@ exit 0
       for (const name of SECRETS) expect(line).toContain(` ${name}=unset`);
       expect(line).not.toContain('secret-value');
     }
+  });
+
+  it('puts only claude and the CI opencode on the PATH of a check, and drops OPENCODE settings', () => {
+    // A login shell adds ~/.opencode/bin (an older opencode that rejects the plugin
+    // settings the tests give it) and ~/.local/bin holds many other tools. CI has
+    // only the two CLIs that it installs with npm.
+    const { sb, work, script } = setup();
+    const cliDir = join(sb.root, '.local/share/fork-sync/agent-clis/node_modules/.bin');
+    const staleDir = join(sb.root, '.opencode/bin');
+    const localBin = join(sb.root, '.local/bin');
+    for (const dir of [cliDir, staleDir, localBin]) mkdirSync(dir, { recursive: true });
+    writeExecutable(join(cliDir, 'opencode'), '#!/bin/sh\n');
+    writeExecutable(join(staleDir, 'opencode'), '#!/bin/sh\n');
+    writeExecutable(join(localBin, 'claude'), '#!/bin/sh\n');
+    writeExecutable(join(localBin, 'other-tool'), '#!/bin/sh\n');
+    const probe = `${sb.log}.path`;
+    writeExecutable(
+      join(sb.bin, 'npx'),
+      `#!/bin/bash
+{
+  echo "opencode=$(command -v opencode)"
+  echo "claude=$(command -v claude)"
+  echo "other=$(command -v other-tool || echo none)"
+  echo "setting=\${OPENCODE_CONFIG_CONTENT-unset} \${CODEX_HOME-unset}"
+  echo "agent-bin=$(ls -A "$(dirname "$(command -v opencode)")" | tr '\\n' ' ')"
+} > "${probe}"
+`
+    );
+    const r = run(sb, `bash "${script}" test-website`, {
+      cwd: work,
+      env: {
+        PATH: `${staleDir}:${sb.env.PATH ?? ''}`,
+        OPENCODE_CONFIG_CONTENT: '{"plugin":[]}',
+        CODEX_HOME: '/somewhere',
+      },
+    });
+    expect(r.status).toBe(0);
+    const agentBin = join(sb.sync, 'agent-bin');
+    expect(readFileSync(probe, 'utf-8').trim().split('\n')).toEqual([
+      `opencode=${agentBin}/opencode`,
+      `claude=${agentBin}/claude`,
+      'other=none',
+      'setting=unset unset',
+      'agent-bin=claude opencode',
+    ]);
+    expect(realpathSync(join(agentBin, 'opencode'))).toBe(realpathSync(join(cliDir, 'opencode')));
   });
 
   it('stops a hung check at its limit, with its processes, and reports it as timed out', () => {
