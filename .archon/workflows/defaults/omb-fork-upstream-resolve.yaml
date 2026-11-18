@@ -990,12 +990,17 @@ nodes:
         if [ "$pr_head" = "$head" ]; then
           # gh exits non-zero for pending or failed checks and prints no JSON when
           # no checks exist yet, so only the JSON on stdout counts.
-          out=$(gh pr checks "$number" --repo "$repo" --json name,state,bucket,link 2>/dev/null || true)
+          out=$(gh pr checks "$number" --repo "$repo" --json name,state,bucket,link,workflow 2>/dev/null || true)
           if jq -e 'type == "array"' >/dev/null 2>&1 <<<"$out"; then checks=$out; fi
         fi
         if [ "$(jq length <<<"$checks")" -gt 0 ]; then
           seen=true
-          if jq -e 'any(.[]; .bucket == "pending")' >/dev/null <<<"$checks"; then
+          # A check that fails as soon as it starts is not held back by another check
+          # that never ends. Only a pending GitHub Actions job (one with a workflow) can
+          # still change the result. A pending status from an outside service, such as
+          # ocr-review, has no workflow and can stay pending for hours, so it is waited
+          # for only while nothing has failed.
+          if jq -e 'any(.[]; .bucket == "pending" and ((.workflow // "") != "" or ((.link // "") | test("/actions/runs/"))))' >/dev/null <<<"$checks"; then
             prev_names=""
           else
             # A second workflow can add its checks after the first one finished,
@@ -1003,9 +1008,15 @@ nodes:
             # polls in a row.
             names=$(jq -c '[.[].name] | sort' <<<"$checks")
             if [ "$names" = "$prev_names" ]; then
-              failed=$(jq -c '[.[] | select(.bucket != "pass" and .bucket != "skipping") | .name]' <<<"$checks")
-              if [ "$failed" = '[]' ]; then conclusion=success; else conclusion=failure; fi
-              break
+              failed=$(jq -c '[.[] | select(.bucket != "pass" and .bucket != "skipping" and .bucket != "pending") | .name]' <<<"$checks")
+              if [ "$failed" != '[]' ]; then
+                conclusion=failure
+                break
+              fi
+              if ! jq -e 'any(.[]; .bucket == "pending")' >/dev/null <<<"$checks"; then
+                conclusion=success
+                break
+              fi
             fi
             prev_names=$names
           fi
@@ -1604,8 +1615,9 @@ nodes:
         # Wait until GitHub shows the re-run as queued or running, so the CI wait
         # never concludes on the old, failed check set.
         for _ in $(seq 1 10); do
-          if gh pr checks "$number" --repo "$repo" --json bucket 2>/dev/null \
-              | jq -e 'any(.[]; .bucket == "pending")' >/dev/null 2>&1; then
+          # gh exits 8 while checks are pending, so only its output is read.
+          now=$(gh pr checks "$number" --repo "$repo" --json bucket,workflow,link 2>/dev/null || true)
+          if jq -e 'any(.[]; .bucket == "pending" and ((.workflow // "") != "" or ((.link // "") | test("/actions/runs/"))))' >/dev/null 2>&1 <<<"$now"; then
             break
           fi
           sleep 30
