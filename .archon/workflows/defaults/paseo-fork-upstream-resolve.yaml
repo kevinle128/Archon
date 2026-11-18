@@ -290,6 +290,25 @@ nodes:
       # the CLI E2E runner run only a part of its files.
       unset OPENAI_API_KEY OPENROUTER_API_KEY ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN
       unset PASEO_CLI_TEST_SHARD PASEO_CLI_TEST_SHARD_TOTAL
+      # PORT is Archon's own listen port (the PM2 setup sets it). A test that expects
+      # no PORT in the environment (worktree-bootstrap.posix) would fail on it.
+      unset PORT
+      # The PM2 PATH has neither the user-level bin directory nor a standalone Node.
+      # The tests resolve the `claude` CLI from PATH (installed in ~/.local/bin).
+      # Several tests copy process.execPath and run the copy; a Homebrew node cannot
+      # run from another directory (it loads libnode through an rpath next to it), so
+      # a standalone Node 22 is preferred when the machine has one, as CI uses.
+      node22_bin="${FORK_SYNC_NODE22_BIN:-$HOME/.local/share/fork-sync/node-22/bin}"
+      if [ -x "$node22_bin/node" ]; then PATH="$node22_bin:$PATH"; fi
+      if [ -d "$HOME/.local/bin" ]; then PATH="$HOME/.local/bin:$PATH"; fi
+      export PATH
+      # macOS keeps TMPDIR under the /var symlink while tests compare it with real
+      # paths (/private/var). Resolve it once so both forms agree; keep the trailing
+      # slash that macOS gives TMPDIR.
+      if [ -n "${TMPDIR:-}" ] && [ -d "$TMPDIR" ]; then
+        TMPDIR="$(cd "$TMPDIR" && pwd -P)/"
+        export TMPDIR
+      fi
 
       for tool in node npm npx jq git; do
         if ! command -v "$tool" >/dev/null 2>&1; then
