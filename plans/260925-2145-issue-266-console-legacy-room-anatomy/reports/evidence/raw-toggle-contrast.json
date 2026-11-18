@@ -1,0 +1,20 @@
+{
+  "console": {
+    "body-bar background": "oklch(0.175 0.007 265)",
+    "closed label (--text-secondary)": "oklch(0.745 0.014 265)",
+    "closed label vs body bar": 8.37,
+    "hover/focus/open label (--text-primary)": "oklch(0.975 0.004 265)",
+    "active label vs body bar": 17.72,
+    "panel background (--surface-inset effective)": "oklch(0.13 0.006 265)",
+    "Raw JSON vs panel": 18.77
+  },
+  "legacy": {
+    "body-bar background": "oklch(0.14 0.005 260)",
+    "closed label (--text-secondary)": "oklch(0.65 0.01 260)",
+    "closed label vs body bar": 6.14,
+    "hover/focus/open label (--text-primary)": "oklch(0.93 0.005 260)",
+    "active label vs body bar": 16.23,
+    "panel background (--surface-inset effective)": "oklch(0.12 0.005 260)",
+    "Raw JSON vs panel": 16.52
+  }
+}

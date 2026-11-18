@@ -1,0 +1,50 @@
+US-004 gate ladder — 2026-09-25
+
+1. Narrow unit (packages/web, NODE_ENV=development)
+   bun test src/lib/room-split-layout.test.ts src/lib/use-container-split-mode.test.tsx src/experiments/console/console-isolation.test.ts
+   → 10 pass / 0 fail
+
+2. Split/route/room-body + regressions (Radix preload)
+   bun test --preload ./src/test/preload-radix-dom.ts \
+     src/components/workflows/LegacyGraphLogsPane.test.tsx \
+     src/components/workflows/WorkflowExecution.test.tsx \
+     src/components/workflows/NodeTranscriptPane.test.tsx \
+     src/components/workflows/LegacyNodeRoom.test.tsx \
+     src/components/workflows/ComposerDock.test.tsx
+   → 274 pass / 0 fail
+   Note: LegacyNodeRoom.test.tsx obsolete todo-before-scroller assertion flipped to scroller→todo as part of this gate.
+
+3. Console isolated invocation
+   bun test src/experiments/console/components/ConsoleInspectPane.test.tsx \
+     src/experiments/console/routes/RunDetailPage.test.tsx \
+     src/experiments/console/components/ConsoleNodeRoom.test.tsx \
+     src/experiments/console/components/ConsoleComposerDock.test.tsx
+   → 273 pass / 0 fail
+
+4. Package-wide
+   bun --filter @archon/web test
+   → exit 0 (lib 1026, stores 51, hooks 18, components 660, source-control 53, console 1121; all 0 fail)
+
+5. Type checks
+   (cd packages/web && bun run type-check) → pass
+   (cd e2e && bun run typecheck) → pass
+
+6. Focused Playwright (e2e/)
+   bunx playwright test -c playwright.config.ts \
+     ui/workflow-run-hitl-room.spec.ts \
+     ui/agent-todo-strip.spec.ts \
+     ui/workflow-run-hitl-visual.spec.ts \
+     ui/occurrence-navigation.spec.ts \
+     ui/agent-finished-iteration.spec.ts \
+     ui/verifier-visual.spec.ts \
+     ui/agent-tool-row-visual.spec.ts \
+     ui/file-edit-diff.spec.ts \
+     ui/task-dispatch-body.spec.ts
+   → 77 passed (5.4m)
+
+Ownership
+- sprint-status.yaml: epic-3=backlog; 10-1-fix-room-geometry-and-execution-selection=ready-for-dev (unchanged)
+- github-issue-map.json not modified
+- M005 not declared complete
+- No package.json / schema / api.generated drift
+- PR deferred to parent workflow (Ralph no-PR rule)
