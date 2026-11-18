@@ -89,8 +89,13 @@ Map the ak-ship steps to this run as follows:
 
 Write the merge request title and description in Vietnamese (plain, complete sentences; keep code, paths,
 commands, identifiers and the `Closes #$IID` line as they are). The team reads merge requests in Vietnamese. Keep
-the ak-ship section structure, with Vietnamese headings: `## Tóm tắt`, `## Bằng chứng hoàn thành`,
-`## Issue liên quan`, `## Chế độ ship`. Record `Writing language: vi (source: workflow rule)` in the last section.
+all nine ak-ship sections, in the template order, with the exact Vietnamese headings of the
+`references/pr-template.md` heading map: `## Tóm tắt công việc end-to-end`, `## Ủy thác subagent`,
+`## Quyết định kỹ thuật`, `## Lệch so với plan`, `## Bằng chứng hoàn thành`, `## Checklist`,
+`## Việc cần người xử lý`, `## Issues liên quan`, `## Chế độ ship`. The PR body contract and the merge
+reviewer check these headings by exact text, so do not shorten, rename or drop one; write `None.` (or
+`No plan.`) under a section that has nothing to report. Record `Writing language: vi (source: workflow rule)`
+in the last section.
 The commit message stays in English (conventional commit).
 
 ## Commit
@@ -156,6 +161,9 @@ Check the exit status of `git push` itself (use `set -o pipefail` or
    filled with evidence only:
    - End-to-end work summary: the issue, the root cause, and the fix
      (`investigation.md`, `implementation.md`).
+   - Subagent delegation: the subagents this run used and their result, or `None.`.
+   - Technical decisions: each design choice of the fix with its reason, or `None.`.
+   - Deviations from plan: `No plan.` unless the run followed a plan file.
    - Completion evidence, first an e2e block under the heading `### Bằng chứng e2e`
      (from `e2e-before.md` and `e2e-after.md`):
      - the test file and the test name;
@@ -168,6 +176,10 @@ Check the exit status of `git push` itself (use `set -o pipefail` or
        (collection, keys).
      Then each unit test, build and lint command with its result (`validation.md`). If no
      unit test covers the touched code, say so and list the build/lint evidence.
+   - Checklist: one checked item per step that ran (fix, e2e before/after, build,
+     lint, review) and one unchecked item with its reason per step that did not run.
+   - Human actions required: what a person must still do or verify (for example a
+     unit test that could not run here), or `None.`.
    - Linked Issues: the line `Closes #$IID` as live text on its own line — not in
      a code fence, inline code, or an HTML comment.
    - Ship Mode: `Target: $TARGET`.
