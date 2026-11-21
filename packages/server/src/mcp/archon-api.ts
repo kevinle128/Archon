@@ -9,7 +9,17 @@
  */
 import { z } from '@hono/zod-openapi';
 
-import { toIsoTimestamp, type RunEventSnapshot, type RunSnapshot } from './run-task';
+import type {
+  AskAnswerBody,
+  PermissionConfirmBody,
+} from '@archon/workflows/schemas/pending-interaction';
+
+import {
+  toIsoTimestamp,
+  type InteractionSnapshot,
+  type RunEventSnapshot,
+  type RunSnapshot,
+} from './run-task';
 
 /** Sends one request to the Archon app (in production: `app.request`). */
 export type ApiRequester = (path: string, init: RequestInit) => Promise<Response>;
@@ -81,12 +91,48 @@ const eventSchema = z
   })
   .loose();
 
-const runDetailSchema = z.object({ run: runSchema, events: z.array(eventSchema) }).loose();
+const interactionSchema = z
+  .object({
+    tool_use_id: z.string().min(1),
+    node_id: z.string().min(1),
+    kind: z.enum(['ask', 'permission']),
+    status: z.enum(['pending', 'answered', 'purged']),
+    envelope: z.record(z.string(), z.unknown()),
+  })
+  .loose();
+
+const runDetailSchema = z
+  .object({
+    run: runSchema,
+    events: z.array(eventSchema),
+    // Rows are parsed one by one below, so a row this layer cannot read never hides the run.
+    pending_interactions: z.array(z.unknown()).optional(),
+    viewer_is_starter: z.boolean().optional(),
+  })
+  .loose();
 const runListSchema = z.object({ runs: z.array(runSchema) }).loose();
 const messageListSchema = z.array(
   z.object({ role: z.string(), content: z.string(), created_at: z.string().optional() }).loose()
 );
 export type ApiMessage = z.infer<typeof messageListSchema>[number];
+
+function toInteractions(rows: readonly unknown[] | undefined): InteractionSnapshot[] {
+  const snapshots: InteractionSnapshot[] = [];
+  for (const row of rows ?? []) {
+    // A row that does not parse cannot be answered here, so it is dropped.
+    const parsed = interactionSchema.safeParse(row);
+    if (!parsed.success) continue;
+    const { kind, status, envelope } = parsed.data;
+    snapshots.push({
+      tool_use_id: parsed.data.tool_use_id,
+      node_id: parsed.data.node_id,
+      kind,
+      status,
+      envelope,
+    });
+  }
+  return snapshots;
+}
 
 export interface RunDetail {
   run: RunSnapshot;
@@ -145,6 +191,10 @@ export interface ArchonApi {
   approve(runId: string, comment?: string): Promise<void>;
   reject(runId: string, reason: string): Promise<void>;
   cancel(runId: string): Promise<void>;
+  /** Answer or decline one AskHuman question list. */
+  answerAsk(runId: string, toolUseId: string, body: AskAnswerBody): Promise<void>;
+  /** Confirm one permission request; only the run starter may. */
+  confirmPermission(runId: string, toolUseId: string, body: PermissionConfirmBody): Promise<void>;
   getConversationMessages(conversationId: string): Promise<ApiMessage[]>;
 }
 
@@ -254,7 +304,13 @@ export function createArchonApi(request: ApiRequester, authHeaders: Headers): Ar
       const detail = await expectOkOrNull(runPath(runId), runDetailSchema);
       if (!detail) return null;
       return {
-        run: toRunSnapshot(detail.run),
+        run: {
+          ...toRunSnapshot(detail.run),
+          interactions: toInteractions(detail.pending_interactions),
+          ...(detail.viewer_is_starter !== undefined
+            ? { viewer_is_starter: detail.viewer_is_starter }
+            : {}),
+        },
         codebaseId: detail.run.codebase_id ?? null,
         events: detail.events.map(toEventSnapshot),
       };
@@ -273,6 +329,26 @@ export function createArchonApi(request: ApiRequester, authHeaders: Headers): Ar
     },
     async cancel(runId: string): Promise<void> {
       await expectOk('POST', `${runPath(runId)}/cancel`, anyBody, {});
+    },
+    async answerAsk(runId: string, toolUseId: string, body: AskAnswerBody): Promise<void> {
+      await expectOk(
+        'POST',
+        `${runPath(runId)}/ask/${encodeURIComponent(toolUseId)}/answer`,
+        anyBody,
+        body
+      );
+    },
+    async confirmPermission(
+      runId: string,
+      toolUseId: string,
+      body: PermissionConfirmBody
+    ): Promise<void> {
+      await expectOk(
+        'POST',
+        `${runPath(runId)}/permissions/${encodeURIComponent(toolUseId)}/confirm`,
+        anyBody,
+        body
+      );
     },
     async getConversationMessages(conversationId: string): Promise<ApiMessage[]> {
       return expectOk(

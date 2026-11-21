@@ -33,6 +33,11 @@ const state = {
   dispatchStatus: 'started',
   approveStatus: 200,
   messages: [] as { role: string; content: string }[],
+  interactions: new Map<string, Record<string, unknown>[]>(),
+  viewerIsStarter: true,
+  /** Answer-route status per tool_use_id; unlisted ids answer 200. */
+  answerStatus: new Map<string, number>(),
+  permissionStatus: 200,
 };
 
 const codebases = [
@@ -110,7 +115,13 @@ fakeApi.get('/api/workflows/runs', c => {
 fakeApi.get('/api/workflows/runs/:runId', c => {
   const found = state.runs.get(c.req.param('runId'));
   if (!found) return c.json({ error: 'Workflow run not found' }, 404);
-  return c.json({ run: found.run, events: found.events, nodeStates: [] });
+  return c.json({
+    run: found.run,
+    events: found.events,
+    nodeStates: [],
+    pending_interactions: state.interactions.get(c.req.param('runId')) ?? [],
+    viewer_is_starter: state.viewerIsStarter,
+  });
 });
 fakeApi.post('/api/workflows/runs/:runId/approve', c =>
   state.approveStatus === 200
@@ -118,7 +129,44 @@ fakeApi.post('/api/workflows/runs/:runId/approve', c =>
     : c.json({ error: 'Workflow run is not paused' }, 400)
 );
 fakeApi.post('/api/workflows/runs/:runId/reject', c => c.json({ success: true, message: 'ok' }));
-fakeApi.post('/api/workflows/runs/:runId/cancel', c => c.json({ success: true, message: 'ok' }));
+/** Like `cancelWorkflowRun`: the run becomes cancelled and its pending rows purged together. */
+fakeApi.post('/api/workflows/runs/:runId/cancel', c => {
+  const runId = c.req.param('runId');
+  const found = state.runs.get(runId);
+  if (!found) return c.json({ error: 'Workflow run not found' }, 404);
+  if (!['running', 'pending', 'paused'].includes(found.run.status as string)) {
+    return c.json({ error: 'Cannot cancel a finished run' }, 400);
+  }
+  found.run.status = 'cancelled';
+  for (const row of state.interactions.get(runId) ?? []) {
+    if (row.status === 'pending') row.status = 'purged';
+  }
+  return c.json({ success: true, message: 'ok' });
+});
+
+/** Mark the row answered; the last pending answer resumes the run, as core does. */
+function resolveRow(runId: string, toolUseId: string): void {
+  const rows = state.interactions.get(runId) ?? [];
+  const row = rows.find(r => r.tool_use_id === toolUseId);
+  if (row) row.status = 'answered';
+  const found = state.runs.get(runId);
+  if (found && !rows.some(r => r.status === 'pending')) found.run.status = 'running';
+}
+fakeApi.post('/api/workflows/runs/:runId/ask/:toolUseId/answer', c => {
+  const toolUseId = c.req.param('toolUseId');
+  const status = state.answerStatus.get(toolUseId) ?? 200;
+  if (status !== 200)
+    return c.json({ error: `answer refused with ${String(status)}` }, status as 400);
+  resolveRow(c.req.param('runId'), toolUseId);
+  return c.json({ success: true, message: 'ok' });
+});
+fakeApi.post('/api/workflows/runs/:runId/permissions/:toolUseId/confirm', c => {
+  if (state.permissionStatus !== 200) {
+    return c.json({ error: 'Only the run starter can confirm' }, state.permissionStatus as 403);
+  }
+  resolveRow(c.req.param('runId'), c.req.param('toolUseId'));
+  return c.json({ success: true, message: 'ok' });
+});
 fakeApi.get('/api/conversations/:id/messages', c => c.json(state.messages));
 
 const handler = createMcpServerHandler({
@@ -200,6 +248,10 @@ beforeEach(() => {
   state.dispatchStatus = 'started';
   state.approveStatus = 200;
   state.messages = [];
+  state.interactions.clear();
+  state.viewerIsStarter = true;
+  state.answerStatus.clear();
+  state.permissionStatus = 200;
 });
 
 describe('discovery and protocol era', () => {
@@ -698,6 +750,247 @@ describe('tasks/cancel', () => {
       { name: '00000000-0000-4000-8000-000000000004' }
     );
     expect(callsTo('POST', '/cancel')).toHaveLength(0);
+  });
+});
+
+describe('tasks with AskHuman and permission input', () => {
+  const RUN = '00000000-0000-4000-8000-000000000009';
+  const SCOPE_QUESTION = {
+    id: 'scope',
+    prompt: 'Which scope?',
+    selection: 'single',
+    options: ['small', 'large'],
+    allowOther: false,
+  };
+  const askRow = (toolUseId: string, nodeId = 'plan'): Record<string, unknown> => ({
+    tool_use_id: toolUseId,
+    node_id: nodeId,
+    kind: 'ask',
+    status: 'pending',
+    envelope: { questions: [SCOPE_QUESTION] },
+  });
+  const permissionRow = (toolUseId: string): Record<string, unknown> => ({
+    tool_use_id: toolUseId,
+    node_id: 'deploy',
+    kind: 'permission',
+    status: 'pending',
+    envelope: { secret: 'never shown' },
+  });
+  const seedWaiting = (rows: Record<string, unknown>[], overrides: Json = {}): void => {
+    seedRun(RUN, { status: 'paused', ...overrides });
+    state.interactions.set(RUN, rows);
+  };
+  const call = (
+    method: 'tasks/get' | 'tasks/update' | 'tasks/cancel',
+    options: RpcOptions & { inputResponses?: Json } = {}
+  ): ReturnType<typeof rpc> => {
+    const { inputResponses, ...rpcOptions } = options;
+    return rpc(
+      method,
+      { taskId: RUN, ...(inputResponses ? { inputResponses } : {}) },
+      { name: RUN, ...rpcOptions }
+    );
+  };
+  const pickSmall = { action: 'accept', content: { q1: 'small' } };
+
+  test('tasks/get reports input_required with the ask request for a paused run', async () => {
+    seedWaiting([askRow('tu-1')]);
+    const task = resultOf((await call('tasks/get', { elicitation: true })).body);
+    expect(task.status).toBe('input_required');
+    const request = (task.inputRequests as Json)['ask-tu-1'] as {
+      method: string;
+      params: { message: string; requestedSchema: Json };
+    };
+    expect(request.method).toBe('elicitation/create');
+    expect(request.params.message).toBe('Which scope?');
+    expect(request.params.requestedSchema).toMatchObject({
+      properties: { q1: { type: 'string', enum: ['small', 'large'] } },
+      required: ['q1'],
+    });
+  });
+
+  test('tasks/update answers an Ask through the answer route', async () => {
+    seedWaiting([askRow('tu-1')]);
+    const { body } = await call('tasks/update', { inputResponses: { 'ask-tu-1': pickSmall } });
+    expect(resultOf(body)).toMatchObject({ resultType: 'complete' });
+    const posts = callsTo('POST', '/ask/tu-1/answer');
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.body).toEqual({ answers: [{ questionId: 'scope', value: 'small' }] });
+  });
+
+  test('tasks/update sends decline for a declined Ask', async () => {
+    seedWaiting([askRow('tu-1')]);
+    await call('tasks/update', { inputResponses: { 'ask-tu-1': { action: 'decline' } } });
+    expect(callsTo('POST', '/ask/tu-1/answer')[0]?.body).toEqual({ decline: true });
+  });
+
+  test('tasks/update ignores a cancelled Ask', async () => {
+    seedWaiting([askRow('tu-1')]);
+    const { body } = await call('tasks/update', {
+      inputResponses: { 'ask-tu-1': { action: 'cancel' } },
+    });
+    expect(resultOf(body)).toMatchObject({ resultType: 'complete' });
+    expect(callsTo('POST', '/answer')).toHaveLength(0);
+  });
+
+  test('tasks/update answers one of two pending Asks and leaves the other open', async () => {
+    seedWaiting([askRow('tu-1'), askRow('tu-2', 'review')]);
+    await call('tasks/update', { inputResponses: { 'ask-tu-1': pickSmall } });
+    const task = resultOf((await call('tasks/get', { elicitation: true })).body);
+    expect(task.status).toBe('input_required');
+    expect(Object.keys(task.inputRequests as Json)).toEqual(['ask-tu-2']);
+    await call('tasks/update', { inputResponses: { 'ask-tu-2': pickSmall } });
+    expect(resultOf((await call('tasks/get', { elicitation: true })).body).status).toBe('working');
+  });
+
+  test('tasks/update applies the approval before Ask answers in one call', async () => {
+    seedWaiting([askRow('tu-1')], {
+      metadata: {
+        approval: { nodeId: 'decide', message: 'Go?', type: 'approval', resolved: null },
+      },
+    });
+    await call('tasks/update', {
+      inputResponses: {
+        'ask-tu-1': pickSmall,
+        'approval-decide': { action: 'accept', content: { decision: 'approve' } },
+      },
+    });
+    const order = state.calls
+      .filter(c => c.method === 'POST')
+      .map(c => (c.path.endsWith('/approve') ? 'approve' : 'answer'));
+    expect(order).toEqual(['approve', 'answer']);
+  });
+
+  test('tasks/update ignores an Ask answered elsewhere (409)', async () => {
+    seedWaiting([askRow('tu-1')]);
+    state.answerStatus.set('tu-1', 409);
+    const { body } = await call('tasks/update', { inputResponses: { 'ask-tu-1': pickSmall } });
+    expect(resultOf(body)).toMatchObject({ resultType: 'complete' });
+  });
+
+  test('tasks/update reports a rejected Ask answer (400) with the failed key', async () => {
+    seedWaiting([askRow('tu-1')]);
+    state.answerStatus.set('tu-1', 400);
+    const { body } = await call('tasks/update', { inputResponses: { 'ask-tu-1': pickSmall } });
+    expect(errorOf(body)).toMatchObject({
+      code: -32602,
+      data: { failed: [{ key: 'ask-tu-1' }], applied: [] },
+    });
+  });
+
+  test('tasks/update reports failed keys after applying the others and a retry applies only the failed one', async () => {
+    seedWaiting([askRow('tu-1'), askRow('tu-2')]);
+    state.answerStatus.set('tu-2', 400);
+    const both = { 'ask-tu-1': pickSmall, 'ask-tu-2': pickSmall };
+    const first = await call('tasks/update', { inputResponses: both });
+    expect(errorOf(first.body).data).toMatchObject({
+      failed: [{ key: 'ask-tu-2' }],
+      applied: ['ask-tu-1'],
+    });
+    state.answerStatus.clear();
+    await call('tasks/update', { inputResponses: both });
+    expect(callsTo('POST', '/ask/tu-1/answer')).toHaveLength(1);
+    expect(callsTo('POST', '/ask/tu-2/answer')).toHaveLength(2);
+  });
+
+  test('tasks/update fails an Ask answer that misses a question before any request', async () => {
+    seedWaiting([askRow('tu-1')]);
+    const { body } = await call('tasks/update', {
+      inputResponses: { 'ask-tu-1': { action: 'accept', content: {} } },
+    });
+    expect(errorOf(body)).toMatchObject({ code: -32602, data: { failed: [{ key: 'ask-tu-1' }] } });
+    expect(callsTo('POST', '/answer')).toHaveLength(0);
+  });
+
+  test('tasks/update confirms a permission with the intent text', async () => {
+    seedWaiting([permissionRow('tu-p')]);
+    await call('tasks/update', {
+      inputResponses: { 'permission-tu-p': { action: 'accept', content: { intent: 'go ahead' } } },
+    });
+    expect(callsTo('POST', '/permissions/tu-p/confirm')[0]?.body).toEqual({ intent: 'go ahead' });
+  });
+
+  test('tasks/update reports a forbidden permission confirm (403)', async () => {
+    seedWaiting([permissionRow('tu-p')]);
+    state.permissionStatus = 403;
+    const { body } = await call('tasks/update', {
+      inputResponses: { 'permission-tu-p': { action: 'accept', content: { intent: 'go ahead' } } },
+    });
+    expect(errorOf(body)).toMatchObject({
+      code: -32602,
+      data: { failed: [{ key: 'permission-tu-p' }] },
+    });
+  });
+
+  test('tasks/update error data for a failed permission confirm holds no intent text', async () => {
+    seedWaiting([permissionRow('tu-p')]);
+    state.permissionStatus = 403;
+    const { body } = await call('tasks/update', {
+      inputResponses: {
+        'permission-tu-p': { action: 'accept', content: { intent: 'my private decision' } },
+      },
+    });
+    expect(JSON.stringify(errorOf(body))).not.toContain('my private decision');
+  });
+
+  test('tasks/update ignores a permission key for a caller who did not start the run', async () => {
+    seedWaiting([permissionRow('tu-p')]);
+    state.viewerIsStarter = false;
+    await call('tasks/update', {
+      inputResponses: { 'permission-tu-p': { action: 'accept', content: { intent: 'go ahead' } } },
+    });
+    expect(callsTo('POST', '/confirm')).toHaveLength(0);
+  });
+
+  test('tasks/update forwards the caller identity headers to the answer route', async () => {
+    seedWaiting([askRow('tu-1')]);
+    await call('tasks/update', {
+      inputResponses: { 'ask-tu-1': pickSmall },
+      headers: { cookie: 'sid=abc' },
+    });
+    expect(callsTo('POST', '/answer')[0]?.headers.get('cookie')).toBe('sid=abc');
+  });
+
+  test('tasks/cancel cancels a run waiting on an Ask and the Ask is no longer open', async () => {
+    seedWaiting([askRow('tu-1')]);
+    await call('tasks/cancel');
+    expect(callsTo('POST', `/runs/${RUN}/cancel`)).toHaveLength(1);
+    const task = resultOf((await call('tasks/get', { elicitation: true })).body);
+    expect(task.status).toBe('cancelled');
+    expect(task.inputRequests).toBeUndefined();
+    expect(state.interactions.get(RUN)?.[0]?.status).toBe('purged');
+  });
+
+  test('tasks/cancel cancels a run waiting on a permission the caller did not start', async () => {
+    seedWaiting([permissionRow('tu-p')]);
+    state.viewerIsStarter = false;
+    await call('tasks/cancel');
+    expect(callsTo('POST', `/runs/${RUN}/cancel`)).toHaveLength(1);
+  });
+
+  test('tasks/cancel keeps a run at an approval gate paused even with an open Ask', async () => {
+    seedWaiting([askRow('tu-1')], {
+      metadata: {
+        approval: { nodeId: 'decide', message: 'Go?', type: 'approval', resolved: null },
+      },
+    });
+    await call('tasks/cancel');
+    expect(callsTo('POST', '/cancel')).toHaveLength(0);
+  });
+
+  test('tasks/cancel twice returns no error and calls the cancel route once', async () => {
+    seedWaiting([askRow('tu-1')]);
+    const first = await call('tasks/cancel');
+    const second = await call('tasks/cancel');
+    expect(first.body.error).toBeUndefined();
+    expect(second.body.error).toBeUndefined();
+    expect(callsTo('POST', '/cancel')).toHaveLength(1);
+  });
+
+  test('tasks/cancel forwards the caller identity headers to the cancel route', async () => {
+    seedWaiting([askRow('tu-1')]);
+    await call('tasks/cancel', { headers: { cookie: 'sid=abc' } });
+    expect(callsTo('POST', '/cancel')[0]?.headers.get('cookie')).toBe('sid=abc');
   });
 });
 

@@ -95,6 +95,7 @@ The task id is the Archon run id. A task is never expired or failed because of i
 |------------|-------------|---------|
 | `pending`, `running` | `working` | `statusMessage` = the running node |
 | `paused` at an approval or interactive-loop gate, not answered yet | `input_required` | `inputRequests` (below) |
+| `paused` with an open AskHuman or permission interaction | `input_required` | `inputRequests` (below) |
 | `paused`, answer recorded, resume pending | `working` | `statusMessage: "answer received"` |
 | `paused` at another gate (`workflow:` child, container write-back, Plannotator) | `working` | `statusMessage` names the gate and the run URL; answer it in Archon |
 | `completed` | `completed` | `result` = `{ resultType: "complete", content, structuredContent: { run_id, workflow, outcome?, pr_url?, ci?, url, output } }`. `output` is the parsed output of the workflow's `returns:` node, else of the last completed node. |
@@ -148,9 +149,89 @@ Answer with `tasks/update`:
 - An approve or reject that Archon refuses (for example the run is no longer paused) is
   returned as `-32602` with Archon's message.
 
-`tasks/cancel` cancels a `working` run. A run waiting for an answer stays paused (the
-cancel is acknowledged only), so a person can still answer it in Archon. A finished run is
-acknowledged without change.
+### AskHuman questions
+
+A run that waits on an AskHuman question list is `input_required`, with one input request
+per open question list. The key is `ask-<toolUseId>`. A run with two parallel question
+lists shows both keys; answering one leaves the other open, and the task stays
+`input_required` until the last one is answered.
+
+All questions of one list are in one form. Question *i* (counting from 1) becomes the
+property `q<i>`, so a question id never collides with a property name:
+
+| Question | Form property |
+|----------|---------------|
+| single choice | `q<i>`: string with `enum` = the options, required |
+| multiple choice | `q<i>`: array of `enum` strings, `minItems: 1`, required |
+| `allowOther` | an extra optional string `q<i>_other`; the choice itself is then optional too |
+| no options | `q<i>`: free-text string, required |
+
+```json
+{
+  "ask-toolu_01": {
+    "method": "elicitation/create",
+    "params": {
+      "mode": "form",
+      "message": "Which scope?",
+      "requestedSchema": {
+        "type": "object",
+        "properties": { "q1": { "type": "string", "title": "Which scope?", "enum": ["small", "large"] } },
+        "required": ["q1"]
+      }
+    }
+  }
+}
+```
+
+The message of a list with several questions is `Answer <n> questions from node <nodeId>.`
+The form carries no run URL. When the stored questions cannot be read, the form is empty
+and the message points to the Archon UI; declining still works.
+
+```json
+{ "taskId": "<run id>", "inputResponses": { "ask-toolu_01": { "action": "accept", "content": { "q1": "small" } } } }
+```
+
+- `accept` sends the answers to the Ask answer route. For a single choice a non-blank
+  `q<i>_other` wins over `q<i>`; for multiple choice it is appended to the chosen values.
+  Archon checks the values against the options and `allowOther`.
+- `decline` sends a decline; `cancel` does nothing.
+- Without the `elicitation` capability, `inputRequests` is `{}` and `statusMessage` names
+  the node and the UI link.
+
+### Permission confirmations
+
+Permission support is in place but dormant: no workflow step creates a permission
+interaction yet. When one exists, it appears as `permission-<toolUseId>` with one required
+string field `intent`, and `accept` sends `{ intent }` to the permission confirm route.
+The form never copies data from the stored request.
+
+Only the person who started the run can confirm a permission. Other callers see no
+permission request in `inputRequests`; `statusMessage` says that the run starter must
+confirm it. Declining or cancelling a permission request does nothing, because a
+permission has no decline.
+
+A confirmed permission does not restart the run by itself yet; that is a known follow-up of
+the confirm route.
+
+### Several answers in one `tasks/update`
+
+- Keys that are unknown, already answered, or no longer open are ignored. A `409` or `404`
+  from Archon for an Ask or a permission means the same.
+- An approval answer is applied first, then the interactions in creation order.
+- When Archon refuses an answer (for example `400` for a value that is not an option), the
+  other answers are still applied, and the call fails with `-32602`. The error `data` is
+  `{ failed: [{ key, message }], applied: [key, ...] }`. Applied keys are no longer open, so
+  a client that sends the whole set again repeats only the failed answers.
+- An approval that Archon refuses fails the call at once, as described above.
+
+### Cancel
+
+`tasks/cancel` cancels a `working` run. A run that waits on an AskHuman question or a
+permission is cancelled too: its pending interactions are purged and the task becomes
+`cancelled`, so a client can stop work that no longer matters. A run that waits at an
+approval gate stays paused (the cancel is acknowledged only), so a person can still answer
+it in Archon, even when a question is open at the same time. A finished run is acknowledged
+without change. A second cancel changes nothing.
 
 ## Events
 
@@ -158,11 +239,13 @@ One event type, `workflow_run.status_changed`, with `poll` and `push` delivery.
 
 - Arguments (all optional): `run_id` (a run id, else `-32602`), `workflow`. No arguments =
   every run of the install.
-- Payload: `{ run_id, workflow, status, task_status, node?, question?, pr_url?, ci?, url, error? }`.
+- Payload: `{ run_id, workflow, status, task_status, node?, question?, input_request_keys?, pr_url?, ci?, url, error? }`.
+  `input_request_keys` lists the keys of the open AskHuman and permission requests, never
+  their content; call `tasks/get` for the form. It is absent when none are open.
   `ci` (`{ conclusion, failed, checks_url }`) is set only on a terminal event (completed,
   failed or cancelled): the final output's `ci`, else the newest CI result of a completed
   node. A CI result alone never adds an event while the run is active.
-- One event per change of status or open gate, plus one when a PR link (`pr_url` in a node's
+- One event per change of status, open gate or open input request keys, plus one when a PR link (`pr_url` in a node's
   JSON output) first appears while the run is still running.
 - `eventId` = `<run_id>:<seq>` (seq counts from 1 per run).
 - Events come from a durable log (`remote_agent_workflow_run_status_log`), so cursors stay

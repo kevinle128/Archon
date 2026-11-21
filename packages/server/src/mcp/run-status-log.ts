@@ -25,6 +25,7 @@ import { loadConfig } from '@archon/core/config';
 import * as codebaseDb from '@archon/core/db/codebases';
 import * as workflowDb from '@archon/core/db/workflows';
 import * as workflowEventDb from '@archon/core/db/workflow-events';
+import * as pendingInteractionDb from '@archon/core/db/workflow-pending-interactions';
 import * as statusLogDb from '@archon/core/db/workflow-run-status-log';
 import type {
   AppendStatusLogRowInput,
@@ -40,6 +41,7 @@ import {
   buildStatusEventPayload,
   inputRequestKey,
   toIsoTimestamp,
+  type InteractionSnapshot,
   type RunEventSnapshot,
   type RunSnapshot,
 } from './run-task';
@@ -53,10 +55,11 @@ function getLog(): ReturnType<typeof createLogger> {
 const DEFAULT_RECONCILE_INTERVAL_MS = 15_000;
 const DEFAULT_NODE_COMPLETED_RECHECK_MS = 500;
 
-/** Emitter events that can change status, gate, or PR link. */
+/** Emitter events that can change status, open input, or PR link. */
 const TRIGGER_EVENT_TYPES = new Set<WorkflowEmitterEvent['type']>([
   'workflow_started',
   'approval_pending',
+  'node_awaiting',
   'interaction_resolved',
   'workflow_completed',
   'workflow_failed',
@@ -108,12 +111,31 @@ export interface StatusLogStore {
   ): Promise<string | undefined>;
 }
 
+/** Human-input rows of a paused run. A corrupt row must not stop the run's status rows. */
+async function readInteractions(runId: string): Promise<InteractionSnapshot[]> {
+  try {
+    const rows = await pendingInteractionDb.listPendingInteractions(runId);
+    return rows.map(row => ({
+      tool_use_id: row.tool_use_id,
+      node_id: row.node_id,
+      kind: row.kind,
+      status: row.status,
+      envelope: row.envelope,
+    }));
+  } catch (error) {
+    if (!(error instanceof pendingInteractionDb.PendingInteractionCorruptRowError)) throw error;
+    getLog().warn({ runId }, 'mcp.status_log_interactions_unreadable');
+    return [];
+  }
+}
+
 export function createDbStatusLogStore(): StatusLogStore {
   return {
     async getRun(runId: string): Promise<(RunSnapshot & { codebase_id: string | null }) | null> {
       const run = await workflowDb.getWorkflowRun(runId);
       if (!run) return null;
       return {
+        interactions: run.status === 'paused' ? await readInteractions(runId) : [],
         id: run.id,
         workflow_name: run.workflow_name,
         status: run.status,
@@ -185,7 +207,7 @@ function stableJson(value: unknown): string {
 }
 
 /**
- * What makes a new event: status, open gate, PR link, and the CI result. CI is
+ * What makes a new event: status, open gate, open input request keys, PR link, and the CI result. CI is
  * part of the key so a final output that lands after the terminal status still
  * produces a corrected terminal event.
  */
@@ -195,7 +217,7 @@ function snapshotKey(
   data: Record<string, unknown>
 ): string {
   const prUrl = typeof data.pr_url === 'string' ? data.pr_url : null;
-  return stableJson([status, gateKey, prUrl, data.ci ?? null]);
+  return stableJson([status, gateKey, data.input_request_keys ?? null, prUrl, data.ci ?? null]);
 }
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
@@ -215,7 +237,12 @@ function runFingerprint(run: RunSnapshot): string {
           resolved: (approval as Record<string, unknown>).resolved,
         }
       : null;
-  return stableJson([run.status, gate, run.metadata.error, run.completed_at]);
+  // A second Ask in an already paused run changes only the pending rows, not the run row.
+  const openRows = (run.interactions ?? [])
+    .filter(row => row.status === 'pending')
+    .map(row => row.tool_use_id)
+    .sort();
+  return stableJson([run.status, gate, run.metadata.error, run.completed_at, openRows]);
 }
 
 type ObserveMode = 'full' | 'reconcile';
