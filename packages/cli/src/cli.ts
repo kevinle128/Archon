@@ -304,7 +304,7 @@ Commands:
   complete <branch> [...]    Complete branch lifecycle (remove worktree + branches)
   serve                      Start the web UI server (downloads web UI on first run)
   skill install [path]       Install the bundled Archon skill into .claude/skills/archon
-  doctor [--full]            Verify your Archon setup (Claude/Codex/Grok CLIs, gh auth, DB, adapters; --full also probes OpenCode)
+  doctor [--full]            Verify your Archon setup (Claude/Codex/Grok CLIs, Cursor API key, gh auth, DB, adapters; --full also probes OpenCode)
   auth github                Connect your GitHub identity via device flow (multi-user installs)
   ai key set <provider>      Connect an AI provider API key (multi-user installs; key read from prompt/stdin)
   ai login <provider>        Connect a subscription (claude/copilot) via OAuth — codex is API-key only

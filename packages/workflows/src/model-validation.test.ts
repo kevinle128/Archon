@@ -47,6 +47,13 @@ describe('buildAiProfile — tier defaults', () => {
     expect(profile.aliases.large?.effort).toBe('high');
   });
 
+  test('resolves cursor small/medium/large to composer-2.5', () => {
+    const profile = buildAiProfile('cursor', {});
+    expect(profile.aliases.small).toEqual({ provider: 'cursor', model: 'composer-2.5' });
+    expect(profile.aliases.medium).toEqual({ provider: 'cursor', model: 'composer-2.5' });
+    expect(profile.aliases.large).toEqual({ provider: 'cursor', model: 'composer-2.5' });
+  });
+
   test('unknown provider yields empty alias map (no tier defaults)', () => {
     const profile = buildAiProfile('newprovider');
     expect(profile.defaultProvider).toBe('newprovider');

@@ -42,6 +42,13 @@ export interface CodexProviderDefaults {
   codexBinaryPath?: string;
 }
 
+/** Built-in Cursor Agent SDK provider defaults. */
+export interface CursorProviderDefaults {
+  [key: string]: unknown;
+  /** Cursor model id returned by `Cursor.models.list()`, e.g. `composer-2.5`. */
+  model?: string;
+}
+
 /** Built-in Grok Build CLI provider defaults. */
 export interface GrokProviderDefaults {
   [key: string]: unknown;
@@ -733,7 +740,7 @@ export interface AgentRequestOptions {
   /**
    * In-process tools the model may call this turn. Defined once by the caller
    * (e.g. core's manage_run) and adapted per provider — Claude wraps each via
-   * `createSdkMcpServer`/`tool()`, Pi via `customTools`. Providers without an
+   * `createSdkMcpServer`/`tool()`, Pi and Cursor via `customTools`. Providers without an
    * in-process tool path (Codex/OpenCode) ignore them. Gated on the
    * `nativeTools` capability.
    */

@@ -92,6 +92,12 @@ describe('registry', () => {
       expect(typeof provider.sendQuery).toBe('function');
     });
 
+    test('returns CursorProvider for cursor type', () => {
+      const provider = getAgentProvider('cursor');
+      expect(provider.getType()).toBe('cursor');
+      expect(typeof provider.sendQuery).toBe('function');
+    });
+
     test('returns GrokProvider for grok type', () => {
       const provider = getAgentProvider('grok');
       expect(provider.getType()).toBe('grok');
@@ -101,7 +107,7 @@ describe('registry', () => {
     test('throws UnknownProviderError for unknown type', () => {
       expect(() => getAgentProvider('unknown')).toThrow(UnknownProviderError);
       expect(() => getAgentProvider('unknown')).toThrow(
-        "Unknown provider: 'unknown'. Available: claude, codex, grok"
+        "Unknown provider: 'unknown'. Available: claude, codex, cursor, grok"
       );
     });
 
@@ -196,14 +202,14 @@ describe('registry', () => {
       }
     });
 
-    test('only Claude advertises native interrupt', () => {
+    test('only Claude and Cursor advertise native interrupt', () => {
       registerCommunityProviders();
       const capable = getProviderInfoList()
         .filter(info => info.capabilities.interrupt === 'native')
         .map(info => info.id)
         .sort();
       // e2e-fake stays unregistered here (ARCHON_E2E_FAKE_PROVIDER unset).
-      expect(capable).toEqual(['claude']);
+      expect(capable).toEqual(['claude', 'cursor']);
     });
 
     test('Codex, DeepSeek, Grok, and OMP advertise stream-abort', () => {
@@ -268,24 +274,25 @@ describe('registry', () => {
   describe('getRegisteredProviders', () => {
     test('returns all registered providers', () => {
       const all = getRegisteredProviders();
-      expect(all.length).toBe(3);
+      expect(all.length).toBe(4);
       const ids = all.map(r => r.id);
       expect(ids).toContain('claude');
       expect(ids).toContain('codex');
+      expect(ids).toContain('cursor');
       expect(ids).toContain('grok');
     });
 
     test('includes community providers after registration', () => {
       registerProvider(makeMockRegistration('my-llm'));
       const all = getRegisteredProviders();
-      expect(all.length).toBe(4);
+      expect(all.length).toBe(5);
     });
   });
 
   describe('getProviderInfoList', () => {
     test('returns API-safe projection without factory', () => {
       const infos = getProviderInfoList();
-      expect(infos.length).toBe(3);
+      expect(infos.length).toBe(4);
       for (const info of infos) {
         expect(info).toHaveProperty('id');
         expect(info).toHaveProperty('displayName');
@@ -315,7 +322,7 @@ describe('registry', () => {
       registerBuiltinProviders();
       registerBuiltinProviders();
       const all = getRegisteredProviders();
-      expect(all.length).toBe(3);
+      expect(all.length).toBe(4);
     });
 
     test('registers Grok as built-in with xAI API-key delivery', () => {
@@ -327,6 +334,16 @@ describe('registry', () => {
           specs: [{ vendor: 'xai', displayName: 'xAI', kinds: ['api_key'] }],
         },
       });
+    });
+
+    test('registers Cursor as built-in with API-key delivery matching runtime capabilities', () => {
+      const registration = getRegistration('cursor');
+      expect(registration.builtIn).toBe(true);
+      expect(registration.credentials).toEqual({
+        kind: 'static',
+        specs: [{ vendor: 'cursor', displayName: 'Cursor', kinds: ['api_key'] }],
+      });
+      expect(registration.capabilities).toEqual(getAgentProvider('cursor').getCapabilities());
     });
   });
 
@@ -418,7 +435,7 @@ describe('registry', () => {
       const ids = getRegisteredProviders()
         .map(p => p.id)
         .sort();
-      expect(ids).toEqual(['claude', 'codex', 'grok', 'pi']);
+      expect(ids).toEqual(['claude', 'codex', 'cursor', 'grok', 'pi']);
     });
   });
 
@@ -469,7 +486,7 @@ describe('registry', () => {
       const ids = getRegisteredProviders()
         .map(p => p.id)
         .sort();
-      expect(ids).toEqual(['claude', 'codex', 'grok', 'opencode', 'pi']);
+      expect(ids).toEqual(['claude', 'codex', 'cursor', 'grok', 'opencode', 'pi']);
     });
   });
 
@@ -518,7 +535,7 @@ describe('registry', () => {
       const ids = getRegisteredProviders()
         .map(p => p.id)
         .sort();
-      expect(ids).toEqual(['claude', 'codex', 'copilot', 'grok']);
+      expect(ids).toEqual(['claude', 'codex', 'copilot', 'cursor', 'grok']);
     });
   });
 
@@ -566,7 +583,7 @@ describe('registry', () => {
       const ids = getRegisteredProviders()
         .map(p => p.id)
         .sort();
-      expect(ids).toEqual(['claude', 'codex', 'grok', 'qodercli']);
+      expect(ids).toEqual(['claude', 'codex', 'cursor', 'grok', 'qodercli']);
     });
   });
 

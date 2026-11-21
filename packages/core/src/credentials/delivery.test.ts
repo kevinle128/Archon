@@ -22,7 +22,7 @@ function oauth(token = 'oauth-bearer'): ResolvedCredential {
 describe('credentials/delivery', () => {
   describe('KNOWN_VENDORS', () => {
     test('includes the vendor-canonical agent credential ids', () => {
-      for (const id of ['anthropic', 'openai', 'github-copilot']) {
+      for (const id of ['anthropic', 'openai', 'github-copilot', 'cursor']) {
         expect(KNOWN_VENDORS.has(id)).toBe(true);
       }
     });
@@ -164,6 +164,21 @@ describe('credentials/delivery', () => {
     test("legacy 'copilot' id normalizes to the same delivery", () => {
       const r = deliverCredential('copilot', apiKey('pat-y'), { artifactsDir: ART_DIR });
       expect(r.env).toEqual({ COPILOT_GITHUB_TOKEN: 'pat-y' });
+    });
+  });
+
+  describe('cursor', () => {
+    test('api_key → CURSOR_API_KEY', () => {
+      const result = deliverCredential('cursor', apiKey('cursor-key'), {
+        artifactsDir: ART_DIR,
+      });
+      expect(result).toEqual({ env: { CURSOR_API_KEY: 'cursor-key' } });
+    });
+
+    test('rejects OAuth credentials', () => {
+      expect(() =>
+        deliverCredential('cursor', oauth('cursor-oauth'), { artifactsDir: ART_DIR })
+      ).toThrow('Cursor credentials support API keys only');
     });
   });
 

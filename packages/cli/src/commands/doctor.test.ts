@@ -15,6 +15,7 @@ import * as git from '@archon/git';
 import {
   checkClaudeBinary,
   checkCodexBinary,
+  checkCursor,
   checkGrok,
   checkOpenCode,
   checkDatabase,
@@ -31,6 +32,7 @@ import {
   doctorCommand,
   type ClaudeBinaryDeps,
   type CodexBinaryDeps,
+  type CursorDeps,
   type DatabaseDeps,
   type FolderProjectDeps,
   type GrokDeps,
@@ -343,6 +345,70 @@ describe('checkGrok', () => {
     expect(result.status).toBe('fail');
     expect(result.message).toContain('not logged in');
     expect(result.message).toContain('grok login');
+  });
+});
+
+describe('checkCursor', () => {
+  const notConfigured: CursorDeps = {
+    isDefaultAssistant: false,
+    credentialConnected: false,
+  };
+
+  it('skips when Cursor is neither the default assistant nor connected', async () => {
+    const result = await checkCursor({}, async () => notConfigured);
+    expect(result).toEqual({
+      label: 'Cursor',
+      status: 'skip',
+      message: 'Cursor not configured (not the default assistant, no Cursor credential connected)',
+    });
+  });
+
+  it('passes when CURSOR_API_KEY is set', async () => {
+    const result = await checkCursor(
+      { CURSOR_API_KEY: ' cursor-test ' },
+      async () => notConfigured
+    );
+    expect(result).toEqual({
+      label: 'Cursor',
+      status: 'pass',
+      message: 'CURSOR_API_KEY is set',
+    });
+  });
+
+  it('passes when the CLI user has a stored cursor credential', async () => {
+    const result = await checkCursor({}, async () => ({
+      isDefaultAssistant: false,
+      credentialConnected: true,
+    }));
+    expect(result).toEqual({
+      label: 'Cursor',
+      status: 'pass',
+      message: 'Cursor API key connected for the CLI user',
+    });
+  });
+
+  it('fails when Cursor is configured and no key is available', async () => {
+    const fromEnv = await checkCursor(
+      { DEFAULT_AI_ASSISTANT: 'cursor', CURSOR_API_KEY: '  ' },
+      async () => notConfigured
+    );
+    const fromConfig = await checkCursor({}, async () => ({
+      isDefaultAssistant: true,
+      credentialConnected: false,
+    }));
+
+    expect(fromEnv.status).toBe('fail');
+    expect(fromEnv.message).toContain('no API key');
+    expect(fromEnv.message).toContain('archon ai key set cursor');
+    expect(fromConfig.status).toBe('fail');
+  });
+
+  it('still checks when config loading throws and the env selects Cursor', async () => {
+    const result = await checkCursor({ DEFAULT_AI_ASSISTANT: 'cursor' }, async () => {
+      throw new Error('config blew up');
+    });
+    expect(result.status).toBe('fail');
+    expect(result.message).toContain('no API key');
   });
 });
 
@@ -947,6 +1013,10 @@ describe('doctorCommand', () => {
   const throwing = (label: string) => async (): Promise<never> => {
     throw new Error(`${label} blew up`);
   };
+
+  it('includes the Cursor credential check in the default suite', () => {
+    expect(doctorCommand.toString()).toContain('checkCursor(env)');
+  });
 
   it('returns 0 when every check passes', async () => {
     const exit = await doctorCommand([passing('A'), passing('B')]);

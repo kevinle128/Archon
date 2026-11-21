@@ -16,7 +16,7 @@ governed native tools that Archon injects for the current workflow when applicab
 Codex is an explicit exception: its SDK adds declared servers to ambient configuration
 rather than replacing it.
 
-MCP works with Claude, Codex, Copilot, and DeepSeek workflow nodes. Pi and OpenCode nodes
+MCP works with Claude, Codex, Cursor, Copilot, and DeepSeek workflow nodes. Pi and OpenCode nodes
 currently warn and ignore the `mcp` field. Devin nodes do not accept Archon's `mcp:` field;
 Devin uses the servers in its own `~/.config/devin/mcp_config.json`.
 

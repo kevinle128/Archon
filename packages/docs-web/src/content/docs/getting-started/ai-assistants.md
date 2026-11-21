@@ -1,6 +1,6 @@
 ---
 title: AI Assistants
-description: Configure Claude Code, Codex, Grok, Qoder CLI, OMP CLI, OpenCode, GitHub Copilot, Pi, DeepSeek Harness, and Devin CLI as AI assistants for Archon.
+description: Configure Claude Code, Codex, Cursor, Grok, Qoder CLI, OMP CLI, OpenCode, GitHub Copilot, Pi, DeepSeek Harness, and Devin CLI as AI assistants for Archon.
 category: getting-started
 area: clients
 audience: [user]
@@ -21,7 +21,7 @@ When a workflow node sets `output_format`, the guarantee level depends on the pr
 | Provider | Tier | How it works | On a validation miss |
 |----------|------|--------------|----------------------|
 | Claude, Codex, Grok, OpenCode | **enforced** | The SDK/backend grammar-constrains decoding (`output_config.format` / `outputSchema` / `--json-schema` / `format:{json_schema}`). | The node **fails** — a refusal or `max_tokens` truncation can still bypass grammar enforcement, so the parsed output is validated post-parse for these too. No reask (a failure here is a genuine edge). |
-| Pi, Copilot, Qoder CLI, OMP CLI, DeepSeek, Devin | **best-effort** | The schema is appended to the prompt; JSON is extracted from the response and structurally repaired (trailing commas, single quotes, truncated tails). | The executor re-asks (prompt + the schema errors) up to **3×**; if still invalid, the node **fails loudly**. |
+| Cursor, Pi, Copilot, Qoder CLI, OMP CLI, DeepSeek, Devin | **best-effort** | The schema is appended to the prompt; JSON is extracted from the response and structurally repaired (trailing commas, single quotes, truncated tails). | The executor re-asks (prompt + the schema errors) up to **3×**; if still invalid, the node **fails loudly**. |
 
 In all cases the parsed output is **validated against your `output_format` schema** before downstream nodes see it, and a node that declares `output_format` but produces no schema-valid output **fails** rather than silently degrading. See [Authoring Workflows → `output_format`](/guides/authoring-workflows/#output_format-for-structured-json) for field-access (`$node.output.field`) semantics.
 
@@ -258,6 +258,37 @@ Direct Codex chat keeps native discovery behavior.
 Run `archon skill install` (or `archon setup`) to install the bundled `archon` and `manage-run` skills for Claude Code, Codex, and Grok.
 
 See [Per-Node Skills](/guides/skills/#codex-compatibility) for behavior details and limitations.
+
+## Cursor
+
+Archon integrates Cursor as a local coding-agent harness through the official
+[`@cursor/sdk`](https://cursor.com/docs/api/sdk/typescript). The agent loop and file operations run
+on the Archon host in the workflow's checkout; model inference remains hosted by Cursor.
+
+Create a Cursor API key and connect it in **Settings → AI Providers**, or set it for a solo install:
+
+```ini
+CURSOR_API_KEY=your-key
+```
+
+Configure Cursor in `~/.archon/config.yaml` or the repository's `.archon/config.yaml`:
+
+```yaml
+assistant: cursor
+assistants:
+  cursor:
+    model: composer-2.5
+```
+
+Cursor supports session resume, streamed text/thinking/tool events, MCP, tool allow/deny lists,
+in-process Archon tools such as `manage_run`, usage reporting, and operator Stop through the SDK's
+native run cancellation. `output_format` is best-effort: Archon prompts for JSON, validates it
+against the declared schema, and re-asks on validation failure.
+
+Cursor currently runs on the host only. Container execution, `AskHuman`, per-node `skills:` and
+`agents:`, soft injection, and the richer Archon `sandbox:` policy are reported as unsupported
+rather than silently ignored. Cursor model availability depends on the connected account; use a
+model id returned by Cursor's model catalog.
 
 ## Grok Build
 

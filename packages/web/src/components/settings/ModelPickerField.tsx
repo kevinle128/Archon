@@ -68,8 +68,8 @@ interface ModelPickerFieldProps {
  *   dropdown; it lists `backend/` prefixes (model counts, connected state) and
  *   the model id itself stays free-typed — the endpoint doesn't expose ids.
  * - Copilot: fixed select over the curated list + a "Custom…" free-text escape.
- * - Claude/Codex (and unknown agents): free text; Claude/Codex surface their
- *   curated common options as suggestions.
+ * - Claude/Codex/Cursor (and unknown agents): free text; Claude/Codex/Cursor
+ *   surface their curated common options as suggestions.
  *
  * Pickers guide, never gate: every shape saves arbitrary strings, and a model
  * on a disconnected backend only draws a non-blocking inline hint.

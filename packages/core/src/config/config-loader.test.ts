@@ -1069,6 +1069,20 @@ assistants:
       expect(safe.assistants.codex).not.toHaveProperty('additionalDirectories');
     });
 
+    test('merges assistants.cursor.model and exposes only that field', async () => {
+      mockFsReadFile.mockResolvedValue(`
+assistants:
+  cursor:
+    model: composer-2.5
+    apiKey: secret-should-not-leak
+`);
+      const config = await loadConfig();
+      expect(config.assistants.cursor.model).toBe('composer-2.5');
+      const safe = toSafeConfig(config);
+      expect(safe.assistants.cursor).toEqual({ model: 'composer-2.5' });
+      expect(safe.assistants.cursor).not.toHaveProperty('apiKey');
+    });
+
     test('exposes only safe Grok assistant fields', async () => {
       mockFsReadFile.mockResolvedValue(`
 assistants:

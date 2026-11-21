@@ -3,6 +3,7 @@ import {
   CLAUDE_MODEL_OPTIONS,
   CODEX_MODEL_OPTIONS,
   COPILOT_MODEL_OPTIONS,
+  CURSOR_MODEL_OPTIONS,
   GROK_MODEL_OPTIONS,
   curatedOptionsForAgent,
   effortForProviderSwitch,
@@ -56,6 +57,7 @@ describe('modelPickerShape', () => {
     expect(modelPickerShape('copilot')).toBe('select');
     expect(modelPickerShape('claude')).toBe('curated');
     expect(modelPickerShape('codex')).toBe('curated');
+    expect(modelPickerShape('cursor')).toBe('curated');
     expect(modelPickerShape('grok')).toBe('curated');
   });
 
@@ -70,6 +72,7 @@ describe('curatedOptionsForAgent', () => {
     expect(curatedOptionsForAgent('claude')).toBe(CLAUDE_MODEL_OPTIONS);
     expect(curatedOptionsForAgent('codex')).toBe(CODEX_MODEL_OPTIONS);
     expect(curatedOptionsForAgent('copilot')).toBe(COPILOT_MODEL_OPTIONS);
+    expect(curatedOptionsForAgent('cursor')).toBe(CURSOR_MODEL_OPTIONS);
     expect(curatedOptionsForAgent('grok')).toBe(GROK_MODEL_OPTIONS);
     expect(curatedOptionsForAgent('pi')).toEqual([]);
     expect(curatedOptionsForAgent('')).toEqual([]);

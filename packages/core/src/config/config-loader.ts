@@ -139,6 +139,7 @@ function mergeAssistantDefaults(
 const SAFE_ASSISTANT_FIELDS: Record<string, readonly string[]> = {
   claude: ['model'],
   codex: ['model', 'modelReasoningEffort', 'webSearchMode'],
+  cursor: ['model'],
   grok: ['model', 'modelReasoningEffort', 'permissionMode'],
   // community providers — list each field we're confident is safe to
   // show in the web UI. Unknown providers fall through with no fields.
@@ -357,7 +358,7 @@ function getDefaults(): MergedConfig {
   // registry.ts#registerCommunityProviders`), so by the time this runs the
   // registry is populated.
   const providers = getRegisteredProviders();
-  const registeredAssistants: AssistantDefaults = { claude: {}, codex: {}, grok: {} };
+  const registeredAssistants: AssistantDefaults = { claude: {}, codex: {}, cursor: {}, grok: {} };
   for (const provider of providers) {
     if (!(provider.id in registeredAssistants)) {
       registeredAssistants[provider.id] = {};

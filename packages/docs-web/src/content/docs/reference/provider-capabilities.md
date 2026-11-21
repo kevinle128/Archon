@@ -27,6 +27,7 @@ per-node YAML field for that provider; a ❌ means the field is accepted but ign
 
 - `claude` — Claude (Anthropic)
 - `codex` — Codex (OpenAI)
+- `cursor` — Cursor
 - `grok` — Grok (xAI)
 - `opencode` — OpenCode (community) *(community provider)*
 - `pi` — Pi (community) *(community provider)*
@@ -38,29 +39,29 @@ per-node YAML field for that provider; a ❌ means the field is accepted but ign
 
 ## Capabilities
 
-| Capability | `claude` | `codex` | `grok` | `opencode` | `pi` | `copilot` | `qodercli` | `omp` | `deepseek` | `devin` |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Session resume | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅⁵ |
-| MCP servers (`mcp:`) | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅³ | ❌ |
-| Hooks (`hooks:`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Skills (`skills:`) | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
-| Inline sub-agents (`agents:`) | ✅ | ❌ | ✅ | ✅² | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Tool restrictions (`allowed_tools`/`denied_tools`) | ✅ | ❌ | ✅¹ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Structured output (`output_format`) | **enforced** | **enforced** | **enforced** | **enforced** | best-effort | best-effort | best-effort | best-effort | best-effort | best-effort |
-| Env injection (`env:`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Cost control (`maxBudgetUsd`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Effort control (`effort`) | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Thinking control (`thinking`) | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| Fallback model (`fallbackModel`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Sandbox (`sandbox`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Setting sources (`settingSources`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| In-process native tools | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Container exec (folder-project container backend) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| AskHuman mid-turn questions | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅⁴ |
-| Turn interrupt (operator Stop) | **native** | **stream-abort** | **stream-abort** | ❌ | ❌ | ❌ | ❌ | **stream-abort** | **stream-abort** | ❌ |
-| Interrupted tool status (per-tool proof) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Soft injection (per-item Send now while generating) | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Delivery acknowledgement (message-id echo) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Capability | `claude` | `codex` | `cursor` | `grok` | `opencode` | `pi` | `copilot` | `qodercli` | `omp` | `deepseek` | `devin` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Session resume | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅⁵ |
+| MCP servers (`mcp:`) | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅³ | ❌ |
+| Hooks (`hooks:`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Skills (`skills:`) | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
+| Inline sub-agents (`agents:`) | ✅ | ❌ | ❌ | ✅ | ✅² | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Tool restrictions (`allowed_tools`/`denied_tools`) | ✅ | ❌ | ✅ | ✅¹ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Structured output (`output_format`) | **enforced** | **enforced** | best-effort | **enforced** | **enforced** | best-effort | best-effort | best-effort | best-effort | best-effort | best-effort |
+| Env injection (`env:`) | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Cost control (`maxBudgetUsd`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Effort control (`effort`) | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Thinking control (`thinking`) | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Fallback model (`fallbackModel`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Sandbox (`sandbox`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Setting sources (`settingSources`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| In-process native tools | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Container exec (folder-project container backend) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| AskHuman mid-turn questions | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅⁴ |
+| Turn interrupt (operator Stop) | **native** | **stream-abort** | **native** | **stream-abort** | ❌ | ❌ | ❌ | ❌ | **stream-abort** | **stream-abort** | ❌ |
+| Interrupted tool status (per-tool proof) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Soft injection (per-item Send now while generating) | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Delivery acknowledgement (message-id echo) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ## Caveats
 
