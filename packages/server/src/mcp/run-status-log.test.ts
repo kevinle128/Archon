@@ -461,7 +461,6 @@ describe('observer only', () => {
   });
 });
 
-// Keep last: it drops the table.
 describe('open AskHuman interactions', () => {
   const question = {
     id: 'scope',
@@ -600,6 +599,7 @@ describe('open AskHuman interactions', () => {
   });
 });
 
+// Keep last: it drops the table.
 describe('missing table', () => {
   test('a write failure is logged and the writer keeps running', async () => {
     await seedRun('r1');
