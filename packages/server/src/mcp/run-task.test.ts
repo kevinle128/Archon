@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
   TASK_TTL_MS,
+  askAnswerFromContent,
+  buildAskRequestedSchema,
   buildDetailedTask,
   buildRunSummary,
   buildStatusEventPayload,
@@ -11,9 +13,11 @@ import {
   selectRunOutput,
   taskStatusOf,
   toIsoTimestamp,
+  type InteractionSnapshot,
   type RunEventSnapshot,
   type RunSnapshot,
 } from './run-task';
+import type { AskHumanQuestion } from '@archon/workflows/schemas/pending-interaction';
 
 const BASE = 'https://archon.example.ts.net';
 
@@ -478,5 +482,192 @@ describe('toIsoTimestamp', () => {
     expect(toIsoTimestamp(null)).toBeNull();
     expect(toIsoTimestamp(undefined)).toBeNull();
     expect(toIsoTimestamp('not a date')).toBe('not a date');
+  });
+});
+
+describe('AskHuman and permission input', () => {
+  const question = (overrides: Partial<AskHumanQuestion> = {}): AskHumanQuestion => ({
+    id: 'scope',
+    prompt: 'Which scope?',
+    selection: 'single',
+    options: ['small', 'large'],
+    allowOther: false,
+    ...overrides,
+  });
+  const ask = (
+    toolUseId: string,
+    overrides: Partial<InteractionSnapshot> = {}
+  ): InteractionSnapshot => ({
+    tool_use_id: toolUseId,
+    node_id: 'plan',
+    kind: 'ask',
+    status: 'pending',
+    envelope: { questions: [question()] },
+    ...overrides,
+  });
+  const permission = (toolUseId: string): InteractionSnapshot => ({
+    tool_use_id: toolUseId,
+    node_id: 'deploy',
+    kind: 'permission',
+    status: 'pending',
+    envelope: { secret: 'sensitive envelope data' },
+  });
+  const waiting = (
+    interactions: InteractionSnapshot[],
+    overrides: Partial<RunSnapshot> = {}
+  ): RunSnapshot => makeRun({ status: 'paused', interactions, ...overrides });
+  const detail = (run: RunSnapshot, elicitation = true): ReturnType<typeof buildDetailedTask> =>
+    buildDetailedTask(run, [], { baseUrl: BASE, elicitation });
+
+  test('taskStatusOf reports input_required for a paused run with a pending Ask', () => {
+    expect(taskStatusOf(waiting([ask('tu-1')]))).toBe('input_required');
+  });
+
+  test('taskStatusOf reports working for a running run with a pending Ask row', () => {
+    expect(taskStatusOf(waiting([ask('tu-1')], { status: 'running' }))).toBe('working');
+  });
+
+  test('taskStatusOf ignores answered and purged interactions', () => {
+    const run = waiting([ask('tu-1', { status: 'answered' }), ask('tu-2', { status: 'purged' })]);
+    expect(taskStatusOf(run)).toBe('working');
+  });
+
+  test('buildDetailedTask lists one ask request per pending Ask in creation order', () => {
+    const task = detail(waiting([ask('tu-b'), ask('tu-a'), ask('tu-c', { status: 'answered' })]));
+    expect(Object.keys(task.inputRequests ?? {})).toEqual(['ask-tu-b', 'ask-tu-a']);
+  });
+
+  test('buildDetailedTask lists the approval request before interaction requests', () => {
+    const run = paused({}, { interactions: undefined });
+    const task = detail({ ...run, interactions: [ask('tu-1')] });
+    expect(Object.keys(task.inputRequests ?? {})).toEqual(['approval-review', 'ask-tu-1']);
+  });
+
+  test('ask form maps a single-select question to a required string enum', () => {
+    expect(buildAskRequestedSchema([question()])).toEqual({
+      type: 'object',
+      properties: { q1: { type: 'string', title: 'Which scope?', enum: ['small', 'large'] } },
+      required: ['q1'],
+    });
+  });
+
+  test('ask form maps a multi-select question to a required array of enum', () => {
+    const form = buildAskRequestedSchema([question({ selection: 'multi' })]);
+    expect(form.properties.q1).toEqual({
+      type: 'array',
+      title: 'Which scope?',
+      minItems: 1,
+      items: { type: 'string', enum: ['small', 'large'] },
+    });
+    expect(form.required).toEqual(['q1']);
+  });
+
+  test('ask form adds an optional other field when allowOther is set', () => {
+    const form = buildAskRequestedSchema([question({ allowOther: true })]);
+    expect(form.properties.q1_other).toEqual({
+      type: 'string',
+      title: 'Which scope? (other answer)',
+    });
+    expect(form.required).toEqual([]);
+  });
+
+  test('ask form uses a free-text field when a question has no options', () => {
+    const form = buildAskRequestedSchema([question({ options: [], allowOther: true })]);
+    expect(form.properties).toEqual({ q1: { type: 'string', title: 'Which scope?' } });
+    expect(form.required).toEqual(['q1']);
+  });
+
+  test('ask form for a corrupt envelope is empty and points to the UI', () => {
+    const task = detail(waiting([ask('tu-1', { envelope: { questions: 'broken' } })]));
+    const request = (task.inputRequests ?? {})['ask-tu-1'] as {
+      params: { message: string; requestedSchema: { properties: object } };
+    };
+    expect(request.params.requestedSchema.properties).toEqual({});
+    expect(request.params.message).toContain('Archon UI');
+  });
+
+  test('ask request message carries no run URL', () => {
+    const task = detail(waiting([ask('tu-1')]));
+    expect(JSON.stringify(task.inputRequests)).not.toContain(BASE);
+  });
+
+  test('answer mapping prefers non-blank other text for single-select', () => {
+    const questions = [question({ allowOther: true })];
+    expect(askAnswerFromContent(questions, { q1: 'small', q1_other: 'medium' })).toEqual({
+      ok: true,
+      body: { answers: [{ questionId: 'scope', value: 'medium' }] },
+    });
+    expect(askAnswerFromContent(questions, { q1: 'small', q1_other: '   ' })).toEqual({
+      ok: true,
+      body: { answers: [{ questionId: 'scope', value: 'small' }] },
+    });
+  });
+
+  test('answer mapping appends other text to multi-select values', () => {
+    const questions = [question({ selection: 'multi', allowOther: true })];
+    expect(askAnswerFromContent(questions, { q1: ['small'], q1_other: 'medium' })).toEqual({
+      ok: true,
+      body: { answers: [{ questionId: 'scope', value: ['small', 'medium'] }] },
+    });
+  });
+
+  test('answer mapping rejects a missing answer before any request', () => {
+    expect(askAnswerFromContent([question()], {})).toEqual({
+      ok: false,
+      message: 'Question 1 needs an answer',
+    });
+  });
+
+  test('permission request has one required intent field and no envelope data', () => {
+    const task = detail(waiting([permission('tu-p')], { viewer_is_starter: true }));
+    const request = (task.inputRequests ?? {})['permission-tu-p'] as {
+      params: { requestedSchema: { required: string[] } };
+    };
+    expect(request.params.requestedSchema.required).toEqual(['intent']);
+    expect(JSON.stringify(task)).not.toContain('sensitive envelope data');
+  });
+
+  test('permission request is hidden from a caller who did not start the run', () => {
+    const task = detail(waiting([permission('tu-p')], { viewer_is_starter: false }));
+    expect(task.status).toBe('input_required');
+    expect(task.inputRequests).toEqual({});
+    expect(task.statusMessage).toContain('run starter');
+  });
+
+  test('without elicitation input requests are empty and the status message names the UI', () => {
+    const task = detail(waiting([ask('tu-1')]), false);
+    expect(task.inputRequests).toEqual({});
+    expect(task.statusMessage).toContain('node plan');
+    expect(task.statusMessage).toContain(`Answer in the Archon UI: ${BASE}/runs/run-1`);
+  });
+
+  test('status event payload lists open Ask and permission keys', () => {
+    const payload = buildStatusEventPayload(waiting([ask('tu-1'), permission('tu-p')]), [], {
+      baseUrl: BASE,
+    });
+    expect(payload.input_request_keys).toEqual(['ask-tu-1', 'permission-tu-p']);
+    expect(payload.node).toBe('plan');
+    expect(JSON.stringify(payload)).not.toContain('Which scope?');
+    expect(JSON.stringify(payload)).not.toContain('sensitive envelope data');
+  });
+
+  test('status event payload omits input request keys when none are open', () => {
+    const payload = buildStatusEventPayload(waiting([ask('tu-1', { status: 'answered' })]), [], {
+      baseUrl: BASE,
+    });
+    expect('input_request_keys' in payload).toBe(false);
+  });
+
+  test('status event payload for an approval gate is unchanged', () => {
+    const payload = buildStatusEventPayload(paused({}), [], { baseUrl: BASE });
+    expect(payload).toEqual({
+      run_id: 'run-1',
+      workflow: 'resolve',
+      status: 'paused',
+      task_status: 'input_required',
+      node: 'review',
+      question: 'Merge it?',
+      url: `${BASE}/runs/run-1`,
+    });
   });
 });

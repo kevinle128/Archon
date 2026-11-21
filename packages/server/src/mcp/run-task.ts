@@ -8,6 +8,19 @@
  * mapping has exactly one implementation.
  */
 
+import type {
+  AskAnswerBody,
+  AskHumanQuestion,
+} from '@archon/workflows/schemas/pending-interaction';
+import { askHumanQuestionSchema } from '@archon/workflows/schemas/pending-interaction';
+import { createLogger } from '@archon/paths';
+
+let cachedLog: ReturnType<typeof createLogger> | undefined;
+function getLog(): ReturnType<typeof createLogger> {
+  if (!cachedLog) cachedLog = createLogger('mcp.run-task');
+  return cachedLog;
+}
+
 /** Tasks stay addressable for 30 days; the server never fails or drops a task because of TTL. */
 export const TASK_TTL_MS = 2_592_000_000;
 /** Recommended `tasks/get` interval for clients. */
@@ -40,6 +53,15 @@ export function isRunId(value: string): boolean {
 
 export type TaskStatus = 'working' | 'input_required' | 'completed' | 'failed' | 'cancelled';
 
+/** One AskHuman or permission row of a run, as far as the MCP layer needs it. */
+export interface InteractionSnapshot {
+  tool_use_id: string;
+  node_id: string;
+  kind: 'ask' | 'permission';
+  status: 'pending' | 'answered' | 'purged';
+  envelope: Record<string, unknown>;
+}
+
 export interface RunSnapshot {
   id: string;
   workflow_name: string;
@@ -50,6 +72,10 @@ export interface RunSnapshot {
   started_at: string | null;
   completed_at: string | null;
   last_activity_at: string | null;
+  /** Human-input rows of the run, oldest first. Absent = none known. */
+  interactions?: readonly InteractionSnapshot[];
+  /** Whether the caller started the run (permission confirm is starter-only). Absent = unknown. */
+  viewer_is_starter?: boolean;
 }
 
 export interface RunEventSnapshot {
@@ -138,6 +164,48 @@ export function inputRequestKey(
   return pause > 1 ? `approval-${gate.nodeId}-${String(pause)}` : `approval-${gate.nodeId}`;
 }
 
+/**
+ * Interactions a person can answer now: pending rows of a paused run. A pending
+ * row on a running run is not open yet; the tool pauses the run right after the
+ * insert, and the resolve route refuses until then.
+ */
+function openInteractions(run: RunSnapshot): InteractionSnapshot[] {
+  if (run.status !== 'paused') return [];
+  return (run.interactions ?? []).filter(row => row.status === 'pending');
+}
+
+export interface OpenInput {
+  key: string;
+  kind: 'approval' | 'ask' | 'permission';
+  nodeId: string;
+  interaction?: InteractionSnapshot;
+}
+
+/** Input request key of one interaction. `tool_use_id` is unique per run, so the key never repeats. */
+export function interactionKey(interaction: InteractionSnapshot): string {
+  return `${interaction.kind}-${interaction.tool_use_id}`;
+}
+
+/**
+ * Everything the run waits on: the open approval gate first, then the open
+ * interactions in creation order.
+ */
+export function openInputs(run: RunSnapshot, events: readonly RunEventSnapshot[]): OpenInput[] {
+  const inputs: OpenInput[] = [];
+  const gate = openAnswerableGate(run);
+  const gateKey = inputRequestKey(run, events);
+  if (gate && gateKey) inputs.push({ key: gateKey, kind: 'approval', nodeId: gate.nodeId });
+  for (const interaction of openInteractions(run)) {
+    inputs.push({
+      key: interactionKey(interaction),
+      kind: interaction.kind,
+      nodeId: interaction.node_id,
+      interaction,
+    });
+  }
+  return inputs;
+}
+
 export function taskStatusOf(run: RunSnapshot): TaskStatus {
   switch (run.status) {
     case 'completed':
@@ -147,7 +215,9 @@ export function taskStatusOf(run: RunSnapshot): TaskStatus {
     case 'cancelled':
       return 'cancelled';
     case 'paused':
-      return openAnswerableGate(run) ? 'input_required' : 'working';
+      return openAnswerableGate(run) || openInteractions(run).length > 0
+        ? 'input_required'
+        : 'working';
     default:
       return 'working';
   }
@@ -332,6 +402,8 @@ export interface StatusEventPayload {
   task_status: TaskStatus;
   node?: string;
   question?: string;
+  /** Keys of the open AskHuman and permission requests; never their content. */
+  input_request_keys?: string[];
   pr_url?: string;
   ci?: CiResult;
   url: string;
@@ -346,7 +418,8 @@ export function buildStatusEventPayload(
   const gate = openAnswerableGate(run);
   // While a gate waits for an answer no node runs, so the gate's node is the one
   // the client must show next to the question.
-  const node = gate?.nodeId ?? currentNode(events);
+  const interactions = openInteractions(run);
+  const node = gate?.nodeId ?? interactions[0]?.node_id ?? currentNode(events);
   const prUrl = findPrUrl(events);
   const error = runError(run);
   const ci = terminalCi(run, events, options);
@@ -357,6 +430,8 @@ export function buildStatusEventPayload(
     task_status: taskStatusOf(run),
     ...(node ? { node } : {}),
     ...(gate ? { question: gate.message } : {}),
+    // The approval gate is already signalled by `question`; only interactions add keys.
+    ...(interactions.length > 0 ? { input_request_keys: interactions.map(interactionKey) } : {}),
     ...(prUrl ? { pr_url: prUrl } : {}),
     ...(ci ? { ci } : {}),
     url: runUrl(options.baseUrl, run.id),
@@ -373,6 +448,116 @@ export const APPROVAL_REQUESTED_SCHEMA = {
   },
   required: ['decision'],
 } as const;
+
+/** Elicitation form of a permission request: one free-text decision. */
+export const PERMISSION_REQUESTED_SCHEMA = {
+  type: 'object',
+  properties: { intent: { type: 'string', title: 'Your decision', minLength: 1 } },
+  required: ['intent'],
+} as const;
+
+interface FormProperty {
+  type: 'string' | 'array';
+  title: string;
+  enum?: string[];
+  minItems?: number;
+  items?: { type: 'string'; enum: string[] };
+}
+
+export interface AskRequestedSchema {
+  type: 'object';
+  properties: Record<string, FormProperty>;
+  required: string[];
+}
+
+/** The questions of an Ask row, or undefined when the stored envelope is not a valid question list. */
+export function questionsOf(envelope: Record<string, unknown>): AskHumanQuestion[] | undefined {
+  const raw = envelope.questions;
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const questions: AskHumanQuestion[] = [];
+  for (const item of raw) {
+    const parsed = askHumanQuestionSchema.safeParse(item);
+    if (!parsed.success) return undefined;
+    questions.push(parsed.data);
+  }
+  return questions;
+}
+
+const questionName = (index: number): string => `q${String(index + 1)}`;
+const otherName = (index: number): string => `${questionName(index)}_other`;
+
+/**
+ * Elicitation form for a question list. The form schema allows only flat
+ * primitive properties and no field mixes an enum with free text, so
+ * `allowOther` becomes a second optional string property per question.
+ * Property names are positional, so a question id can never collide with them.
+ */
+export function buildAskRequestedSchema(
+  questions: readonly AskHumanQuestion[]
+): AskRequestedSchema {
+  const properties: Record<string, FormProperty> = {};
+  const required: string[] = [];
+  questions.forEach((question, index) => {
+    const name = questionName(index);
+    const title = question.prompt;
+    if (question.options.length === 0) {
+      // Free text. Without `allowOther` core accepts no value, but the person can still decline.
+      properties[name] = { type: 'string', title };
+      required.push(name);
+      return;
+    }
+    properties[name] =
+      question.selection === 'multi'
+        ? {
+            type: 'array',
+            title,
+            ...(question.allowOther ? {} : { minItems: 1 }),
+            items: { type: 'string', enum: [...question.options] },
+          }
+        : { type: 'string', title, enum: [...question.options] };
+    if (question.allowOther) {
+      properties[otherName(index)] = { type: 'string', title: `${title} (other answer)` };
+    } else {
+      required.push(name);
+    }
+  });
+  return { type: 'object', properties, required };
+}
+
+export type AskAnswerMapping = { ok: true; body: AskAnswerBody } | { ok: false; message: string };
+
+/** Accept content of the form from `buildAskRequestedSchema` to the answer route body. */
+export function askAnswerFromContent(
+  questions: readonly AskHumanQuestion[],
+  content: Record<string, unknown>
+): AskAnswerMapping {
+  const answers: { questionId: string; value: string | string[] }[] = [];
+  for (const [index, question] of questions.entries()) {
+    const picked = content[questionName(index)];
+    const otherRaw = content[otherName(index)];
+    const other = typeof otherRaw === 'string' && otherRaw.trim() !== '' ? otherRaw : undefined;
+    const missing: AskAnswerMapping = {
+      ok: false,
+      message: `Question ${String(index + 1)} needs an answer`,
+    };
+    if (question.selection === 'multi') {
+      const values =
+        typeof picked === 'string'
+          ? [picked]
+          : Array.isArray(picked) && picked.every(v => typeof v === 'string')
+            ? picked
+            : [];
+      const value = other !== undefined ? [...values, other] : values;
+      if (value.length === 0) return missing;
+      answers.push({ questionId: question.id, value });
+    } else {
+      const value = other ?? (typeof picked === 'string' ? picked : undefined);
+      if (value === undefined) return missing;
+      answers.push({ questionId: question.id, value });
+    }
+  }
+  return { ok: true, body: { answers } };
+}
 
 export interface DetailedTaskOptions extends MappingOptions {
   /** Whether the `tasks/get` request declared the elicitation client capability. */
@@ -424,6 +609,49 @@ export function taskBase(
   };
 }
 
+function describeWaiting(inputs: readonly OpenInput[], viewerIsStarter: boolean): string {
+  const parts: string[] = [];
+  const asks = inputs.filter(input => input.kind === 'ask');
+  if (asks.length > 0) {
+    const nodes = [...new Set(asks.map(input => input.nodeId))].join(', ');
+    parts.push(
+      `Waiting for an answer at node ${nodes} (${String(asks.length)} question ${asks.length === 1 ? 'list' : 'lists'}).`
+    );
+  }
+  for (const input of inputs.filter(item => item.kind === 'permission')) {
+    parts.push(
+      viewerIsStarter
+        ? `Waiting for a permission decision at node ${input.nodeId}.`
+        : `Waiting for the run starter to confirm a permission at node ${input.nodeId}.`
+    );
+  }
+  return parts.join(' ');
+}
+
+function askRequest(interaction: InteractionSnapshot, runId: string): Record<string, unknown> {
+  const questions = questionsOf(interaction.envelope);
+  if (!questions) {
+    // The person can still decline; the answer itself has to happen in the UI.
+    getLog().warn({ runId, toolUseId: interaction.tool_use_id }, 'mcp.ask_envelope_invalid');
+    return {
+      method: 'elicitation/create',
+      params: {
+        mode: 'form',
+        message: `Node ${interaction.node_id} asks a question that this client cannot show. Answer in the Archon UI.`,
+        requestedSchema: { type: 'object', properties: {}, required: [] },
+      },
+    };
+  }
+  const message =
+    questions.length === 1 && questions[0]
+      ? questions[0].prompt
+      : `Answer ${String(questions.length)} questions from node ${interaction.node_id}.`;
+  return {
+    method: 'elicitation/create',
+    params: { mode: 'form', message, requestedSchema: buildAskRequestedSchema(questions) },
+  };
+}
+
 export function buildDetailedTask(
   run: RunSnapshot,
   events: readonly RunEventSnapshot[],
@@ -434,9 +662,11 @@ export function buildDetailedTask(
   const base = { ...taskBase(run, events), status };
 
   if (status === 'input_required') {
+    const inputs = openInputs(run, events);
+    if (inputs.length === 0) return { ...base, status: 'working' };
     const gate = openAnswerableGate(run);
-    const key = inputRequestKey(run, events);
-    if (!gate || !key) return { ...base, status: 'working' };
+    const gateInput = inputs.find(input => input.kind === 'approval');
+    const waiting = gate ? gate.message : describeWaiting(inputs, run.viewer_is_starter === true);
     if (!options.elicitation) {
       // A server must not send elicitation/create to a client that did not
       // declare elicitation. The field stays present (the tasks spec requires it
@@ -444,24 +674,39 @@ export function buildDetailedTask(
       // status message instead. tasks/update still accepts a known key.
       return {
         ...base,
-        statusMessage: `${gate.message} Answer in the Archon UI: ${url}`,
+        statusMessage: `${waiting} Answer in the Archon UI: ${url}`,
         inputRequests: {},
       };
     }
-    return {
-      ...base,
-      statusMessage: gate.message,
-      inputRequests: {
-        [key]: {
+    const inputRequests: Record<string, unknown> = {};
+    if (gate && gateInput) {
+      inputRequests[gateInput.key] = {
+        method: 'elicitation/create',
+        params: {
+          mode: 'form',
+          message: `${gate.message}\n\nRun: ${url}`,
+          requestedSchema: APPROVAL_REQUESTED_SCHEMA,
+        },
+      };
+    }
+    for (const input of inputs) {
+      if (!input.interaction) continue;
+      if (input.kind === 'ask') {
+        inputRequests[input.key] = askRequest(input.interaction, run.id);
+      } else if (run.viewer_is_starter === true) {
+        // Only the run starter can confirm a permission; the route refuses anyone else.
+        inputRequests[input.key] = {
           method: 'elicitation/create',
           params: {
             mode: 'form',
-            message: `${gate.message}\n\nRun: ${url}`,
-            requestedSchema: APPROVAL_REQUESTED_SCHEMA,
+            // The permission envelope has no contract and may hold sensitive data, so none of it is copied.
+            message: `Node ${input.nodeId} asks for permission. Write your decision.`,
+            requestedSchema: PERMISSION_REQUESTED_SCHEMA,
           },
-        },
-      },
-    };
+        };
+      }
+    }
+    return { ...base, statusMessage: waiting, inputRequests };
   }
 
   if (status === 'working') {

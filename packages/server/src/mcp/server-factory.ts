@@ -25,12 +25,15 @@ import { ArchonApiError, type ApiCodebase, type ArchonApi, type RunDetail } from
 import {
   buildDetailedTask,
   buildRunSummary,
-  inputRequestKey,
+  askAnswerFromContent,
   isRunId,
+  openInputs,
+  questionsOf,
   runUrl,
   taskBase,
   taskStatusOf,
   toText,
+  type OpenInput,
   type RunSnapshot,
 } from './run-task';
 
@@ -152,6 +155,19 @@ const elicitationResponseSchema = z.object({
     .loose()
     .optional(),
 });
+
+/** Response to an AskHuman or permission request; `content` holds the form values. */
+const interactionResponseSchema = z
+  .object({
+    action: z.enum(['accept', 'decline', 'cancel']),
+    content: z.record(z.string(), z.unknown()).optional(),
+  })
+  .loose();
+
+/** The route said the row is already answered, or gone: the key is stale, not an error. */
+function isStaleInteractionError(error: ArchonApiError): boolean {
+  return error.status === 409 || error.status === 404;
+}
 
 /** Resolve the workflow's `returns:` node for a completed or failed run (best-effort). */
 async function returnsNodeFor(api: ArchonApi, detail: RunDetail): Promise<string | undefined> {
@@ -348,6 +364,114 @@ export function createMcpServerHandler(deps: McpServerDeps): McpHttpHandler {
         return task as unknown as Record<string, unknown>;
       });
 
+      /** Approve or reject the open gate. Returns whether a decision was sent. */
+      async function applyApproval(
+        taskId: string,
+        input: OpenInput,
+        raw: unknown
+      ): Promise<boolean> {
+        const parsed = elicitationResponseSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.action !== 'accept' || !parsed.data.content) {
+          getLog().info({ runId: taskId, key: input.key }, 'mcp.task_update_declined');
+          return false;
+        }
+        const { decision, comment } = parsed.data.content;
+        try {
+          if (decision === 'approve') {
+            await api.approve(taskId, comment);
+          } else {
+            await api.reject(
+              taskId,
+              comment && comment.length > 0 ? comment : REJECT_REASON_DEFAULT
+            );
+          }
+        } catch (error) {
+          if (error instanceof ArchonApiError) throw new ProtocolError(-32602, error.message);
+          throw error;
+        }
+        getLog().info({ runId: taskId, key: input.key, decision }, 'mcp.task_update_applied');
+        return true;
+      }
+
+      type InteractionOutcome =
+        | { state: 'applied' }
+        | { state: 'skipped' }
+        | { state: 'failed'; message: string };
+
+      /** Answer one Ask or confirm one permission. Never logs the answer content. */
+      async function applyInteraction(
+        taskId: string,
+        input: OpenInput,
+        raw: unknown
+      ): Promise<InteractionOutcome> {
+        const interaction = input.interaction;
+        const parsed = interactionResponseSchema.safeParse(raw);
+        // The permission contract has no decline, so decline and cancel both leave it open.
+        const declinesAsk = parsed.success && parsed.data.action === 'decline';
+        if (
+          !interaction ||
+          !parsed.success ||
+          parsed.data.action === 'cancel' ||
+          (declinesAsk && input.kind === 'permission')
+        ) {
+          getLog().info(
+            { runId: taskId, key: input.key, kind: input.kind },
+            'mcp.task_update_declined'
+          );
+          return { state: 'skipped' };
+        }
+        const { content } = parsed.data;
+        let send: () => Promise<void>;
+        if (input.kind === 'ask') {
+          if (declinesAsk) {
+            send = async (): Promise<void> =>
+              api.answerAsk(taskId, interaction.tool_use_id, { decline: true });
+          } else {
+            const questions = questionsOf(interaction.envelope);
+            if (!questions) {
+              return {
+                state: 'failed',
+                message: 'This question list can only be answered in the Archon UI',
+              };
+            }
+            if (!content) return { state: 'failed', message: 'An answer needs content' };
+            const mapped = askAnswerFromContent(questions, content);
+            if (!mapped.ok) return { state: 'failed', message: mapped.message };
+            send = async (): Promise<void> =>
+              api.answerAsk(taskId, interaction.tool_use_id, mapped.body);
+          }
+        } else {
+          const intent = content?.intent;
+          if (typeof intent !== 'string' || intent.trim() === '') {
+            return { state: 'failed', message: 'A permission decision needs an intent text' };
+          }
+          send = async (): Promise<void> =>
+            api.confirmPermission(taskId, interaction.tool_use_id, { intent });
+        }
+        try {
+          await send();
+        } catch (error) {
+          if (!(error instanceof ArchonApiError)) throw error;
+          if (isStaleInteractionError(error)) {
+            getLog().info(
+              { runId: taskId, key: input.key, kind: input.kind, status: error.status },
+              'mcp.task_update_ignored'
+            );
+            return { state: 'skipped' };
+          }
+          getLog().warn(
+            { runId: taskId, key: input.key, kind: input.kind, status: error.status },
+            'mcp.task_update_failed'
+          );
+          return { state: 'failed', message: error.message };
+        }
+        getLog().info(
+          { runId: taskId, key: input.key, kind: input.kind },
+          'mcp.task_update_applied'
+        );
+        return { state: 'applied' };
+      }
+
       server.server.setRequestHandler(
         'tasks/update',
         { params: taskIdParams },
@@ -356,37 +480,45 @@ export function createMcpServerHandler(deps: McpServerDeps): McpHttpHandler {
           if (!isRunId(taskId)) throw taskNotFound(taskId);
           const detail = await api.getRunDetail(taskId);
           if (!detail) throw taskNotFound(taskId);
-          const key = inputRequestKey(detail.run, detail.events);
           const responses = handlerCtx.mcpReq.inputResponses ?? {};
-          const raw = key !== undefined ? responses[key] : undefined;
-          if (key === undefined || raw === undefined) {
+          // Approval first: approving a gate keeps the run paused, but answering the
+          // last Ask first would resume the run and make the approval call fail.
+          const outstanding = openInputs(detail.run, detail.events).filter(
+            // Only the run starter can confirm a permission; others never get its key.
+            input => input.kind !== 'permission' || detail.run.viewer_is_starter === true
+          );
+          const outstandingKeys = new Set(outstanding.map(input => input.key));
+          const receivedKeys = Object.keys(responses);
+          const answered = outstanding.filter(input => responses[input.key] !== undefined);
+          if (answered.length === 0 || receivedKeys.some(key => !outstandingKeys.has(key))) {
             // Stale or unknown keys are ignored: keys are unique over the task's life.
             getLog().info(
-              { runId: taskId, currentKey: key, receivedKeys: Object.keys(responses) },
+              { runId: taskId, currentKeys: [...outstandingKeys], receivedKeys },
               'mcp.task_update_ignored'
             );
-            return {};
           }
-          const parsed = elicitationResponseSchema.safeParse(raw);
-          if (!parsed.success || parsed.data.action !== 'accept' || !parsed.data.content) {
-            getLog().info({ runId: taskId, key }, 'mcp.task_update_declined');
-            return {};
-          }
-          const { decision, comment } = parsed.data.content;
-          try {
-            if (decision === 'approve') {
-              await api.approve(taskId, comment);
-            } else {
-              await api.reject(
-                taskId,
-                comment && comment.length > 0 ? comment : REJECT_REASON_DEFAULT
-              );
+
+          const applied: string[] = [];
+          const failed: { key: string; message: string }[] = [];
+          for (const input of answered) {
+            const raw = responses[input.key];
+            if (input.kind === 'approval') {
+              if (await applyApproval(taskId, input, raw)) applied.push(input.key);
+              continue;
             }
-          } catch (error) {
-            if (error instanceof ArchonApiError) throw new ProtocolError(-32602, error.message);
-            throw error;
+            const outcome = await applyInteraction(taskId, input, raw);
+            if (outcome.state === 'applied') applied.push(input.key);
+            else if (outcome.state === 'failed')
+              failed.push({ key: input.key, message: outcome.message });
           }
-          getLog().info({ runId: taskId, key, decision }, 'mcp.task_update_applied');
+          if (failed.length > 0) {
+            // Applied answers are durable and their keys are no longer outstanding, so
+            // a client that sends the whole set again has them ignored: a retry is safe.
+            throw new ProtocolError(-32602, `${String(failed.length)} input response(s) failed`, {
+              failed,
+              applied,
+            });
+          }
           return {};
         }
       );
@@ -400,16 +532,23 @@ export function createMcpServerHandler(deps: McpServerDeps): McpHttpHandler {
           const detail = await api.getRunDetail(taskId);
           if (!detail) throw taskNotFound(taskId);
           const status = taskStatusOf(detail.run);
-          if (status === 'working') {
+          const inputs = openInputs(detail.run, detail.events);
+          const gateOpen = inputs.some(input => input.kind === 'approval');
+          const interactionOpen = inputs.some(input => input.kind !== 'approval');
+          // A run waiting on a question or permission is cancellable so the client can stop
+          // work that no longer matters; a run at an approval gate stays paused.
+          const cancellable =
+            status === 'working' || (status === 'input_required' && interactionOpen && !gateOpen);
+          if (cancellable) {
             try {
               await api.cancel(taskId);
             } catch (error) {
               // Cancellation is cooperative; a run that finished meanwhile is not an error.
               if (!(error instanceof ArchonApiError && error.status === 400)) throw error;
             }
-            getLog().info({ runId: taskId }, 'mcp.task_cancel_applied');
+            getLog().info({ runId: taskId, taskStatus: status }, 'mcp.task_cancel_applied');
           } else {
-            // A run paused for a human answer stays paused: the person can still answer
+            // A run paused at an approval gate stays paused: the person can still answer
             // it in Archon. Terminal runs have nothing to cancel.
             getLog().info({ runId: taskId, taskStatus: status }, 'mcp.task_cancel_acknowledged');
           }

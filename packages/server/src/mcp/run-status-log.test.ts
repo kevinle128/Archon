@@ -14,6 +14,7 @@ delete process.env.DATABASE_URL;
 
 const { pool, closeDatabase } = await import('@archon/core/db/connection');
 const workflowDb = await import('@archon/core/db/workflows');
+const pendingDb = await import('@archon/core/db/workflow-pending-interactions');
 const { listStatusLogRows } = await import('@archon/core/db/workflow-run-status-log');
 const { StatusLogSignal, createDbStatusLogStore, startRunStatusLogWriter } =
   await import('./run-status-log');
@@ -107,6 +108,7 @@ function emit(type: WorkflowEmitterEvent['type'], runId: string): void {
 
 beforeEach(async () => {
   await pool.query('DELETE FROM remote_agent_workflow_run_status_log');
+  await pool.query('DELETE FROM remote_agent_pending_interactions');
   await pool.query('DELETE FROM remote_agent_workflow_events');
   await pool.query('DELETE FROM remote_agent_workflow_runs');
   await pool.query('DELETE FROM remote_agent_conversations');
@@ -460,6 +462,144 @@ describe('observer only', () => {
 });
 
 // Keep last: it drops the table.
+describe('open AskHuman interactions', () => {
+  const question = {
+    id: 'scope',
+    prompt: 'Which private scope?',
+    selection: 'single',
+    options: ['small', 'large'],
+    allowOther: false,
+  };
+
+  let askClock = 0;
+
+  /** Insert an Ask row as the tool does (run still running), then pause the run. */
+  async function openAsk(runId: string, toolUseId: string): Promise<void> {
+    await pendingDb.insertPendingInteraction({
+      workflow_run_id: runId,
+      node_id: 'plan',
+      tool_use_id: toolUseId,
+      kind: 'ask',
+      envelope: { questions: [question] },
+      provider_session_id: 'session-1',
+    });
+    // SQLite timestamps have one-second resolution; fix the order the rows are listed in.
+    askClock += 1;
+    await pool.query(
+      'UPDATE remote_agent_pending_interactions SET created_at = $1 WHERE tool_use_id = $2',
+      [`2026-11-08 00:00:${String(askClock).padStart(2, '0')}`, toolUseId]
+    );
+    await setRun(runId, 'paused');
+  }
+
+  test('node_awaiting appends a row with the open Ask key', async () => {
+    await seedRun('r1');
+    await openAsk('r1', 'tu-1');
+    emit('node_awaiting', 'r1');
+    await drain();
+
+    const logged = await rows('r1');
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({ status: 'paused', gate_key: null });
+    expect(logged[0]?.data).toMatchObject({
+      task_status: 'input_required',
+      node: 'plan',
+      input_request_keys: ['ask-tu-1'],
+    });
+  });
+
+  test('answering one of two Asks appends a row with the remaining key', async () => {
+    await seedRun('r1');
+    await openAsk('r1', 'tu-1');
+    await openAsk('r1', 'tu-2');
+    emit('node_awaiting', 'r1');
+    await drain();
+    await pool.query(
+      "UPDATE remote_agent_pending_interactions SET status = 'answered' WHERE tool_use_id = 'tu-1'"
+    );
+    emit('interaction_resolved', 'r1');
+    await drain();
+
+    const keys = (await rows('r1')).map(r => r.data.input_request_keys);
+    expect(keys).toEqual([['ask-tu-1', 'ask-tu-2'], ['ask-tu-2']]);
+  });
+
+  test('reconcile sees a second Ask on an already paused run', async () => {
+    await seedRun('r1');
+    await openAsk('r1', 'tu-1');
+    await writer.reconcile();
+    await openAsk('r1', 'tu-2');
+    await writer.reconcile();
+
+    const keys = (await rows('r1')).map(r => r.data.input_request_keys);
+    expect(keys).toEqual([['ask-tu-1'], ['ask-tu-1', 'ask-tu-2']]);
+  });
+
+  test('reconcile appends no row for an unchanged paused run with open Asks', async () => {
+    await seedRun('r1');
+    await openAsk('r1', 'tu-1');
+    await writer.reconcile();
+    await writer.reconcile();
+    expect(await rows('r1')).toHaveLength(1);
+  });
+
+  test('rows written before this change compare equal for a paused run without interactions', async () => {
+    await seedRun('r1', 'paused');
+    await writer.refresh('r1');
+    const [first] = await rows('r1');
+    expect(first?.data).not.toHaveProperty('input_request_keys');
+    await writer.reconcile();
+    await writer.refresh('r1');
+    expect(await rows('r1')).toHaveLength(1);
+  });
+
+  test('rows written before this change compare equal for a run paused at an approval gate', async () => {
+    await seedRun('r1', 'paused', {
+      approval: { nodeId: 'decide', message: 'q', type: 'approval', resolved: null },
+    });
+    await writer.refresh('r1');
+    const [first] = await rows('r1');
+    expect(first?.gate_key).toBe('approval-decide');
+    expect(first?.data).not.toHaveProperty('input_request_keys');
+    await writer.refresh('r1');
+    expect(await rows('r1')).toHaveLength(1);
+  });
+
+  test('a corrupt interaction row does not stop status rows for the run', async () => {
+    await seedRun('r1');
+    await openAsk('r1', 'tu-1');
+    await pool.query("UPDATE remote_agent_pending_interactions SET envelope = '[1]'");
+    await writer.refresh('r1');
+
+    const logged = await rows('r1');
+    expect(logged).toHaveLength(1);
+    expect(logged[0]?.data).not.toHaveProperty('input_request_keys');
+  });
+
+  test('status-log rows never contain question text or permission data', async () => {
+    await seedRun('r1');
+    await openAsk('r1', 'tu-1');
+    await writer.refresh('r1');
+    expect(JSON.stringify(await rows('r1'))).not.toContain('Which private scope?');
+  });
+
+  test('a cancel while waiting on an Ask appends a cancelled row without input request keys', async () => {
+    await seedRun('r1');
+    await openAsk('r1', 'tu-1');
+    await writer.refresh('r1');
+    await workflowDb.cancelWorkflowRun('r1');
+    await writer.reconcile();
+
+    const last = (await rows('r1')).at(-1);
+    expect(last).toMatchObject({ status: 'cancelled' });
+    expect(last?.data).not.toHaveProperty('input_request_keys');
+    const purged = await pool.query<{ status: string }>(
+      'SELECT status FROM remote_agent_pending_interactions'
+    );
+    expect(purged.rows.map(r => r.status)).toEqual(['purged']);
+  });
+});
+
 describe('missing table', () => {
   test('a write failure is logged and the writer keeps running', async () => {
     await seedRun('r1');
