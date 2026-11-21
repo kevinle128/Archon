@@ -362,18 +362,20 @@ export async function checkCursor(
 ): Promise<CheckResult> {
   const label = 'Cursor';
 
-  let deps: CursorDeps;
+  let deps: CursorDeps | undefined;
   try {
     deps = await loadDeps(env);
   } catch (err) {
     getLog().debug({ err }, 'doctor.cursor_deps_load_failed');
-    deps = { isDefaultAssistant: false, credentialConnected: false };
   }
 
-  const configured = env.DEFAULT_AI_ASSISTANT === 'cursor' || deps.isDefaultAssistant;
+  // config.yaml outranks DEFAULT_AI_ASSISTANT (loadConfig already folds the env
+  // fallback in), so the raw env value only counts when config failed to load.
+  const configured = deps ? deps.isDefaultAssistant : env.DEFAULT_AI_ASSISTANT === 'cursor';
+  const credentialConnected = deps?.credentialConnected ?? false;
   const hasInstallKey =
     typeof env.CURSOR_API_KEY === 'string' && env.CURSOR_API_KEY.trim().length > 0;
-  if (!configured && !hasInstallKey && !deps.credentialConnected) {
+  if (!configured && !hasInstallKey && !credentialConnected) {
     return {
       label,
       status: 'skip',
@@ -381,7 +383,7 @@ export async function checkCursor(
     };
   }
 
-  if (hasInstallKey || deps.credentialConnected) {
+  if (hasInstallKey || credentialConnected) {
     return {
       label,
       status: 'pass',

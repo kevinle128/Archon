@@ -388,19 +388,19 @@ describe('checkCursor', () => {
   });
 
   it('fails when Cursor is configured and no key is available', async () => {
-    const fromEnv = await checkCursor(
-      { DEFAULT_AI_ASSISTANT: 'cursor', CURSOR_API_KEY: '  ' },
-      async () => notConfigured
-    );
-    const fromConfig = await checkCursor({}, async () => ({
+    const fromConfig = await checkCursor({ CURSOR_API_KEY: '  ' }, async () => ({
       isDefaultAssistant: true,
       credentialConnected: false,
     }));
 
-    expect(fromEnv.status).toBe('fail');
-    expect(fromEnv.message).toContain('no API key');
-    expect(fromEnv.message).toContain('archon ai key set cursor');
     expect(fromConfig.status).toBe('fail');
+    expect(fromConfig.message).toContain('no API key');
+    expect(fromConfig.message).toContain('archon ai key set cursor');
+  });
+
+  it('ignores a stale DEFAULT_AI_ASSISTANT=cursor when config.yaml selects another assistant', async () => {
+    const result = await checkCursor({ DEFAULT_AI_ASSISTANT: 'cursor' }, async () => notConfigured);
+    expect(result.status).toBe('skip');
   });
 
   it('still checks when config loading throws and the env selects Cursor', async () => {

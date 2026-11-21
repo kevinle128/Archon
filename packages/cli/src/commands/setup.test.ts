@@ -1038,9 +1038,15 @@ describe('buildDefaultModelChoices (#1999)', () => {
     expect(values).toEqual(['__keep__', 'sonnet', 'opus', 'haiku', '__custom__']);
   });
 
-  it('includes composer-2.5 in the curated cursor shortlist', () => {
+  it('does not offer "Keep SDK default" for cursor, which has no SDK default model', () => {
     const values = buildDefaultModelChoices('cursor', undefined).map(c => c.value);
-    expect(values).toEqual(['__keep__', 'composer-2.5', '__custom__']);
+    expect(values).toEqual(['composer-2.5', '__custom__']);
+  });
+
+  it('keeps an existing cursor model on re-run', () => {
+    const choices = buildDefaultModelChoices('cursor', 'composer-2.5');
+    expect(choices.map(c => c.value)).toEqual(['__keep__', 'composer-2.5', '__custom__']);
+    expect(choices[0].label).toBe('Keep current (composer-2.5)');
   });
 
   it('includes the curated codex shortlist', () => {

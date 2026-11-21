@@ -1,6 +1,7 @@
 import type { SDKMessage, TokenUsage as CursorTokenUsage } from '@cursor/sdk';
 
-import type { MessageChunk, ModelUsageEntry, TokenUsage } from '../types';
+import type { MessageChunk, TokenUsage, UsageBreakdown } from '../types';
+import { toUsageBreakdown } from '../usage-breakdown';
 
 export interface CursorEventState {
   usage?: CursorTokenUsage;
@@ -29,22 +30,32 @@ export function toArchonTokenUsage(usage: CursorTokenUsage | undefined): TokenUs
   };
 }
 
-export function toCursorUsageEntry(
+/**
+ * Cursor reports one aggregate usage per turn, so `requests` stays unset.
+ * The model is `reported` only when the SDK names it; otherwise it is the
+ * requested model.
+ */
+export function toCursorUsageBreakdown(
   usage: CursorTokenUsage | undefined,
-  model: string | undefined
-): ModelUsageEntry | undefined {
+  reportedModel: string | undefined,
+  requestedModel: string | undefined
+): UsageBreakdown | undefined {
   if (!usage) return undefined;
-  return {
-    provider: 'cursor',
-    model: model ?? null,
-    modelSource: model ? 'reported' : 'unknown',
-    requests: 1,
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    cacheReadTokens: usage.cacheReadTokens,
-    cacheWriteTokens: usage.cacheWriteTokens,
-    ...(usage.reasoningTokens !== undefined ? { reasoningTokens: usage.reasoningTokens } : {}),
-  };
+  const reported = reportedModel?.trim() || undefined;
+  const requested = requestedModel?.trim() || undefined;
+  const breakdown = toUsageBreakdown([
+    {
+      provider: 'cursor',
+      model: reported ?? requested ?? null,
+      modelSource: reported ? 'reported' : requested ? 'requested' : 'unknown',
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheReadTokens: usage.cacheReadTokens,
+      cacheWriteTokens: usage.cacheWriteTokens,
+      ...(usage.reasoningTokens !== undefined ? { reasoningTokens: usage.reasoningTokens } : {}),
+    },
+  ]);
+  return breakdown.length > 0 ? breakdown : undefined;
 }
 
 export function mapCursorMessage(message: SDKMessage, state: CursorEventState): MessageChunk[] {

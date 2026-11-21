@@ -25,7 +25,7 @@ import { parseCursorConfig } from './config';
 import {
   mapCursorMessage,
   toArchonTokenUsage,
-  toCursorUsageEntry,
+  toCursorUsageBreakdown,
   type CursorEventState,
 } from './event-bridge';
 
@@ -170,8 +170,8 @@ async function resolveMcpServers(
 
 function resolveModel(options: SendQueryOptions | undefined): string {
   const config = parseCursorConfig(options?.assistantConfig ?? {});
-  const model = options?.model ?? config.model;
-  if (!model || model.trim().length === 0) {
+  const model = (options?.model ?? config.model)?.trim();
+  if (!model) {
     throw new Error(
       "Cursor requires a model. Set 'model:' on the workflow node or configure assistants.cursor.model."
     );
@@ -261,32 +261,46 @@ async function* streamCursorRun(
   try {
     try {
       for await (const message of run.stream()) {
-        for (const chunk of mapCursorMessage(message, state)) yield chunk;
+        // A node abort unwinds without yielding: the consumer may have stopped pulling.
+        if (nodeCancelled) break;
+        for (const chunk of mapCursorMessage(message, state)) {
+          if (nodeCancelled) break;
+          yield chunk;
+        }
       }
     } catch (error) {
       if (!operatorInterrupted && !nodeCancelled) throw error;
     }
+    if (nodeCancelled) throw new Error('Query aborted');
 
     const result = await run.wait();
+    if (nodeCancelled) throw new Error('Query aborted');
     const usage = result.usage ?? state.usage;
-    const model = result.model?.id ?? resolvedModel;
+    const reportedModel = result.model?.id?.trim() || undefined;
     const tokens = toArchonTokenUsage(usage);
-    const usageEntry = toCursorUsageEntry(usage, model);
-    const structuredOutput = result.result ? tryParseStructuredOutput(result.result) : undefined;
+    const usageBreakdown = toCursorUsageBreakdown(usage, reportedModel, resolvedModel);
+    const hasOutputSchema = Boolean(
+      options?.outputFormat?.schema ?? options?.nodeConfig?.output_format
+    );
+    const structuredOutput =
+      hasOutputSchema && result.result ? tryParseStructuredOutput(result.result) : undefined;
+    // Only a run the SDK actually cancelled counts as an operator interrupt; a Stop
+    // that races a natural finish or an SDK error keeps that outcome.
+    const wasOperatorInterrupted = operatorInterrupted && result.status === 'cancelled';
     const isError =
-      result.status === 'error' || (result.status === 'cancelled' && !operatorInterrupted);
+      result.status === 'error' || (result.status === 'cancelled' && !wasOperatorInterrupted);
 
     yield {
       type: 'result',
       sessionId: agent.agentId,
       ...(tokens ? { tokens } : {}),
-      ...(usageEntry ? { usageBreakdown: [usageEntry] } : {}),
-      resolvedModel: { id: model },
+      ...(usageBreakdown ? { usageBreakdown } : {}),
+      ...(reportedModel ? { resolvedModel: { id: reportedModel } } : {}),
       ...(structuredOutput !== undefined ? { structuredOutput } : {}),
       ...(isError ? { isError: true } : {}),
       ...(result.error?.code ? { errorSubtype: result.error.code } : {}),
       ...(result.error?.message ? { errors: [result.error.message] } : {}),
-      ...(operatorInterrupted ? { terminalReason: STREAM_ABORTED_TERMINAL_REASON } : {}),
+      ...(wasOperatorInterrupted ? { terminalReason: STREAM_ABORTED_TERMINAL_REASON } : {}),
       stopReason: result.status,
     };
   } finally {
@@ -309,6 +323,7 @@ export class CursorProvider implements IAgentProvider {
     if (options?.execContext?.kind === 'container') {
       throw new Error('Cursor provider does not support container execution.');
     }
+    if (options?.abortSignal?.aborted) throw new Error('Query aborted');
 
     const apiKey = resolveCursorApiKey(options);
     const model = resolveModel(options);
@@ -336,6 +351,7 @@ export class CursorProvider implements IAgentProvider {
 
     const { agent, resumed } = await createOrResumeAgent(resumeSessionId, agentOptions);
     try {
+      if (options?.abortSignal?.aborted) throw new Error('Query aborted');
       const stream = streamCursorRun(agent, buildEffectivePrompt(prompt, options), options, model);
       yield* withResumedOutcome(stream, resumedOutcome(resumeSessionId, resumed));
     } finally {

@@ -137,6 +137,9 @@ const DEFAULT_CHAT_MODEL_OPTIONS: Record<string, { value: string; hint?: string 
   grok: [{ value: 'grok-4.5' }],
 };
 
+/** Providers with no SDK default model: setup must write `assistants.<p>.model`. */
+const MODEL_REQUIRED_PROVIDERS = new Set(['cursor']);
+
 /** Sentinel select values for the default-chat-model prompt. Prefixed with
  *  `__` so they can never collide with a real model id. */
 const KEEP_MODEL = '__keep__';
@@ -662,12 +665,17 @@ export function buildDefaultModelChoices(
   currentModel: string | undefined
 ): { value: string; label: string; hint?: string }[] {
   const curated = DEFAULT_CHAT_MODEL_OPTIONS[provider] ?? [];
+  const canKeep = currentModel !== undefined || !MODEL_REQUIRED_PROVIDERS.has(provider);
   return [
-    {
-      value: KEEP_MODEL,
-      label: currentModel ? `Keep current (${currentModel})` : 'Keep SDK default',
-      ...(currentModel ? {} : { hint: 'set one later with `archon ai default`' }),
-    },
+    ...(canKeep
+      ? [
+          {
+            value: KEEP_MODEL,
+            label: currentModel ? `Keep current (${currentModel})` : 'Keep SDK default',
+            ...(currentModel ? {} : { hint: 'set one later with `archon ai default`' }),
+          },
+        ]
+      : []),
     ...curated.map(o => ({ value: o.value, label: o.value, ...(o.hint ? { hint: o.hint } : {}) })),
     { value: CUSTOM_MODEL, label: 'Other…', hint: 'type a model id' },
   ];
@@ -682,8 +690,15 @@ export function buildDefaultModelChoices(
 async function collectDefaultChatModel(provider: string): Promise<string | undefined> {
   const currentModel = readInstallDefaultModel(provider);
 
+  const modelRequired = currentModel === undefined && MODEL_REQUIRED_PROVIDERS.has(provider);
+  const fallbackModel = modelRequired
+    ? DEFAULT_CHAT_MODEL_OPTIONS[provider]?.[0]?.value
+    : undefined;
+
   const choice = await select({
-    message: `Default chat model for ${provider}? (Enter to keep ${currentModel ?? 'the SDK default'})`,
+    message: modelRequired
+      ? `Default chat model for ${provider}? (${provider} has no SDK default)`
+      : `Default chat model for ${provider}? (Enter to keep ${currentModel ?? 'the SDK default'})`,
     options: buildDefaultModelChoices(provider, currentModel),
   });
 
@@ -707,7 +722,7 @@ async function collectDefaultChatModel(provider: string): Promise<string | undef
     // submit — guard like the docs-path prompt does. Empty input = same as
     // keeping the default (guide, never gate).
     const trimmed = typeof typed === 'string' ? typed.trim() : '';
-    return trimmed.length > 0 ? trimmed : undefined;
+    return trimmed.length > 0 ? trimmed : fallbackModel;
   }
 
   return choice;

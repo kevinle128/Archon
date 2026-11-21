@@ -439,57 +439,130 @@ describe('CursorProvider', () => {
     expect(closed).toBe(true);
   });
 
-  test('node cancel is not reported as an operator interrupt', async () => {
+  test('an already-aborted node signal throws before creating an agent', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const provider = new CursorProvider();
+    await expect(
+      collect(provider, { model: 'composer-2.5', abortSignal: controller.signal })
+    ).rejects.toThrow('Query aborted');
+    expect(createAgent).not.toHaveBeenCalled();
+    expect(fakeAgent.send).not.toHaveBeenCalled();
+  });
+
+  test('a node cancel mid-stream throws and closes the agent instead of yielding a result', async () => {
+    const interrupt = new AbortController();
+    const abort = new AbortController();
+    runResult = {
+      id: 'run-cursor-1',
+      status: 'cancelled',
+      model: { id: 'composer-2.5' },
+    };
+
+    const provider = new CursorProvider();
+    const chunks: unknown[] = [];
+    let error: unknown;
+    try {
+      for await (const chunk of provider.sendQuery('Return the result', '/repo', undefined, {
+        model: 'composer-2.5',
+        interruptSignal: interrupt.signal,
+        abortSignal: abort.signal,
+      })) {
+        chunks.push(chunk);
+        if (chunks.length === 1) {
+          interrupt.abort();
+          abort.abort();
+        }
+      }
+    } catch (err) {
+      error = err;
+    }
+
+    expect((error as Error | undefined)?.message).toBe('Query aborted');
+    expect(fakeRun.cancel).toHaveBeenCalledTimes(1);
+    expect(chunks).toHaveLength(1);
+    expect(chunks.some(c => (c as { type: string }).type === 'result')).toBe(false);
+    expect(closed).toBe(true);
+  });
+
+  test('an operator Stop that races a natural finish keeps the completed result', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const provider = new CursorProvider();
+    const chunks = await collect(provider, {
+      model: 'composer-2.5',
+      interruptSignal: controller.signal,
+    });
+
+    expect(chunks.at(-1)).toMatchObject({ type: 'result', stopReason: 'finished' });
+    expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
+    expect(chunks.at(-1)).not.toHaveProperty('isError');
+  });
+
+  test('an operator Stop that races an SDK error still reports the error', async () => {
     const controller = new AbortController();
     controller.abort();
     runResult = {
       id: 'run-cursor-1',
-      status: 'cancelled',
+      status: 'error',
       model: { id: 'composer-2.5' },
     };
 
     const provider = new CursorProvider();
     const chunks = await collect(provider, {
       model: 'composer-2.5',
-      abortSignal: controller.signal,
+      interruptSignal: controller.signal,
     });
 
-    expect(fakeRun.cancel).toHaveBeenCalledTimes(1);
-    expect(chunks.at(-1)).toMatchObject({
-      type: 'result',
-      sessionId: 'cursor-agent-1',
-      isError: true,
-      stopReason: 'cancelled',
-    });
+    expect(chunks.at(-1)).toMatchObject({ type: 'result', isError: true, stopReason: 'error' });
     expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
   });
 
-  test('a node cancel after an operator interrupt does not keep stream_aborted', async () => {
-    const interrupt = new AbortController();
-    const abort = new AbortController();
-    interrupt.abort();
-    abort.abort();
-    runResult = {
-      id: 'run-cursor-1',
-      status: 'cancelled',
-      model: { id: 'composer-2.5' },
-    };
-
+  test('does not parse structured output when no schema is requested', async () => {
     const provider = new CursorProvider();
-    const chunks = await collect(provider, {
-      model: 'composer-2.5',
-      interruptSignal: interrupt.signal,
-      abortSignal: abort.signal,
-    });
+    const chunks = await collect(provider, { model: 'composer-2.5' });
 
-    expect(fakeRun.cancel).toHaveBeenCalledTimes(1);
+    expect(chunks.at(-1)).toMatchObject({ type: 'result', stopReason: 'finished' });
+    expect(chunks.at(-1)).not.toHaveProperty('structuredOutput');
+  });
+
+  test('reports usage as one aggregate turn attributed to the reported model', async () => {
+    const provider = new CursorProvider();
+    const chunks = await collect(provider, { model: 'composer-2.5' });
+
     expect(chunks.at(-1)).toMatchObject({
       type: 'result',
-      sessionId: 'cursor-agent-1',
-      isError: true,
-      stopReason: 'cancelled',
+      usageBreakdown: [
+        {
+          provider: 'cursor',
+          model: 'composer-2.5',
+          modelSource: 'reported',
+          inputTokens: 12,
+          outputTokens: 7,
+          cacheReadTokens: 3,
+          cacheWriteTokens: 0,
+          reasoningTokens: 2,
+        },
+      ],
     });
-    expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
+    const result = chunks.at(-1) as { usageBreakdown: Record<string, unknown>[] };
+    expect(result.usageBreakdown[0]).not.toHaveProperty('requests');
+  });
+
+  test('attributes usage to the trimmed requested model when the SDK reports none', async () => {
+    runResult = { id: 'run-cursor-1', status: 'finished', result: 'done' };
+
+    const provider = new CursorProvider();
+    const chunks = await collect(provider, { model: ' composer-2.5 ' });
+
+    expect(createOptions?.model).toEqual({ id: 'composer-2.5' });
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'result',
+      usageBreakdown: [{ provider: 'cursor', model: 'composer-2.5', modelSource: 'requested' }],
+    });
+    expect(chunks.at(-1)).not.toHaveProperty('resolvedModel');
   });
 
   test('closes the agent when the run fails', async () => {
