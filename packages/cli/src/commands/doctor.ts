@@ -19,6 +19,7 @@ import {
   type ClaudeBinaryResolution,
 } from '@archon/providers/claude/binary-resolver';
 import { resolveGrokBinaryPath } from '@archon/providers/grok/binary-resolver';
+import { readCursorCliLogin, type CursorCliLogin } from '@archon/providers/cursor/cli-login';
 import type { Codebase, MergedConfig, SchemaVersionInfo } from '@archon/core';
 
 // Vendor-canonical credential id for Codex (since #1955 credentials are keyed
@@ -352,13 +353,14 @@ export interface CursorDeps {
 }
 
 /**
- * Verify Cursor credentials. Cursor has no CLI binary check: the local Agent
- * SDK authenticates with CURSOR_API_KEY or a stored per-user API key. Skips
- * when Cursor is neither the configured assistant nor connected.
+ * Verify Cursor credentials. The local Agent SDK accepts CURSOR_API_KEY, a
+ * per-user API key, or the Cursor CLI login (`agent login`) on this machine.
+ * Skips when Cursor is neither the configured assistant nor connected.
  */
 export async function checkCursor(
   env: NodeJS.ProcessEnv,
-  loadDeps: (env: NodeJS.ProcessEnv) => Promise<CursorDeps> = defaultLoadCursorDeps
+  loadDeps: (env: NodeJS.ProcessEnv) => Promise<CursorDeps> = defaultLoadCursorDeps,
+  readLogin: () => Promise<CursorCliLogin> = () => readCursorCliLogin({ env })
 ): Promise<CheckResult> {
   const label = 'Cursor';
 
@@ -393,11 +395,51 @@ export async function checkCursor(
     };
   }
 
+  // The provider does not fall back to the CLI login when the key is set but blank.
+  if (env.CURSOR_API_KEY !== undefined) {
+    return {
+      label,
+      status: 'fail',
+      message:
+        'CURSOR_API_KEY is set but blank, which blocks the Cursor CLI login. Set a non-empty CURSOR_API_KEY, or unset it to use `agent login`.',
+    };
+  }
+
+  let login: CursorCliLogin;
+  try {
+    login = await readLogin();
+  } catch (err) {
+    return {
+      label,
+      status: 'fail',
+      message: `Could not read the Cursor CLI login: ${(err as Error).message}`,
+    };
+  }
+  if (login.status === 'present') {
+    return { label, status: 'pass', message: 'Cursor CLI login is available' };
+  }
+  if (login.status === 'locked') {
+    return {
+      label,
+      status: 'fail',
+      message:
+        'Cursor CLI is logged in, but the macOS login keychain is locked for this process. Run Archon in the GUI login session, or set CURSOR_API_KEY.',
+    };
+  }
+  if (login.status === 'expired') {
+    return {
+      label,
+      status: 'fail',
+      message:
+        'The Cursor CLI access token has expired. Run `agent login` again, or set CURSOR_API_KEY.',
+    };
+  }
+
   return {
     label,
     status: 'fail',
     message:
-      'Cursor is configured but no API key is available. Set CURSOR_API_KEY or run `archon ai key set cursor`.',
+      'Cursor is configured but no API key is available. Set CURSOR_API_KEY, run `agent login`, or run `archon ai key set cursor`.',
   };
 }
 

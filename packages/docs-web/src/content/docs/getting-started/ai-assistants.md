@@ -265,7 +265,7 @@ Archon integrates Cursor as a local coding-agent harness through the official
 [`@cursor/sdk`](https://cursor.com/docs/api/sdk/typescript). The agent loop and file operations run
 on the Archon host in the workflow's checkout; model inference remains hosted by Cursor.
 
-Create a Cursor API key and connect it in **Settings → AI Providers**, or set it for a solo install:
+Create a Cursor API key and connect it in **Settings → AI Providers**, or set it for a solo install. When `CURSOR_API_KEY` is unset, Archon uses the Cursor CLI login from `agent login` on the host:
 
 ```ini
 CURSOR_API_KEY=your-key

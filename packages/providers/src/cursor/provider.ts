@@ -21,6 +21,7 @@ import { loadMcpConfig } from '../mcp/config';
 import { augmentPromptForJsonSchema, tryParseStructuredOutput } from '../shared/structured-output';
 import { resumedOutcome, withResumedOutcome } from '../shared/resumed';
 import { CURSOR_CAPABILITIES } from './capabilities';
+import { readCursorCliLogin } from './cli-login';
 import { parseCursorConfig } from './config';
 import {
   mapCursorMessage,
@@ -179,16 +180,47 @@ function resolveModel(options: SendQueryOptions | undefined): string {
   return model;
 }
 
-function resolveCursorApiKey(options: SendQueryOptions | undefined): string {
+function explicitCursorApiKey(options: SendQueryOptions | undefined): string | undefined {
   const fromRequest = options?.env?.CURSOR_API_KEY;
   const raw = fromRequest !== undefined ? fromRequest : process.env.CURSOR_API_KEY;
-  const apiKey = typeof raw === 'string' ? raw.trim() : '';
-  if (apiKey.length === 0) {
+  if (raw === undefined) return undefined;
+  return raw.trim();
+}
+
+async function resolveCursorAuth(
+  options: SendQueryOptions | undefined
+): Promise<{ apiKey: string; teamId?: number }> {
+  const explicit = explicitCursorApiKey(options);
+  if (explicit !== undefined) {
+    if (explicit.length === 0) {
+      throw new Error(
+        'Cursor requires CURSOR_API_KEY. Set it in the environment or connect a Cursor API key before starting the agent.'
+      );
+    }
+    return { apiKey: explicit };
+  }
+
+  const login = await readCursorCliLogin({
+    env: options?.env ? { ...process.env, ...options.env } : process.env,
+  });
+  if (login.status === 'present') {
+    return login.teamId === undefined
+      ? { apiKey: login.bearer }
+      : { apiKey: login.bearer, teamId: login.teamId };
+  }
+  if (login.status === 'locked') {
     throw new Error(
-      'Cursor requires CURSOR_API_KEY. Set it in the environment or connect a Cursor API key before starting the agent.'
+      'Cursor CLI is logged in, but the macOS login keychain is locked for this process. Run Archon in the GUI login session, or set CURSOR_API_KEY.'
     );
   }
-  return apiKey;
+  if (login.status === 'expired') {
+    throw new Error(
+      'The Cursor CLI access token has expired. Run `agent login` again, or set CURSOR_API_KEY.'
+    );
+  }
+  throw new Error(
+    'Cursor requires a CLI login or CURSOR_API_KEY. Run `agent login` on this machine, or set CURSOR_API_KEY.'
+  );
 }
 
 async function createOrResumeAgent(
@@ -325,15 +357,18 @@ export class CursorProvider implements IAgentProvider {
     }
     if (options?.abortSignal?.aborted) throw new Error('Query aborted');
 
-    const apiKey = resolveCursorApiKey(options);
+    const { apiKey, teamId } = await resolveCursorAuth(options);
     const model = resolveModel(options);
     const customTools = buildCustomTools(options?.nativeTools);
     const mcpServers = await resolveMcpServers(options, cwd);
     const nodeConfig = options?.nodeConfig;
     const agentOptions: AgentOptions = {
       model: { id: model },
-      // Always a concrete key. Omitting it lets the SDK read its credential store.
+      // The CLI login's access token is the bearer the CLI sends. The SDK
+      // puts `apiKey` in Authorization, so that token is passed here. An
+      // explicit CURSOR_API_KEY still wins and is sent the same way.
       apiKey,
+      ...(teamId !== undefined ? { teamId } : {}),
       local: {
         cwd,
         // On/off only. Archon's richer sandbox: field is not translated.

@@ -331,7 +331,7 @@ are more current than any tree drawn here.
 - Implement `IAgentProvider` interface
 - **ClaudeProvider**: `@anthropic-ai/claude-agent-sdk`
 - **CodexProvider**: `@openai/codex-sdk`
-- **CursorProvider**: `@cursor/sdk` — local Agent SDK (`builtIn: true`), API key via `CURSOR_API_KEY`, best-effort structured output
+- **CursorProvider**: `@cursor/sdk` — local Agent SDK (`builtIn: true`), `CURSOR_API_KEY` or the Cursor CLI login (`agent login`), best-effort structured output
 - **PiProvider** (community, `builtIn: false`): `@earendil-works/pi-coding-agent` — one harness for ~20 LLM backends via `<provider>/<model>` refs (e.g. `anthropic/claude-haiku-4-5`, `openrouter/qwen/qwen3-coder`); supports extensions, skills, tool restrictions, thinking level, best-effort structured output. See `packages/docs-web/src/content/docs/getting-started/ai-assistants.md` for setup, capability matrix, and extension config.
 - Streaming: `for await (const event of events) { await platform.send(event) }`
 
