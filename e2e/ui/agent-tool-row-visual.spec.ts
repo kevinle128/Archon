@@ -22,8 +22,8 @@ import { T } from '../lib/playwright/timeouts';
  * and plans/260918-0834-issue-176-tool-family-bodies/reports/implementation-evidence.md.
  * The gallery tests run on deterministic route-fulfilled transcript fixtures —
  * labeled as such in their attachments — not fake-provider claims.
- * Captures go to the Playwright output dir via testInfo; Raw captures are also
- * written to the current Node Room anatomy plan's reports/evidence/ directory.
+ * Captures go to the Playwright output dir via testInfo; the Story 1.2 Raw
+ * captures are also written to the supplement's reports/evidence/ directory.
  */
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -35,15 +35,9 @@ const MOCKUP_DIR = join(
   'ux-Archon-agent-node-room-2026-09-09',
   'mockups'
 );
-const ROOM_ANATOMY_EVIDENCE_DIR =
+const STORY_12_EVIDENCE_DIR =
   env.ARCHON_VERIFY_EVIDENCE ??
-  join(
-    REPO_ROOT,
-    'plans',
-    '260925-2145-issue-266-console-legacy-room-anatomy',
-    'reports',
-    'evidence'
-  );
+  join(REPO_ROOT, 'plans', '260918-1038-issue-175-raw-payload-toggle', 'reports', 'evidence');
 
 type Surface = 'console' | 'legacy';
 
@@ -901,13 +895,13 @@ const surface = 'legacy' as const;
       fullPage: true,
     });
 
-    // Story 1.2 / anatomy evidence: closed and open Raw at the canonical 460px
-    // panel, plus a desktop context shot, written to the plan evidence dir.
-    mkdirSync(ROOM_ANATOMY_EVIDENCE_DIR, { recursive: true });
+    // Story 1.2 evidence: closed and open Raw at the canonical 460px panel,
+    // plus a desktop context shot, written to the supplement's evidence dir.
+    mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
     await summary.press('Enter');
     await expect(row).toHaveJSProperty('open', true);
     const closedRowShot = await row.screenshot({
-      path: join(ROOM_ANATOMY_EVIDENCE_DIR, `${surface}-raw-closed-460.png`),
+      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-closed-460.png`),
     });
     await testInfo.attach(`${surface}-raw-closed-460.png`, {
       body: closedRowShot,
@@ -916,14 +910,14 @@ const surface = 'legacy' as const;
     await rawToggle.click();
     await expect(row.locator('pre')).toBeVisible({ timeout: T.medium });
     const openRowShot = await row.screenshot({
-      path: join(ROOM_ANATOMY_EVIDENCE_DIR, `${surface}-raw-open-460.png`),
+      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-open-460.png`),
     });
     await testInfo.attach(`${surface}-raw-open-460.png`, {
       body: openRowShot,
       contentType: 'image/png',
     });
     await page.screenshot({
-      path: join(ROOM_ANATOMY_EVIDENCE_DIR, `${surface}-raw-open-1440.png`),
+      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-open-1440.png`),
       fullPage: true,
     });
   });
@@ -1327,9 +1321,9 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones meet their WCAG floors
     };
     evidence[surface] = surfaceEvidence;
   }
-  mkdirSync(ROOM_ANATOMY_EVIDENCE_DIR, { recursive: true });
+  mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
   writeFileSync(
-    join(ROOM_ANATOMY_EVIDENCE_DIR, 'raw-toggle-contrast.json'),
+    join(STORY_12_EVIDENCE_DIR, 'raw-toggle-contrast.json'),
     `${JSON.stringify(rawEvidence, null, 2)}\n`
   );
   await testInfo.attach('raw-toggle-contrast.json', {

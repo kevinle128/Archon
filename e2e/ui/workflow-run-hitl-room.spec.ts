@@ -40,17 +40,11 @@ const WIDTH_TOLERANCE_PX = 2;
 const ROOM_MIN_WIDTH_PX = 240;
 const DRAFT_OTHER = 'shared-ask-draft';
 
-/** Current Node Room anatomy evidence directory for the long-payload Raw capture. */
+/** Story 1.2 evidence directory — the Console long-payload Raw capture lands here. */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const ROOM_ANATOMY_EVIDENCE_DIR =
+const STORY_12_EVIDENCE_DIR =
   env.ARCHON_VERIFY_EVIDENCE ??
-  join(
-    REPO_ROOT,
-    'plans',
-    '260925-2145-issue-266-console-legacy-room-anatomy',
-    'reports',
-    'evidence'
-  );
+  join(REPO_ROOT, 'plans', '260918-1038-issue-175-raw-payload-toggle', 'reports', 'evidence');
 
 async function pageWaitStarter(
   browser: Parameters<typeof createIdentityContext>[0],
@@ -616,9 +610,9 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth
   );
   expect(pageOverflow, 'page has no horizontal scroll with long Raw open').toBeLessThanOrEqual(1);
-  mkdirSync(ROOM_ANATOMY_EVIDENCE_DIR, { recursive: true });
+  mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
   const rawShot = await rawPanel.screenshot({
-    path: join(ROOM_ANATOMY_EVIDENCE_DIR, 'console-long-raw-open.png'),
+    path: join(STORY_12_EVIDENCE_DIR, 'console-long-raw-open.png'),
   });
   await testInfo.attach('console-long-raw-open.png', {
     body: rawShot,
