@@ -1,0 +1,47 @@
+{
+  "id": "mcp",
+  "description": "Solo MCP endpoint discovery, tool list, and access checks",
+  "impact_paths": [
+    "packages/server/src/mcp/route.ts",
+    "packages/server/src/mcp/server-factory.ts",
+    "packages/server/src/mcp/events.ts",
+    "packages/server/src/routes/api.ts"
+  ],
+  "behaviors": [
+    {
+      "id": "mcp.discovery",
+      "description": "POST /mcp answers discovery, lists the workflow tools, lists runs, lists status events, and refuses a bad header or a foreign origin.",
+      "priority": 1,
+      "impact_paths": [
+        "packages/server/src/mcp/route.ts",
+        "packages/server/src/mcp/server-factory.ts",
+        "packages/server/src/mcp/events.ts",
+        "packages/server/src/routes/api.ts"
+      ],
+      "scenarios": [
+        "mcp.discovery"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "mcp.discovery",
+      "runner": {
+        "kind": "http",
+        "id": "mcp.discovery"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies",
+        "Built target Web UI and E2E dependencies"
+      ],
+      "proof_obligations": [
+        "server/discover names archon, protocol 2026-07-28, and the tasks and events extensions",
+        "tools/list returns run_workflow, get_run, and list_runs",
+        "list_runs returns a runs array from the live server",
+        "events/list names workflow_run.status_changed",
+        "A missing protocol header is HTTP 400 and JSON-RPC -32020",
+        "A foreign Origin is HTTP 403"
+      ]
+    }
+  ]
+}

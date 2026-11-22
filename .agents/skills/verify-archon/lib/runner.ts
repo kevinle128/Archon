@@ -9,11 +9,13 @@ import {
 import { TOOLING_REPO, ARTIFACT_SUBTREE, readJson, writeJson, toolingDigest, loadCatalog, evidenceDirectory, attachmentInventory } from './io';
 import { runCliScenario, command, isolatedEnvironment } from './cli-scenarios';
 import { runApiScenario } from './api-scenario';
+import { runMcpScenario } from './mcp-scenario';
 import { browserCases, runBrowserScenario } from './browser-scenarios';
 import { protocolSchema } from './schema-validation';
 import { checkVisualSources, visualBinding } from './visual-review';
 
 const cliBindings = new Set(['install.health', 'workflow.execution', 'workflow.governance', 'workflow.invalid-input']);
+const httpBindings = new Set(['http.lifecycle', 'mcp.discovery']);
 export function validateRunnable(catalog: Catalog, ids = catalog.features.flatMap(feature => feature.scenarios.map(item => item.id)), _evidenceRoot?: string): void {
   for (const id of ids) {
     const scenario = catalog.features.flatMap(feature => feature.scenarios).find(item => item.id === id);
@@ -21,7 +23,7 @@ export function validateRunnable(catalog: Catalog, ids = catalog.features.flatMa
     const binding = scenario.runner;
     if (binding.id !== (id === 'ui.visual' ? visualBinding() : id) || !(
       (binding.kind === 'cli' && cliBindings.has(binding.id)) ||
-      (binding.kind === 'http' && binding.id === 'http.lifecycle') ||
+      (binding.kind === 'http' && httpBindings.has(binding.id)) ||
       (binding.kind === 'browser' && Object.hasOwn(browserCases, id))
     )) throw new Error(`Unsupported runner binding ${binding.kind}:${binding.id}`);
   }
@@ -78,7 +80,7 @@ export async function prove(
       catalog_sha256: result.catalog_sha256, selection_sha256: result.selection_sha256,
       tooling_sha256: result.tooling_sha256,
     });
-    if (ids.some(id => id.startsWith('ui.') || id === 'http.lifecycle')) {
+    if (ids.some(id => id.startsWith('ui.') || httpBindings.has(id))) {
       // Build the exact target for each public proof; do not trust an ambient dist.
       const build = await command(['bun', 'run', 'build:web'], repo, isolatedEnvironment(evidence), 900_000);
       await writeJson(join(evidence, 'build.json'), build);
@@ -87,7 +89,8 @@ export async function prove(
     for (const id of ids) {
       const scenario = cliBindings.has(id) ? await runCliScenario(repo, id, evidence)
         : id === 'http.lifecycle' ? await runApiScenario(repo, id, evidence)
-          : await runBrowserScenario(repo, id, evidence);
+          : id === 'mcp.discovery' ? await runMcpScenario(repo, id, evidence)
+            : await runBrowserScenario(repo, id, evidence);
       result.scenarios.push(scenario);
       // Persist progress as FAIL so a process interruption cannot leave a PASS.
       await writeJson(join(evidence, 'progress.json'), result);
