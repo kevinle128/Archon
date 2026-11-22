@@ -275,54 +275,26 @@ The Web UI and CLI work out of the box. Optionally connect a chat platform for r
 ## Deployment
 
 Archon runs as a host-native process (Bun) so agent subprocesses can use host CLIs (`claude`, `codex`, `git`, `gh`).
-**Host contract (fixed):** Mac Mini = PM2 production (PM2 + PostgreSQL); laptop = Docker Compose Postgres + `bun run dev` (never PM2, never `bun run start`).
+**Host contract (fixed):** Mac Mini = GUI launch agent `com.archon.server` plus PostgreSQL; laptop = Docker Compose Postgres + `bun run dev` (never PM2, never `bun run start`).
 Run every command from this repository's root, and confirm you are in the correct checkout with `git remote -v` before acting — a separate, unrelated Archon checkout may also exist on the same host, and all deploy/data commands must target this one only.
 
 The database backend is decided by `DATABASE_URL` in `.env`: a `postgresql://…` value selects PostgreSQL (needs the Compose `postgres` service); unset or commented selects SQLite at `~/.archon/archon.db` (zero setup).
 All persistent data lives under `ARCHON_HOME` (default `~/.archon`): `archon.db`, `workspaces/`, `logs/`, `config.yaml`.
 Copy `.env.example` to `.env` first; never commit secrets.
 
-### Mac Mini — production (PM2 + PostgreSQL)
+### Mac Mini — production (GUI launch agent + PostgreSQL)
 
-Supervised by PM2 with autorestart; PostgreSQL runs as a Docker Compose sidecar.
-Prerequisites: `bun`, `pm2` (`npm i -g pm2`), and Docker.
-
-```bash
-cp .env.example .env        # first time only; then fill credentials
-# .env MUST contain (host PM2 + compose postgres talk over localhost):
-#   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/remote_coding_agent
-./scripts/deploy-pm2.sh     # installs deps, builds web, starts postgres, registers PM2 app "archon"
-```
-
-`deploy-pm2.sh` auto-starts the Compose `postgres` service whenever `DATABASE_URL` is a `postgresql://` URL (skip with `--no-compose`), builds the web UI (skip with `--no-build`), registers the app from `ecosystem.pm2.config.cjs` (name `archon`, `NODE_ENV=production`), runs `pm2 save`, then waits for `http://127.0.0.1:${PORT:-3090}/api/health`.
-It never runs `docker compose down -v` or removes volumes — deploys preserve all history.
-
-After pulling new code, redeploy with `./scripts/deploy-pm2.sh` — it rebuilds the web UI and restarts the app.
-`pm2 restart archon` alone only restarts the process and does NOT rebuild the frontend, so UI changes would not appear.
-
-To pick up workflow YAML changes without killing in-flight runs:
+Launch agent `com.archon.server` in the GUI login session. PostgreSQL is the shared database on localhost. Do not start this install with PM2. A PM2 child cannot read the Cursor CLI login keychain.
 
 ```bash
-./scripts/deploy-pm2.sh --reload-workflows
+git pull --ff-only origin develop
+launchctl kickstart -k "gui/$(id -u)/com.archon.server"
+curl -fsS http://127.0.0.1:3090/api/health
 ```
 
-That runs `bun run generate:bundled` and does **not** restart PM2.
-Host PM2 is source mode (`bun src/index.ts`), so discovery re-reads `.archon/workflows/` on the next list/run.
-New files under `defaults/` must be `git add`ed first.
-After pulling code or UI changes, use the full deploy — that path still restarts.
+The checkout is a symlink to a sparsebundle mounted under the home directory. The agent runs `bun packages/server/src/index.ts`. Logs are `~/Library/Logs/archon/server.out.log` and `server.err.log`. Refuse the deploy when `/api/health` reports a running workflow.
 
-
-Manage the running install:
-
-```bash
-pm2 status archon
-pm2 logs archon
-pm2 restart archon          # restart the process only (no rebuild — backend-only)
-pm2 stop archon             # stop the app (Postgres container keeps running)
-```
-
-Default port is 3090 (override with `PORT` in `.env`).
-Optional flags: `--with-auth` (Caddy forward-auth login sidecar), `--startup` (survive reboot via `pm2 startup`), and `--reload-workflows` (YAML-only refresh, no PM2 restart).
+Build the web UI in the checkout before the kickstart when the pull changes it. Workflow YAML is read from the checkout on the next list or run. `git add` new files under `defaults/` first. Default port is 3090 (override with `PORT` in `.env`).
 
 ### Laptop — development (no PM2)
 
@@ -344,25 +316,24 @@ Stop the app with Ctrl-C (leave Postgres running for next time, or `docker compo
 
 ### Which host + mode am I on? (agents: check before acting)
 
-Identify the host FIRST — PM2 presence proves neither which machine you are on nor that it manages THIS checkout:
+Identify the host FIRST. On the Mac mini the supervisor is the launch agent, not a PM2 app:
 
 ```bash
 scutil --get ComputerName 2>/dev/null; hostname   # owner-assigned host name (the reliable signal)
 pwd -P                                             # the checkout you are about to act on
 ```
 
-Then determine whether PM2 manages THIS checkout — a different Archon checkout on the same host may be the one under PM2:
+Then confirm which process serves this checkout:
 
 ```bash
 git remote -v                                                                     # confirm the intended Archon repo
-pm2 jlist | jq -r '.[] | select(.name=="archon") | {cwd:.pm2_env.pm_cwd, script:.pm2_env.pm_exec_path, status:.pm2_env.status}'
-# PM2 manages THIS checkout ONLY if that cwd equals `pwd -P` above (pm2 describe archon shows the same, human-readable).
+launchctl print "gui/$(id -u)/com.archon.server"                                  # Mac mini supervisor
 lsof -nP -iTCP:3090 -sTCP:LISTEN                                                   # what is actually serving the port
 curl -s localhost:3090/api/health | jq .                                          # version, activePlatforms, is_docker
 grep -E '^DATABASE_URL=' .env                                                      # present => PostgreSQL; absent => SQLite (~/.archon/archon.db)
 ```
 
-Apply the host contract: on the Mac Mini, PM2 is expected; on a laptop, PM2 is NOT. A PM2 `archon` whose `pm_cwd` differs from `pwd -P` belongs to a different checkout — never restart/stop/deploy it as if it were this one. On a laptop, run Docker Compose Postgres + `bun run dev` (never `bun run start`), and confirm with the owner before touching PM2.
+Apply the host contract: on the Mac Mini, `com.archon.server` is the Archon process. Do not start Archon with PM2. On a laptop, run Docker Compose Postgres + `bun run dev` (never `bun run start`).
 
 ## Architecture
 
