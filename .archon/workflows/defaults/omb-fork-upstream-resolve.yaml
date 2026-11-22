@@ -1287,8 +1287,8 @@ nodes:
   - id: resolve
     command: omb-fork-resolve-upstream-merge
     idle_timeout: 7200000
-    model: gpt-6.1-terra
-    effort: medium
+    provider: cursor
+    model: grok-4.7-medium
     depends_on: [prepare]
     output_format:
       type: object
@@ -1344,8 +1344,8 @@ nodes:
         - id: fix-checks-attempt
           command: omb-fork-resolve-upstream-merge
           idle_timeout: 7200000
-          model: gpt-6.1-terra
-          effort: medium
+          provider: cursor
+          model: grok-4.7-medium
           prompt_suffix: |
             ## Fix pass
 

@@ -33,6 +33,7 @@ import { substituteWorkflowVariables } from '../executor-shared';
 import { evaluateCondition } from '../condition-evaluator';
 import type { DagNode, NodeOutput, WorkflowDefinition } from '../schemas';
 import { createGitVisibleChangesCommit } from '@archon/git';
+import { registerBuiltinProviders } from '@archon/providers';
 import { BUNDLED_COMMANDS, BUNDLED_WORKFLOWS } from './bundled-defaults';
 
 const NAME = 'buzz-fork-upstream-resolve';
@@ -47,6 +48,9 @@ const SHA_A = 'a'.repeat(40);
 const SHA_B = 'b'.repeat(40);
 const SHA_C = 'c'.repeat(40);
 const REAL_GIT = spawnSync('bash', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+
+// The resolver nodes name provider: cursor. Load-time validation needs the registry.
+registerBuiltinProviders();
 
 function loadWorkflow(): WorkflowDefinition {
   const result = parseWorkflow(YAML_TEXT, `${NAME}.yaml`);
@@ -525,7 +529,7 @@ describe('buzz-fork-upstream-resolve structure', () => {
     expect(YAML_TEXT).not.toContain('INPUTS_');
   });
 
-  it('pins the verified models on the AI nodes and leaves the provider to the install', () => {
+  it('pins Cursor on the resolver nodes and leaves the other AI nodes to the install', () => {
     const aiNodes = [
       ...WORKFLOW.nodes,
       ...loopGroupOf('fix-checks').nodes,
@@ -538,16 +542,16 @@ describe('buzz-fork-upstream-resolve structure', () => {
       'fix-ci-attempt',
     ]);
     const models = Object.fromEntries(
-      aiNodes.map(n => [n.id, { model: n.model, effort: n.effort }])
+      aiNodes.map(n => [n.id, { provider: n.provider, model: n.model, effort: n.effort }])
     );
-    // The resolver needs the stronger model; the other AI nodes do bounded work.
+    // The resolver runs on Cursor. Medium is part of the model id: Cursor has no effort field.
+    // The other AI nodes do bounded work on the install provider.
     expect(models).toEqual({
-      resolve: { model: 'gpt-6.1-terra', effort: 'medium' },
-      'create-pr': { model: 'gpt-6-luna', effort: undefined },
-      'fix-checks-attempt': { model: 'gpt-6.1-terra', effort: 'medium' },
-      'fix-ci-attempt': { model: 'gpt-6-luna', effort: undefined },
+      resolve: { provider: 'cursor', model: 'grok-4.7-medium', effort: undefined },
+      'create-pr': { provider: undefined, model: 'gpt-6-luna', effort: undefined },
+      'fix-checks-attempt': { provider: 'cursor', model: 'grok-4.7-medium', effort: undefined },
+      'fix-ci-attempt': { provider: undefined, model: 'gpt-6-luna', effort: undefined },
     });
-    for (const node of aiNodes) expect(node.provider).toBeUndefined();
   });
 
   it('never asks a human: no approval gate, no guidance pass, no force-review label', () => {

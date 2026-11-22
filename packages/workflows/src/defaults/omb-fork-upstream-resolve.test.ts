@@ -19,6 +19,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { registerBuiltinProviders } from '@archon/providers';
 import { parseWorkflow } from '../loader';
 import { substituteNodeOutputRefs } from '../dag-executor';
 import { substituteWorkflowVariables } from '../executor-shared';
@@ -33,6 +34,9 @@ const RUN_ID = 'abcdef0123456789abcdef0123456789';
 const FORK_REPO = 'kevinle128/OpenMausBot';
 const ISSUE = 42;
 const REAL_GIT = spawnSync('bash', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+
+// The resolver nodes name provider: cursor. Load-time validation needs the registry.
+registerBuiltinProviders();
 
 function loadWorkflow(): WorkflowDefinition {
   const result = parseWorkflow(YAML_TEXT, `${NAME}.yaml`);
