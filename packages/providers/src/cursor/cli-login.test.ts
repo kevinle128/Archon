@@ -20,9 +20,10 @@ function jwt(exp: number): string {
   return `${header}.${payload}.sig`;
 }
 
-function fail(status: number, stderr: string): Error & { status: number; stderr: string } {
-  const error = new Error('security failed') as Error & { status: number; stderr: string };
-  error.status = status;
+function fail(status: number, stderr: string): Error & { code: number; stderr: string } {
+  // Matches `node:child_process.execFile`: the exit code is on `code`.
+  const error = new Error('security failed') as Error & { code: number; stderr: string };
+  error.code = status;
   error.stderr = stderr;
   return error;
 }

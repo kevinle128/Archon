@@ -283,7 +283,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
   const hasCodexCredentials = process.env.CODEX_ID_TOKEN && process.env.CODEX_ACCESS_TOKEN;
   const hasCursorApiKey = Boolean(process.env.CURSOR_API_KEY?.trim());
   let cursorCliLogin: CursorCliLogin | undefined;
-  if (!hasCursorApiKey) {
+  // A blank CURSOR_API_KEY blocks the CLI login fallback at query time.
+  if (process.env.CURSOR_API_KEY === undefined) {
     try {
       cursorCliLogin = await readCursorCliLogin();
     } catch (err) {

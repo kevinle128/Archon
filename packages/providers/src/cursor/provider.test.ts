@@ -81,9 +81,11 @@ mock.module('@cursor/sdk', () => ({
 
 let cliLogin: CursorCliLogin = { status: 'absent' };
 let cliLoginReads = 0;
+let cliLoginEnv: NodeJS.ProcessEnv | undefined;
 mock.module('./cli-login', () => ({
-  readCursorCliLogin: async () => {
+  readCursorCliLogin: async (overrides?: { env?: NodeJS.ProcessEnv }) => {
     cliLoginReads += 1;
+    cliLoginEnv = overrides?.env;
     return cliLogin;
   },
 }));
@@ -364,6 +366,20 @@ describe('CursorProvider', () => {
     expect(createOptions?.apiKey).toBe('cli-access-token');
     expect(createOptions?.teamId).toBe(7);
     expect(cliLoginReads).toBe(1);
+  });
+
+  test('the CLI login is read with the request env merged over process.env', async () => {
+    delete process.env.CURSOR_API_KEY;
+    cliLogin = { status: 'present', bearer: 'cli-access-token' };
+    const provider = new CursorProvider();
+
+    await collect(provider, {
+      model: 'composer-2.5',
+      env: { CURSOR_CONFIG_DIR: '/tmp/cursor-config' },
+    });
+
+    expect(cliLoginEnv?.CURSOR_CONFIG_DIR).toBe('/tmp/cursor-config');
+    expect(cliLoginEnv?.PATH).toBe(process.env.PATH);
   });
 
   test('an explicit API key wins over the CLI login', async () => {

@@ -105,8 +105,15 @@ function bearerFromFields(
 
 function execFailure(error: unknown): { status: number | undefined; stderr: string } {
   if (typeof error !== 'object' || error === null) return { status: undefined, stderr: '' };
-  const record = error as { status?: unknown; stderr?: unknown };
-  const status = typeof record.status === 'number' ? record.status : undefined;
+  // `execFile` puts the child's exit code on `code` (a number); `status` is the
+  // `spawnSync` spelling.
+  const record = error as { code?: unknown; status?: unknown; stderr?: unknown };
+  const status =
+    typeof record.code === 'number'
+      ? record.code
+      : typeof record.status === 'number'
+        ? record.status
+        : undefined;
   const stderr =
     typeof record.stderr === 'string'
       ? record.stderr

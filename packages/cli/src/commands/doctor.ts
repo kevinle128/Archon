@@ -395,7 +395,26 @@ export async function checkCursor(
     };
   }
 
-  const login = await readLogin();
+  // The provider does not fall back to the CLI login when the key is set but blank.
+  if (env.CURSOR_API_KEY !== undefined) {
+    return {
+      label,
+      status: 'fail',
+      message:
+        'CURSOR_API_KEY is set but blank, which blocks the Cursor CLI login. Set a non-empty CURSOR_API_KEY, or unset it to use `agent login`.',
+    };
+  }
+
+  let login: CursorCliLogin;
+  try {
+    login = await readLogin();
+  } catch (err) {
+    return {
+      label,
+      status: 'fail',
+      message: `Could not read the Cursor CLI login: ${(err as Error).message}`,
+    };
+  }
   if (login.status === 'present') {
     return { label, status: 'pass', message: 'Cursor CLI login is available' };
   }

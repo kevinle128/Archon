@@ -200,7 +200,9 @@ async function resolveCursorAuth(
     return { apiKey: explicit };
   }
 
-  const login = await readCursorCliLogin();
+  const login = await readCursorCliLogin({
+    env: options?.env ? { ...process.env, ...options.env } : process.env,
+  });
   if (login.status === 'present') {
     return login.teamId === undefined
       ? { apiKey: login.bearer }
