@@ -4,10 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-# PM2 injects NODE_APP_INSTANCE into managed processes. Only manual invocations
-# should deploy; a PM2 child must start the server directly to avoid recursion.
+# PM2 injects NODE_APP_INSTANCE into managed processes. A manual invocation
+# must not deploy: the Mac mini install is the GUI launch agent.
 if [ -z "${NODE_APP_INSTANCE:-}" ]; then
-  exec "$ROOT_DIR/scripts/deploy-pm2.sh" "$@"
+  echo "Archon on the Mac mini is launch agent com.archon.server." >&2
+  echo "Restart it with: launchctl kickstart -k gui/\$(id -u)/com.archon.server" >&2
+  exit 1
 fi
 
 BUN_BIN="${ARCHON_BUN_BIN:-}"
