@@ -197,11 +197,9 @@ There is no migration ledger and no version gate. Both schemas are re-applied in
 
 The OceanLabs Mac mini runs Archon as launch agent `com.archon.server` in the GUI login session, not under PM2. The Cursor CLI token is in the macOS login keychain, and a PM2 child cannot read it.
 
-Deploy that install with `git pull --ff-only origin develop` in the checkout, then `launchctl kickstart -k gui/$(id -u)/com.archon.server`. Do not run `scripts/deploy-pm2.sh` or `pm2 start` there. Either command binds port 3090 outside the GUI session, and Cursor login stops working. `runner-buzz` on the same machine stays on PM2.
+Deploy that install with `git pull --ff-only origin develop` in the checkout, then `launchctl kickstart -k gui/$(id -u)/com.archon.server`. Do not `pm2 start` Archon there. That binds port 3090 outside the GUI session, and Cursor login stops working. `runner-buzz` on the same machine stays on PM2.
 
 The checkout path is a symlink to a sparsebundle mounted under the home directory. A launchd process whose working directory is the raw external volume hangs in `getcwd` or `openat`. The launch agent runs `bun packages/server/src/index.ts`. `bun run start` hangs in `bun --filter` and never listens. `~/.archon` must not be a symlink onto the raw external volume, or the process hangs while loading that env file.
-
-`scripts/deploy-pm2.sh` remains the host-PM2 path for other installs.
 
 ### CLI (Command Line)
 
