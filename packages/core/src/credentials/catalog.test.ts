@@ -16,7 +16,7 @@ beforeAll(() => {
   registerCommunityProviders();
 });
 
-const TOUCHED_ENV = ['OPENROUTER_API_KEY', 'AWS_PROFILE'];
+const TOUCHED_ENV = ['OPENROUTER_API_KEY', 'AWS_PROFILE', 'CURSOR_API_KEY'];
 const savedEnv = new Map<string, string | undefined>(TOUCHED_ENV.map(k => [k, process.env[k]]));
 afterEach(() => {
   for (const [k, v] of savedEnv) {
@@ -37,6 +37,13 @@ describe('credentials/catalog', () => {
     expect(anthropic!.kinds).toContain('subscription');
     // Pi-only backends carry only Pi.
     expect(catalog.get('openrouter')?.agents).toEqual(['pi']);
+    const cursor = catalog.get('cursor');
+    expect(cursor).toEqual({
+      vendor: 'cursor',
+      displayName: 'Cursor',
+      kinds: ['api_key'],
+      agents: ['cursor'],
+    });
     // Ambient-only vendors are present but not api_key-connectable.
     expect(catalog.get('amazon-bedrock')?.kinds).toEqual(['ambient']);
   });
@@ -55,6 +62,7 @@ describe('credentials/catalog', () => {
     const vendors = listConnectableVendors();
     expect(vendors).toEqual([...vendors].sort());
     expect(vendors).toContain('anthropic');
+    expect(vendors).toContain('cursor');
     expect(vendors).toContain('github-copilot');
     expect(vendors).toContain('google-vertex'); // api_key-capable despite also-ambient
     expect(vendors).not.toContain('amazon-bedrock');
@@ -117,6 +125,41 @@ describe('credentials/catalog', () => {
       expect(claude.credentials[0]!.subscriptionAvailable).toBe(true);
       const copilot = matrix.find(a => a.id === 'copilot')!;
       expect(copilot.credentials[0]!.subscriptionAvailable).toBe(true);
+    });
+
+    test('cursor is API-key only: install env or a stored key is ready, OAuth is not', () => {
+      delete process.env.CURSOR_API_KEY;
+      let cursor = buildAgentCredentialMatrix([]).find(a => a.id === 'cursor');
+      expect(cursor).toBeDefined();
+      if (!cursor) throw new Error('cursor agent missing from credential matrix');
+      expect(cursor.credentials).toEqual([
+        {
+          vendor: 'cursor',
+          displayName: 'Cursor',
+          kinds: ['api_key'],
+          connected: null,
+          subscriptionAvailable: false,
+          installEnv: false,
+        },
+      ]);
+      expect(cursor.ready).toBe(false);
+
+      process.env.CURSOR_API_KEY = 'cursor-install-key';
+      cursor = buildAgentCredentialMatrix([]).find(a => a.id === 'cursor');
+      if (!cursor) throw new Error('cursor agent missing from credential matrix');
+      expect(cursor.credentials[0]?.installEnv).toBe(true);
+      expect(cursor.credentials[0]?.subscriptionAvailable).toBe(false);
+      expect(cursor.ready).toBe(true);
+
+      delete process.env.CURSOR_API_KEY;
+      cursor = buildAgentCredentialMatrix([{ provider: 'cursor', kind: 'api_key' }]).find(
+        a => a.id === 'cursor'
+      );
+      if (!cursor) throw new Error('cursor agent missing from credential matrix');
+      expect(cursor.credentials[0]?.connected).toBe('api_key');
+      expect(cursor.credentials[0]?.installEnv).toBe(false);
+      expect(cursor.credentials[0]?.subscriptionAvailable).toBe(false);
+      expect(cursor.ready).toBe(true);
     });
 
     test('install-env detection feeds readiness without any stored connection', () => {

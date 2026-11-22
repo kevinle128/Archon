@@ -61,6 +61,7 @@ export {
 // Provider classes
 export { ClaudeProvider } from './claude/provider';
 export { CodexProvider } from './codex/provider';
+export { CursorProvider } from './cursor/provider';
 export { GrokProvider } from './grok/provider';
 
 // Config parsers
@@ -71,6 +72,7 @@ export {
   type ParsedSettingSources,
 } from './claude/config';
 export { parseCodexConfig, type CodexProviderDefaults } from './codex/config';
+export { parseCursorConfig, type CursorProviderDefaults } from './cursor/config';
 export { parseGrokConfig, type GrokProviderDefaults } from './grok/config';
 
 // Utilities (needed by consumers)
@@ -90,6 +92,7 @@ export {
 } from './grok/binary-resolver';
 export { GROK_CAPABILITIES } from './grok/capabilities';
 export { CODEX_CAPABILITIES } from './codex/capabilities';
+export { CURSOR_CAPABILITIES } from './cursor/capabilities';
 
 // Skills resolution
 export { claudeSkillSearchRoots, findInstalledSkillNames, skillSearchRoots } from './shared/skills';

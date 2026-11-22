@@ -56,7 +56,7 @@ Create `~/.archon/config.yaml` for user-wide preferences:
 
 ```yaml
 # Default AI assistant
-defaultAssistant: claude # must match a registered provider (e.g. claude, codex, opencode, pi, copilot, qodercli, omp, deepseek, devin)
+defaultAssistant: claude # must match a registered provider (e.g. claude, codex, cursor, opencode, pi, copilot, qodercli, omp, deepseek, devin)
 
 # Assistant defaults
 assistants:
@@ -84,6 +84,8 @@ assistants:
     additionalDirectories:
       - /absolute/path/to/other/repo
     # codexBinaryPath: /absolute/path/to/codex  # Optional: Codex CLI path
+  cursor:
+    model: composer-2.5
   omp:
     model: openai-codex/gpt-6-sol
     modelReasoningEffort: high
@@ -273,7 +275,7 @@ defaults:
 
 ```
 
-Providers with built-in tier defaults (`claude`, `codex`, `pi`, `copilot`, `opencode`) work
+Providers with built-in tier defaults (`claude`, `codex`, `cursor`, `pi`, `copilot`, `opencode`) work
 without a `tiers:` block. Other providers must configure any tier they use, or resolving
 `small`, `medium`, or `large` will fail with a clear configuration error.
 
@@ -451,7 +453,7 @@ Environment variables override all other configuration. They are organized by ca
 | `ARCHON_PUBLIC_URL` | Public HTTP or HTTPS Archon web origin for non-Plannotator approval callback review links; Plannotator approval callbacks use the live `reviewUrl` from the review session. | -- |
 | `LOG_LEVEL` | Logging verbosity (`fatal`, `error`, `warn`, `info`, `debug`, `trace`) | `info` |
 | `BOT_DISPLAY_NAME` | Bot name shown in batch-mode "starting" messages | `Archon` |
-| `DEFAULT_AI_ASSISTANT` | Fallback AI assistant when no config file sets the assistant. Overridden by `defaultAssistant` in global config or `assistant` in repo config. Must match a registered provider id — currently `claude`, `codex`, `opencode`, `pi`, `copilot`, `qodercli`, `omp`, `deepseek`, or `devin`. | `claude` |
+| `DEFAULT_AI_ASSISTANT` | Fallback AI assistant when no config file sets the assistant. Overridden by `defaultAssistant` in global config or `assistant` in repo config. Must match a registered provider id — currently `claude`, `codex`, `cursor`, `opencode`, `pi`, `copilot`, `qodercli`, `omp`, `deepseek`, or `devin`. | `claude` |
 | `MAX_CONCURRENT_CONVERSATIONS` | Maximum concurrent AI conversations | `10` |
 | `SESSION_RETENTION_DAYS` | Delete inactive sessions older than N days | `30` |
 | `ARCHON_VERBOSE_BOOT` | When set to `1`, prints `[archon] loaded N keys from …` lines to stderr at boot. Also enabled by `LOG_LEVEL=debug` or `LOG_LEVEL=trace`. Silent by default to avoid interleaving with interactive command output. | -- |
@@ -478,6 +480,15 @@ When `CLAUDE_USE_GLOBAL_AUTH` is unset, Archon auto-detects: it uses explicit to
 | `CODEX_ACCESS_TOKEN` | Codex access token | -- |
 | `CODEX_REFRESH_TOKEN` | Codex refresh token | -- |
 | `CODEX_ACCOUNT_ID` | Codex account ID | -- |
+
+### AI Providers -- Cursor
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `CURSOR_API_KEY` | Cursor user or service-account API key used by the official Cursor Agent SDK. Per-user credentials connected in Settings override this value for that user's runs. | -- |
+
+The Cursor provider also reads `assistants.cursor.model`. Cursor local agents require a model id;
+the built-in workflow tiers currently resolve Cursor to `composer-2.5`.
 
 ### AI Providers -- Copilot (community)
 

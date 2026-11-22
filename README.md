@@ -381,11 +381,11 @@ Apply the host contract: on the Mac Mini, PM2 is expected; on a laptop, PM2 is N
       ┌───────┴────────┐          ┌───────┴────────┐
       │                │          │                │
       ▼                ▼          ▼                ▼
-┌───────────┐  ┌────────────┐  ┌──────────────────────────┐
-│  Command  │  │  Workflow  │  │    AI Assistant Clients  │
-│  Handler  │  │  Executor  │  │   (Claude / Codex / Pi)  │
-│  (Slash)  │  │  (YAML)    │  │                          │
-└───────────┘  └────────────┘  └──────────────────────────┘
+┌───────────┐  ┌────────────┐  ┌────────────────────────────────────┐
+│  Command  │  │  Workflow  │  │       AI Assistant Clients         │
+│  Handler  │  │  Executor  │  │  (Claude / Codex / Cursor / Pi)    │
+│  (Slash)  │  │  (YAML)    │  │                                    │
+└───────────┘  └────────────┘  └────────────────────────────────────┘
       │              │                      │
       └──────────────┴──────────────────────┘
                            │
@@ -413,7 +413,7 @@ Full documentation is available at **[archon.diy/docs](https://archon.diy/docs/)
 | [Authoring Workflows](https://archon.diy/guides/authoring-workflows/) | Create custom YAML workflows |
 | [Authoring Commands](https://archon.diy/guides/authoring-commands/) | Create reusable AI commands |
 | [Configuration](https://archon.diy/reference/configuration/) | All config options, env vars, YAML settings |
-| [AI Assistants](https://archon.diy/getting-started/ai-assistants/) | Claude, Codex, Grok, and Pi setup details |
+| [AI Assistants](https://archon.diy/getting-started/ai-assistants/) | Claude, Codex, Cursor, Grok, and Pi setup details |
 | [Deployment](https://archon.diy/deployment/) | Docker, VPS, production setup |
 | [Architecture](https://archon.diy/reference/architecture/) | System design and internals |
 | [Troubleshooting](https://archon.diy/reference/troubleshooting/) | Common issues and fixes |

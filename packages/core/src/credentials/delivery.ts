@@ -80,18 +80,20 @@ export interface DeliveryOptions {
 
 /**
  * The set of vendor ids the delivery map can turn into env/files — i.e. the
- * connectable catalog. Derived from the generated Pi backend map (which
- * already includes `anthropic`, `openai`, and `github-copilot`); ambient
- * vendors (AWS Bedrock, Vertex ADC) are detection-only and excluded. Used at
- * connect time to fail fast on typos before encrypting and persisting a key
- * we could never deliver. Legacy agent-keyed ids are accepted via
- * {@link normalizeCredentialVendor}, not listed here.
+ * connectable catalog. It combines the generated Pi backend map (which already
+ * includes `anthropic`, `openai`, and `github-copilot`) with native-only
+ * vendors such as Cursor. Ambient vendors (AWS Bedrock, Vertex ADC) are
+ * detection-only and excluded. Used at connect time to fail fast on typos
+ * before encrypting and persisting a key we could never deliver. Legacy
+ * agent-keyed ids are accepted via {@link normalizeCredentialVendor}, not
+ * listed here.
  */
 export const KNOWN_VENDORS: ReadonlySet<string> = new Set<string>(
-  // Every key-vendor in the generated map is deliverable. Ambient-ONLY vendors
-  // (amazon-bedrock) are absent from the env map by construction; google-vertex
-  // appears in both (API key OR ambient ADC) and stays connectable.
-  Object.keys(PI_PROVIDER_ENV_VARS)
+  // Every key-vendor in the generated map is deliverable. Cursor is a native
+  // SDK credential and therefore does not appear in Pi's generated map.
+  // Ambient-ONLY vendors (amazon-bedrock) are absent from the env map by
+  // construction; google-vertex appears in both and stays connectable.
+  [...Object.keys(PI_PROVIDER_ENV_VARS), 'cursor']
 );
 
 /**
@@ -182,6 +184,12 @@ export function deliverCredential(
           COPILOT_GITHUB_TOKEN: cred.kind === 'api_key' ? cred.apiKey : cred.oauthApiKey,
         },
       };
+
+    case 'cursor':
+      if (cred.kind === 'oauth') {
+        throw new Error('Cursor credentials support API keys only; OAuth delivery is unavailable.');
+      }
+      return { env: { CURSOR_API_KEY: cred.apiKey } };
 
     default: {
       // Happy path first: any vendor in the generated env map delivers its

@@ -9,6 +9,11 @@
     "medium": { "model": "gpt-5.5", "effort": "medium" },
     "large": { "model": "gpt-5.5", "effort": "high" }
   },
+  "cursor": {
+    "small": { "model": "composer-2.5" },
+    "medium": { "model": "composer-2.5" },
+    "large": { "model": "composer-2.5" }
+  },
   "pi": {
     "small": { "model": "anthropic/claude-haiku-4-5" },
     "medium": { "model": "anthropic/claude-sonnet-4-6" },

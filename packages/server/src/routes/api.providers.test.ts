@@ -213,6 +213,7 @@ describe('GET /api/providers', () => {
     const ids = body.providers.map(p => p.id);
     expect(ids).toContain('claude');
     expect(ids).toContain('codex');
+    expect(ids).toContain('cursor');
     expect(body.providers.every(p => p.builtIn)).toBe(true);
   });
 

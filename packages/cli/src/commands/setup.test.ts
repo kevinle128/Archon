@@ -138,6 +138,19 @@ CODEX_ACCOUNT_ID=account1
       writeFileSync(envPath, 'DEFAULT_AI_ASSISTANT=grok\n');
       expect(checkExistingConfig(envPath)?.hasGrok).toBe(true);
     });
+
+    it('detects Cursor from CURSOR_API_KEY or the configured default', () => {
+      const envPath = join(TEST_DIR, 'cursor.env');
+      writeFileSync(envPath, 'CURSOR_API_KEY=cursor-test\n');
+      expect(checkExistingConfig(envPath)?.hasCursor).toBe(true);
+      expect(checkExistingConfig(envPath)?.hasClaude).toBe(false);
+
+      writeFileSync(envPath, 'DEFAULT_AI_ASSISTANT=cursor\n');
+      expect(checkExistingConfig(envPath)?.hasCursor).toBe(true);
+
+      writeFileSync(envPath, 'DEFAULT_AI_ASSISTANT=claude\n');
+      expect(checkExistingConfig(envPath)?.hasCursor).toBe(false);
+    });
   });
 
   describe('runGrokLogin', () => {
@@ -404,6 +417,38 @@ CODEX_ACCOUNT_ID=account1
 
       expect(content).toContain('# Pi not configured');
       expect(content).not.toMatch(/^ANTHROPIC_API_KEY=/m);
+    });
+
+    it('emits CURSOR_API_KEY when Cursor is the only assistant', () => {
+      const content = generateEnvContent({
+        ai: {
+          claude: false,
+          codex: false,
+          cursor: true,
+          cursorApiKey: 'cursor-test-key',
+          pi: false,
+          defaultAssistant: 'cursor',
+        },
+        platforms: { github: false, telegram: false, slack: false },
+        botDisplayName: 'Archon',
+      });
+
+      expect(content).toContain('CURSOR_API_KEY=cursor-test-key');
+      expect(content).toContain('DEFAULT_AI_ASSISTANT=cursor');
+      expect(content).not.toContain('# Cursor not configured');
+      expect(content).toContain('# Claude not configured');
+    });
+
+    it('emits a manual-key comment when Cursor is selected without a key', () => {
+      const content = generateEnvContent({
+        ai: { claude: false, codex: false, cursor: true, pi: false, defaultAssistant: 'cursor' },
+        platforms: { github: false, telegram: false, slack: false },
+        botDisplayName: 'Archon',
+      });
+
+      expect(content).toContain('# Cursor configured');
+      expect(content).not.toMatch(/^CURSOR_API_KEY=/m);
+      expect(content).toContain('DEFAULT_AI_ASSISTANT=cursor');
     });
 
     it('generates valid content for mixed Claude+Pi setup', () => {
@@ -733,6 +778,45 @@ describe('writeScopedEnv (#1303)', () => {
     expect(result.preservedKeys).toContain('DATABASE_URL');
   });
 
+  it('merge and add keep an existing Cursor key and default assistant', () => {
+    const envPath = join(HOME_DIR, '.env');
+    writeFileSync(envPath, 'CURSOR_API_KEY=existing-cursor-key\nDEFAULT_AI_ASSISTANT=cursor\n');
+    const proposed = generateEnvContent({
+      ai: {
+        claude: false,
+        codex: false,
+        cursor: true,
+        pi: false,
+        defaultAssistant: 'claude',
+      },
+      platforms: { github: false, telegram: false, slack: false },
+      botDisplayName: 'Archon',
+    });
+    expect(proposed).not.toMatch(/^CURSOR_API_KEY=/m);
+
+    const result = writeScopedEnv(proposed, {
+      scope: 'home',
+      repoPath: REPO_DIR,
+      force: false,
+    });
+    const merged = parseDotenv(readFileSync(result.targetPath, 'utf-8'));
+    expect(merged.CURSOR_API_KEY).toBe('existing-cursor-key');
+    expect(merged.DEFAULT_AI_ASSISTANT).toBe('cursor');
+    expect(result.preservedKeys).toContain('DEFAULT_AI_ASSISTANT');
+
+    const replaced = writeScopedEnv(
+      'CURSOR_API_KEY=new-cursor-key\nDEFAULT_AI_ASSISTANT=cursor\n',
+      {
+        scope: 'home',
+        repoPath: REPO_DIR,
+        force: false,
+      }
+    );
+    const kept = parseDotenv(readFileSync(replaced.targetPath, 'utf-8'));
+    expect(kept.CURSOR_API_KEY).toBe('existing-cursor-key');
+    expect(replaced.preservedKeys).toContain('CURSOR_API_KEY');
+  });
+
   it('merge preserves existing bot tokens', () => {
     const envPath = join(HOME_DIR, '.env');
     writeFileSync(
@@ -952,6 +1036,17 @@ describe('buildDefaultModelChoices (#1999)', () => {
   it('includes the curated claude shortlist between keep and custom', () => {
     const values = buildDefaultModelChoices('claude', undefined).map(c => c.value);
     expect(values).toEqual(['__keep__', 'sonnet', 'opus', 'haiku', '__custom__']);
+  });
+
+  it('does not offer "Keep SDK default" for cursor, which has no SDK default model', () => {
+    const values = buildDefaultModelChoices('cursor', undefined).map(c => c.value);
+    expect(values).toEqual(['composer-2.5', '__custom__']);
+  });
+
+  it('keeps an existing cursor model on re-run', () => {
+    const choices = buildDefaultModelChoices('cursor', 'composer-2.5');
+    expect(choices.map(c => c.value)).toEqual(['__keep__', 'composer-2.5', '__custom__']);
+    expect(choices[0].label).toBe('Keep current (composer-2.5)');
   });
 
   it('includes the curated codex shortlist', () => {

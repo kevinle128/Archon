@@ -2,7 +2,7 @@
  * Setup command - Interactive CLI wizard for Archon credential configuration
  *
  * Guides users through configuring:
- * - AI assistants (Claude, Codex, Grok, and/or Pi)
+ * - AI assistants (Claude, Codex, Cursor, Grok, and/or Pi)
  * - Platform connections (GitHub, Telegram, Slack — all skippable)
  *
  * SQLite is the implicit default; no database prompt. PostgreSQL users set
@@ -133,8 +133,12 @@ const DEFAULT_CHAT_MODEL_OPTIONS: Record<string, { value: string; hint?: string 
     { value: 'haiku', hint: 'fastest' },
   ],
   codex: [{ value: 'gpt-6-sol' }, { value: 'gpt-5.6-terra' }, { value: 'gpt-5.6-luna' }],
+  cursor: [{ value: 'composer-2.5' }],
   grok: [{ value: 'grok-4.5' }],
 };
+
+/** Providers with no SDK default model: setup must write `assistants.<p>.model`. */
+const MODEL_REQUIRED_PROVIDERS = new Set(['cursor']);
 
 /** Sentinel select values for the default-chat-model prompt. Prefixed with
  *  `__` so they can never collide with a real model id. */
@@ -152,6 +156,9 @@ interface SetupConfig {
     claudeBinaryPath?: string;
     codex: boolean;
     codexTokens?: CodexTokens;
+    cursor: boolean;
+    /** API key for the official Cursor Agent SDK. Written as CURSOR_API_KEY. */
+    cursorApiKey?: string;
     grok: boolean;
     pi: boolean;
     /** e.g. 'anthropic/claude-haiku-4-5' — written to ~/.archon/config.yaml */
@@ -212,6 +219,7 @@ interface CodexTokens {
 interface ExistingConfig {
   hasClaude: boolean;
   hasCodex: boolean;
+  hasCursor: boolean;
   hasGrok: boolean;
   hasPi: boolean;
   platforms: {
@@ -487,6 +495,8 @@ export function checkExistingConfig(envPath?: string): ExistingConfig | null {
       hasEnvValue(content, 'CODEX_ACCESS_TOKEN') &&
       hasEnvValue(content, 'CODEX_REFRESH_TOKEN') &&
       hasEnvValue(content, 'CODEX_ACCOUNT_ID'),
+    hasCursor:
+      hasEnvValue(content, 'CURSOR_API_KEY') || /^DEFAULT_AI_ASSISTANT=cursor\s*$/m.test(content),
     hasGrok: hasEnvValue(content, 'XAI_API_KEY') || /^DEFAULT_AI_ASSISTANT=grok\s*$/m.test(content),
     // Detection is intentionally API-key-only (no DEFAULT_AI_ASSISTANT=pi check)
     // so that re-runs after partial configs still surface Pi. Doctor's checkPi
@@ -596,6 +606,25 @@ async function collectPiConfig(): Promise<{
 }
 
 /**
+ * Prompt for a Cursor API key. There is no CLI install or login probe — the
+ * official Agent SDK authenticates with CURSOR_API_KEY only.
+ */
+async function collectCursorApiKey(): Promise<string | undefined> {
+  const apiKey = await password({
+    message: 'Enter CURSOR_API_KEY (press Enter to skip — you can set it later):',
+    validate: () => undefined,
+  });
+
+  if (isCancel(apiKey)) {
+    cancel('Setup cancelled.');
+    process.exit(0);
+  }
+
+  const key = apiKey.trim();
+  return key.length > 0 ? key : undefined;
+}
+
+/**
  * Best-effort read of the install-scope default chat model
  * (`assistants.<provider>.model` in ~/.archon/config.yaml) so a setup re-run
  * surfaces the current value (#1999). Hint-only: any read/parse failure
@@ -636,12 +665,17 @@ export function buildDefaultModelChoices(
   currentModel: string | undefined
 ): { value: string; label: string; hint?: string }[] {
   const curated = DEFAULT_CHAT_MODEL_OPTIONS[provider] ?? [];
+  const canKeep = currentModel !== undefined || !MODEL_REQUIRED_PROVIDERS.has(provider);
   return [
-    {
-      value: KEEP_MODEL,
-      label: currentModel ? `Keep current (${currentModel})` : 'Keep SDK default',
-      ...(currentModel ? {} : { hint: 'set one later with `archon ai default`' }),
-    },
+    ...(canKeep
+      ? [
+          {
+            value: KEEP_MODEL,
+            label: currentModel ? `Keep current (${currentModel})` : 'Keep SDK default',
+            ...(currentModel ? {} : { hint: 'set one later with `archon ai default`' }),
+          },
+        ]
+      : []),
     ...curated.map(o => ({ value: o.value, label: o.value, ...(o.hint ? { hint: o.hint } : {}) })),
     { value: CUSTOM_MODEL, label: 'Other…', hint: 'type a model id' },
   ];
@@ -656,8 +690,15 @@ export function buildDefaultModelChoices(
 async function collectDefaultChatModel(provider: string): Promise<string | undefined> {
   const currentModel = readInstallDefaultModel(provider);
 
+  const modelRequired = currentModel === undefined && MODEL_REQUIRED_PROVIDERS.has(provider);
+  const fallbackModel = modelRequired
+    ? DEFAULT_CHAT_MODEL_OPTIONS[provider]?.[0]?.value
+    : undefined;
+
   const choice = await select({
-    message: `Default chat model for ${provider}? (Enter to keep ${currentModel ?? 'the SDK default'})`,
+    message: modelRequired
+      ? `Default chat model for ${provider}? (${provider} has no SDK default)`
+      : `Default chat model for ${provider}? (Enter to keep ${currentModel ?? 'the SDK default'})`,
     options: buildDefaultModelChoices(provider, currentModel),
   });
 
@@ -681,7 +722,7 @@ async function collectDefaultChatModel(provider: string): Promise<string | undef
     // submit — guard like the docs-path prompt does. Empty input = same as
     // keeping the default (guide, never gate).
     const trimmed = typeof typed === 'string' ? typed.trim() : '';
-    return trimmed.length > 0 ? trimmed : undefined;
+    return trimmed.length > 0 ? trimmed : fallbackModel;
   }
 
   return choice;
@@ -1018,6 +1059,7 @@ async function collectAIConfig(): Promise<SetupConfig['ai']> {
     options: [
       { value: 'claude', label: 'Claude (Recommended)', hint: 'Anthropic Claude Code SDK' },
       { value: 'codex', label: 'Codex', hint: 'OpenAI Codex SDK' },
+      { value: 'cursor', label: 'Cursor', hint: 'official Cursor Agent SDK' },
       { value: 'grok', label: 'Grok', hint: 'xAI Grok Build CLI' },
       {
         value: 'pi',
@@ -1035,6 +1077,7 @@ async function collectAIConfig(): Promise<SetupConfig['ai']> {
 
   let hasClaude = assistants.includes('claude');
   let hasCodex = assistants.includes('codex');
+  const hasCursor = assistants.includes('cursor');
   let hasGrok = assistants.includes('grok');
   let hasPi = assistants.includes('pi');
 
@@ -1153,11 +1196,12 @@ After upgrading, run 'archon setup' again.`,
     hasGrok = false;
   }
 
-  if (!hasClaude && !hasCodex && !hasGrok && !hasPi) {
+  if (!hasClaude && !hasCodex && !hasCursor && !hasGrok && !hasPi) {
     log.warning('No AI assistant selected. You can add one later by running `archon setup` again.');
     return {
       claude: false,
       codex: false,
+      cursor: false,
       grok: false,
       pi: false,
       defaultAssistant: getRegisteredProviders().find(p => p.builtIn)?.id ?? 'claude',
@@ -1169,6 +1213,7 @@ After upgrading, run 'archon setup' again.`,
   let claudeOauthToken: string | undefined;
   let claudeBinaryPath: string | undefined;
   let codexTokens: CodexTokens | undefined;
+  let cursorApiKey: string | undefined;
   let piModel: string | undefined;
   let piApiKey: string | undefined;
   let piApiKeyEnvVar: string | undefined;
@@ -1186,6 +1231,10 @@ After upgrading, run 'archon setup' again.`,
   if (hasCodex) {
     const tokens = await collectCodexAuth();
     codexTokens = tokens ?? undefined;
+  }
+
+  if (hasCursor) {
+    cursorApiKey = await collectCursorApiKey();
   }
 
   if (hasGrok) {
@@ -1253,6 +1302,7 @@ After upgrading, run 'archon setup' again.`,
   const selectedProviders = [
     ...(hasClaude ? ['claude'] : []),
     ...(hasCodex ? ['codex'] : []),
+    ...(hasCursor ? ['cursor'] : []),
     ...(hasGrok ? ['grok'] : []),
     ...(hasPi ? ['pi'] : []),
   ];
@@ -1298,6 +1348,8 @@ After upgrading, run 'archon setup' again.`,
     ...(claudeBinaryPath !== undefined ? { claudeBinaryPath } : {}),
     codex: hasCodex,
     codexTokens,
+    cursor: hasCursor,
+    ...(cursorApiKey !== undefined ? { cursorApiKey } : {}),
     grok: hasGrok,
     pi: hasPi,
     piModel,
@@ -1688,6 +1740,18 @@ export function generateEnvContent(config: SetupConfig): string {
     lines.push(`CODEX_ACCESS_TOKEN=${config.ai.codexTokens.accessToken}`);
     lines.push(`CODEX_REFRESH_TOKEN=${config.ai.codexTokens.refreshToken}`);
     lines.push(`CODEX_ACCOUNT_ID=${config.ai.codexTokens.accountId}`);
+    lines.push('');
+  }
+
+  if (config.ai.cursor && config.ai.cursorApiKey) {
+    lines.push('# Cursor Authentication');
+    lines.push(`CURSOR_API_KEY=${config.ai.cursorApiKey}`);
+    lines.push('');
+  } else if (config.ai.cursor) {
+    lines.push('# Cursor configured — set CURSOR_API_KEY manually');
+    lines.push('');
+  } else {
+    lines.push('# Cursor not configured');
     lines.push('');
   }
 
@@ -2192,6 +2256,7 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
     const summary = [
       `Claude: ${existing.hasClaude ? 'Configured' : 'Not configured'}`,
       `Codex: ${existing.hasCodex ? 'Configured' : 'Not configured'}`,
+      `Cursor: ${existing.hasCursor ? 'Configured' : 'Not configured'}`,
       `Grok: ${existing.hasGrok ? 'Configured' : 'Not configured'}`,
       `Pi: ${existing.hasPi ? 'Configured' : 'Not configured'}`,
       `Platforms: ${configuredPlatforms.length > 0 ? configuredPlatforms.join(', ') : 'None'}`,
@@ -2230,6 +2295,7 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
       ai: {
         claude: existing?.hasClaude ?? false,
         codex: existing?.hasCodex ?? false,
+        cursor: existing?.hasCursor ?? false,
         grok: existing?.hasGrok ?? false,
         pi: existing?.hasPi ?? false,
         defaultAssistant: getRegisteredProviders().find(p => p.builtIn)?.id ?? 'claude',
@@ -2451,6 +2517,9 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
   }
   if (config.ai.codex && config.ai.codexTokens) {
     aiConfigured.push('Codex');
+  }
+  if (config.ai.cursor) {
+    aiConfigured.push(config.ai.cursorApiKey ? 'Cursor (API key)' : 'Cursor');
   }
   if (config.ai.grok) {
     aiConfigured.push('Grok');

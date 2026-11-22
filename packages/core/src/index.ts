@@ -2,7 +2,7 @@
  * @archon/core - Shared business logic for Archon
  *
  * This package contains:
- * - AI client adapters (Claude, Codex, Grok)
+ * - AI client adapters (Claude, Codex, Cursor, Grok)
  * - Database operations (SQLite/PostgreSQL)
  * - Orchestration logic
  * - Workflow store adapter (bridges core DB to @archon/workflows IWorkflowStore)

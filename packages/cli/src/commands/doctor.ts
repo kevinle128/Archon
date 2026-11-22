@@ -26,6 +26,7 @@ import type { Codebase, MergedConfig, SchemaVersionInfo } from '@archon/core';
 // when it isn't the configured default assistant.
 const CODEX_CREDENTIAL_VENDOR = 'openai';
 const GROK_CREDENTIAL_VENDOR = 'xai';
+const CURSOR_CREDENTIAL_VENDOR = 'cursor';
 
 // Env vars that indicate a Pi backend API key is configured. Keep in sync with
 // `PI_BACKENDS` in setup.ts — these are the auth signals checkPi inspects.
@@ -339,6 +340,86 @@ export async function defaultLoadGrokDeps(env: NodeJS.ProcessEnv): Promise<GrokD
   return {
     configBinaryPath: config.assistants.grok.grokBinaryPath,
     isDefaultAssistant: config.assistant === 'grok',
+    credentialConnected,
+  };
+}
+
+export interface CursorDeps {
+  /** True when the merged default assistant resolves to cursor. */
+  isDefaultAssistant: boolean;
+  /** True when the CLI user has connected a cursor API key. */
+  credentialConnected: boolean;
+}
+
+/**
+ * Verify Cursor credentials. Cursor has no CLI binary check: the local Agent
+ * SDK authenticates with CURSOR_API_KEY or a stored per-user API key. Skips
+ * when Cursor is neither the configured assistant nor connected.
+ */
+export async function checkCursor(
+  env: NodeJS.ProcessEnv,
+  loadDeps: (env: NodeJS.ProcessEnv) => Promise<CursorDeps> = defaultLoadCursorDeps
+): Promise<CheckResult> {
+  const label = 'Cursor';
+
+  let deps: CursorDeps | undefined;
+  try {
+    deps = await loadDeps(env);
+  } catch (err) {
+    getLog().debug({ err }, 'doctor.cursor_deps_load_failed');
+  }
+
+  // config.yaml outranks DEFAULT_AI_ASSISTANT (loadConfig already folds the env
+  // fallback in), so the raw env value only counts when config failed to load.
+  const configured = deps ? deps.isDefaultAssistant : env.DEFAULT_AI_ASSISTANT === 'cursor';
+  const credentialConnected = deps?.credentialConnected ?? false;
+  const hasInstallKey =
+    typeof env.CURSOR_API_KEY === 'string' && env.CURSOR_API_KEY.trim().length > 0;
+  if (!configured && !hasInstallKey && !credentialConnected) {
+    return {
+      label,
+      status: 'skip',
+      message: 'Cursor not configured (not the default assistant, no Cursor credential connected)',
+    };
+  }
+
+  if (hasInstallKey || credentialConnected) {
+    return {
+      label,
+      status: 'pass',
+      message: hasInstallKey
+        ? 'CURSOR_API_KEY is set'
+        : 'Cursor API key connected for the CLI user',
+    };
+  }
+
+  return {
+    label,
+    status: 'fail',
+    message:
+      'Cursor is configured but no API key is available. Set CURSOR_API_KEY or run `archon ai key set cursor`.',
+  };
+}
+
+export async function defaultLoadCursorDeps(env: NodeJS.ProcessEnv): Promise<CursorDeps> {
+  const { loadConfig, listUserProviderKeys } = await import('@archon/core');
+  const userDb = await import('@archon/core/db/users');
+  const config = await loadConfig(process.cwd());
+
+  let credentialConnected = false;
+  const cliId = env.ARCHON_USER_ID || env.USER || env.USERNAME;
+  if (cliId) {
+    try {
+      const user = await userDb.findOrCreateUserByPlatformIdentity('cli', cliId, cliId);
+      const rows = await listUserProviderKeys(user.id);
+      credentialConnected = rows.some(r => r.provider === CURSOR_CREDENTIAL_VENDOR);
+    } catch (err) {
+      getLog().debug({ err }, 'doctor.cursor_credential_lookup_failed');
+    }
+  }
+
+  return {
+    isDefaultAssistant: config.assistant === 'cursor',
     credentialConnected,
   };
 }
@@ -827,6 +908,7 @@ export async function doctorCommand(
         checkClaudeBinary(),
         checkCodexBinary(env),
         checkGrok(env),
+        checkCursor(env),
         checkGhAuth(env),
         checkPi(env),
         checkOpenCode(env, full),

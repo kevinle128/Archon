@@ -16,7 +16,7 @@ Comprehensive guide to understanding and extending Archon.
 
 ## System Overview
 
-Archon is a **platform-agnostic AI coding assistant orchestrator** that connects messaging platforms (Web UI, Telegram, GitHub, Slack, Discord) to AI coding assistants (Claude Code, Codex) via a unified interface. The built-in Web UI provides a complete standalone experience with real-time streaming, tool call visualization, and workflow management.
+Archon is a **platform-agnostic AI coding assistant orchestrator** that connects messaging platforms (Web UI, Telegram, GitHub, Slack, Discord) to AI coding assistants (Claude Code, Codex, Cursor) via a unified interface. The built-in Web UI provides a complete standalone experience with real-time streaming, tool call visualization, and workflow management.
 
 ### Core Architecture
 
@@ -306,7 +306,7 @@ async handleWebhook(payload: any, signature: string): Promise<void> {
 
 AI agent providers wrap AI SDKs and provide a unified streaming interface. Implement the `IAgentProvider` interface to add new providers.
 
-> **Note:** This section covers built-in providers maintained by the core team (Claude, Codex, Grok).
+> **Note:** This section covers built-in providers maintained by the core team (Claude, Codex, Cursor, Grok).
 > For community providers (`builtIn: false`) — which live under `packages/providers/src/community/` and register through `registerCommunityProviders()` — see [Adding a Community Provider](../contributing/adding-a-community-provider/).
 
 ### IAgentProvider Interface
