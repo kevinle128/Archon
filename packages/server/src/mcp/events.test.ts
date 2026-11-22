@@ -142,6 +142,17 @@ describe('events/list', () => {
   });
 });
 
+describe('events/list payload', () => {
+  test('status event descriptor lists input_request_keys', async () => {
+    const { body } = await call('events/list', {});
+    const [event] = resultOf(body).events as { payloadSchema: { properties: Json } }[];
+    expect(event?.payloadSchema.properties.input_request_keys).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+    });
+  });
+});
+
 describe('events/poll', () => {
   test('cursor null returns no history and a fresh cursor', async () => {
     await seedRun('00000000-0000-4000-8000-000000000001');

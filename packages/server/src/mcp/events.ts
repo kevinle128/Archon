@@ -82,6 +82,7 @@ export const STATUS_EVENT_DESCRIPTOR = {
       },
       node: { type: 'string' },
       question: { type: 'string' },
+      input_request_keys: { type: 'array', items: { type: 'string' } },
       pr_url: { type: 'string' },
       ci: {
         type: 'object',
