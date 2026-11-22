@@ -644,7 +644,8 @@ nodes:
   - id: implement
     depends_on: [investigate]
     context: fresh
-    model: opus
+    model: sonnet
+    effort: medium
     skills: [ak-fix]
     prompt: |
       Implement the smallest fix for the bug.
