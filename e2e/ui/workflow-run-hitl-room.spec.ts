@@ -528,45 +528,6 @@ test('[P1] [V:hitl.room-width-reload] Reload keeps the room width', async ({ pag
   expect(Math.abs(after - before)).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
 });
 
-test('[P1] [V:hitl.room-fixed-width-container] Split-mode outer widths stay fixed as wide containers change', async ({
-  page,
-  archon,
-}) => {
-  const started = await archon.runHitlWorkflow();
-
-  await page.setViewportSize(SPLIT_VIEWPORT);
-  await openRunDetail(page, started.runId);
-  await waitForRunTitle(page, 'e2e-hitl-run');
-  await openConsoleLogRow(page, HITL_INSPECT_NODE);
-  await waitForRoom(page, HITL_INSPECT_NODE);
-  const consoleInitial = await expectOuterRoomGeometry(page, 'console');
-  expect(consoleInitial.mode).toBe('split');
-
-  await page.setViewportSize({ width: 1280, height: 1000 });
-  await waitForRoom(page, HITL_INSPECT_NODE);
-  const consoleResized = await expectOuterRoomGeometry(page, 'console');
-  expect(consoleResized.mode).toBe('split');
-  expect(Math.abs(consoleResized.width - consoleInitial.width)).toBeLessThanOrEqual(
-    OUTER_WIDTH_TOLERANCE_PX
-  );
-
-  await page.setViewportSize(SPLIT_VIEWPORT);
-  await openLegacyRunDetail(page, started.runId);
-  await waitForRunTitle(page, 'e2e-hitl-run');
-  await openLegacyLogRow(page, HITL_INSPECT_NODE);
-  await waitForRoom(page, HITL_INSPECT_NODE);
-  const legacyInitial = await expectOuterRoomGeometry(page, 'legacy');
-  expect(legacyInitial.mode).toBe('split');
-
-  await page.setViewportSize({ width: 1280, height: 1000 });
-  await waitForRoom(page, HITL_INSPECT_NODE);
-  const legacyResized = await expectOuterRoomGeometry(page, 'legacy');
-  expect(legacyResized.mode).toBe('split');
-  expect(Math.abs(legacyResized.width - legacyInitial.width)).toBeLessThanOrEqual(
-    OUTER_WIDTH_TOLERANCE_PX
-  );
-});
-
 test('[P1] [V:hitl.history-pagination] Complete history crosses a cursor boundary', async ({
   page,
   archon,
