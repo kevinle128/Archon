@@ -193,6 +193,16 @@ There is no migration ledger and no version gate. Both schemas are re-applied in
 - **Mirror every change into both schemas** (see the generated-files note in the Defaults section). The parity test in `sqlite.test.ts` checks table names and columns in both directions, against small tracked allowlists — so a column added to one dialect and forgotten in the other fails CI.
 - `remote_agent_schema_version` records which Archon build created the database and which last applied schema to it, surfaced by `archon doctor` and `GET /api/health`. It is diagnostic only — nothing gates on it, and the values come from `APP_VERSION` in `packages/core/src/db/schema-version.ts`, never from a hand-bumped number.
 
+### Mac mini install
+
+The OceanLabs Mac mini runs Archon as launch agent `com.archon.server` in the GUI login session, not under PM2. The Cursor CLI token is in the macOS login keychain, and a PM2 child cannot read it.
+
+Deploy that install with `git pull --ff-only origin develop` in the checkout, then `launchctl kickstart -k gui/$(id -u)/com.archon.server`. Do not run `scripts/deploy-pm2.sh` or `pm2 start` there. Either command binds port 3090 outside the GUI session, and Cursor login stops working. `runner-buzz` on the same machine stays on PM2.
+
+The checkout path is a symlink to a sparsebundle mounted under the home directory. A launchd process whose working directory is the raw external volume hangs in `getcwd` or `openat`. The launch agent runs `bun packages/server/src/index.ts`. `bun run start` hangs in `bun --filter` and never listens. `~/.archon` must not be a symlink onto the raw external volume, or the process hangs while loading that env file.
+
+`scripts/deploy-pm2.sh` remains the host-PM2 path for other installs.
+
 ### CLI (Command Line)
 
 Run workflows directly from the command line without needing the server.

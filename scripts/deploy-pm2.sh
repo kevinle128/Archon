@@ -58,7 +58,9 @@ Notes:
   - This script never runs "docker compose down -v", "docker volume rm", or any
     other volume/database reset. Deploys must preserve existing history.
   - `--reload-workflows` does not install, build, touch Compose, or restart
-    PM2. That is the path for YAML-only updates on a live Mac Mini install.
+    PM2. That is the path for YAML-only updates on a live host-PM2 install.
+    The OceanLabs Mac mini is not that install. It runs as a GUI launch agent.
+    See AGENTS.md, "Mac mini install".
 USAGE
 }
 
