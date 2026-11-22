@@ -19,6 +19,7 @@ import type {
   SDKMessage,
 } from '@cursor/sdk';
 
+import type { CursorCliLogin } from './cli-login';
 import { createMockLogger } from '../test/mocks/logger';
 
 const mockLogger = createMockLogger();
@@ -78,6 +79,15 @@ mock.module('@cursor/sdk', () => ({
   },
 }));
 
+let cliLogin: CursorCliLogin = { status: 'absent' };
+let cliLoginReads = 0;
+mock.module('./cli-login', () => ({
+  readCursorCliLogin: async () => {
+    cliLoginReads += 1;
+    return cliLogin;
+  },
+}));
+
 const { CursorProvider } = await import('./provider');
 
 const originalCursorKey = process.env.CURSOR_API_KEY;
@@ -95,6 +105,8 @@ async function collect(
 
 beforeEach(() => {
   process.env.CURSOR_API_KEY = 'process-cursor-key';
+  cliLogin = { status: 'absent' };
+  cliLoginReads = 0;
   createOptions = undefined;
   resumeOptions = undefined;
   resumeId = undefined;
@@ -329,16 +341,40 @@ describe('CursorProvider', () => {
     const provider = new CursorProvider();
     delete process.env.CURSOR_API_KEY;
 
-    await expect(collect(provider, { model: 'composer-2.5' })).rejects.toThrow(/CURSOR_API_KEY/);
+    await expect(collect(provider, { model: 'composer-2.5' })).rejects.toThrow(/agent login/);
     await expect(
       collect(provider, { model: 'composer-2.5', env: { CURSOR_API_KEY: '   ' } })
     ).rejects.toThrow(/CURSOR_API_KEY/);
     await expect(
       provider.sendQuery('Continue', '/repo', 'cursor-existing', { model: 'composer-2.5' }).next()
-    ).rejects.toThrow(/CURSOR_API_KEY/);
+    ).rejects.toThrow(/agent login/);
 
     expect(createAgent).not.toHaveBeenCalled();
     expect(resumeAgent).not.toHaveBeenCalled();
+    expect(cliLoginReads).toBe(2);
+  });
+
+  test('a CLI login bearer is passed to the SDK when no API key is set', async () => {
+    delete process.env.CURSOR_API_KEY;
+    cliLogin = { status: 'present', bearer: 'cli-access-token', teamId: 7 };
+    const provider = new CursorProvider();
+
+    await collect(provider, { model: 'composer-2.5' });
+
+    expect(createOptions?.apiKey).toBe('cli-access-token');
+    expect(createOptions?.teamId).toBe(7);
+    expect(cliLoginReads).toBe(1);
+  });
+
+  test('an explicit API key wins over the CLI login', async () => {
+    cliLogin = { status: 'present', bearer: 'cli-access-token', teamId: 7 };
+    const provider = new CursorProvider();
+
+    await collect(provider, { model: 'composer-2.5' });
+
+    expect(createOptions?.apiKey).toBe('process-cursor-key');
+    expect(createOptions?.teamId).toBeUndefined();
+    expect(cliLoginReads).toBe(0);
   });
 
   test('a blank request key does not fall through to the process key', async () => {

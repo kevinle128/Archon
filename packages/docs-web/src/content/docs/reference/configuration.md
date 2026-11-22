@@ -485,7 +485,7 @@ When `CLAUDE_USE_GLOBAL_AUTH` is unset, Archon auto-detects: it uses explicit to
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `CURSOR_API_KEY` | Cursor user or service-account API key used by the official Cursor Agent SDK. Per-user credentials connected in Settings override this value for that user's runs. | -- |
+| `CURSOR_API_KEY` | Cursor user or service-account API key used by the official Cursor Agent SDK. When this is unset, Archon uses the Cursor CLI login from `agent login` on the host. Per-user credentials connected in Settings override this value for that user's runs. | -- |
 
 The Cursor provider also reads `assistants.cursor.model`. Cursor local agents require a model id;
 the built-in workflow tiers currently resolve Cursor to `composer-2.5`.

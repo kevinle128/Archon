@@ -387,11 +387,28 @@ describe('checkCursor', () => {
     });
   });
 
+  it('passes when the Cursor CLI login is available', async () => {
+    const result = await checkCursor(
+      {},
+      async () => ({ isDefaultAssistant: true, credentialConnected: false }),
+      async () => ({ status: 'present', bearer: 'cli-access-token' })
+    );
+    expect(result).toEqual({
+      label: 'Cursor',
+      status: 'pass',
+      message: 'Cursor CLI login is available',
+    });
+  });
+
   it('fails when Cursor is configured and no key is available', async () => {
-    const fromConfig = await checkCursor({ CURSOR_API_KEY: '  ' }, async () => ({
-      isDefaultAssistant: true,
-      credentialConnected: false,
-    }));
+    const fromConfig = await checkCursor(
+      { CURSOR_API_KEY: '  ' },
+      async () => ({
+        isDefaultAssistant: true,
+        credentialConnected: false,
+      }),
+      async () => ({ status: 'absent' })
+    );
 
     expect(fromConfig.status).toBe('fail');
     expect(fromConfig.message).toContain('no API key');
@@ -404,9 +421,13 @@ describe('checkCursor', () => {
   });
 
   it('still checks when config loading throws and the env selects Cursor', async () => {
-    const result = await checkCursor({ DEFAULT_AI_ASSISTANT: 'cursor' }, async () => {
-      throw new Error('config blew up');
-    });
+    const result = await checkCursor(
+      { DEFAULT_AI_ASSISTANT: 'cursor' },
+      async () => {
+        throw new Error('config blew up');
+      },
+      async () => ({ status: 'absent' })
+    );
     expect(result.status).toBe('fail');
     expect(result.message).toContain('no API key');
   });

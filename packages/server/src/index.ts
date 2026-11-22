@@ -54,6 +54,7 @@ import {
   registerCommunityProviders,
   shutdownLangfuse,
 } from '@archon/providers';
+import { readCursorCliLogin, type CursorCliLogin } from '@archon/providers/cursor/cli-login';
 import { getVendorCatalog } from '@archon/core';
 
 // Bootstrap provider registry before any provider lookups
@@ -280,7 +281,20 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
   // so it must NOT trip the no-credentials exit (#1983).
   const hasClaudeCredentials = hasClaudeBootAuthPosture(process.env);
   const hasCodexCredentials = process.env.CODEX_ID_TOKEN && process.env.CODEX_ACCESS_TOKEN;
-  const hasCursorCredentials = Boolean(process.env.CURSOR_API_KEY);
+  const hasCursorApiKey = Boolean(process.env.CURSOR_API_KEY?.trim());
+  let cursorCliLogin: CursorCliLogin | undefined;
+  if (!hasCursorApiKey) {
+    try {
+      cursorCliLogin = await readCursorCliLogin();
+    } catch (err) {
+      getLog().warn({ err }, 'cursor_cli_login_unreadable');
+    }
+  }
+  const hasCursorCredentials =
+    hasCursorApiKey ||
+    cursorCliLogin?.status === 'present' ||
+    cursorCliLogin?.status === 'locked' ||
+    cursorCliLogin?.status === 'expired';
 
   if (!hasClaudeCredentials && !hasCodexCredentials && !hasCursorCredentials) {
     getLog().fatal(
@@ -288,13 +302,13 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
         checked: {
           claude: ['CLAUDE_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_USE_GLOBAL_AUTH'],
           codex: ['CODEX_ID_TOKEN', 'CODEX_ACCESS_TOKEN'],
-          cursor: ['CURSOR_API_KEY'],
+          cursor: ['CURSOR_API_KEY', 'agent login'],
         },
         hints: [
           'Set CLAUDE_USE_GLOBAL_AUTH=true in .env (requires `claude /login` first)',
           'Or set CLAUDE_API_KEY in .env',
           'Or set CODEX_ID_TOKEN + CODEX_ACCESS_TOKEN in .env',
-          'Or set CURSOR_API_KEY in .env',
+          'Or set CURSOR_API_KEY in .env, or run `agent login` on this machine',
           'See .env.example for all options',
         ],
         envFile: BUNDLED_IS_BINARY ? getArchonEnvPath() : envPath,
@@ -316,11 +330,18 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
       'codex_credentials_missing'
     );
   }
-  // Same shape as the Claude/Codex warnings. A per-user vault
-  // (TOKEN_ENCRYPTION_KEY) delivers Cursor auth per request, so a missing
-  // install key is not a boot warning there. The fatal check above is unchanged.
-  if (!hasCursorCredentials && !process.env.TOKEN_ENCRYPTION_KEY) {
-    getLog().warn({ checked: ['CURSOR_API_KEY'] }, 'cursor_credentials_missing');
+  // A per-user vault (TOKEN_ENCRYPTION_KEY) delivers Cursor auth per request,
+  // so a missing install key is not a boot warning there. A CLI login counts
+  // as install auth. A locked keychain still means the login exists, but this
+  // process cannot read it until it runs in the GUI login session.
+  if (!hasCursorApiKey && !process.env.TOKEN_ENCRYPTION_KEY) {
+    if (cursorCliLogin?.status === 'locked') {
+      getLog().warn({ checked: ['cursor-access-token'] }, 'cursor_cli_keychain_locked');
+    } else if (cursorCliLogin?.status === 'expired') {
+      getLog().warn({ checked: ['cursor-access-token'] }, 'cursor_cli_login_expired');
+    } else if (!hasCursorCredentials) {
+      getLog().warn({ checked: ['CURSOR_API_KEY', 'agent login'] }, 'cursor_credentials_missing');
+    }
   }
 
   // Test database connection
