@@ -322,6 +322,7 @@ nodes:
   - id: e2e-reproduce
     depends_on: [setup]
     context: fresh
+    effort: medium
     skills: [ak-test]
     # Written by setup next to the worktree: the one game-db-mcp server of the run's stage
     # (base=main -> game-db-mcp-prod, else game-db-mcp-dev). Only this node gets it. The file exists only
